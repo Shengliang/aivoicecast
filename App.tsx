@@ -4,7 +4,7 @@ import { Channel, ViewState, UserProfile, TranscriptItem } from './types';
 import { 
   Podcast, Mic, Layout, Search, Sparkles, LogOut, 
   Settings, Menu, X, Plus, Github, Database, Cloud, Globe, 
-  Calendar, Briefcase, Users, Disc, FileText 
+  Calendar, Briefcase, Users, Disc, FileText, AlertTriangle 
 } from 'lucide-react';
 import { LiveSession } from './components/LiveSession';
 import { PodcastDetail } from './components/PodcastDetail';
@@ -14,6 +14,7 @@ import { CreateChannelModal } from './components/CreateChannelModal';
 import { VoiceCreateModal } from './components/VoiceCreateModal';
 import { ApiKeyModal } from './components/ApiKeyModal';
 import { DataSyncModal } from './components/DataSyncModal';
+import { FirebaseConfigModal } from './components/FirebaseConfigModal';
 import { DebugView } from './components/DebugView';
 import { CloudDebugView } from './components/CloudDebugView';
 import { PublicChannelInspector } from './components/PublicChannelInspector';
@@ -27,7 +28,7 @@ import { RecordingList } from './components/RecordingList';
 import { DocumentList } from './components/DocumentList';
 import { CalendarView } from './components/CalendarView';
 
-import { auth } from './services/firebaseConfig';
+import { auth, isFirebaseConfigured } from './services/firebaseConfig';
 import { 
   voteChannel, publishChannelToFirestore, updateCommentInChannel, 
   deleteCommentFromChannel, addCommentToChannel, getPublicChannels, 
@@ -97,6 +98,8 @@ const App: React.FC = () => {
   const [isVoiceCreateOpen, setIsVoiceCreateOpen] = useState(false);
   const [isApiKeyModalOpen, setIsApiKeyModalOpen] = useState(false);
   const [isSyncModalOpen, setIsSyncModalOpen] = useState(false);
+  const [isFirebaseModalOpen, setIsFirebaseModalOpen] = useState(false);
+  
   const [hasApiKey, setHasApiKey] = useState(false);
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
   const [channelToEdit, setChannelToEdit] = useState<Channel | null>(null);
@@ -134,6 +137,12 @@ const App: React.FC = () => {
       }
     });
 
+    // Check Firebase Config
+    if (!isFirebaseConfigured) {
+        // Optional: Auto-open modal or just show a warning icon
+        // setIsFirebaseModalOpen(true);
+    }
+
     return () => unsubscribeAuth();
   }, []);
 
@@ -143,14 +152,14 @@ const App: React.FC = () => {
     getUserChannels().then(setUserChannels);
 
     // 2. Public Channels (Firestore - Realtime)
-    const unsubPublic = subscribeToPublicChannels(
-      (data) => setPublicChannels(data),
-      (err) => console.error("Public channels error", err)
-    );
-
-    return () => {
-      unsubPublic();
-    };
+    // Only subscribe if we have a valid config to avoid console spam of 404s
+    if (isFirebaseConfigured) {
+        const unsubPublic = subscribeToPublicChannels(
+          (data) => setPublicChannels(data),
+          (err) => console.error("Public channels error", err)
+        );
+        return () => { unsubPublic(); };
+    }
   }, []);
 
   // Load Group Channels when profile updates
@@ -336,6 +345,13 @@ const App: React.FC = () => {
             </div>
 
             <div className="flex items-center space-x-2 sm:space-x-4">
+              {/* Config Warning */}
+              {!isFirebaseConfigured && (
+                  <button onClick={() => setIsFirebaseModalOpen(true)} className="p-2 text-amber-500 bg-amber-900/20 rounded-full hover:bg-amber-900/40 border border-amber-900/50 animate-pulse" title="Missing Firebase Config">
+                      <AlertTriangle size={18} />
+                  </button>
+              )}
+
               {currentUser && (
                   <div className="hidden sm:block">
                       <Notifications />
@@ -569,7 +585,7 @@ const App: React.FC = () => {
                  <button onClick={() => setViewState('debug')} className="hover:text-indigo-400 flex items-center gap-2"><Database size={14}/> DB Inspector</button>
                  <button onClick={() => setViewState('cloud_debug')} className="hover:text-indigo-400 flex items-center gap-2"><Cloud size={14}/> Cloud Storage</button>
                  <button onClick={() => setViewState('public_debug')} className="hover:text-indigo-400 flex items-center gap-2"><Globe size={14}/> Public Channels</button>
-                 <a href="https://github.com/firebase/firebase-js-sdk" target="_blank" rel="noreferrer" className="hover:text-white flex items-center gap-2"><Github size={14}/> Open Source</a>
+                 <button onClick={() => setIsFirebaseModalOpen(true)} className="hover:text-indigo-400 flex items-center gap-2"><Settings size={14}/> Config</button>
               </div>
               
               <div className="flex items-center space-x-2 bg-slate-900 p-1 rounded-lg border border-slate-800">
@@ -578,7 +594,7 @@ const App: React.FC = () => {
               </div>
            </div>
            <div className="text-center text-slate-700 text-xs mt-8">
-              v3.10.1 • Powered by Gemini 2.5 Flash & Firebase
+              v3.10.2 • Powered by Gemini 2.5 Flash & Firebase
            </div>
         </footer>
       )}
@@ -605,6 +621,12 @@ const App: React.FC = () => {
       <DataSyncModal
         isOpen={isSyncModalOpen}
         onClose={() => setIsSyncModalOpen(false)}
+      />
+
+      <FirebaseConfigModal
+        isOpen={isFirebaseModalOpen}
+        onClose={() => setIsFirebaseModalOpen(false)}
+        onConfigUpdate={(valid) => { if(valid) window.location.reload(); }}
       />
 
       {channelToEdit && (
