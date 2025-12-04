@@ -1,0 +1,823 @@
+
+import React, { useState, useEffect } from 'react';
+import { Channel, Booking } from '../types';
+import { Calendar, Clock, User, ArrowLeft, Search, Briefcase, Sparkles, CheckCircle, X, Loader2, Play, Users, Mail, Video, Mic, FileText, Download, Trash2, Monitor, UserPlus } from 'lucide-react';
+import { auth } from '../services/firebaseConfig';
+import { createBooking, getUserBookings, cancelBooking, sendInvitation, getPendingInvitations, updateBookingInvite, deleteBookingRecording } from '../services/firestoreService';
+
+interface MentorBookingProps {
+  currentUser: any;
+  channels: Channel[]; // Using channels as the source for "Mentors"
+  onStartLiveSession: (channel: Channel, context?: string, recordingEnabled?: boolean, bookingId?: string, videoEnabled?: boolean, cameraEnabled?: boolean) => void;
+}
+
+const TIME_SLOTS = [
+  '09:00', '10:00', '11:00', '13:00', '14:00', '15:00', '16:00', '17:00', '19:00', '20:00'
+];
+
+export const MentorBooking: React.FC<MentorBookingProps> = ({ currentUser, channels, onStartLiveSession }) => {
+  const [activeTab, setActiveTab] = useState<'browse' | 'p2p' | 'my_bookings'>('browse');
+  const [selectedMentor, setSelectedMentor] = useState<Channel | null>(null);
+  
+  // Booking Form State
+  const [selectedDate, setSelectedDate] = useState<string>('');
+  const [selectedTime, setSelectedTime] = useState<string>('');
+  const [topic, setTopic] = useState('');
+  const [inviteEmail, setInviteEmail] = useState(''); // Used for Guest in AI or Invitee in P2P
+  const [isBooking, setIsBooking] = useState(false);
+  
+  // My Bookings State
+  const [myBookings, setMyBookings] = useState<Booking[]>([]);
+  const [isLoadingBookings, setIsLoadingBookings] = useState(false);
+  const [playingBookingId, setPlayingBookingId] = useState<string | null>(null);
+  const [audioError, setAudioError] = useState<string | null>(null);
+
+  // Session Start Modal State
+  const [sessionStartBooking, setSessionStartBooking] = useState<Booking | null>(null);
+  const [recordMeeting, setRecordMeeting] = useState(false);
+  const [recordScreen, setRecordScreen] = useState(false);
+  const [recordCamera, setRecordCamera] = useState(false);
+  const [extraGuestEmail, setExtraGuestEmail] = useState('');
+  const [isSendingInvite, setIsSendingInvite] = useState(false);
+
+  // Filter mentors (handcrafted only to ensure quality, or high rated)
+  const mentors = channels.filter(c => c.likes > 20 || !Number.isNaN(Number(c.id)) === false); // Rough filter for quality/handcrafted
+
+  useEffect(() => {
+    if (activeTab === 'my_bookings' && currentUser) {
+      loadBookings();
+    }
+  }, [activeTab, currentUser]);
+
+  const loadBookings = async () => {
+    if (!currentUser) return;
+    setIsLoadingBookings(true);
+    try {
+      const data = await getUserBookings(currentUser.uid, currentUser.email);
+      setMyBookings(data.filter(b => b.status !== 'cancelled' && b.status !== 'rejected')); 
+    } catch(e) {
+      console.error(e);
+    } finally {
+      setIsLoadingBookings(false);
+    }
+  };
+
+  const handleBookSession = async () => {
+    if (!currentUser) {
+        alert("Please sign in to book a session.");
+        return;
+    }
+    if (!selectedDate || !selectedTime || !topic.trim()) {
+        alert("Please fill in all fields.");
+        return;
+    }
+
+    // Determine type (AI Mentor or P2P)
+    const isP2P = activeTab === 'p2p';
+    
+    if (!isP2P && !selectedMentor) return;
+    if (isP2P && !inviteEmail) {
+        alert("Please enter a peer email address.");
+        return;
+    }
+
+    setIsBooking(true);
+    try {
+        const newBooking: Booking = {
+            id: '', // set by firestore
+            userId: currentUser.uid,
+            hostName: currentUser.displayName || currentUser.email,
+            mentorId: isP2P ? 'p2p-meeting' : selectedMentor!.id,
+            mentorName: isP2P ? 'Peer Meeting' : selectedMentor!.title,
+            mentorImage: isP2P ? 'https://ui-avatars.com/api/?name=Peer&background=random' : selectedMentor!.imageUrl,
+            date: selectedDate,
+            time: selectedTime,
+            topic: topic,
+            invitedEmail: inviteEmail.trim() || undefined,
+            status: isP2P ? 'pending' : 'scheduled',
+            type: isP2P ? 'p2p' : 'ai',
+            createdAt: Date.now()
+        };
+        
+        await createBooking(newBooking);
+        alert(isP2P ? "Meeting request sent! Waiting for peer acceptance." : "Session Booked Successfully!");
+        setActiveTab('my_bookings');
+        
+        // Reset
+        setSelectedMentor(null);
+        setTopic('');
+        setInviteEmail('');
+        setSelectedDate('');
+        setSelectedTime('');
+    } catch(e) {
+        alert("Failed to book session.");
+        console.error(e);
+    } finally {
+        setIsBooking(false);
+    }
+  };
+
+  const handleCancel = async (id: string) => {
+      if(!confirm("Cancel this session?")) return;
+      try {
+          await cancelBooking(id);
+          loadBookings();
+      } catch(e) {
+          alert("Failed to cancel.");
+      }
+  };
+
+  const handleDeleteRecording = async (booking: Booking) => {
+      if (!confirm("Are you sure you want to delete this recording? This will permanently remove the audio/video and transcript.")) return;
+      try {
+          await deleteBookingRecording(booking.id, booking.recordingUrl, booking.transcriptUrl);
+          loadBookings();
+      } catch(e) {
+          console.error(e);
+          alert("Failed to delete recording.");
+      }
+  };
+
+  const handleOpenStartModal = (booking: Booking) => {
+      setSessionStartBooking(booking);
+      setRecordMeeting(false);
+      setRecordScreen(false);
+      setRecordCamera(false);
+      setExtraGuestEmail('');
+  };
+
+  const handleSendExtraInvite = async () => {
+      if (!extraGuestEmail || !extraGuestEmail.includes('@')) {
+          alert("Please enter a valid email.");
+          return;
+      }
+      if (!sessionStartBooking) return;
+
+      setIsSendingInvite(true);
+      try {
+          // Update Firestore
+          await updateBookingInvite(sessionStartBooking.id, extraGuestEmail);
+          
+          // Update local state
+          const updatedBooking = { ...sessionStartBooking, invitedEmail: extraGuestEmail };
+          setSessionStartBooking(updatedBooking);
+          
+          // Update list
+          setMyBookings(prev => prev.map(b => b.id === updatedBooking.id ? updatedBooking : b));
+
+          alert(`Invitation sent to ${extraGuestEmail}! They will see this meeting in their calendar.`);
+          setExtraGuestEmail('');
+      } catch(e) {
+          console.error(e);
+          alert("Failed to send invite.");
+      } finally {
+          setIsSendingInvite(false);
+      }
+  };
+
+  const handleConfirmStart = () => {
+      if (!sessionStartBooking) return;
+      
+      // If P2P, we create a temporary channel/room for the meeting
+      let channel: Channel | undefined;
+      
+      if (sessionStartBooking.type === 'p2p') {
+          // Use a generic channel for P2P meetings that defaults to Recording/Transcription mode
+          channel = {
+              id: sessionStartBooking.id, // Use booking ID as channel ID so it's unique
+              title: sessionStartBooking.topic || "Peer Meeting",
+              description: "Peer to Peer Meeting",
+              author: "System",
+              voiceName: "Zephyr",
+              systemInstruction: "You are a professional meeting scribe. Your task is to accurately transcribe the conversation. Do not speak unless there is a critical error. Format the transcript clearly.",
+              likes: 0,
+              dislikes: 0,
+              comments: [],
+              tags: ['Meeting'],
+              imageUrl: 'https://images.unsplash.com/photo-1522071820081-009f0129c71c?w=600&q=80',
+              createdAt: Date.now()
+          };
+          // P2P sessions usually imply recording the human conversation
+          onStartLiveSession(channel, sessionStartBooking.topic, true, sessionStartBooking.id, recordScreen, recordCamera);
+      } else {
+          // AI Mentor Session
+          channel = channels.find(c => c.id === sessionStartBooking.mentorId);
+          if (channel) {
+              onStartLiveSession(channel, sessionStartBooking.topic, recordMeeting, sessionStartBooking.id, recordScreen, recordCamera);
+          }
+      }
+      setSessionStartBooking(null);
+  };
+
+  // Helper to generate next 7 days
+  const getNextDays = () => {
+      const days = [];
+      for(let i=1; i<=7; i++) {
+          const d = new Date();
+          d.setDate(d.getDate() + i);
+          days.push(d.toISOString().split('T')[0]);
+      }
+      return days;
+  };
+
+  const pendingBookings = myBookings.filter(b => b.status === 'pending');
+  const upcomingBookings = myBookings.filter(b => b.status === 'scheduled');
+  const pastBookings = myBookings.filter(b => b.status === 'completed');
+
+  return (
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 animate-fade-in relative">
+        
+        {/* Header */}
+        <div className="flex flex-col md:flex-row justify-between items-center mb-8 gap-4">
+            <div>
+                <h1 className="text-3xl font-bold text-white flex items-center space-x-2">
+                    <Briefcase className="text-indigo-400" />
+                    <span>Mentorship Hub</span>
+                </h1>
+                <p className="text-slate-400 mt-1">Schedule sessions with AI Mentors or Peers.</p>
+            </div>
+            <div className="flex bg-slate-900 rounded-lg p-1 border border-slate-700">
+                <button 
+                    onClick={() => setActiveTab('browse')}
+                    className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${activeTab === 'browse' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'}`}
+                >
+                    Browse Mentors
+                </button>
+                <button 
+                    onClick={() => setActiveTab('p2p')}
+                    className={`px-4 py-2 text-sm font-medium rounded-md transition-colors flex items-center gap-1 ${activeTab === 'p2p' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'}`}
+                >
+                    <UserPlus size={14} />
+                    <span>Peer Meeting</span>
+                </button>
+                <button 
+                    onClick={() => setActiveTab('my_bookings')}
+                    className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${activeTab === 'my_bookings' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'}`}
+                >
+                    My Schedule
+                </button>
+            </div>
+        </div>
+
+        {/* P2P Booking Tab */}
+        {activeTab === 'p2p' && (
+            <div className="bg-slate-900 border border-slate-800 rounded-2xl shadow-xl overflow-hidden max-w-4xl mx-auto animate-fade-in">
+                <div className="p-6 border-b border-slate-800 bg-slate-950/50">
+                    <h2 className="text-xl font-bold text-white flex items-center gap-2"><UserPlus className="text-indigo-400"/> Book a Peer Meeting</h2>
+                    <p className="text-slate-400 text-sm mt-1">Schedule a time with another member. They will receive an invite to accept or reject.</p>
+                </div>
+                
+                {!currentUser ? (
+                    <div className="p-12 text-center text-slate-400">
+                        <User size={48} className="mx-auto mb-4 opacity-50" />
+                        <p>You must be signed in to book a meeting.</p>
+                    </div>
+                ) : (
+                    <div className="p-8 space-y-8">
+                        {/* 1. Pick Date */}
+                        <div>
+                            <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-3 flex items-center space-x-2">
+                                <Calendar size={16} /> <span>Select Date</span>
+                            </h3>
+                            <div className="flex gap-2 overflow-x-auto pb-2">
+                                {getNextDays().map(date => {
+                                    const dObj = new Date(date);
+                                    const isSelected = selectedDate === date;
+                                    return (
+                                        <button 
+                                            key={date}
+                                            onClick={() => setSelectedDate(date)}
+                                            className={`flex-shrink-0 w-24 p-3 rounded-xl border flex flex-col items-center justify-center transition-all ${isSelected ? 'bg-indigo-600 border-indigo-500 text-white shadow-lg' : 'bg-slate-800 border-slate-700 text-slate-400 hover:border-slate-500 hover:text-white'}`}
+                                        >
+                                            <span className="text-xs font-bold uppercase">{dObj.toLocaleDateString('en-US', { weekday: 'short' })}</span>
+                                            <span className="text-lg font-bold">{dObj.getDate()}</span>
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        </div>
+
+                        {/* 2. Pick Time */}
+                        <div>
+                            <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-3 flex items-center space-x-2">
+                                <Clock size={16} /> <span>Select Time (EST)</span>
+                            </h3>
+                            <div className="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-8 gap-2">
+                                {TIME_SLOTS.map(time => (
+                                    <button 
+                                        key={time}
+                                        onClick={() => setSelectedTime(time)}
+                                        className={`py-2 rounded-lg text-sm font-medium border transition-all ${selectedTime === time ? 'bg-emerald-600 border-emerald-500 text-white' : 'bg-slate-800 border-slate-700 text-slate-300 hover:border-slate-500 hover:text-white'}`}
+                                    >
+                                        {time}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* 3. Details */}
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div>
+                                <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-3 flex items-center space-x-2">
+                                    <Mail size={16} /> <span>Peer Email</span>
+                                </h3>
+                                <div className="bg-slate-800 border border-slate-700 rounded-xl p-2 px-4 flex items-center gap-2">
+                                    <input 
+                                        type="email"
+                                        value={inviteEmail}
+                                        onChange={(e) => setInviteEmail(e.target.value)}
+                                        className="bg-transparent text-white w-full focus:outline-none py-2"
+                                        placeholder="colleague@example.com"
+                                    />
+                                </div>
+                            </div>
+                            
+                            <div>
+                                <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-3 flex items-center space-x-2">
+                                    <Sparkles size={16} /> <span>Meeting Topic</span>
+                                </h3>
+                                <input 
+                                    type="text"
+                                    value={topic}
+                                    onChange={(e) => setTopic(e.target.value)}
+                                    className="w-full bg-slate-800 border border-slate-700 rounded-xl p-3 text-white focus:ring-2 focus:ring-indigo-500 outline-none"
+                                    placeholder="e.g. Weekly Sync"
+                                />
+                            </div>
+                        </div>
+
+                        {/* Submit */}
+                        <div className="pt-4 flex justify-end">
+                            <button 
+                                onClick={handleBookSession}
+                                disabled={isBooking || !selectedDate || !selectedTime || !topic || !inviteEmail}
+                                className="px-8 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold rounded-xl shadow-lg flex items-center space-x-2 transition-transform hover:scale-105"
+                            >
+                                {isBooking ? <Loader2 className="animate-spin" /> : <CheckCircle />}
+                                <span>Request Meeting</span>
+                            </button>
+                        </div>
+                    </div>
+                )}
+            </div>
+        )}
+
+        {/* Browse AI Mentors Tab */}
+        {activeTab === 'browse' && (
+            selectedMentor ? (
+                // Booking Form
+                <div className="bg-slate-900 border border-slate-800 rounded-2xl shadow-xl overflow-hidden max-w-4xl mx-auto">
+                    <div className="p-6 border-b border-slate-800 flex items-center space-x-4 bg-slate-950/50">
+                        <button onClick={() => setSelectedMentor(null)} className="p-2 hover:bg-slate-800 rounded-full text-slate-400 hover:text-white">
+                            <ArrowLeft size={20} />
+                        </button>
+                        <img src={selectedMentor.imageUrl} className="w-12 h-12 rounded-full object-cover border-2 border-indigo-500" />
+                        <div>
+                            <h2 className="text-xl font-bold text-white">{selectedMentor.title}</h2>
+                            <p className="text-sm text-indigo-400 font-bold uppercase tracking-wider">{selectedMentor.voiceName} • AI Mentor</p>
+                        </div>
+                    </div>
+                    
+                    {!currentUser ? (
+                       <div className="p-12 text-center text-slate-400">
+                          <User size={48} className="mx-auto mb-4 opacity-50" />
+                          <p>You must be signed in to book a session.</p>
+                       </div>
+                    ) : (
+                    <div className="p-8 space-y-8">
+                        {/* 1. Pick Date */}
+                        <div>
+                            <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-3 flex items-center space-x-2">
+                                <Calendar size={16} /> <span>Select Date</span>
+                            </h3>
+                            <div className="flex gap-2 overflow-x-auto pb-2">
+                                {getNextDays().map(date => {
+                                    const dObj = new Date(date);
+                                    const isSelected = selectedDate === date;
+                                    return (
+                                        <button 
+                                            key={date}
+                                            onClick={() => setSelectedDate(date)}
+                                            className={`flex-shrink-0 w-24 p-3 rounded-xl border flex flex-col items-center justify-center transition-all ${isSelected ? 'bg-indigo-600 border-indigo-500 text-white shadow-lg' : 'bg-slate-800 border-slate-700 text-slate-400 hover:border-slate-500 hover:text-white'}`}
+                                        >
+                                            <span className="text-xs font-bold uppercase">{dObj.toLocaleDateString('en-US', { weekday: 'short' })}</span>
+                                            <span className="text-lg font-bold">{dObj.getDate()}</span>
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        </div>
+
+                        {/* 2. Pick Time */}
+                        <div>
+                            <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-3 flex items-center space-x-2">
+                                <Clock size={16} /> <span>Select Time (EST)</span>
+                            </h3>
+                            <div className="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-8 gap-2">
+                                {TIME_SLOTS.map(time => (
+                                    <button 
+                                        key={time}
+                                        onClick={() => setSelectedTime(time)}
+                                        className={`py-2 rounded-lg text-sm font-medium border transition-all ${selectedTime === time ? 'bg-emerald-600 border-emerald-500 text-white' : 'bg-slate-800 border-slate-700 text-slate-300 hover:border-slate-500 hover:text-white'}`}
+                                    >
+                                        {time}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* 3. Topic & Invite */}
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div>
+                                <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-3 flex items-center space-x-2">
+                                    <Sparkles size={16} /> <span>Discussion Topic</span>
+                                </h3>
+                                <textarea 
+                                    value={topic}
+                                    onChange={(e) => setTopic(e.target.value)}
+                                    className="w-full bg-slate-800 border border-slate-700 rounded-xl p-4 text-white focus:ring-2 focus:ring-indigo-500 outline-none resize-none"
+                                    rows={4}
+                                    placeholder="What would you like to focus on? (e.g. Mock interview for React role)"
+                                />
+                            </div>
+                            
+                            <div>
+                                <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-3 flex items-center space-x-2">
+                                    <Users size={16} /> <span>Invite a Friend (Optional)</span>
+                                </h3>
+                                <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-4 space-y-3">
+                                    <p className="text-xs text-slate-500">Invite another member to join this session. They will see it in their calendar.</p>
+                                    <div className="flex items-center space-x-2 bg-slate-900 border border-slate-600 rounded-lg px-3 py-2">
+                                        <Mail size={16} className="text-slate-400" />
+                                        <input 
+                                            type="email"
+                                            value={inviteEmail}
+                                            onChange={(e) => setInviteEmail(e.target.value)}
+                                            className="bg-transparent text-sm text-white w-full focus:outline-none"
+                                            placeholder="friend@email.com"
+                                        />
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Submit */}
+                        <div className="pt-4 flex justify-end">
+                            <button 
+                                onClick={handleBookSession}
+                                disabled={isBooking || !selectedDate || !selectedTime || !topic}
+                                className="px-8 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold rounded-xl shadow-lg flex items-center space-x-2 transition-transform hover:scale-105"
+                            >
+                                {isBooking ? <Loader2 className="animate-spin" /> : <CheckCircle />}
+                                <span>Confirm Booking</span>
+                            </button>
+                        </div>
+                    </div>
+                    )}
+                </div>
+            ) : (
+                // Mentor Grid
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {mentors.map(channel => (
+                        <div key={channel.id} className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden hover:border-indigo-500/50 transition-all hover:shadow-xl group">
+                            <div className="h-32 overflow-hidden relative">
+                                <img src={channel.imageUrl} alt={channel.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 opacity-60" />
+                                <div className="absolute inset-0 bg-gradient-to-t from-slate-900 to-transparent"></div>
+                                <div className="absolute bottom-3 left-4">
+                                    <h3 className="text-lg font-bold text-white leading-tight">{channel.title}</h3>
+                                    <p className="text-xs text-indigo-300 font-bold uppercase tracking-wider">{channel.voiceName}</p>
+                                </div>
+                            </div>
+                            <div className="p-5">
+                                <p className="text-slate-400 text-sm line-clamp-3 mb-4">{channel.description}</p>
+                                <div className="flex flex-wrap gap-2 mb-4">
+                                    {channel.tags.slice(0,2).map(t => <span key={t} className="text-[10px] bg-slate-800 text-slate-400 px-2 py-1 rounded border border-slate-700">#{t}</span>)}
+                                </div>
+                                <button 
+                                    onClick={() => setSelectedMentor(channel)}
+                                    className="w-full py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg font-bold text-sm transition-colors shadow-lg shadow-indigo-500/20"
+                                >
+                                    Book Session
+                                </button>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            )
+        )}
+
+        {activeTab === 'my_bookings' && (
+            <div className="space-y-8">
+                {!currentUser ? (
+                    <div className="text-center py-12 text-slate-500 bg-slate-900/50 rounded-2xl border border-slate-800 border-dashed">
+                        <User size={48} className="mx-auto mb-4 opacity-50" />
+                        <p>Please sign in to view your schedule.</p>
+                    </div>
+                ) : isLoadingBookings ? (
+                    <div className="text-center py-12 text-indigo-400">
+                        <Loader2 size={32} className="animate-spin mx-auto mb-2" />
+                        <p>Loading schedule...</p>
+                    </div>
+                ) : (
+                    <>
+                    {/* Pending Requests (Sent) */}
+                    {pendingBookings.length > 0 && (
+                        <div className="space-y-4">
+                            <h2 className="text-lg font-bold text-amber-400 border-b border-slate-800 pb-2">Pending Requests</h2>
+                            {pendingBookings.map(booking => (
+                                <div key={booking.id} className="bg-slate-900 border border-amber-500/30 rounded-xl p-4 flex flex-col md:flex-row items-center gap-4 opacity-80">
+                                    <div className="flex items-center gap-3 flex-1">
+                                        <div className="p-3 bg-amber-900/30 rounded-full text-amber-400">
+                                            <Clock size={20} />
+                                        </div>
+                                        <div>
+                                            <h3 className="font-bold text-white">Pending: {booking.topic}</h3>
+                                            <p className="text-xs text-slate-400">Sent to: {booking.invitedEmail} • {booking.date} @ {booking.time}</p>
+                                        </div>
+                                    </div>
+                                    <button onClick={() => handleCancel(booking.id)} className="px-4 py-2 bg-slate-800 text-slate-400 rounded-lg text-xs hover:text-white border border-slate-700">Cancel Request</button>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+
+                    {/* Upcoming */}
+                    <div className="space-y-4">
+                        <h2 className="text-lg font-bold text-white border-b border-slate-800 pb-2">Upcoming Sessions</h2>
+                        {upcomingBookings.length === 0 ? (
+                            <p className="text-slate-500 text-sm italic">No upcoming sessions.</p>
+                        ) : (
+                            upcomingBookings.map(booking => {
+                                const bookingDate = new Date(`${booking.date}T${booking.time}`);
+                                const isToday = new Date().toDateString() === bookingDate.toDateString();
+                                const isInvited = booking.userId !== currentUser.uid;
+                                // For P2P, create a fake channel to allow StartModal to work
+                                const channel = booking.type === 'p2p' ? { id: 'p2p' } as Channel : channels.find(c => c.id === booking.mentorId);
+
+                                return (
+                                    <div key={booking.id} className="bg-slate-900 border border-slate-800 rounded-xl p-6 flex flex-col md:flex-row items-center gap-6 hover:border-indigo-500/30 transition-all">
+                                        <div className="flex-shrink-0 text-center bg-slate-800 rounded-xl p-4 min-w-[100px] border border-slate-700">
+                                            <p className="text-xs text-slate-400 uppercase font-bold">{bookingDate.toLocaleDateString('en-US', { month: 'short' })}</p>
+                                            <p className="text-3xl font-bold text-white my-1">{bookingDate.getDate()}</p>
+                                            <p className="text-sm font-mono text-indigo-300">{booking.time}</p>
+                                        </div>
+                                        
+                                        <div className="flex-1 text-center md:text-left">
+                                            <div className="flex items-center justify-center md:justify-start space-x-3 mb-2">
+                                                <img src={booking.mentorImage} className="w-8 h-8 rounded-full object-cover" />
+                                                <h3 className="text-xl font-bold text-white">
+                                                    {booking.type === 'p2p' 
+                                                        ? (isInvited ? `Meeting with ${booking.hostName}` : `Meeting with ${booking.invitedEmail}`)
+                                                        : booking.mentorName
+                                                    }
+                                                </h3>
+                                                {isInvited && <span className="text-[10px] bg-purple-900/50 text-purple-300 px-2 py-0.5 rounded border border-purple-700">Guest</span>}
+                                                {booking.type === 'p2p' && <span className="text-[10px] bg-blue-900/50 text-blue-300 px-2 py-0.5 rounded border border-blue-700">Peer</span>}
+                                            </div>
+                                            <p className="text-slate-400 text-sm mb-2"><span className="text-slate-500 font-bold uppercase text-xs mr-2">Topic:</span> {booking.topic}</p>
+                                            <div className="flex items-center justify-center md:justify-start space-x-2">
+                                                <span className={`px-2 py-0.5 rounded text-[10px] uppercase font-bold ${isToday ? 'bg-emerald-900/50 text-emerald-400 border border-emerald-800' : 'bg-slate-800 text-slate-500'}`}>
+                                                    {isToday ? 'Happening Today' : 'Upcoming'}
+                                                </span>
+                                                {booking.invitedEmail && !isInvited && booking.type !== 'p2p' && <span className="text-[10px] text-slate-500 bg-slate-800 px-2 py-0.5 rounded border border-slate-700">Invited: {booking.invitedEmail}</span>}
+                                            </div>
+                                        </div>
+
+                                        <div className="flex flex-col gap-2 w-full md:w-auto">
+                                            <button 
+                                                onClick={() => channel && handleOpenStartModal(booking)}
+                                                className="px-6 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg font-bold shadow-lg shadow-indigo-500/20 flex items-center justify-center space-x-2"
+                                            >
+                                                <Play size={16} fill="currentColor" />
+                                                <span>Start Session</span>
+                                            </button>
+                                            {!isInvited && (
+                                                <button 
+                                                    onClick={() => handleCancel(booking.id)}
+                                                    className="px-6 py-2 bg-slate-800 hover:bg-red-900/20 text-slate-400 hover:text-red-400 border border-slate-700 hover:border-red-900/50 rounded-lg text-sm transition-colors"
+                                                >
+                                                    Cancel
+                                                </button>
+                                            )}
+                                        </div>
+                                    </div>
+                                );
+                            })
+                        )}
+                    </div>
+
+                    {/* Past & Recorded */}
+                    <div className="space-y-4">
+                        <h2 className="text-lg font-bold text-white border-b border-slate-800 pb-2">Past Sessions & Recordings</h2>
+                        {pastBookings.length === 0 ? (
+                            <p className="text-slate-500 text-sm italic">No past sessions found.</p>
+                        ) : (
+                            pastBookings.map(booking => {
+                                const bookingDate = new Date(`${booking.date}T${booking.time}`);
+                                return (
+                                    <div key={booking.id} className="bg-slate-900/50 border border-slate-800 rounded-xl p-4 flex flex-col gap-4">
+                                        <div className="flex items-center justify-between">
+                                            <div className="flex items-center gap-3">
+                                                <div className="w-10 h-10 bg-slate-800 rounded-full flex items-center justify-center text-slate-400 font-bold border border-slate-700">
+                                                    {bookingDate.getDate()}
+                                                </div>
+                                                <div>
+                                                    <h4 className="font-bold text-slate-200">{booking.topic}</h4>
+                                                    <p className="text-xs text-slate-500">with {booking.mentorName} • {bookingDate.toLocaleDateString()}</p>
+                                                </div>
+                                            </div>
+                                            <div className="flex gap-2">
+                                                {booking.transcriptUrl && (
+                                                    <a 
+                                                        href={booking.transcriptUrl} 
+                                                        target="_blank" 
+                                                        rel="noopener noreferrer"
+                                                        className="p-2 text-slate-400 hover:text-white bg-slate-800 rounded-lg border border-slate-700"
+                                                        title="Download Transcript"
+                                                    >
+                                                        <FileText size={16} />
+                                                    </a>
+                                                )}
+                                                {booking.recordingUrl ? (
+                                                    <button 
+                                                        onClick={() => {
+                                                            setPlayingBookingId(playingBookingId === booking.id ? null : booking.id);
+                                                            setAudioError(null);
+                                                        }}
+                                                        className={`p-2 rounded-lg border flex items-center gap-2 text-xs font-bold ${playingBookingId === booking.id ? 'bg-red-500 text-white border-red-500' : 'bg-slate-800 text-indigo-400 border-slate-700 hover:border-indigo-500'}`}
+                                                    >
+                                                        {playingBookingId === booking.id ? <X size={16}/> : <Play size={16}/>}
+                                                        <span>{playingBookingId === booking.id ? 'Stop' : 'Listen'}</span>
+                                                    </button>
+                                                ) : (
+                                                    <span className="text-xs text-slate-500 italic p-2">Recording not available</span>
+                                                )}
+                                                
+                                                {/* Delete Recording Button */}
+                                                {(booking.recordingUrl || booking.transcriptUrl) && (
+                                                    <button 
+                                                        onClick={() => handleDeleteRecording(booking)}
+                                                        className="p-2 text-slate-400 hover:text-red-400 bg-slate-800 rounded-lg border border-slate-700 hover:border-red-500/50 transition-colors"
+                                                        title="Delete Recording"
+                                                    >
+                                                        <Trash2 size={16} />
+                                                    </button>
+                                                )}
+                                            </div>
+                                        </div>
+                                        
+                                        {/* Video/Audio Player */}
+                                        {playingBookingId === booking.id && booking.recordingUrl && (
+                                            <div className="bg-slate-950 p-3 rounded-lg border border-slate-800 animate-fade-in">
+                                                {audioError ? (
+                                                    <div className="flex items-center justify-between text-xs text-red-400 px-2 py-1 bg-red-900/10 rounded border border-red-900/30">
+                                                        <div className="flex items-center gap-2">
+                                                            <Loader2 size={14} className="animate-spin" /> {/* Or alert icon */}
+                                                            <span>Playback error (Codec mismatch).</span>
+                                                        </div>
+                                                        <a 
+                                                            href={booking.recordingUrl} 
+                                                            target="_blank" 
+                                                            rel="noreferrer" 
+                                                            className="underline font-bold hover:text-red-300"
+                                                        >
+                                                            Download File
+                                                        </a>
+                                                    </div>
+                                                ) : (
+                                                    <video 
+                                                        controls 
+                                                        autoPlay 
+                                                        src={booking.recordingUrl} 
+                                                        className="w-full max-h-96 rounded-lg bg-black" 
+                                                        onError={() => setAudioError("Format not supported")}
+                                                    />
+                                                )}
+                                            </div>
+                                        )}
+                                    </div>
+                                );
+                            })
+                        )}
+                    </div>
+                    </>
+                )}
+            </div>
+        )}
+
+        {/* Start Session Modal */}
+        {sessionStartBooking && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
+                <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-md shadow-2xl p-6 animate-fade-in-up">
+                    <div className="flex justify-between items-center mb-6">
+                        <h3 className="text-xl font-bold text-white">Start Meeting</h3>
+                        <button onClick={() => setSessionStartBooking(null)} className="text-slate-400 hover:text-white"><X size={20}/></button>
+                    </div>
+
+                    <div className="space-y-6">
+                        {/* Invite More */}
+                        {sessionStartBooking.type !== 'p2p' && (
+                        <div className="bg-slate-800/50 p-4 rounded-xl border border-slate-700">
+                            <label className="text-xs font-bold text-slate-400 uppercase flex items-center gap-2 mb-2">
+                                <Users size={14}/> Invite Another Member
+                            </label>
+                            <div className="flex gap-2">
+                                <input 
+                                    type="email" 
+                                    placeholder="colleague@email.com" 
+                                    value={extraGuestEmail}
+                                    onChange={(e) => setExtraGuestEmail(e.target.value)}
+                                    className="flex-1 bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500"
+                                />
+                                <button 
+                                    onClick={handleSendExtraInvite}
+                                    disabled={isSendingInvite}
+                                    className="px-3 bg-slate-700 hover:bg-slate-600 text-white rounded-lg text-xs font-bold"
+                                >
+                                    {isSendingInvite ? <Loader2 size={14} className="animate-spin"/> : 'Add'}
+                                </button>
+                            </div>
+                            {sessionStartBooking.invitedEmail && (
+                                <div className="mt-2 text-xs text-emerald-400 flex items-center gap-1">
+                                    <CheckCircle size={12} />
+                                    <span>Invited: {sessionStartBooking.invitedEmail}</span>
+                                </div>
+                            )}
+                        </div>
+                        )}
+
+                        {/* Record Toggle */}
+                        <div className="space-y-2">
+                            <div 
+                                onClick={() => setRecordMeeting(!recordMeeting)}
+                                className={`p-4 rounded-xl border cursor-pointer transition-all flex items-center justify-between ${recordMeeting ? 'bg-red-900/20 border-red-500/50' : 'bg-slate-800/50 border-slate-700 hover:bg-slate-800'}`}
+                            >
+                                <div className="flex items-center gap-3">
+                                    <div className={`p-2 rounded-full ${recordMeeting ? 'bg-red-500 text-white' : 'bg-slate-700 text-slate-400'}`}>
+                                        {recordMeeting ? <Video size={20} /> : <Mic size={20} />}
+                                    </div>
+                                    <div>
+                                        <p className={`font-bold ${recordMeeting ? 'text-red-400' : 'text-slate-300'}`}>Record Meeting</p>
+                                        <p className="text-xs text-slate-500">Save audio & transcript to cloud</p>
+                                    </div>
+                                </div>
+                                <div className={`w-6 h-6 rounded-full border flex items-center justify-center ${recordMeeting ? 'border-red-500 bg-red-500 text-white' : 'border-slate-500'}`}>
+                                    {recordMeeting && <CheckCircle size={14} />}
+                                </div>
+                            </div>
+
+                            {/* Record Screen Toggle (Only if recording is enabled) */}
+                            {recordMeeting && (
+                                <div 
+                                    onClick={() => setRecordScreen(!recordScreen)}
+                                    className={`p-3 rounded-xl border cursor-pointer transition-all flex items-center justify-between ml-4 ${recordScreen ? 'bg-indigo-900/20 border-indigo-500/50' : 'bg-slate-800/30 border-slate-700 hover:bg-slate-800'}`}
+                                >
+                                    <div className="flex items-center gap-3">
+                                        <div className={`p-1.5 rounded-full ${recordScreen ? 'bg-indigo-500 text-white' : 'bg-slate-700 text-slate-400'}`}>
+                                            <Monitor size={16} />
+                                        </div>
+                                        <div>
+                                            <p className={`font-bold text-sm ${recordScreen ? 'text-indigo-400' : 'text-slate-400'}`}>Include Screen Share</p>
+                                        </div>
+                                    </div>
+                                    <div className={`w-5 h-5 rounded-full border flex items-center justify-center ${recordScreen ? 'border-indigo-500 bg-indigo-500 text-white' : 'border-slate-500'}`}>
+                                        {recordScreen && <CheckCircle size={12} />}
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Record Camera Toggle (Only if recording is enabled) */}
+                            {recordMeeting && (
+                                <div 
+                                    onClick={() => setRecordCamera(!recordCamera)}
+                                    className={`p-3 rounded-xl border cursor-pointer transition-all flex items-center justify-between ml-4 ${recordCamera ? 'bg-indigo-900/20 border-indigo-500/50' : 'bg-slate-800/30 border-slate-700 hover:bg-slate-800'}`}
+                                >
+                                    <div className="flex items-center gap-3">
+                                        <div className={`p-1.5 rounded-full ${recordCamera ? 'bg-indigo-500 text-white' : 'bg-slate-700 text-slate-400'}`}>
+                                            <Video size={16} />
+                                        </div>
+                                        <div>
+                                            <p className={`font-bold text-sm ${recordCamera ? 'text-indigo-400' : 'text-slate-400'}`}>Include Camera Video</p>
+                                        </div>
+                                    </div>
+                                    <div className={`w-5 h-5 rounded-full border flex items-center justify-center ${recordCamera ? 'border-indigo-500 bg-indigo-500 text-white' : 'border-slate-500'}`}>
+                                        {recordCamera && <CheckCircle size={12} />}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+
+                        <button 
+                            onClick={handleConfirmStart}
+                            className="w-full py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl shadow-lg flex items-center justify-center gap-2 transition-transform hover:scale-[1.02]"
+                        >
+                            <Play size={18} fill="currentColor"/>
+                            <span>Join Now</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        )}
+    </div>
+  );
+};

@@ -1,0 +1,353 @@
+
+import { Channel, ChannelVisibility } from '../types';
+import { OFFLINE_CHANNEL_ID } from './offlineContent';
+
+export const VOICES = ['Puck', 'Charon', 'Kore', 'Fenrir', 'Zephyr'];
+
+// Use a fixed past date (Jan 15, 2024) to ensure initial data doesn't clutter the "Today" view in Calendar
+const INITIAL_DATE = 1705276800000; 
+
+export const CATEGORY_STYLES: Record<string, string> = {
+  'Personal Finance & Wealth': 'luxury gold coins financial chart minimalist clean 4k',
+  'Career, Productivity & Self-Improvement': 'modern office success motivation sunrise minimalist',
+  'Technology & AI': 'futuristic cyberpunk glowing blue circuit board robot high tech',
+  'Health, Fitness & Wellness': 'organic healthy food yoga nature sunlight bright fresh',
+  'Relationships & Family': 'warm cozy home family dinner sunset emotional connection',
+  'True Crime': 'detective noir dark moody mystery crime scene flashlight cinematic',
+  'Politics, Society & Culture': 'newsroom capitol debate podium microphone crowd journalism',
+  'Business & Entrepreneurship': 'skyscraper boardroom handshake startup rocket launch business',
+  'Entertainment & Pop Culture': 'neon lights cinema concert stage spotlight colorful pop art',
+  'Lifestyle, Travel & Hobbies': 'adventure travel backpack landscape camera coffee cozy'
+};
+
+export const TOPIC_CATEGORIES: Record<string, string[]> = {
+  'Personal Finance & Wealth': [
+    'Investing for beginners', 'Stock market insights', 'Real estate investing', 
+    'Passive income strategies', 'Financial independence / FIRE movement', 
+    'Cryptocurrency & blockchain', 'Side hustles', 'Retirement planning', 
+    'Tax optimization', 'Budgeting & money management'
+  ],
+  'Career, Productivity & Self-Improvement': [
+    'Career growth & leadership', 'Productivity hacks', 'Time management', 
+    'Public speaking & communication', 'Mental models & decision-making', 
+    'Negotiation skills', 'Goal-setting systems', 'Motivation & discipline', 
+    'Creativity techniques', 'Work-life balance'
+  ],
+  'Technology & AI': [
+    'Artificial intelligence explained', 'How to use AI tools', 'Future of jobs with AI', 
+    'Tech news breakdown', 'Software engineering insights', 'Cybersecurity & privacy', 
+    'Robotics & automation', 'Space tech', 'Biotechnology advances', 'Silicon Valley founder stories'
+  ],
+  'Health, Fitness & Wellness': [
+    'Healthy eating & nutrition', 'Strength training', 'Weight loss science', 
+    'Longevity research', 'Mental health & anxiety', 'Sleep optimization', 
+    'Holistic health', 'Chronic pain management', 'Sports performance', 'Biohacking'
+  ],
+  'Relationships & Family': [
+    'Marriage & long-term relationships', 'Dating tips', 'Parenting strategies', 
+    'Conflict resolution', 'Emotional intelligence', 'Communication in relationships', 
+    'Divorce recovery', 'Raising teens', 'Friendship building', 'Work-family dynamics'
+  ],
+  'True Crime': [
+    'Unsolved mysteries', 'Famous criminal cases', 'Wrongful convictions', 
+    'Serial killers', 'FBI case breakdowns', 'Forensic science explained', 
+    'Courtroom drama', 'Criminal psychology', 'Cold cases', 'Missing person investigations'
+  ],
+  'Politics, Society & Culture': [
+    'US political analysis', 'Geopolitics', 'Social issues explained', 
+    'Media bias & news breakdown', 'American culture & history', 'Law & constitutional topics', 
+    'Immigration stories', 'Generational differences', 'DEI / workplace culture', 'Religion & belief discussions'
+  ],
+  'Business & Entrepreneurship': [
+    'Startup stories', 'Small business growth', 'Marketing strategy', 
+    'E-commerce tactics', 'Venture capital & funding', 'Scaling companies', 
+    'Branding', 'Leadership challenges', 'Remote work & future of work', 'Business failures & lessons'
+  ],
+  'Entertainment & Pop Culture': [
+    'Movie & TV reviews', 'Celebrity interviews', 'Music analysis', 
+    'Comedy conversations', 'Internet culture trends', 'TikTok & YouTube creator stories', 
+    'eSports & gaming', 'Anime & fandom discussions', 'Sports news & commentary', 'Book discussions'
+  ],
+  'Lifestyle, Travel & Hobbies': [
+    'US travel guides', 'International travel tips', 'Food exploration', 
+    'Minimalism & decluttering', 'Home organization', 'Gardening', 
+    'DIY projects', 'Pets & dog training', 'Photography & videography', 'Outdoor adventures & hiking'
+  ]
+};
+
+export const HANDCRAFTED_CHANNELS: Channel[] = [
+  {
+    id: OFFLINE_CHANNEL_ID,
+    title: 'AIVoiceCast Architecture',
+    description: 'Learn how this app was built. A 100% Offline podcast explaining React 19, IndexedDB, Web Audio API, and Gemini integration.',
+    author: 'Self-Documenting',
+    voiceName: 'Puck',
+    systemInstruction: 'You are the architect of the AIVoiceCast platform. You explain technical details about the app\'s source code, offline capabilities, and design patterns.',
+    likes: 9999,
+    dislikes: 0,
+    comments: [],
+    tags: ['Architecture', 'Offline', 'React', 'Coding'],
+    imageUrl: 'https://images.unsplash.com/photo-1518770660439-4636190af475?w=600&q=80&auto=format&fit=crop',
+    welcomeMessage: "Welcome to the backend of the frontend. Let's explore the code.",
+    starterPrompts: [
+      "Why use IndexedDB?",
+      "How does the visualizer work?",
+      "Explain the offline mode",
+      "Architecture overview"
+    ],
+    createdAt: INITIAL_DATE
+  },
+  {
+    id: 'startup-funding-30',
+    title: '30 Ways to Fund Your Startup',
+    description: 'A comprehensive guide for entrepreneurs covering 30 different ways to raise capital. From bootstrapping and friends & family to VC, angel investing, and creative financing.',
+    author: 'Startup Finance Mentor',
+    voiceName: 'Kore',
+    systemInstruction: 'You are an expert Startup Finance Mentor. Your goal is to educate entrepreneurs on "30 Ways to Fund a Startup". You categorize methods into 5 groups: 1. Bootstrapping (Savings, Friends/Family), 2. Debt (Loans, Credit), 3. Equity (Angel, VC), 4. Instruments (Bonds, Convertible Notes), 5. Creative (Crowdfunding, Grants). Explain pros, cons, and risks for each. Be encouraging but realistic about financial risks.',
+    likes: 720,
+    dislikes: 5,
+    comments: [],
+    tags: ['Startup', 'Finance', 'Business', 'Venture Capital'],
+    imageUrl: 'https://image.pollinations.ai/prompt/startup%20investment%20finance%20money%20growth%20chart%20business%20meeting?width=600&height=400&nologo=true',
+    welcomeMessage: "Welcome, founder. Fundraising is a journey. Let's explore the 30 paths to capital.",
+    starterPrompts: [
+      "What are the 5 main categories of funding?",
+      "Pros and cons of Angel Investment vs VC?",
+      "How to bootstrap without going broke?",
+      "Explain Convertible Notes simply"
+    ],
+    createdAt: INITIAL_DATE
+  },
+  {
+    id: 'smartnic-interview',
+    title: 'SmartNIC Driver Interview',
+    description: 'Technical deep dive into Network Driver development. Covers flow control (netif queues), socket buffer copying, and RoCE primitives.',
+    author: 'Kernel Lead',
+    voiceName: 'Fenrir',
+    systemInstruction: 'You are a Senior Network Driver Engineer conducting a hard technical interview. You focus on the data path. Ask the user to explain: 1. Flow control using `netif_stop_queue` and `netif_wake_queue`. 2. The cost of `sendto()` and where the user-to-kernel copy happens. 3. How RoCE works at a low level, specifically Work Queue Elements (WQE) and Completion Queue Elements (CQE). Be rigorous.',
+    likes: 412,
+    dislikes: 3,
+    comments: [],
+    tags: ['SmartNIC', 'Kernel', 'C', 'RoCE'],
+    imageUrl: 'https://image.pollinations.ai/prompt/electronic%20network%20interface%20card%20pcie%20macro%20chip?width=600&height=400&nologo=true',
+    welcomeMessage: "Review started. Let's discuss your TX path implementation. How are you handling queue pressure?",
+    starterPrompts: [
+      "When to use netif_stop_queue?",
+      "Explain sendto() memory copy cost",
+      "What is WQE vs CQE in RoCE?",
+      "How do drivers handle TX ring full?"
+    ],
+    createdAt: INITIAL_DATE
+  },
+  {
+    id: 'oracle-acceleron',
+    title: 'Oracle Acceleron & AI Networking',
+    description: 'Deep dive into OCI\'s next-gen networking stack, Zettascale clusters, and how converged SmartNICs/DPUs enable zero-trust security and massive AI scale.',
+    author: 'Cloud Infrastructure Architect',
+    voiceName: 'Kore',
+    systemInstruction: 'You are a Cloud Infrastructure Architect at Oracle. You specialize in OCI networking, specifically Acceleron, RoCEv2, and the Zettascale supercluster architecture. You explain how SmartNICs (DPUs) offload network/storage tasks, enforce Zero Trust Packet Routing (ZPR), and enable ultra-low latency for 100k+ GPU clusters.',
+    likes: 88,
+    dislikes: 1,
+    comments: [],
+    tags: ['Cloud', 'Oracle', 'Networking', 'SmartNIC'],
+    imageUrl: 'https://images.unsplash.com/photo-1544197150-b99a580bb7a8?w=600&q=80&auto=format&fit=crop',
+    welcomeMessage: "Welcome to the cloud fabric. Let's discuss how we scale AI to the Zettascale.",
+    starterPrompts: [
+      "What is Oracle Acceleron?",
+      "How does the Zettascale cluster work?",
+      "Explain Zero Trust Packet Routing",
+      "Acceleron vs traditional networking?"
+    ],
+    createdAt: INITIAL_DATE
+  },
+  {
+    id: 'broadcom-smartnic',
+    title: 'Broadcom SmartNIC & AI Networking',
+    description: 'Deep dive into the industry\'s first 800G AI Ethernet NIC, Stingray SmartNICs, and why networking is the bottleneck for large-scale AI.',
+    author: 'Network Hardware Expert',
+    voiceName: 'Fenrir',
+    systemInstruction: 'You are a Network Hardware Architect specializing in high-performance AI infrastructure. You explain Broadcom\'s networking solutions, including the 800G AI Ethernet NIC (Thor Ultra) and Stingray SmartNICs. You discuss the importance of high bandwidth, RoCEv2, congestion control, and low latency for scaling AI clusters (100K+ XPUs).',
+    likes: 156,
+    dislikes: 2,
+    comments: [],
+    tags: ['Hardware', 'Networking', 'AI', 'SmartNIC'],
+    imageUrl: 'https://images.unsplash.com/photo-1558494949-ef010cbdcc31?w=600&q=80&auto=format&fit=crop',
+    welcomeMessage: "Welcome. Networking is the critical bottleneck of the AI era. Let's discuss how we solve it with SmartNICs.",
+    starterPrompts: [
+      "What is a Broadcom SmartNIC?",
+      "Why is 800G Ethernet important for AI?",
+      "Explain RoCE and RDMA",
+      "Difference between SmartNIC and AI-NIC?"
+    ],
+    createdAt: INITIAL_DATE
+  },
+  {
+    id: '1',
+    title: 'Software Interview Voice',
+    description: 'Practice your coding interview skills with a strict but fair senior engineer bot.',
+    author: 'gen-lang-client-0648937375',
+    voiceName: 'Fenrir',
+    systemInstruction: 'You are a senior software engineer conducting a technical interview. Ask challenging algorithm questions, critique the user\'s explanation, and provide feedback on time complexity.',
+    likes: 342,
+    dislikes: 12,
+    comments: [],
+    tags: ['Tech', 'Career', 'Education'],
+    imageUrl: 'https://image.pollinations.ai/prompt/coding%20interview%20computer%20screen%20cyberpunk%20tech%20office?width=600&height=400&nologo=true',
+    welcomeMessage: "Welcome. I am ready to evaluate your technical skills. Shall we start with a Dynamic Programming problem?",
+    starterPrompts: [
+      "Ask me a medium difficulty Array question",
+      "Mock system design interview for Instagram",
+      "Explain the time complexity of QuickSort",
+      "How do I handle race conditions?"
+    ],
+    createdAt: INITIAL_DATE
+  },
+  {
+    id: '2',
+    title: 'Linux Kernel Voice',
+    description: 'Deep dive into the Linux Kernel internals. Discussion about schedulers, memory management, and drivers.',
+    author: 'gen-lang-client-0375218270',
+    voiceName: 'Puck',
+    systemInstruction: 'You are an expert on the Linux Kernel. You speak with high technical accuracy about C programming, kernel subsystems, and operating system theory. You are opinionated but helpful.',
+    likes: 891,
+    dislikes: 5,
+    comments: [],
+    tags: ['Linux', 'OS', 'Engineering'],
+    imageUrl: 'https://image.pollinations.ai/prompt/linux%20penguin%20server%20room%20matrix%20code%20green?width=600&height=400&nologo=true',
+    welcomeMessage: "Kernel mode engaged. I am listening. What subsystem shall we inspect today?",
+    starterPrompts: [
+      "Explain the CFS scheduler in detail",
+      "How does the VFS (Virtual File System) work?",
+      "What is a zombie process?",
+      "Explain RCU (Read-Copy-Update) synchronization",
+      "Walk me through the boot process"
+    ],
+    createdAt: INITIAL_DATE
+  },
+  {
+    id: '3',
+    title: 'Database Internal',
+    description: 'Everything about B-Trees, WAL, ACID compliance and distributed systems.',
+    author: 'gen-lang-client-0983029066',
+    voiceName: 'Kore',
+    systemInstruction: 'You are a database architect. Explain complex concepts like sharding, replication lag, and isolation levels simply. Use analogies.',
+    likes: 120,
+    dislikes: 2,
+    comments: [],
+    tags: ['Database', 'System Design'],
+    imageUrl: 'https://image.pollinations.ai/prompt/database%20server%20rack%20glowing%20blue%20data%20flow%20futuristic?width=600&height=400&nologo=true',
+    welcomeMessage: "Data persistence is my passion. Let's dig into the storage engine.",
+    starterPrompts: [
+      "Explain the difference between B-Tree and LSM Tree",
+      "What is Write-Ahead Logging (WAL)?",
+      "How do distributed transactions work?",
+      "Explain ACID properties with an example"
+    ],
+    createdAt: INITIAL_DATE
+  },
+  {
+    id: '4',
+    title: 'Creative Spark',
+    description: 'A general purpose assistant for brainstorming and casual conversation.',
+    author: 'gen-lang-client-0539687618',
+    voiceName: 'Zephyr',
+    systemInstruction: 'You are a helpful and creative assistant. Engage in brainstorming and general knowledge questions.',
+    likes: 56,
+    dislikes: 0,
+    comments: [],
+    tags: ['General', 'Assistant'],
+    imageUrl: 'https://image.pollinations.ai/prompt/abstract%20creative%20sparks%20colorful%20art%20explosion%20ideas?width=600&height=400&nologo=true',
+    welcomeMessage: "Hello! I'm here to help ignite your creativity. What's on your mind?",
+    starterPrompts: [
+      "Help me brainstorm names for a coffee shop",
+      "Tell me a fun fact about space",
+      "Let's create a story together",
+      "Give me a creative writing prompt"
+    ],
+    createdAt: INITIAL_DATE
+  },
+  {
+    id: '5',
+    title: 'Google AI Studio - Gemini 3',
+    description: 'Explore the cutting-edge capabilities of Gemini 3.0. We discuss multimodal inputs, function calling, and building next-gen apps with Google AI Studio.',
+    author: 'gen-lang-client-0123456789',
+    voiceName: 'Charon',
+    systemInstruction: 'You are a product manager for Google AI. You are enthusiastic about Gemini 3.0 features, specifically the long context window, multimodal capabilities, and the Live API. You encourage developers to build cool things.',
+    likes: 1240,
+    dislikes: 15,
+    comments: [],
+    tags: ['Gemini', 'Google', 'AI', 'Tech'],
+    imageUrl: 'https://image.pollinations.ai/prompt/google%20gemini%20ai%20robot%20assistant%20futuristic%20clean%20white?width=600&height=400&nologo=true',
+    welcomeMessage: "Welcome to the future of AI! I'm excited to show you what Gemini 3.0 can do.",
+    starterPrompts: [
+      "What's new in Gemini 3.0?",
+      "How do I use the Live API?",
+      "Explain multimodal capabilities",
+      "What is the context window limit?"
+    ],
+    createdAt: INITIAL_DATE
+  },
+  {
+    id: '6',
+    title: 'LLM and Machine Learning',
+    description: 'A comprehensive guide for LLMs. From Transformer architecture to fine-tuning strategies and RAG pipelines.',
+    author: 'gen-lang-client-9876543210',
+    voiceName: 'Fenrir',
+    systemInstruction: 'You are a machine learning researcher. Explain complex ML concepts like attention mechanisms, backpropagation, and quantization in a clear, academic yet accessible way. You love discussing the future of AGI.',
+    likes: 856,
+    dislikes: 8,
+    comments: [],
+    tags: ['ML', 'LLM', 'Data Science', 'Research'],
+    imageUrl: 'https://image.pollinations.ai/prompt/neural%20network%20brain%20glowing%20connections%20artificial%20intelligence?width=600&height=400&nologo=true',
+    welcomeMessage: "Greetings. I am ready to discuss the mathematical foundations of intelligence.",
+    starterPrompts: [
+      "Explain the Transformer architecture",
+      "What is RAG (Retrieval-Augmented Generation)?",
+      "How does backpropagation work?",
+      "Explain quantization in simple terms"
+    ],
+    createdAt: INITIAL_DATE
+  },
+  {
+    id: '7',
+    title: 'Chinese Poetry Master',
+    description: 'Immerse yourself in the beauty of Tang and Song dynasty poetry. Learn history, meaning, and pronunciation.',
+    author: 'gen-lang-client-8888888888',
+    voiceName: 'Zephyr',
+    systemInstruction: 'You are a master of classical Chinese poetry. You help users appreciate poems from the Tang and Song dynasties (like Li Bai, Du Fu). You explain the imagery, historical context, and deep meanings. You can recite lines and ask users to repeat them.',
+    likes: 405,
+    dislikes: 3,
+    comments: [],
+    tags: ['Culture', 'Language', 'Poetry'],
+    imageUrl: 'https://image.pollinations.ai/prompt/traditional%20chinese%20ink%20painting%20mountains%20fog%20ancient%20scroll?width=600&height=400&nologo=true',
+    welcomeMessage: "Welcome, seeker of beauty. Let us walk among the mountains and rivers of verse.",
+    starterPrompts: [
+      "Recite a poem by Li Bai",
+      "Explain the meaning of 'Quiet Night Thought'",
+      "Who was Du Fu?",
+      "Teach me a poem about spring"
+    ],
+    createdAt: INITIAL_DATE
+  },
+  {
+    id: '8',
+    title: 'Scripture Voice',
+    description: 'A quiet space for reading and contemplating sacred texts and ancient wisdom traditions.',
+    author: 'gen-lang-client-7777777777',
+    voiceName: 'Kore',
+    systemInstruction: 'You are a calm and respectful guide through ancient scriptures and philosophical texts. You discuss wisdom from various traditions, focusing on the text\'s meaning, historical context, and application to modern life. Your tone is contemplative and serene.',
+    likes: 620,
+    dislikes: 10,
+    comments: [],
+    tags: ['Philosophy', 'Spirituality', 'History'],
+    imageUrl: 'https://image.pollinations.ai/prompt/ancient%20library%20sacred%20light%20dusty%20books%20peaceful%20meditation?width=600&height=400&nologo=true',
+    welcomeMessage: "Peace be with you. I am here to explore the depths of ancient wisdom.",
+    starterPrompts: [
+      "Share a quote about patience",
+      "Discuss the philosophy of Stoicism",
+      "Read a passage about compassion",
+      "What does ancient wisdom say about anxiety?"
+    ],
+    createdAt: INITIAL_DATE
+  }
+];

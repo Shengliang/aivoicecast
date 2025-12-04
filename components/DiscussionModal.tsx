@@ -1,0 +1,228 @@
+
+import React, { useState, useEffect } from 'react';
+import { X, MessageCircle, FileText, Loader2, CornerDownRight, Edit2, Save, Sparkles } from 'lucide-react';
+import { CommunityDiscussion } from '../types';
+import { getDiscussionById, saveDiscussionDesignDoc } from '../services/firestoreService';
+import { generateDesignDocFromTranscript } from '../services/lectureGenerator';
+import { MarkdownView } from './MarkdownView';
+
+interface DiscussionModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  discussionId: string;
+  initialDiscussion?: CommunityDiscussion | null; // Optional prepopulated data
+  currentUser?: any;
+  language?: 'en' | 'zh';
+  activeLectureTopic?: string; // Passed for context generation
+}
+
+export const DiscussionModal: React.FC<DiscussionModalProps> = ({ 
+  isOpen, onClose, discussionId, initialDiscussion, currentUser, language = 'en', activeLectureTopic 
+}) => {
+  const [activeDiscussion, setActiveDiscussion] = useState<CommunityDiscussion | null>(initialDiscussion || null);
+  const [loading, setLoading] = useState(false);
+  const [viewMode, setViewMode] = useState<'transcript' | 'doc'>('transcript');
+  
+  // Doc Editing State
+  const [isEditingDoc, setIsEditingDoc] = useState(false);
+  const [editedDocContent, setEditedDocContent] = useState('');
+  const [isSavingDoc, setIsSavingDoc] = useState(false);
+  const [isGeneratingDoc, setIsGeneratingDoc] = useState(false);
+
+  useEffect(() => {
+    if (isOpen) {
+      if (!initialDiscussion || initialDiscussion.id !== discussionId) {
+        setLoading(true);
+        getDiscussionById(discussionId).then(data => {
+          setActiveDiscussion(data);
+          setLoading(false);
+        }).catch(() => {
+          setLoading(false);
+        });
+      } else {
+        setActiveDiscussion(initialDiscussion);
+      }
+      // Reset view state
+      setViewMode('transcript');
+      setIsEditingDoc(false);
+    }
+  }, [isOpen, discussionId, initialDiscussion]);
+
+  // Sync edit state when discussion changes
+  useEffect(() => {
+    if (activeDiscussion?.designDoc) {
+      setEditedDocContent(activeDiscussion.designDoc);
+    }
+  }, [activeDiscussion]);
+
+  if (!isOpen) return null;
+
+  const handleGenerateDoc = async () => {
+      if (!activeDiscussion || !activeDiscussion.transcript) return;
+      setIsGeneratingDoc(true);
+      try {
+          const dateStr = new Date().toLocaleDateString('en-US');
+          const meta = {
+              date: dateStr,
+              topic: activeLectureTopic || "Discussion",
+              segmentIndex: activeDiscussion.segmentIndex
+          };
+
+          const doc = await generateDesignDocFromTranscript(activeDiscussion.transcript, meta, language as 'en' | 'zh');
+          if (doc) {
+              await saveDiscussionDesignDoc(activeDiscussion.id, doc);
+              // Update local state
+              setActiveDiscussion({ ...activeDiscussion, designDoc: doc });
+              setEditedDocContent(doc);
+          } else {
+              alert("Failed to generate document.");
+          }
+      } catch(e) {
+          console.error(e);
+          alert("Error generating document.");
+      } finally {
+          setIsGeneratingDoc(false);
+      }
+  };
+
+  const handleSaveDoc = async () => {
+    if (!activeDiscussion) return;
+    setIsSavingDoc(true);
+    try {
+      await saveDiscussionDesignDoc(activeDiscussion.id, editedDocContent);
+      setActiveDiscussion({ ...activeDiscussion, designDoc: editedDocContent });
+      setIsEditingDoc(false);
+    } catch (e) {
+      console.error(e);
+      alert("Failed to save document.");
+    } finally {
+      setIsSavingDoc(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/90 backdrop-blur-md">
+      <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-2xl shadow-2xl flex flex-col max-h-[85vh] animate-fade-in-up">
+          <div className="p-4 border-b border-slate-800 bg-slate-900 rounded-t-2xl">
+              <div className="flex justify-between items-center mb-4">
+                  <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                      <MessageCircle size={18} className="text-emerald-400" />
+                      <span>Discussion Details</span>
+                  </h3>
+                  <button onClick={onClose} className="text-slate-400 hover:text-white"><X size={20}/></button>
+              </div>
+              
+              {/* Tabs */}
+              <div className="flex space-x-2">
+                  <button 
+                      onClick={() => setViewMode('transcript')}
+                      className={`flex-1 py-2 text-sm font-bold rounded-lg transition-colors flex items-center justify-center space-x-2 ${viewMode === 'transcript' ? 'bg-slate-800 text-white' : 'text-slate-500 hover:text-slate-300'}`}
+                  >
+                      <MessageCircle size={16} />
+                      <span>Transcript</span>
+                  </button>
+                  <button 
+                      onClick={() => setViewMode('doc')}
+                      className={`flex-1 py-2 text-sm font-bold rounded-lg transition-colors flex items-center justify-center space-x-2 ${viewMode === 'doc' ? 'bg-slate-800 text-indigo-400' : 'text-slate-500 hover:text-slate-300'}`}
+                  >
+                      <FileText size={16} />
+                      <span>Design Document</span>
+                  </button>
+              </div>
+          </div>
+          
+          <div className="p-6 overflow-y-auto flex-1 scrollbar-thin scrollbar-thumb-slate-700">
+              {loading ? (
+                  <div className="text-center py-12 text-slate-500">
+                      <Loader2 size={32} className="animate-spin mx-auto mb-2"/>
+                      <p>Loading...</p>
+                  </div>
+              ) : activeDiscussion ? (
+                  <>
+                      {viewMode === 'transcript' ? (
+                          <div className="space-y-4">
+                              <div className="bg-slate-800/50 p-3 rounded-lg text-xs text-slate-400 mb-4 border border-slate-700 flex justify-between items-center">
+                                  <span>Started by <span className="font-bold text-indigo-300">{activeDiscussion.userName}</span> on {new Date(activeDiscussion.createdAt).toLocaleDateString()}</span>
+                                  {activeDiscussion.segmentIndex !== undefined && (
+                                      <button 
+                                          onClick={() => {
+                                              onClose();
+                                              const el = document.getElementById(`seg-${activeDiscussion.segmentIndex}`);
+                                              if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                                          }}
+                                          className="text-emerald-400 hover:text-emerald-300 flex items-center gap-1 font-bold"
+                                      >
+                                          <CornerDownRight size={14} />
+                                          Jump to Segment
+                                      </button>
+                                  )}
+                              </div>
+                              {activeDiscussion.transcript && activeDiscussion.transcript.map((item, idx) => (
+                                  <div key={idx} className={`flex flex-col ${item.role === 'user' ? 'items-end' : 'items-start'}`}>
+                                      <div className="flex items-center space-x-2 mb-1 px-1">
+                                          <span className="text-[10px] text-slate-500 uppercase font-bold">{item.role === 'user' ? activeDiscussion.userName : 'AI Host'}</span>
+                                      </div>
+                                      <div className={`px-4 py-2 rounded-xl max-w-[90%] text-sm ${item.role === 'user' ? 'bg-indigo-900/30 text-indigo-100 rounded-tr-sm border border-indigo-500/30' : 'bg-slate-800 text-slate-300 rounded-tl-sm border border-slate-700'}`}>
+                                          <p className="whitespace-pre-wrap">{item.text}</p>
+                                      </div>
+                                  </div>
+                              ))}
+                          </div>
+                      ) : (
+                          <div className="h-full flex flex-col">
+                              {activeDiscussion.designDoc ? (
+                                  <>
+                                    <div className="flex justify-end mb-4 space-x-2 sticky top-0 z-10 bg-slate-900 pb-2">
+                                        {isEditingDoc ? (
+                                            <>
+                                                <button onClick={() => setIsEditingDoc(false)} className="px-3 py-1.5 text-xs text-slate-400 hover:text-white bg-slate-800 rounded-lg">Cancel</button>
+                                                <button onClick={handleSaveDoc} disabled={isSavingDoc} className="px-3 py-1.5 text-xs text-white bg-emerald-600 hover:bg-emerald-500 rounded-lg flex items-center gap-1 font-bold">
+                                                    {isSavingDoc ? <Loader2 size={12} className="animate-spin"/> : <Save size={12}/>} Save
+                                                </button>
+                                            </>
+                                        ) : (
+                                            <button onClick={() => setIsEditingDoc(true)} className="px-3 py-1.5 text-xs text-indigo-300 hover:text-white bg-slate-800 hover:bg-indigo-600 rounded-lg flex items-center gap-1 border border-slate-700">
+                                                <Edit2 size={12}/> Edit
+                                            </button>
+                                        )}
+                                    </div>
+
+                                    {isEditingDoc ? (
+                                        <textarea 
+                                            value={editedDocContent}
+                                            onChange={e => setEditedDocContent(e.target.value)}
+                                            className="w-full h-full min-h-[400px] bg-slate-950 p-4 rounded-lg border border-slate-700 font-mono text-sm text-slate-300 focus:outline-none focus:border-indigo-500 resize-none"
+                                        />
+                                    ) : (
+                                        <div className="prose prose-invert prose-sm max-w-none">
+                                            <MarkdownView content={activeDiscussion.designDoc} />
+                                        </div>
+                                    )}
+                                  </>
+                              ) : (
+                                  <div className="flex flex-col items-center justify-center h-full space-y-4 p-8">
+                                      <FileText size={48} className="text-slate-700" />
+                                      <p className="text-slate-400 text-center text-sm max-w-xs">
+                                          Convert this discussion into a formal design document with one click.
+                                      </p>
+                                      <button 
+                                          onClick={handleGenerateDoc}
+                                          disabled={isGeneratingDoc}
+                                          className="flex items-center space-x-2 px-6 py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-full shadow-lg transition-transform hover:scale-105 disabled:opacity-50 disabled:scale-100"
+                                      >
+                                          {isGeneratingDoc ? <Loader2 size={18} className="animate-spin"/> : <Sparkles size={18} />}
+                                          <span>Generate Design Doc</span>
+                                      </button>
+                                  </div>
+                              )}
+                          </div>
+                      )}
+                  </>
+              ) : (
+                  <p className="text-center text-red-400">Discussion not found.</p>
+              )}
+          </div>
+      </div>
+    </div>
+  );
+};

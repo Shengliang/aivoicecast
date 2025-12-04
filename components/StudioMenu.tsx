@@ -1,0 +1,111 @@
+
+import React from 'react';
+import { UserProfile } from '../types';
+import { getUserProfile } from '../services/firestoreService';
+import { Sparkles, BarChart2, Plus, Wand2, Key, Database } from 'lucide-react';
+import { VOICES } from '../utils/initialData';
+
+interface StudioMenuProps {
+  isUserMenuOpen: boolean;
+  setIsUserMenuOpen: (open: boolean) => void;
+  userProfile: UserProfile | null;
+  setUserProfile: (p: UserProfile | null) => void;
+  currentUser: any;
+  globalVoice: string;
+  setGlobalVoice: (v: string) => void;
+  hasApiKey: boolean;
+  setIsCreateModalOpen: (open: boolean) => void;
+  setIsVoiceCreateOpen: (open: boolean) => void;
+  setIsApiKeyModalOpen: (open: boolean) => void;
+  setIsSyncModalOpen: (open: boolean) => void;
+  t: any;
+}
+
+export const StudioMenu: React.FC<StudioMenuProps> = ({
+  isUserMenuOpen, setIsUserMenuOpen, userProfile, setUserProfile, currentUser,
+  globalVoice, setGlobalVoice, hasApiKey, 
+  setIsCreateModalOpen, setIsVoiceCreateOpen, setIsApiKeyModalOpen, setIsSyncModalOpen, t
+}) => {
+  
+  if (!isUserMenuOpen || !currentUser) return null;
+
+  return (
+    <>
+      <div className="fixed inset-0 z-40" onClick={() => setIsUserMenuOpen(false)}></div>
+      <div className="absolute right-0 mt-2 w-72 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl z-50 overflow-hidden animate-fade-in-up">
+         <div className="p-3 border-b border-slate-800 bg-slate-950/50">
+            <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center space-x-2">
+               <Sparkles size={12} className="text-indigo-400" />
+               <span>Creator Studio</span>
+            </h3>
+         </div>
+         
+         {/* Stats Banner */}
+         <div className="bg-slate-800/50 p-3 flex items-center justify-between border-b border-slate-800">
+            <div className="flex items-center space-x-2 text-indigo-300">
+               <BarChart2 size={16} />
+               <span className="text-xs font-medium">API Usage</span>
+            </div>
+            <span className="text-sm font-bold text-white bg-indigo-900/50 px-2 py-0.5 rounded-md">
+               {userProfile?.apiUsageCount || 0} calls
+            </span>
+         </div>
+
+         <div className="p-2 space-y-1">
+            <button 
+               onClick={() => { setIsCreateModalOpen(true); setIsUserMenuOpen(false); }}
+               className="w-full flex items-center space-x-3 px-3 py-2 text-sm text-white hover:bg-slate-800 rounded-lg transition-colors"
+            >
+               <div className="p-1.5 bg-indigo-900/50 text-indigo-400 rounded-md"><Plus size={16}/></div>
+               <span className="font-medium">Create Podcast</span>
+            </button>
+            <button 
+               onClick={() => { setIsVoiceCreateOpen(true); setIsUserMenuOpen(false); }}
+               className="w-full flex items-center space-x-3 px-3 py-2 text-sm text-white hover:bg-slate-800 rounded-lg transition-colors"
+            >
+               <div className="p-1.5 bg-pink-900/50 text-pink-400 rounded-md"><Wand2 size={16}/></div>
+               <span className="font-medium">Magic Voice Create</span>
+            </button>
+            
+            <div className="h-px bg-slate-800 my-2 mx-2" />
+            
+            <div className="px-3 py-2">
+               <div className="flex items-center justify-between mb-2">
+                  <label className="text-xs font-bold text-slate-500 uppercase">Live Host Voice</label>
+                  <span className="text-xs text-indigo-400">{globalVoice}</span>
+                </div>
+               <div className="grid grid-cols-3 gap-1">
+                  {['Auto', ...VOICES].map(v => (
+                     <button 
+                        key={v}
+                        onClick={() => setGlobalVoice(v)}
+                        className={`text-[10px] py-1 rounded border ${globalVoice === v ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-white'}`}
+                     >
+                        {v}
+                     </button>
+                  ))}
+                </div>
+            </div>
+
+            <div className="h-px bg-slate-800 my-2 mx-2" />
+
+            <button 
+               onClick={() => { setIsApiKeyModalOpen(true); setIsUserMenuOpen(false); }}
+               className={`w-full flex items-center space-x-3 px-3 py-2 text-sm rounded-lg transition-colors ${!hasApiKey ? 'text-red-400 hover:bg-red-900/20' : 'text-slate-300 hover:text-white hover:bg-slate-800'}`}
+            >
+               <Key size={16} />
+               <span>{hasApiKey ? "Change API Key" : "Set API Key (Required)"}</span>
+            </button>
+            <button 
+               onClick={() => { setIsSyncModalOpen(true); setIsUserMenuOpen(false); }}
+               className="w-full flex items-center space-x-3 px-3 py-2 text-sm text-slate-300 hover:text-white hover:bg-slate-800 rounded-lg transition-colors"
+            >
+               <Database size={16} />
+               <span>Data Sync & Backup</span>
+            </button>
+         </div>
+      </div>
+    </>
+  );
+};
+    
