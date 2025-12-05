@@ -164,7 +164,7 @@ export interface TodoItem {
 
 export interface CodeFile {
   name: string;
-  language: 'python' | 'javascript' | 'typescript' | 'html' | 'css';
+  language: 'python' | 'javascript' | 'typescript' | 'html' | 'css' | 'java' | 'c++' | 'c' | 'rust' | 'go' | 'c#' | 'json' | 'markdown' | 'text' | 'typescript (react)' | 'javascript (react)';
   content: string;
 }
 
