@@ -4,7 +4,7 @@ import { Channel, ViewState, UserProfile, TranscriptItem } from './types';
 import { 
   Podcast, Mic, Layout, Search, Sparkles, LogOut, 
   Settings, Menu, X, Plus, Github, Database, Cloud, Globe, 
-  Calendar, Briefcase, Users, Disc, FileText, AlertTriangle, List, BookOpen
+  Calendar, Briefcase, Users, Disc, FileText, AlertTriangle, List, BookOpen, ChevronDown
 } from 'lucide-react';
 import { LiveSession } from './components/LiveSession';
 import { PodcastDetail } from './components/PodcastDetail';
@@ -96,7 +96,8 @@ const App: React.FC = () => {
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
-  const [activeTab, setActiveTab] = useState('all');
+  const [activeTab, setActiveTab] = useState('categories');
+  const [selectedCategory, setSelectedCategory] = useState('All');
   
   // Data State
   const [channels, setChannels] = useState<Channel[]>(HANDCRAFTED_CHANNELS);
@@ -317,37 +318,19 @@ const App: React.FC = () => {
       setViewState('live_session');
   };
 
-  const featuredGroups = useMemo(() => {
-      const groups: Record<string, Channel[]> = {};
-      
-      // 1. Spotlight (Handcrafted)
-      groups['Spotlight'] = HANDCRAFTED_CHANNELS;
-
-      // 2. Categories from Utils (Limited for Featured View)
-      Object.keys(TOPIC_CATEGORIES).forEach(category => {
-          // Simple keyword matching for demo purposes
-          const keywords = category.toLowerCase().split(/[ &]/).filter(w => w.length > 3);
-          const matches = channels.filter(c => 
-              keywords.some(k => c.tags.some(t => t.toLowerCase().includes(k)) || c.title.toLowerCase().includes(k))
-          );
-          if (matches.length > 0) {
-              groups[category] = matches.slice(0, 4); // Limit 4 per category
-          }
-      });
-
-      return groups;
-  }, [channels]);
-
   const allCategoryGroups = useMemo(() => {
       const groups: Record<string, Channel[]> = {};
       
+      // Merge "Spotlight" (Featured) content into Categories view
+      groups['Spotlight'] = HANDCRAFTED_CHANNELS;
+
       Object.keys(TOPIC_CATEGORIES).forEach(category => {
           const keywords = category.toLowerCase().split(/[ &]/).filter(w => w.length > 3);
           const matches = channels.filter(c => 
               keywords.some(k => c.tags.some(t => t.toLowerCase().includes(k)) || c.title.toLowerCase().includes(k))
           );
           if (matches.length > 0) {
-              groups[category] = matches; // NO LIMIT
+              groups[category] = matches;
           }
       });
 
@@ -452,9 +435,7 @@ const App: React.FC = () => {
             {/* Tabs */}
             <div className="flex space-x-2 overflow-x-auto pb-4 mb-4 scrollbar-hide">
                {[
-                 { id: 'all', label: t.all, icon: Layout },
-                 { id: 'featured', label: t.featured, icon: Sparkles },
-                 { id: 'categories', label: t.categories, icon: List },
+                 { id: 'categories', label: t.categories, icon: Layout },
                  { id: 'calendar', label: t.calendar, icon: Calendar },
                  { id: 'mentorship', label: t.mentorship, icon: Briefcase },
                  { id: 'groups', label: t.groups, icon: Users },
@@ -474,91 +455,68 @@ const App: React.FC = () => {
 
             {/* Content Area */}
             <div className="min-h-[60vh]">
-               {activeTab === 'all' && (
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    {channels.map(channel => (
-                      <ChannelCard 
-                        key={channel.id} 
-                        channel={channel} 
-                        handleChannelClick={(id) => { setActiveChannelId(id); setViewState('podcast_detail'); }}
-                        handleVote={handleVote}
-                        currentUser={currentUser}
-                        setChannelToEdit={setChannelToEdit}
-                        setIsSettingsModalOpen={setIsSettingsModalOpen}
-                        globalVoice={globalVoice}
-                        t={t}
-                        onCommentClick={handleCommentClick}
-                      />
-                    ))}
-                  </div>
-               )}
-
-               {activeTab === 'featured' && featuredGroups && (
-                    <div className="space-y-12">
-                      {Object.entries(featuredGroups).map(([groupName, groupChannels]) => {
-                        const channels = groupChannels as Channel[];
-                        if (!channels || channels.length === 0) return null;
-                        
-                        return (
-                          <div key={groupName} className="space-y-4">
-                            <h2 className="text-2xl font-bold text-white flex items-center gap-2">
-                               {groupName === 'Spotlight' ? <Sparkles className="text-yellow-400" /> : <div className="w-2 h-8 bg-indigo-500 rounded-full"></div>}
-                               <span>{groupName}</span>
-                            </h2>
-                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                              {channels.map(channel => (
-                                <ChannelCard 
-                                  key={channel.id} 
-                                  channel={channel} 
-                                  handleChannelClick={(id) => { setActiveChannelId(id); setViewState('podcast_detail'); }}
-                                  handleVote={handleVote}
-                                  currentUser={currentUser}
-                                  setChannelToEdit={setChannelToEdit}
-                                  setIsSettingsModalOpen={setIsSettingsModalOpen}
-                                  globalVoice={globalVoice}
-                                  t={t}
-                                  onCommentClick={handleCommentClick}
-                                />
-                              ))}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-
                {activeTab === 'categories' && allCategoryGroups && (
-                    <div className="space-y-12">
-                      {Object.entries(allCategoryGroups).map(([groupName, groupChannels]) => {
-                        const channels = groupChannels as Channel[];
-                        if (!channels || channels.length === 0) return null;
-                        
-                        return (
-                          <div key={groupName} className="space-y-4">
-                            <h2 className="text-2xl font-bold text-white flex items-center gap-2">
-                               <div className="w-2 h-8 bg-indigo-500 rounded-full"></div>
-                               <span>{groupName}</span>
-                               <span className="text-sm font-normal text-slate-500 ml-2">({channels.length})</span>
-                            </h2>
-                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                              {channels.map(channel => (
-                                <ChannelCard 
-                                  key={channel.id} 
-                                  channel={channel} 
-                                  handleChannelClick={(id) => { setActiveChannelId(id); setViewState('podcast_detail'); }}
-                                  handleVote={handleVote}
-                                  currentUser={currentUser}
-                                  setChannelToEdit={setChannelToEdit}
-                                  setIsSettingsModalOpen={setIsSettingsModalOpen}
-                                  globalVoice={globalVoice}
-                                  t={t}
-                                  onCommentClick={handleCommentClick}
-                                />
-                              ))}
-                            </div>
+                    <div className="space-y-6">
+                      {/* Filter Dropdown */}
+                      <div className="flex items-center justify-end px-2">
+                          <div className="relative">
+                              <select 
+                                value={selectedCategory} 
+                                onChange={(e) => setSelectedCategory(e.target.value)}
+                                className="appearance-none bg-slate-800 border border-slate-700 text-white pl-4 pr-10 py-2 rounded-lg text-sm font-bold focus:ring-2 focus:ring-indigo-500 focus:outline-none cursor-pointer hover:bg-slate-700 transition-colors shadow-sm"
+                              >
+                                <option value="All">All Categories</option>
+                                {Object.keys(allCategoryGroups).map(cat => (
+                                    <option key={cat} value={cat}>{cat}</option>
+                                ))}
+                              </select>
+                              <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
                           </div>
-                        );
-                      })}
+                      </div>
+
+                      <div className="space-y-12">
+                        {Object.entries(allCategoryGroups)
+                          .filter(([name]) => selectedCategory === 'All' || selectedCategory === name)
+                          .map(([groupName, groupChannels]) => {
+                            const channels = groupChannels as Channel[];
+                            if (!channels || channels.length === 0) return null;
+                            
+                            return (
+                              <div key={groupName} className="space-y-4 animate-fade-in">
+                                <h2 className="text-2xl font-bold text-white flex items-center gap-2">
+                                  {groupName === 'Spotlight' ? (
+                                    <>
+                                      <Sparkles className="text-yellow-400" />
+                                      <span>{t.featured || 'Featured'}</span>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <div className="w-2 h-8 bg-indigo-500 rounded-full"></div>
+                                      <span>{groupName}</span>
+                                      <span className="text-sm font-normal text-slate-500 ml-2">({channels.length})</span>
+                                    </>
+                                  )}
+                                </h2>
+                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                                  {channels.map(channel => (
+                                    <ChannelCard 
+                                      key={channel.id} 
+                                      channel={channel} 
+                                      handleChannelClick={(id) => { setActiveChannelId(id); setViewState('podcast_detail'); }}
+                                      handleVote={handleVote}
+                                      currentUser={currentUser}
+                                      setChannelToEdit={setChannelToEdit}
+                                      setIsSettingsModalOpen={setIsSettingsModalOpen}
+                                      globalVoice={globalVoice}
+                                      t={t}
+                                      onCommentClick={handleCommentClick}
+                                    />
+                                  ))}
+                                </div>
+                              </div>
+                            );
+                        })}
+                      </div>
                     </div>
                )}
 
