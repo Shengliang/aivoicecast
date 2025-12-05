@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { GoogleGenAI } from '@google/genai';
 import { ArrowLeft, Play, Save, Folder, File, Code, Terminal, Plus, Trash2, Loader2, ChevronRight, ChevronDown, Download, Smartphone, X, MessageSquare, CheckCircle, FileCode, FileJson, FileType, Search, Coffee, Hash, Eye, CloudUpload, PenTool, Edit3 } from 'lucide-react';
@@ -67,39 +66,135 @@ def is_valid_bst_iterative(root):
     return True`
     },
     {
-      name: 'python/build_bst.py',
-      language: 'python',
-      content: `class TreeNode:
-    def __init__(self, val=0, left=None, right=None):
-        self.val = val
-        self.left = left
-        self.right = right
+      name: 'typescript/solution.ts',
+      language: 'typescript',
+      content: `class TreeNode {
+    val: number;
+    left: TreeNode | null;
+    right: TreeNode | null;
+    constructor(val?: number, left?: TreeNode | null, right?: TreeNode | null) {
+        this.val = (val === undefined ? 0 : val);
+        this.left = (left === undefined ? null : left);
+        this.right = (right === undefined ? null : right);
+    }
+}
 
-# Construct BST from Preorder Traversal
-# Uses O(N) time complexity by passing bound constraints
-def bstFromPreorder(preorder: list[int]) -> TreeNode:
-    # Use a list for 'idx' to emulate pass-by-reference mutable integer
-    idx = [0]
-    n = len(preorder)
+// Approach 1: Recursive with Type Safety
+function isValidBST(root: TreeNode | null): boolean {
+    return validate(root, -Infinity, Infinity);
+}
+
+function validate(node: TreeNode | null, min: number, max: number): boolean {
+    if (!node) return true;
     
-    def build(bound):
-        # Stop if we used all elements OR next element exceeds bound
-        if idx[0] == n or preorder[idx[0]] > bound:
-            return None
+    if (node.val <= min || node.val >= max) return false;
+    
+    return validate(node.left, min, node.val) && 
+           validate(node.right, node.val, max);
+}
+
+// Approach 2: Iterative with Type Alias
+type StackFrame = { node: TreeNode, min: number, max: number };
+
+function isValidBSTIterative(root: TreeNode | null): boolean {
+    if (!root) return true;
+    const stack: StackFrame[] = [{ node: root, min: -Infinity, max: Infinity }];
+    
+    while (stack.length) {
+        const { node, min, max } = stack.pop()!;
+        
+        if (node.val <= min || node.val >= max) return false;
+        
+        if (node.right) stack.push({ node: node.right, min: node.val, max });
+        if (node.left) stack.push({ node: node.left, min, max: node.val });
+    }
+    return true;
+}`
+    },
+    {
+      name: 'csharp/Solution.cs',
+      language: 'c#',
+      content: `using System;
+using System.Collections.Generic;
+
+public class TreeNode {
+    public int val;
+    public TreeNode left;
+    public TreeNode right;
+    public TreeNode(int val=0, TreeNode left=null, TreeNode right=null) {
+        this.val = val;
+        this.left = left;
+        this.right = right;
+    }
+}
+
+public class Solution {
+    // Approach 1: Recursive using nullable long to handle Int32.MaxValue bounds
+    public bool IsValidBST(TreeNode root) {
+        return Validate(root, long.MinValue, long.MaxValue);
+    }
+
+    private bool Validate(TreeNode node, long min, long max) {
+        if (node == null) return true;
+        
+        if (node.val <= min || node.val >= max) return false;
+        
+        return Validate(node.left, min, node.val) &&
+               Validate(node.right, node.val, max);
+    }
+
+    // Approach 2: Iterative In-Order Traversal
+    public bool IsValidBSTIterative(TreeNode root) {
+        var stack = new Stack<TreeNode>();
+        TreeNode prev = null;
+        
+        while (root != null || stack.Count > 0) {
+            while (root != null) {
+                stack.Push(root);
+                root = root.left;
+            }
             
-        val = preorder[idx[0]]
-        idx[0] += 1
-        root = TreeNode(val)
-        
-        # Left child must be smaller than current val
-        root.left = build(val)
-        
-        # Right child must be smaller than the bound inherited from parent
-        root.right = build(bound)
-        
-        return root
-        
-    return build(float('inf'))`
+            root = stack.Pop();
+            
+            // If next element in in-order traversal is smaller/equal to previous, invalid
+            if (prev != null && root.val <= prev.val) return false;
+            
+            prev = root;
+            root = root.right;
+        }
+        return true;
+    }
+}`
+    },
+    {
+      name: 'c/main.c',
+      language: 'c',
+      content: `#include <stdbool.h>
+#include <limits.h>
+#include <stdlib.h>
+
+struct TreeNode {
+    int val;
+    struct TreeNode *left;
+    struct TreeNode *right;
+};
+
+// Helper function using long long to prevent integer overflow on boundary checks
+bool validate(struct TreeNode* root, long long min, long long max) {
+    if (root == NULL) return true;
+    
+    // Check constraints
+    if (root->val <= min || root->val >= max) return false;
+    
+    // Recursively validate subtrees
+    return validate(root->left, min, root->val) &&
+           validate(root->right, root->val, max);
+}
+
+bool isValidBST(struct TreeNode* root) {
+    // LLONG_MIN/MAX are needed because a valid BST node can contain INT_MIN/INT_MAX
+    return validate(root, LLONG_MIN, LLONG_MAX);
+}`
     },
     {
       name: 'javascript/is_bst.js',
@@ -585,10 +680,13 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
       const newFiles = [...project.files, newFile];
       setProject(prev => ({ ...prev, files: newFiles }));
       setActiveFileIndex(newFiles.length - 1);
-      if (name.includes('/')) {
-          const folderName = name.split('/')[0];
+      
+      const parts = name.split('/');
+      if (parts.length > 1) {
+          const folderName = parts[0];
+          // Fix for: Type 'unknown' cannot be used as an index type
           if (folderName) {
-             setExpandedFolders(prev => ({...prev, [folderName]: true}));
+             setExpandedFolders((prev: Record<string, boolean>) => ({...prev, [folderName as string]: true}));
           }
       }
   };
