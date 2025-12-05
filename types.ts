@@ -174,5 +174,6 @@ export interface CodeProject {
   files: CodeFile[];
   lastModified: number;
   review?: string;
+  humanComments?: string; // Interviewer/Human notes
   ownerId?: string;
 }
