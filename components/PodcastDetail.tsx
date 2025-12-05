@@ -25,7 +25,7 @@ interface PodcastDetailProps {
 
 const GEMINI_VOICES = ['Puck', 'Charon', 'Kore', 'Fenrir', 'Zephyr'];
 const BLOCKLIST = ['Fred', 'Trinoids', 'Albert', 'Bad News', 'Bells', 'Cellos', 'Good News', 'Organ', 'Zarvox', 'Deranged', 'Hysterical', 'Boing', 'Bubbles', 'Bahh', 'Whisper', 'Wobble'];
-const QUALITY_KEYWORDS = ['Google', 'Premium', 'Enhanced', 'Natural', 'Siri', 'Daniel', 'Samantha', 'Ting-Ting', 'Meijia'];
+const QUALITY_KEYWORDS = ['Google', 'Premium', 'Enhanced', 'Natural', 'Siri', 'Neural', 'Daniel', 'Samantha', 'Ting-Ting', 'Meijia'];
 
 const UI_TEXT = {
   en: {
@@ -278,11 +278,18 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
         const langCode = language === 'zh' ? 'zh' : 'en';
         let filtered = voices.filter(v => v.lang.startsWith(langCode));
         filtered = filtered.filter(v => !BLOCKLIST.some(bad => v.name.includes(bad)));
+        
+        // Prioritize Siri and Enhanced voices on iOS
         filtered.sort((a, b) => {
-            const aQ = QUALITY_KEYWORDS.some(k => a.name.includes(k)) ? 1 : 0;
-            const bQ = QUALITY_KEYWORDS.some(k => b.name.includes(k)) ? 1 : 0;
-            return bQ - aQ;
+            const getScore = (v: SpeechSynthesisVoice) => {
+                if (v.name.includes('Siri')) return 3; // Top priority
+                if (v.name.includes('Enhanced') || v.name.includes('Premium') || v.name.includes('Neural')) return 2;
+                if (QUALITY_KEYWORDS.some(k => v.name.includes(k))) return 1;
+                return 0;
+            };
+            return getScore(b) - getScore(a);
         });
+
         if (filtered.length === 0) filtered = voices.filter(v => v.lang.startsWith(langCode));
         if (filtered.length === 0) filtered = voices;
         setSystemVoices(filtered);

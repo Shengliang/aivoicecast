@@ -705,11 +705,11 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
   };
 
   // Group files by folder
-  const filesByFolder = React.useMemo<Record<string, {file: CodeFile, index: number}[]>>(() => {
+  const filesByFolder = React.useMemo(() => {
       const groups: Record<string, {file: CodeFile, index: number}[]> = {};
       project.files.forEach((file, index) => {
           const parts = file.name.split('/');
-          const folder = parts.length > 1 ? parts[0] : 'root';
+          const folder = (parts.length > 1 && parts[0]) ? parts[0] : 'root';
           if (!groups[folder]) groups[folder] = [];
           groups[folder].push({ file, index });
       });
