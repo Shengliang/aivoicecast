@@ -29,7 +29,7 @@ const BLOCKLIST = ['Fred', 'Trinoids', 'Albert', 'Bad News', 'Bells', 'Cellos', 
 const QUALITY_KEYWORDS = [
     'Google', 'Premium', 'Enhanced', 'Natural', 'Siri', 'Neural', 
     'Daniel', 'Samantha', 'Karen', 'Rishi', 'Moira', 'Tessa', 'Arthur', 'Martha', 
-    'Ting-Ting', 'Meijia', 'Sin-ji'
+    'Ting-Ting', 'Meijia', 'Sin-ji', 'Alex'
 ];
 
 const UI_TEXT = {
@@ -310,6 +310,12 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
     // Voice Scoring for Prioritization
     const getScore = (v: SpeechSynthesisVoice) => {
         const name = v.name.toLowerCase();
+        // Tier 0: User Favorites (Apple Defaults)
+        if (name.includes('alex') && name.includes('us')) return 20; // Specific Alex (US)
+        if (name === 'alex') return 19; // Just Alex
+        if (name.includes('daniel') && name.includes('enhanced')) return 18; // Specific Daniel Enhanced
+        if (name.includes('daniel')) return 17;
+
         // Tier 1: Explicit Siri
         if (name.includes('siri')) return 10;
         // Tier 2: Enhanced/Premium/Neural or known high-quality names (Samantha, etc)
