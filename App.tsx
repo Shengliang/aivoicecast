@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo } from 'react';
 import { Channel, ViewState, UserProfile, TranscriptItem } from './types';
 import { 
@@ -37,6 +36,7 @@ import {
 import { getUserChannels, saveUserChannel, deleteUserChannel } from './utils/db';
 import { HANDCRAFTED_CHANNELS, CATEGORY_STYLES, TOPIC_CATEGORIES } from './utils/initialData';
 import { OFFLINE_CHANNEL_ID } from './utils/offlineContent';
+import { GEMINI_API_KEY } from './services/private_keys';
 
 const UI_TEXT = {
   en: {
@@ -123,7 +123,8 @@ const App: React.FC = () => {
   const [globalVoice, setGlobalVoice] = useState('Auto');
 
   useEffect(() => {
-    const key = localStorage.getItem('gemini_api_key');
+    // Check local storage, private key file, or process env
+    const key = localStorage.getItem('gemini_api_key') || GEMINI_API_KEY || process.env.API_KEY;
     setHasApiKey(!!key);
 
     let unsubscribeAuth = () => {};
@@ -596,7 +597,7 @@ const App: React.FC = () => {
               </div>
            </div>
            <div className="text-center text-slate-700 text-xs mt-8">
-              v3.11.0 • Powered by Gemini 2.5 Flash & Firebase
+              v3.14.1 • Powered by Gemini 2.5 Flash & Firebase
            </div>
         </footer>
       )}

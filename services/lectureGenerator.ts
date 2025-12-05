@@ -1,8 +1,8 @@
-
 import { GoogleGenAI } from '@google/genai';
 import { GeneratedLecture, SubTopic, TranscriptItem } from '../types';
 import { incrementApiUsage } from './firestoreService';
 import { auth } from './firebaseConfig';
+import { GEMINI_API_KEY } from './private_keys';
 
 export async function generateLectureScript(
   topic: string, 
@@ -11,7 +11,7 @@ export async function generateLectureScript(
 ): Promise<GeneratedLecture | null> {
   try {
     // Initialize client inside function to pick up latest API Key
-    const apiKey = localStorage.getItem('gemini_api_key') || process.env.API_KEY || '';
+    const apiKey = localStorage.getItem('gemini_api_key') || GEMINI_API_KEY || process.env.API_KEY || '';
     if (!apiKey) {
       console.warn("API Key missing");
       return null;
@@ -89,7 +89,7 @@ export async function generateBatchLectures(
     if (subTopics.length === 0) return {};
 
     // Initialize client inside function to pick up latest API Key
-    const apiKey = localStorage.getItem('gemini_api_key') || process.env.API_KEY || '';
+    const apiKey = localStorage.getItem('gemini_api_key') || GEMINI_API_KEY || process.env.API_KEY || '';
     if (!apiKey) return null;
     const ai = new GoogleGenAI({ apiKey });
 
@@ -179,7 +179,7 @@ export async function summarizeDiscussionAsSection(
   language: 'en' | 'zh'
 ): Promise<GeneratedLecture['sections'] | null> {
   try {
-    const apiKey = localStorage.getItem('gemini_api_key') || process.env.API_KEY || '';
+    const apiKey = localStorage.getItem('gemini_api_key') || GEMINI_API_KEY || process.env.API_KEY || '';
     if (!apiKey) return null;
     const ai = new GoogleGenAI({ apiKey });
 
@@ -237,7 +237,7 @@ export async function generateDesignDocFromTranscript(
   language: 'en' | 'zh' = 'en'
 ): Promise<string | null> {
   try {
-    const apiKey = localStorage.getItem('gemini_api_key') || process.env.API_KEY || '';
+    const apiKey = localStorage.getItem('gemini_api_key') || GEMINI_API_KEY || process.env.API_KEY || '';
     if (!apiKey) return null;
     const ai = new GoogleGenAI({ apiKey });
 

@@ -1,8 +1,8 @@
-
 import { GoogleGenAI } from '@google/genai';
 import { Chapter } from '../types';
 import { incrementApiUsage } from './firestoreService';
 import { auth } from './firebaseConfig';
+import { GEMINI_API_KEY } from './private_keys';
 
 export async function generateCurriculum(
   topic: string, 
@@ -11,7 +11,7 @@ export async function generateCurriculum(
 ): Promise<Chapter[] | null> {
   try {
     // Initialize client inside function to pick up latest API Key
-    const apiKey = localStorage.getItem('gemini_api_key') || process.env.API_KEY || '';
+    const apiKey = localStorage.getItem('gemini_api_key') || GEMINI_API_KEY || process.env.API_KEY || '';
     if (!apiKey) return null;
     const ai = new GoogleGenAI({ apiKey });
 

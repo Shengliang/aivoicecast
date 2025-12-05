@@ -1,10 +1,10 @@
-
 import { GoogleGenAI } from '@google/genai';
 import { Channel, Chapter } from '../types';
 import { incrementApiUsage } from './firestoreService';
 import { auth } from './firebaseConfig';
 import { generateLectureScript } from './lectureGenerator';
 import { cacheLectureScript } from '../utils/db';
+import { GEMINI_API_KEY } from './private_keys';
 
 const VOICES = ['Puck', 'Charon', 'Kore', 'Fenrir', 'Zephyr'];
 
@@ -14,7 +14,7 @@ export async function generateChannelFromPrompt(
   language: 'en' | 'zh' = 'en'
 ): Promise<Channel | null> {
   try {
-    const apiKey = localStorage.getItem('gemini_api_key') || process.env.API_KEY || '';
+    const apiKey = localStorage.getItem('gemini_api_key') || GEMINI_API_KEY || process.env.API_KEY || '';
     if (!apiKey) throw new Error("API Key missing");
     const ai = new GoogleGenAI({ apiKey });
 
@@ -132,7 +132,7 @@ export async function modifyCurriculumWithAI(
   language: 'en' | 'zh' = 'en'
 ): Promise<Chapter[] | null> {
   try {
-    const apiKey = localStorage.getItem('gemini_api_key') || process.env.API_KEY || '';
+    const apiKey = localStorage.getItem('gemini_api_key') || GEMINI_API_KEY || process.env.API_KEY || '';
     if (!apiKey) throw new Error("API Key missing");
     const ai = new GoogleGenAI({ apiKey });
 
@@ -208,7 +208,7 @@ export async function generateChannelFromDocument(
   language: 'en' | 'zh' = 'en'
 ): Promise<Channel | null> {
   try {
-    const apiKey = localStorage.getItem('gemini_api_key') || process.env.API_KEY || '';
+    const apiKey = localStorage.getItem('gemini_api_key') || GEMINI_API_KEY || process.env.API_KEY || '';
     if (!apiKey) throw new Error("API Key missing");
     const ai = new GoogleGenAI({ apiKey });
 

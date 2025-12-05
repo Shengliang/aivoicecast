@@ -1,6 +1,6 @@
-
 import { GoogleGenAI, LiveServerMessage } from '@google/genai';
 import { base64ToBytes, decodeAudioData, createPcmBlob } from '../utils/audioUtils';
+import { GEMINI_API_KEY } from './private_keys';
 
 export interface LiveConnectionCallbacks {
   onOpen: () => void;
@@ -60,7 +60,7 @@ export class GeminiLiveService {
   ) {
     try {
       // Initialize AI Client here to ensure we pick up the latest API Key
-      const apiKey = localStorage.getItem('gemini_api_key') || process.env.API_KEY;
+      const apiKey = localStorage.getItem('gemini_api_key') || GEMINI_API_KEY || process.env.API_KEY;
       if (!apiKey) {
         throw new Error("API Key is missing. Please set it via the Key button in the navbar.");
       }

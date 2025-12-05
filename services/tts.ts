@@ -1,7 +1,8 @@
-// [FORCE-SYNC-v3.11.0] Timestamp: ${new Date().toISOString()}
+// [FORCE-SYNC-v3.14.1] Timestamp: ${new Date().toISOString()}
 import { GoogleGenAI } from '@google/genai';
 import { base64ToBytes, decodeAudioData } from '../utils/audioUtils';
 import { getCachedAudioBuffer, cacheAudioBuffer } from '../utils/db';
+import { GEMINI_API_KEY } from './private_keys';
 
 export type TtsErrorType = 'none' | 'quota' | 'network' | 'unknown';
 
@@ -109,7 +110,7 @@ export async function synthesizeSpeech(
       }
 
       // Initialize client inside function to pick up latest API Key
-      const apiKey = localStorage.getItem('gemini_api_key') || process.env.API_KEY || '';
+      const apiKey = localStorage.getItem('gemini_api_key') || GEMINI_API_KEY || process.env.API_KEY || '';
       if (!apiKey) {
         console.warn("API Key missing, cannot synthesize speech");
         return { buffer: null, errorType: 'unknown', errorMessage: 'API Key missing' };
