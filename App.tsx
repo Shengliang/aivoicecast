@@ -3,7 +3,7 @@ import { Channel, ViewState, UserProfile, TranscriptItem } from './types';
 import { 
   Podcast, Mic, Layout, Search, Sparkles, LogOut, 
   Settings, Menu, X, Plus, Github, Database, Cloud, Globe, 
-  Calendar, Briefcase, Users, Disc, FileText, AlertTriangle, List
+  Calendar, Briefcase, Users, Disc, FileText, AlertTriangle, List, BookOpen
 } from 'lucide-react';
 import { LiveSession } from './components/LiveSession';
 import { PodcastDetail } from './components/PodcastDetail';
@@ -38,6 +38,8 @@ import { HANDCRAFTED_CHANNELS, CATEGORY_STYLES, TOPIC_CATEGORIES } from './utils
 import { OFFLINE_CHANNEL_ID } from './utils/offlineContent';
 import { GEMINI_API_KEY } from './services/private_keys';
 
+const APP_VERSION = "v3.15.0";
+
 const UI_TEXT = {
   en: {
     appTitle: "AIVoiceCast",
@@ -55,7 +57,9 @@ const UI_TEXT = {
     mentorship: "Mentorship",
     groups: "Groups",
     recordings: "Recordings",
-    docs: "Documents"
+    docs: "Documents",
+    lectures: "Lectures",
+    podcasts: "Podcasts"
   },
   zh: {
     appTitle: "AI 播客",
@@ -73,7 +77,9 @@ const UI_TEXT = {
     mentorship: "导师",
     groups: "群组",
     recordings: "录音",
-    docs: "文档"
+    docs: "文档",
+    lectures: "课程",
+    podcasts: "播客"
   }
 };
 
@@ -189,6 +195,13 @@ const App: React.FC = () => {
     
     setChannels(unique);
   }, [userChannels, publicChannels, groupChannels]);
+
+  // Calculate Total Lectures
+  const totalLectures = useMemo(() => {
+    return channels.reduce((acc, channel) => {
+      return acc + (channel.chapters?.reduce((cAcc, ch) => cAcc + (ch.subTopics?.length || 0), 0) || 0);
+    }, 0);
+  }, [channels]);
 
   // Active channel can be from the list OR the temporary one
   const activeChannel = useMemo(() => {
@@ -364,6 +377,25 @@ const App: React.FC = () => {
             </div>
 
             <div className="flex items-center space-x-2 sm:space-x-4">
+              
+              {/* Podcast Count Badge */}
+              <div className="hidden lg:flex items-center px-3 py-1 bg-purple-900/30 border border-purple-500/30 rounded-full text-xs font-bold text-purple-300 shadow-sm">
+                <Podcast size={14} className="mr-1.5"/>
+                <span>{channels.length.toLocaleString()} {t.podcasts}</span>
+              </div>
+
+              {/* Lecture Count Badge */}
+              <div className="hidden xl:flex items-center px-3 py-1 bg-indigo-900/30 border border-indigo-500/30 rounded-full text-xs font-bold text-indigo-300 shadow-sm">
+                <BookOpen size={14} className="mr-1.5"/>
+                <span>{totalLectures.toLocaleString()} {t.lectures}</span>
+              </div>
+
+              {/* Language Switcher */}
+              <div className="flex items-center bg-slate-800 rounded-lg p-1 border border-slate-700">
+                 <button onClick={() => setLanguage('en')} className={`px-2 py-1 rounded-md text-[10px] font-bold transition-all ${language === 'en' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-400 hover:text-white'}`}>EN</button>
+                 <button onClick={() => setLanguage('zh')} className={`px-2 py-1 rounded-md text-[10px] font-bold transition-all ${language === 'zh' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-400 hover:text-white'}`}>中文</button>
+              </div>
+
               {/* Config Warning */}
               {!isFirebaseConfigured && (
                   <button onClick={() => setIsFirebaseModalOpen(true)} className="p-2 text-amber-500 bg-amber-900/20 rounded-full hover:bg-amber-900/40 border border-amber-900/50 animate-pulse" title="Missing Firebase Config">
@@ -640,16 +672,10 @@ const App: React.FC = () => {
                  <button onClick={() => setViewState('debug')} className="hover:text-indigo-400 flex items-center gap-2"><Database size={14}/> DB Inspector</button>
                  <button onClick={() => setViewState('cloud_debug')} className="hover:text-indigo-400 flex items-center gap-2"><Cloud size={14}/> Cloud Storage</button>
                  <button onClick={() => setViewState('public_debug')} className="hover:text-indigo-400 flex items-center gap-2"><Globe size={14}/> Public Channels</button>
-                 <button onClick={() => setIsFirebaseModalOpen(true)} className="hover:text-indigo-400 flex items-center gap-2"><Settings size={14}/> Config</button>
-              </div>
-              
-              <div className="flex items-center space-x-2 bg-slate-900 p-1 rounded-lg border border-slate-800">
-                 <button onClick={() => setLanguage('en')} className={`px-3 py-1 rounded text-xs font-bold ${language === 'en' ? 'bg-indigo-600 text-white' : 'text-slate-500'}`}>EN</button>
-                 <button onClick={() => setLanguage('zh')} className={`px-3 py-1 rounded text-xs font-bold ${language === 'zh' ? 'bg-indigo-600 text-white' : 'text-slate-500'}`}>中文</button>
               </div>
            </div>
            <div className="text-center text-slate-700 text-xs mt-8">
-              v3.14.1 • Powered by Gemini 2.5 Flash & Firebase
+              {channels.length} {t.podcasts} • {totalLectures} {t.lectures} • {APP_VERSION} • Powered by Gemini 2.5 Flash & Firebase
            </div>
         </footer>
       )}
