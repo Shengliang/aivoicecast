@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { GoogleGenAI } from '@google/genai';
 import { ArrowLeft, Play, Save, Folder, File, Code, Terminal, Plus, Trash2, Loader2, ChevronRight, ChevronDown, Download, Smartphone, X } from 'lucide-react';
@@ -11,18 +12,18 @@ interface CodeStudioProps {
 
 const INITIAL_PROJECT: CodeProject = {
   id: 'proj-1',
-  name: 'Interview Prep: Python',
+  name: 'Python Playground',
   lastModified: Date.now(),
   files: [
     {
       name: 'main.py',
       language: 'python',
-      content: `def reverse_string(s):\n    return s[::-1]\n\ntext = "AIVoiceCast"\nprint(f"Original: {text}")\nprint(f"Reversed: {reverse_string(text)}")`
+      content: `from utils import factorial\n\nnum = 6\nresult = factorial(num)\nprint(f"Calculating factorial of {num}...")\nprint(f"Result: {result}")\n\n# List comprehension example\nsquares = [x**2 for x in range(1, 6)]\nprint(f"First 5 squares: {squares}")`
     },
     {
       name: 'utils.py',
       language: 'python',
-      content: `def is_palindrome(s):\n    return s == s[::-1]`
+      content: `def factorial(n):\n    if n == 0:\n        return 1\n    return n * factorial(n-1)`
     }
   ]
 };
@@ -70,14 +71,15 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
             ${fileContext}
             
             Task:
-            1. Simulate the execution of the code.
+            1. Simulate the execution of the code strictly.
             2. Return ONLY the console output (stdout/stderr).
             3. If there is an error, show the traceback.
             4. Do not explain the code, just run it.
+            5. CRITICAL: For string manipulation (reversal, slicing), pay extreme attention to character-level accuracy. Do not hallucinate based on tokens. Calculate math precisely.
         `;
 
         const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash',
+            model: 'gemini-3-pro-preview', // Upgraded model for better code logic
             contents: prompt
         });
         
