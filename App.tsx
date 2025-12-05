@@ -41,7 +41,7 @@ import { HANDCRAFTED_CHANNELS, CATEGORY_STYLES, TOPIC_CATEGORIES } from './utils
 import { OFFLINE_CHANNEL_ID } from './utils/offlineContent';
 import { GEMINI_API_KEY } from './services/private_keys';
 
-const APP_VERSION = "v3.19.0";
+const APP_VERSION = "v3.19.1";
 
 const UI_TEXT = {
   en: {
@@ -529,15 +529,10 @@ const App: React.FC = () => {
                     {/* Controls Row (Search, Layout, Filter) */}
                     <div className="flex flex-col md:flex-row items-center justify-between gap-4 mb-6">
                         <div className="text-xl font-bold text-white flex items-center gap-2">
-                            {searchQuery ? (
+                            {searchQuery && (
                                 <>
                                     <Search className="text-indigo-400" />
                                     <span>Search: "{searchQuery}"</span>
-                                </>
-                            ) : (
-                                <>
-                                    <Sparkles className="text-yellow-400" />
-                                    <span>Explore Podcasts</span>
                                 </>
                             )}
                         </div>
