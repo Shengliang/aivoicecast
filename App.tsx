@@ -4,7 +4,7 @@ import { Channel, ViewState, UserProfile, TranscriptItem } from './types';
 import { 
   Podcast, Mic, Layout, Search, Sparkles, LogOut, 
   Settings, Menu, X, Plus, Github, Database, Cloud, Globe, 
-  Calendar, Briefcase, Users, Disc, FileText, AlertTriangle, List, BookOpen, ChevronDown
+  Calendar, Briefcase, Users, Disc, FileText, AlertTriangle, List, BookOpen, ChevronDown, Table as TableIcon, LayoutGrid
 } from 'lucide-react';
 import { LiveSession } from './components/LiveSession';
 import { PodcastDetail } from './components/PodcastDetail';
@@ -28,6 +28,7 @@ import { MentorBooking } from './components/MentorBooking';
 import { RecordingList } from './components/RecordingList';
 import { DocumentList } from './components/DocumentList';
 import { CalendarView } from './components/CalendarView';
+import { PodcastListTable, SortKey } from './components/PodcastListTable';
 
 import { auth, isFirebaseConfigured } from './services/firebaseConfig';
 import { 
@@ -40,7 +41,7 @@ import { HANDCRAFTED_CHANNELS, CATEGORY_STYLES, TOPIC_CATEGORIES } from './utils
 import { OFFLINE_CHANNEL_ID } from './utils/offlineContent';
 import { GEMINI_API_KEY } from './services/private_keys';
 
-const APP_VERSION = "v3.17.1";
+const APP_VERSION = "v3.19.0";
 
 const UI_TEXT = {
   en: {
@@ -100,6 +101,10 @@ const App: React.FC = () => {
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [searchQuery, setSearchQuery] = useState('');
   
+  // Layout & Sorting
+  const [layoutMode, setLayoutMode] = useState<'grid' | 'table'>('grid');
+  const [sortConfig, setSortConfig] = useState<{ key: SortKey; direction: 'asc' | 'desc' }>({ key: 'createdAt', direction: 'desc' });
+
   // Data State
   const [channels, setChannels] = useState<Channel[]>(HANDCRAFTED_CHANNELS);
   const [publicChannels, setPublicChannels] = useState<Channel[]>([]);
@@ -191,7 +196,7 @@ const App: React.FC = () => {
     const all = [...HANDCRAFTED_CHANNELS, ...userChannels, ...publicChannels, ...groupChannels];
     const unique = Array.from(new Map(all.map(item => [item.id, item])).values());
     
-    // Sort: Handcrafted first, then by date desc
+    // Sort: Handcrafted first, then by date desc (Default sort for data integrity)
     unique.sort((a, b) => {
         const isAHand = HANDCRAFTED_CHANNELS.some(h => h.id === a.id);
         const isBHand = HANDCRAFTED_CHANNELS.some(h => h.id === b.id);
@@ -319,6 +324,16 @@ const App: React.FC = () => {
       setViewState('live_session');
   };
 
+  // --- Sorting & Filtering Logic ---
+
+  const handleSort = (key: SortKey) => {
+      setSortConfig(current => ({
+          key,
+          direction: current.key === key && current.direction === 'desc' ? 'asc' : 'desc'
+      }));
+  };
+
+  // Memoized: Categorized Grid Data
   const allCategoryGroups = useMemo(() => {
       const groups: Record<string, Channel[]> = {};
       
@@ -337,6 +352,52 @@ const App: React.FC = () => {
 
       return groups;
   }, [channels]);
+
+  // Memoized: Flat Table Data
+  const tableData = useMemo(() => {
+      let data = [...channels];
+
+      // 1. Filter by Search
+      if (searchQuery) {
+          const lowerQ = searchQuery.toLowerCase();
+          data = data.filter(c => 
+              c.title.toLowerCase().includes(lowerQ) || 
+              c.description.toLowerCase().includes(lowerQ) ||
+              c.tags.some(t => t.toLowerCase().includes(lowerQ))
+          );
+      }
+
+      // 2. Filter by Category Dropdown (if not 'All')
+      if (selectedCategory !== 'All') {
+          if (selectedCategory === 'Spotlight') {
+              data = data.filter(c => HANDCRAFTED_CHANNELS.some(h => h.id === c.id));
+          } else {
+              const keywords = selectedCategory.toLowerCase().split(/[ &]/).filter(w => w.length > 3);
+              data = data.filter(c => keywords.some(k => c.tags.some(t => t.toLowerCase().includes(k)) || c.title.toLowerCase().includes(k)));
+          }
+      }
+
+      // 3. Sort
+      data.sort((a, b) => {
+          const aVal = sortConfig.key === 'voiceName' ? a.voiceName : 
+                       sortConfig.key === 'likes' ? a.likes : 
+                       sortConfig.key === 'createdAt' ? (a.createdAt || 0) : 
+                       sortConfig.key === 'author' ? a.author :
+                       a.title;
+          
+          const bVal = sortConfig.key === 'voiceName' ? b.voiceName : 
+                       sortConfig.key === 'likes' ? b.likes : 
+                       sortConfig.key === 'createdAt' ? (b.createdAt || 0) : 
+                       sortConfig.key === 'author' ? b.author :
+                       b.title;
+
+          if (aVal < bVal) return sortConfig.direction === 'asc' ? -1 : 1;
+          if (aVal > bVal) return sortConfig.direction === 'asc' ? 1 : -1;
+          return 0;
+      });
+
+      return data;
+  }, [channels, searchQuery, selectedCategory, sortConfig]);
 
   return (
     <div className="min-h-screen supports-[min-height:100dvh]:min-h-[100dvh] bg-slate-950 text-slate-100 font-sans overflow-x-hidden">
@@ -465,115 +526,138 @@ const App: React.FC = () => {
             <div className="min-h-[60vh]">
                {activeTab === 'categories' && (
                     <>
-                    {/* Search Result View */}
-                    {searchQuery ? (
-                        <div className="space-y-6">
-                            <div className="flex items-center justify-between">
-                                <h2 className="text-xl font-bold text-white flex items-center gap-2">
+                    {/* Controls Row (Search, Layout, Filter) */}
+                    <div className="flex flex-col md:flex-row items-center justify-between gap-4 mb-6">
+                        <div className="text-xl font-bold text-white flex items-center gap-2">
+                            {searchQuery ? (
+                                <>
                                     <Search className="text-indigo-400" />
-                                    <span>Search Results for "{searchQuery}"</span>
-                                </h2>
-                                <button onClick={() => setSearchQuery('')} className="text-sm text-indigo-400 hover:text-white underline">Clear Search</button>
+                                    <span>Search: "{searchQuery}"</span>
+                                </>
+                            ) : (
+                                <>
+                                    <Sparkles className="text-yellow-400" />
+                                    <span>Explore Podcasts</span>
+                                </>
+                            )}
+                        </div>
+
+                        <div className="flex items-center gap-3 w-full md:w-auto">
+                            {/* Layout Toggle */}
+                            <div className="flex bg-slate-800 p-1 rounded-lg border border-slate-700">
+                                <button 
+                                    onClick={() => setLayoutMode('grid')}
+                                    className={`p-2 rounded-md transition-colors ${layoutMode === 'grid' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-400 hover:text-white'}`}
+                                    title="Grid View"
+                                >
+                                    <LayoutGrid size={16} />
+                                </button>
+                                <button 
+                                    onClick={() => setLayoutMode('table')}
+                                    className={`p-2 rounded-md transition-colors ${layoutMode === 'table' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-400 hover:text-white'}`}
+                                    title="Table View"
+                                >
+                                    <TableIcon size={16} />
+                                </button>
                             </div>
-                            
-                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                                {channels.filter(c => 
-                                    c.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                                    c.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                                    c.tags.some(t => t.toLowerCase().includes(searchQuery.toLowerCase()))
-                                ).map(channel => (
-                                    <ChannelCard 
-                                      key={channel.id} 
-                                      channel={channel} 
-                                      handleChannelClick={(id) => { setActiveChannelId(id); setViewState('podcast_detail'); }}
-                                      handleVote={handleVote}
-                                      currentUser={currentUser}
-                                      setChannelToEdit={setChannelToEdit}
-                                      setIsSettingsModalOpen={setIsSettingsModalOpen}
-                                      globalVoice={globalVoice}
-                                      t={t}
-                                      onCommentClick={handleCommentClick}
-                                    />
-                                ))}
+
+                            {/* Filter Dropdown */}
+                            <div className="relative flex-1 md:flex-none">
+                                <select 
+                                    value={selectedCategory} 
+                                    onChange={(e) => setSelectedCategory(e.target.value)}
+                                    className="w-full appearance-none bg-slate-800 border border-slate-700 text-white pl-4 pr-10 py-2.5 rounded-lg text-sm font-bold focus:ring-2 focus:ring-indigo-500 focus:outline-none cursor-pointer hover:bg-slate-700 transition-colors shadow-sm"
+                                >
+                                    <option value="All">All Categories</option>
+                                    {Object.keys(allCategoryGroups).map(cat => (
+                                        <option key={cat} value={cat}>{cat}</option>
+                                    ))}
+                                </select>
+                                <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
                             </div>
-                            
-                            {channels.filter(c => 
-                                c.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                                c.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                                c.tags.some(t => t.toLowerCase().includes(searchQuery.toLowerCase()))
-                            ).length === 0 && (
-                                <div className="text-center py-12 text-slate-500">
-                                    <Search size={48} className="mx-auto mb-4 opacity-20" />
-                                    <p>No podcasts found matching "{searchQuery}".</p>
+                        </div>
+                    </div>
+
+                    {layoutMode === 'table' ? (
+                        <PodcastListTable 
+                            channels={tableData}
+                            onChannelClick={(id) => { setActiveChannelId(id); setViewState('podcast_detail'); }}
+                            sortConfig={sortConfig}
+                            onSort={handleSort}
+                            globalVoice={globalVoice}
+                        />
+                    ) : (
+                        // GRID MODE
+                        <div className="space-y-6">
+                            {/* Search Result Grid */}
+                            {searchQuery ? (
+                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                                    {channels.filter(c => 
+                                        c.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
+                                        c.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                                        c.tags.some(t => t.toLowerCase().includes(searchQuery.toLowerCase()))
+                                    ).map(channel => (
+                                        <ChannelCard 
+                                          key={channel.id} 
+                                          channel={channel} 
+                                          handleChannelClick={(id) => { setActiveChannelId(id); setViewState('podcast_detail'); }}
+                                          handleVote={handleVote}
+                                          currentUser={currentUser}
+                                          setChannelToEdit={setChannelToEdit}
+                                          setIsSettingsModalOpen={setIsSettingsModalOpen}
+                                          globalVoice={globalVoice}
+                                          t={t}
+                                          onCommentClick={handleCommentClick}
+                                        />
+                                    ))}
+                                </div>
+                            ) : (
+                                // Category Grouped Grid
+                                <div className="space-y-12">
+                                    {Object.entries(allCategoryGroups)
+                                      .filter(([name]) => selectedCategory === 'All' || selectedCategory === name)
+                                      .map(([groupName, groupChannels]) => {
+                                        const channels = groupChannels as Channel[];
+                                        if (!channels || channels.length === 0) return null;
+                                        
+                                        return (
+                                          <div key={groupName} className="space-y-4 animate-fade-in">
+                                            <h2 className="text-2xl font-bold text-white flex items-center gap-2">
+                                              {groupName === 'Spotlight' ? (
+                                                <>
+                                                  <Sparkles className="text-yellow-400" />
+                                                  <span>{t.featured || 'Featured'}</span>
+                                                </>
+                                              ) : (
+                                                <>
+                                                  <div className="w-2 h-8 bg-indigo-500 rounded-full"></div>
+                                                  <span>{groupName}</span>
+                                                  <span className="text-sm font-normal text-slate-500 ml-2">({channels.length})</span>
+                                                </>
+                                              )}
+                                            </h2>
+                                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                                              {channels.map(channel => (
+                                                <ChannelCard 
+                                                  key={channel.id} 
+                                                  channel={channel} 
+                                                  handleChannelClick={(id) => { setActiveChannelId(id); setViewState('podcast_detail'); }}
+                                                  handleVote={handleVote}
+                                                  currentUser={currentUser}
+                                                  setChannelToEdit={setChannelToEdit}
+                                                  setIsSettingsModalOpen={setIsSettingsModalOpen}
+                                                  globalVoice={globalVoice}
+                                                  t={t}
+                                                  onCommentClick={handleCommentClick}
+                                                />
+                                              ))}
+                                            </div>
+                                          </div>
+                                        );
+                                    })}
                                 </div>
                             )}
                         </div>
-                    ) : (
-                        // Standard Category View
-                        allCategoryGroups && (
-                            <div className="space-y-6">
-                              {/* Filter Dropdown */}
-                              <div className="flex items-center justify-end px-2">
-                                  <div className="relative">
-                                      <select 
-                                        value={selectedCategory} 
-                                        onChange={(e) => setSelectedCategory(e.target.value)}
-                                        className="appearance-none bg-slate-800 border border-slate-700 text-white pl-4 pr-10 py-2 rounded-lg text-sm font-bold focus:ring-2 focus:ring-indigo-500 focus:outline-none cursor-pointer hover:bg-slate-700 transition-colors shadow-sm"
-                                      >
-                                        <option value="All">All Categories</option>
-                                        {Object.keys(allCategoryGroups).map(cat => (
-                                            <option key={cat} value={cat}>{cat}</option>
-                                        ))}
-                                      </select>
-                                      <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-                                  </div>
-                              </div>
-
-                              <div className="space-y-12">
-                                {Object.entries(allCategoryGroups)
-                                  .filter(([name]) => selectedCategory === 'All' || selectedCategory === name)
-                                  .map(([groupName, groupChannels]) => {
-                                    const channels = groupChannels as Channel[];
-                                    if (!channels || channels.length === 0) return null;
-                                    
-                                    return (
-                                      <div key={groupName} className="space-y-4 animate-fade-in">
-                                        <h2 className="text-2xl font-bold text-white flex items-center gap-2">
-                                          {groupName === 'Spotlight' ? (
-                                            <>
-                                              <Sparkles className="text-yellow-400" />
-                                              <span>{t.featured || 'Featured'}</span>
-                                            </>
-                                          ) : (
-                                            <>
-                                              <div className="w-2 h-8 bg-indigo-500 rounded-full"></div>
-                                              <span>{groupName}</span>
-                                              <span className="text-sm font-normal text-slate-500 ml-2">({channels.length})</span>
-                                            </>
-                                          )}
-                                        </h2>
-                                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                                          {channels.map(channel => (
-                                            <ChannelCard 
-                                              key={channel.id} 
-                                              channel={channel} 
-                                              handleChannelClick={(id) => { setActiveChannelId(id); setViewState('podcast_detail'); }}
-                                              handleVote={handleVote}
-                                              currentUser={currentUser}
-                                              setChannelToEdit={setChannelToEdit}
-                                              setIsSettingsModalOpen={setIsSettingsModalOpen}
-                                              globalVoice={globalVoice}
-                                              t={t}
-                                              onCommentClick={handleCommentClick}
-                                            />
-                                          ))}
-                                        </div>
-                                      </div>
-                                    );
-                                })}
-                              </div>
-                            </div>
-                        )
                     )}
                     </>
                )}
