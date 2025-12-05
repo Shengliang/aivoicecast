@@ -1,11 +1,13 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { Channel, Booking } from '../types';
-import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, Clock, Briefcase, Plus, Video, CheckCircle, X, Users, Loader2, Mic, Play, Mail, Sparkles, ArrowLeft, Monitor, Filter, LayoutGrid, List, Languages, CloudSun, Wind, BookOpen } from 'lucide-react';
+import { Channel, Booking, TodoItem } from '../types';
+import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, Clock, Briefcase, Plus, Video, CheckCircle, X, Users, Loader2, Mic, Play, Mail, Sparkles, ArrowLeft, Monitor, Filter, LayoutGrid, List, Languages, CloudSun, Wind, BookOpen, CheckSquare, Square, Trash2 } from 'lucide-react';
 import { ChannelCard } from './ChannelCard';
 import { getUserBookings, createBooking, updateBookingInvite } from '../services/firestoreService';
 import { fetchLocalWeather, getWeatherDescription, WeatherData } from '../utils/weatherService';
 import { getLunarDate, getDailyWord, getSeasonContext, DailyWord } from '../utils/lunarService';
+import { GoogleGenAI } from '@google/genai';
+import { GEMINI_API_KEY } from '../services/private_keys';
 
 interface CalendarViewProps {
   channels: Channel[];
@@ -95,6 +97,11 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
   const [dailyWord, setDailyWord] = useState<DailyWord | null>(null);
   const [season, setSeason] = useState('');
   
+  // TODO List State
+  const [todos, setTodos] = useState<TodoItem[]>([]);
+  const [newTodo, setNewTodo] = useState('');
+  const [isPlanning, setIsPlanning] = useState(false);
+
   // View State
   const [viewMode, setViewMode] = useState<'day' | 'week' | 'month'>('day');
   const [currentPage, setCurrentPage] = useState(1);
@@ -120,19 +127,31 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
   const [recordScreen, setRecordScreen] = useState(false);
   const [recordCamera, setRecordCamera] = useState(false);
 
-  // Filter mentors (handcrafted only to ensure quality, or high rated)
+  // Filter mentors
   const mentors = useMemo(() => channels.filter(c => c.likes > 20 || !Number.isNaN(Number(c.id)) === false), [channels]);
 
-  // Fetch bookings on mount if user is logged in
+  // Load initial data
   useEffect(() => {
     if (currentUser) {
       getUserBookings(currentUser.uid, currentUser.email)
         .then(data => setBookings(data.filter(b => b.status !== 'cancelled' && b.status !== 'rejected')))
         .catch(console.error);
+        
+      // Load Todos from LocalStorage (Simulated DB for now)
+      const savedTodos = localStorage.getItem(`todos_${currentUser.uid}`);
+      if (savedTodos) setTodos(JSON.parse(savedTodos));
     } else {
         setBookings([]);
+        setTodos([]);
     }
   }, [currentUser, isBookingModalOpen]);
+
+  // Save Todos on change
+  useEffect(() => {
+      if (currentUser) {
+          localStorage.setItem(`todos_${currentUser.uid}`, JSON.stringify(todos));
+      }
+  }, [todos, currentUser]);
 
   // Fetch Weather & Daily Content
   useEffect(() => {
@@ -154,46 +173,47 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
 
   // 1. Grid Indicators
   const eventsByDate = useMemo(() => {
-    const map: Record<string, { channels: Channel[], bookings: Booking[] }> = {};
+    const map: Record<string, { channels: Channel[], bookings: Booking[], todos: TodoItem[] }> = {};
     
     channels.forEach(c => {
       if (c.createdAt) {
         const key = getDateKey(c.createdAt);
-        if (!map[key]) map[key] = { channels: [], bookings: [] };
+        if (!map[key]) map[key] = { channels: [], bookings: [], todos: [] };
         map[key].channels.push(c);
       }
     });
 
     bookings.forEach(b => {
         const key = getDateKey(b.date + 'T' + b.time); 
-        if (!map[key]) map[key] = { channels: [], bookings: [] };
+        if (!map[key]) map[key] = { channels: [], bookings: [], todos: [] };
         map[key].bookings.push(b);
     });
 
+    todos.forEach(t => {
+        const key = getDateKey(new Date(t.date));
+        if (!map[key]) map[key] = { channels: [], bookings: [], todos: [] };
+        map[key].todos.push(t);
+    });
+
     return map;
-  }, [channels, bookings]);
+  }, [channels, bookings, todos]);
 
   // 2. Filtered Events based on View Mode
   const filteredData = useMemo(() => {
       let filteredChannels = [] as Channel[];
       let filteredBookings = [] as Booking[];
+      let filteredTodos = [] as TodoItem[];
 
-      // Time Ranges
       const startDay = getStartOfDay(selectedDate);
       const startWeek = getStartOfWeek(selectedDate);
       const endWeek = getEndOfWeek(selectedDate);
       const startMonth = getStartOfMonth(displayDate); 
       const endMonth = getEndOfMonth(displayDate);
 
-      // Filter Logic
       const filterItem = (itemDate: Date) => {
-          if (viewMode === 'day') {
-              return isSameDate(itemDate, selectedDate);
-          } else if (viewMode === 'week') {
-              return itemDate >= startWeek && itemDate <= endWeek;
-          } else {
-              return itemDate >= startMonth && itemDate <= endMonth;
-          }
+          if (viewMode === 'day') return isSameDate(itemDate, selectedDate);
+          else if (viewMode === 'week') return itemDate >= startWeek && itemDate <= endWeek;
+          else return itemDate >= startMonth && itemDate <= endMonth;
       };
 
       filteredChannels = channels.filter(c => c.createdAt && filterItem(new Date(c.createdAt)));
@@ -201,12 +221,13 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
           const bDate = new Date(`${b.date}T${b.time}`);
           return filterItem(bDate);
       });
+      filteredTodos = todos.filter(t => filterItem(new Date(t.date)));
 
       filteredChannels.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
       filteredBookings.sort((a, b) => new Date(`${a.date}T${a.time}`).getTime() - new Date(`${b.date}T${b.time}`).getTime());
 
-      return { channels: filteredChannels, bookings: filteredBookings };
-  }, [channels, bookings, selectedDate, displayDate, viewMode]);
+      return { channels: filteredChannels, bookings: filteredBookings, todos: filteredTodos };
+  }, [channels, bookings, todos, selectedDate, displayDate, viewMode]);
 
   // Pagination for Channels
   const paginatedChannels = useMemo(() => {
@@ -238,7 +259,70 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
       setBookDate(date);
   };
 
-  // --- Actions ---
+  // --- TODO Logic ---
+  const handleAddTodo = () => {
+      if (!newTodo.trim() || !currentUser) return;
+      const todo: TodoItem = {
+          id: crypto.randomUUID(),
+          text: newTodo,
+          isCompleted: false,
+          date: selectedDate.toISOString() // Associate with selected day
+      };
+      setTodos([...todos, todo]);
+      setNewTodo('');
+  };
+
+  const toggleTodo = (id: string) => {
+      setTodos(prev => prev.map(t => t.id === id ? { ...t, isCompleted: !t.isCompleted } : t));
+  };
+
+  const deleteTodo = (id: string) => {
+      setTodos(prev => prev.filter(t => t.id !== id));
+  };
+
+  const handleAIPlan = async () => {
+      if (!currentUser) return;
+      const goal = prompt("What is your main goal for today? (e.g. Prepare for Google Interview)");
+      if (!goal) return;
+
+      setIsPlanning(true);
+      try {
+          const apiKey = localStorage.getItem('gemini_api_key') || GEMINI_API_KEY || process.env.API_KEY || '';
+          if (!apiKey) throw new Error("API Key Required");
+          const ai = new GoogleGenAI({ apiKey });
+          
+          const prompt = `
+            You are a productivity expert.
+            User Goal: "${goal}"
+            Date: ${selectedDate.toDateString()}
+            
+            Create 3-5 specific, actionable TODO items for today to help the user achieve this goal.
+            Return ONLY a JSON array of strings. Example: ["Review Graph Algorithms", "Mock Interview at 2pm"]
+          `;
+          
+          const response = await ai.models.generateContent({
+              model: 'gemini-2.5-flash',
+              contents: prompt,
+              config: { responseMimeType: 'application/json' }
+          });
+          
+          const items: string[] = JSON.parse(response.text || "[]");
+          const newTodos = items.map(text => ({
+              id: crypto.randomUUID(),
+              text,
+              isCompleted: false,
+              date: selectedDate.toISOString()
+          }));
+          
+          setTodos([...todos, ...newTodos]);
+      } catch(e) {
+          alert("AI Planning failed.");
+      } finally {
+          setIsPlanning(false);
+      }
+  };
+
+  // --- Other Actions ---
 
   const handleBookSession = async () => {
     if (!currentUser) return;
@@ -422,11 +506,37 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                 <button onClick={() => setViewMode('month')} className={`p-2 text-xs font-bold rounded-lg text-left pl-4 transition-all ${viewMode === 'month' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-400 hover:bg-slate-900'}`}>Monthly Grid</button>
             </div>
 
-            <div className="mt-auto bg-indigo-900/10 p-3 rounded-xl border border-indigo-500/20">
-                <p className="text-[10px] text-indigo-300 font-bold mb-1">PRO TIP</p>
-                <p className="text-[10px] text-indigo-400/80 leading-relaxed">
-                    Click any day on the grid to see the Lunar date and historical context for that specific day.
-                </p>
+            {/* TODO LIST */}
+            <div className="flex-1 overflow-y-auto mt-4 border-t border-slate-800 pt-4">
+                <div className="flex items-center justify-between mb-2">
+                    <h4 className="text-xs font-bold text-slate-400 uppercase">Tasks for Selected Day</h4>
+                    <button onClick={handleAIPlan} disabled={isPlanning} className="text-xs text-indigo-400 hover:text-white flex items-center gap-1">
+                        {isPlanning ? <Loader2 size={12} className="animate-spin"/> : <Sparkles size={12}/>} Plan
+                    </button>
+                </div>
+                
+                <div className="space-y-2">
+                    {filteredData.todos.map(todo => (
+                        <div key={todo.id} className="flex items-center gap-2 text-sm text-slate-300 group">
+                            <button onClick={() => toggleTodo(todo.id)}>
+                                {todo.isCompleted ? <CheckSquare size={16} className="text-emerald-500"/> : <Square size={16} className="text-slate-600"/>}
+                            </button>
+                            <span className={`flex-1 truncate ${todo.isCompleted ? 'line-through text-slate-600' : ''}`}>{todo.text}</span>
+                            <button onClick={() => deleteTodo(todo.id)} className="opacity-0 group-hover:opacity-100 text-slate-600 hover:text-red-400"><Trash2 size={12}/></button>
+                        </div>
+                    ))}
+                    <div className="flex items-center gap-2 mt-2">
+                        <Plus size={16} className="text-slate-600"/>
+                        <input 
+                            type="text" 
+                            value={newTodo}
+                            onChange={(e) => setNewTodo(e.target.value)}
+                            onKeyDown={(e) => e.key === 'Enter' && handleAddTodo()}
+                            placeholder="Add task..." 
+                            className="bg-transparent text-sm text-white placeholder-slate-600 outline-none w-full"
+                        />
+                    </div>
+                </div>
             </div>
         </div>
 
@@ -445,9 +555,10 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
               if (!date) return <div key={`empty-${idx}`} className="aspect-square bg-slate-900/20 rounded-xl border border-transparent"></div>;
               
               const dateKey = getDateKey(date);
-              const data = eventsByDate[dateKey] || { channels: [], bookings: [] };
+              const data = eventsByDate[dateKey] || { channels: [], bookings: [], todos: [] };
               const hasChannels = data.channels.length > 0;
               const hasBookings = data.bookings.length > 0;
+              const hasTodos = data.todos.length > 0;
               const isSelected = dateKey === getDateKey(selectedDate);
               const isToday = dateKey === getDateKey(new Date());
               const lunar = getLunarDate(date);
@@ -486,6 +597,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                   <div className="absolute bottom-1 left-1.5 flex gap-0.5">
                     {hasChannels && <div className={`w-1 h-1 rounded-full ${isSelected ? 'bg-white' : 'bg-indigo-400'}`}></div>}
                     {hasBookings && <div className={`w-1 h-1 rounded-full ${isSelected ? 'bg-purple-200' : 'bg-purple-500'}`}></div>}
+                    {hasTodos && <div className={`w-1 h-1 rounded-full ${isSelected ? 'bg-emerald-200' : 'bg-emerald-500'}`}></div>}
                   </div>
                 </button>
               );

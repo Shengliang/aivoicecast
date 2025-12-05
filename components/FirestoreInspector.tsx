@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { getDebugCollectionDocs, seedDatabase } from '../services/firestoreService';
 import { ArrowLeft, RefreshCw, Database, Table, Code, Search, UploadCloud } from 'lucide-react';
@@ -65,7 +64,7 @@ export const FirestoreInspector: React.FC<FirestoreInspectorProps> = ({ onBack }
   };
 
   // Extract all unique keys for table headers
-  const allKeys = Array.from(new Set(docs.flatMap(d => Object.keys(d))));
+  const allKeys = Array.from(new Set(docs.flatMap(d => Object.keys(d)))) as string[];
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col h-screen overflow-hidden">

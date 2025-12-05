@@ -83,9 +83,11 @@ export interface CommunityDiscussion {
   createdAt: number;
   segmentIndex?: number; // If linked to a specific segment
   updatedAt?: number;
+  title?: string; // Editable title for docs
+  isManual?: boolean; // Created manually via editor
 }
 
-export type ViewState = 'directory' | 'podcast_detail' | 'live_session' | 'create_channel' | 'debug' | 'cloud_debug' | 'public_debug';
+export type ViewState = 'directory' | 'podcast_detail' | 'live_session' | 'create_channel' | 'debug' | 'cloud_debug' | 'public_debug' | 'mission' | 'code_studio';
 
 export interface AudioState {
   isConnected: boolean;
@@ -151,4 +153,24 @@ export interface RecordingSession {
   mediaUrl: string;     // audio or video
   mediaType: string;    // mime type
   transcriptUrl: string;
+}
+
+export interface TodoItem {
+  id: string;
+  text: string;
+  isCompleted: boolean;
+  date: string; // YYYY-MM-DD
+}
+
+export interface CodeFile {
+  name: string;
+  language: 'python' | 'javascript' | 'typescript' | 'html' | 'css';
+  content: string;
+}
+
+export interface CodeProject {
+  id: string;
+  name: string;
+  files: CodeFile[];
+  lastModified: number;
 }

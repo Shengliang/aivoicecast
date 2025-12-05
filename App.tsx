@@ -4,7 +4,7 @@ import { Channel, ViewState, UserProfile, TranscriptItem } from './types';
 import { 
   Podcast, Mic, Layout, Search, Sparkles, LogOut, 
   Settings, Menu, X, Plus, Github, Database, Cloud, Globe, 
-  Calendar, Briefcase, Users, Disc, FileText, AlertTriangle, List, BookOpen, ChevronDown, Table as TableIcon, LayoutGrid
+  Calendar, Briefcase, Users, Disc, FileText, AlertTriangle, List, BookOpen, ChevronDown, Table as TableIcon, LayoutGrid, Rocket, Code
 } from 'lucide-react';
 import { LiveSession } from './components/LiveSession';
 import { PodcastDetail } from './components/PodcastDetail';
@@ -29,6 +29,8 @@ import { RecordingList } from './components/RecordingList';
 import { DocumentList } from './components/DocumentList';
 import { CalendarView } from './components/CalendarView';
 import { PodcastListTable, SortKey } from './components/PodcastListTable';
+import { MissionManifesto } from './components/MissionManifesto';
+import { CodeStudio } from './components/CodeStudio';
 
 import { auth, isFirebaseConfigured } from './services/firebaseConfig';
 import { 
@@ -41,7 +43,7 @@ import { HANDCRAFTED_CHANNELS, CATEGORY_STYLES, TOPIC_CATEGORIES } from './utils
 import { OFFLINE_CHANNEL_ID } from './utils/offlineContent';
 import { GEMINI_API_KEY } from './services/private_keys';
 
-const APP_VERSION = "v3.19.1";
+const APP_VERSION = "v3.20.0";
 
 const UI_TEXT = {
   en: {
@@ -62,7 +64,9 @@ const UI_TEXT = {
     recordings: "Recordings",
     docs: "Documents",
     lectures: "Lectures",
-    podcasts: "Podcasts"
+    podcasts: "Podcasts",
+    mission: "Mission",
+    code: "Code Studio"
   },
   zh: {
     appTitle: "AI 播客",
@@ -82,7 +86,9 @@ const UI_TEXT = {
     recordings: "录音",
     docs: "文档",
     lectures: "课程",
-    podcasts: "播客"
+    podcasts: "播客",
+    mission: "使命",
+    code: "代码工作室"
   }
 };
 
@@ -435,17 +441,21 @@ const App: React.FC = () => {
 
             <div className="flex items-center space-x-2 sm:space-x-4">
               
-              {/* Podcast Count Badge - Visible on tablet/desktop */}
-              <div className="hidden sm:flex items-center px-3 py-1 bg-purple-900/30 border border-purple-500/30 rounded-full text-xs font-bold text-purple-300 shadow-sm">
-                <Podcast size={14} className="mr-1.5"/>
-                <span>{channels.length.toLocaleString()} {t.podcasts}</span>
-              </div>
+              <button 
+                onClick={() => setViewState('mission')} 
+                className="hidden lg:flex items-center space-x-2 px-3 py-1.5 bg-slate-800/50 hover:bg-indigo-900/30 text-indigo-300 text-xs font-bold rounded-lg transition-colors border border-indigo-500/20"
+              >
+                <Rocket size={14}/>
+                <span>{t.mission}</span>
+              </button>
 
-              {/* Lecture Count Badge - Visible on desktop */}
-              <div className="hidden md:flex items-center px-3 py-1 bg-indigo-900/30 border border-indigo-500/30 rounded-full text-xs font-bold text-indigo-300 shadow-sm">
-                <BookOpen size={14} className="mr-1.5"/>
-                <span>{totalLectures.toLocaleString()} {t.lectures}</span>
-              </div>
+              <button 
+                onClick={() => setViewState('code_studio')} 
+                className="hidden lg:flex items-center space-x-2 px-3 py-1.5 bg-slate-800/50 hover:bg-emerald-900/30 text-emerald-400 text-xs font-bold rounded-lg transition-colors border border-emerald-500/20"
+              >
+                <Code size={14}/>
+                <span>{t.code}</span>
+              </button>
 
               {/* Language Switcher */}
               <div className="flex items-center bg-slate-800 rounded-lg p-1 border border-slate-700">
@@ -498,6 +508,9 @@ const App: React.FC = () => {
 
       {/* Main Content Switch */}
       <div className="flex-1 overflow-y-auto">
+        {viewState === 'mission' && <MissionManifesto onBack={() => setViewState('directory')} />}
+        {viewState === 'code_studio' && <CodeStudio onBack={() => setViewState('directory')} currentUser={currentUser} />}
+        
         {viewState === 'directory' && (
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 animate-fade-in">
             
@@ -506,6 +519,7 @@ const App: React.FC = () => {
                {[
                  { id: 'categories', label: t.categories, icon: Layout },
                  { id: 'calendar', label: t.calendar, icon: Calendar },
+                 { id: 'code', label: t.code, icon: Code },
                  { id: 'mentorship', label: t.mentorship, icon: Briefcase },
                  { id: 'groups', label: t.groups, icon: Users },
                  { id: 'recordings', label: t.recordings, icon: Disc },
@@ -513,7 +527,10 @@ const App: React.FC = () => {
                ].map(tab => (
                  <button
                    key={tab.id}
-                   onClick={() => setActiveTab(tab.id)}
+                   onClick={() => {
+                       if (tab.id === 'code') setViewState('code_studio');
+                       else setActiveTab(tab.id);
+                   }}
                    className={`flex items-center space-x-2 px-4 py-2 rounded-full text-sm font-bold whitespace-nowrap transition-all ${activeTab === tab.id ? 'bg-white text-slate-900 shadow-md' : 'bg-slate-800/50 text-slate-400 hover:bg-slate-800 hover:text-white'}`}
                  >
                    <tab.icon size={16} />
@@ -765,8 +782,11 @@ const App: React.FC = () => {
                     <Podcast className="text-indigo-500"/> AIVoiceCast
                  </h3>
                  <p className="text-slate-500 text-sm mt-2 max-w-xs">
-                    The world's first interactive AI podcast platform. Learn, listen, and converse with generated personas.
+                    The world's first interactive AI-Human community platform. 
                  </p>
+                 <button onClick={() => setViewState('mission')} className="mt-2 text-xs text-indigo-400 hover:text-indigo-300 font-bold uppercase tracking-wider">
+                    Our Mission
+                 </button>
               </div>
               
               <div className="flex flex-wrap justify-center gap-6 text-sm text-slate-400">
