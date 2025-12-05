@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { GoogleGenAI } from '@google/genai';
-import { ArrowLeft, Play, Save, Folder, File, Code, Terminal, Plus, Trash2, Loader2, ChevronRight, ChevronDown, Download, Smartphone, X, MessageSquare, CheckCircle, FileCode, FileJson, FileType, Search, Coffee, Hash, Eye } from 'lucide-react';
+import { ArrowLeft, Play, Save, Folder, File, Code, Terminal, Plus, Trash2, Loader2, ChevronRight, ChevronDown, Download, Smartphone, X, MessageSquare, CheckCircle, FileCode, FileJson, FileType, Search, Coffee, Hash, Eye, CloudUpload } from 'lucide-react';
 import { GEMINI_API_KEY } from '../services/private_keys';
 import { CodeProject, CodeFile } from '../types';
 import { MarkdownView } from './MarkdownView';
+import { saveCodeProject } from '../services/firestoreService';
 
 interface CodeStudioProps {
   onBack: () => void;
@@ -526,6 +527,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
   const [expandedFolders, setExpandedFolders] = useState<Record<string, boolean>>({});
   const [activeTemplate, setActiveTemplate] = useState('all');
   const [viewMode, setViewMode] = useState<'code' | 'review'>('code');
+  const [isSaving, setIsSaving] = useState(false);
   
   // Refs for scrolling sync
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -540,6 +542,15 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
       uniqueFolders.forEach(f => allFolders[f] = true);
       setExpandedFolders(allFolders);
   }, [project.files]);
+
+  // Load project review if available
+  useEffect(() => {
+      if (project.review) {
+          setOutput(project.review);
+      } else {
+          setOutput('');
+      }
+  }, [project]);
 
   const activeFile = project.files[activeFileIndex];
 
@@ -621,12 +632,32 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
             contents: prompt
         });
         
-        setOutput(response.text || "No feedback generated.");
+        const reviewText = response.text || "No feedback generated.";
+        setOutput(reviewText);
+        // Persist review in local project state (not saved to cloud yet unless saved)
+        setProject(prev => ({ ...prev, review: reviewText }));
+        
     } catch (e: any) {
         setOutput(`Review Error: ${e.message}`);
     } finally {
         setIsReviewing(false);
     }
+  };
+
+  const handleSaveToCloud = async () => {
+      if (!currentUser) return alert("Please sign in to save projects.");
+      setIsSaving(true);
+      try {
+          // Save both code and review
+          const projectToSave = { ...project, review: output };
+          await saveCodeProject(projectToSave);
+          alert("Project saved to Cloud!");
+      } catch (e) {
+          console.error(e);
+          alert("Failed to save project.");
+      } finally {
+          setIsSaving(false);
+      }
   };
 
   const handleAddFile = () => {
@@ -639,7 +670,9 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
       setActiveFileIndex(newFiles.length - 1);
       if (name.includes('/')) {
           const folderName = name.split('/')[0];
-          setExpandedFolders((prev: Record<string, boolean>) => ({...prev, [folderName]: true}));
+          if (folderName) {
+             setExpandedFolders(prev => ({...prev, [folderName]: true}));
+          }
       }
   };
 
@@ -654,7 +687,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
   };
 
   const toggleFolder = (folderName: string) => {
-      setExpandedFolders((prev: Record<string, boolean>) => ({...prev, [folderName]: !prev[folderName]}));
+      setExpandedFolders(prev => ({...prev, [folderName]: !prev[folderName]}));
   };
 
   // Group files by folder
@@ -719,8 +752,14 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
                 {isReviewing ? <Loader2 size={14} className="animate-spin"/> : <Search size={14} />}
                 <span>{isReviewing ? 'ANALYZING...' : 'REVIEW CODE'}</span>
              </button>
-             <button className="p-1.5 hover:bg-[#3d3d3d] rounded text-gray-400 hover:text-white" title="Save Project (Local)">
-                <Save size={16} />
+             <button 
+                onClick={handleSaveToCloud}
+                disabled={isSaving}
+                className="flex items-center gap-2 px-3 py-1.5 bg-[#3d3d3d] hover:bg-[#4d4d4d] text-white rounded-sm text-xs font-bold transition-colors border border-gray-600"
+                title="Save Project to Firebase"
+             >
+                {isSaving ? <Loader2 size={14} className="animate-spin" /> : <CloudUpload size={14} />}
+                <span className="hidden sm:inline">SAVE</span>
              </button>
          </div>
       </div>
@@ -806,11 +845,11 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
 
               {viewMode === 'code' ? (
                   /* Code Editor View */
-                  <div className="flex-1 relative group flex">
+                  <div className="flex-1 relative group flex h-full">
                       {/* Line Numbers Gutter */}
                       <div 
                         ref={lineNumbersRef}
-                        className="w-12 bg-[#1e1e1e] text-right pr-3 pt-4 text-slate-600 font-mono text-xs select-none border-r border-[#2d2d2d] overflow-hidden"
+                        className="w-12 bg-[#1e1e1e] text-right pr-3 pt-4 text-slate-600 font-mono text-xs select-none border-r border-[#2d2d2d] overflow-hidden h-full"
                       >
                           {Array.from({length: lineNumbers}).map((_, i) => (
                               <div key={i} className="leading-relaxed">{i + 1}</div>
@@ -818,13 +857,13 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
                       </div>
 
                       {/* Text Editor */}
-                      <div className="flex-1 relative">
+                      <div className="flex-1 relative h-full">
                           <textarea 
                               ref={textareaRef}
                               value={activeFile.content}
                               onChange={(e) => handleCodeChange(e.target.value)}
                               onScroll={handleScroll}
-                              className="w-full h-full bg-[#1e1e1e] text-gray-200 p-4 font-mono text-sm outline-none resize-none leading-relaxed whitespace-pre"
+                              className="w-full h-full bg-[#1e1e1e] text-gray-200 p-4 font-mono text-sm outline-none resize-none leading-relaxed whitespace-pre overflow-auto"
                               spellCheck={false}
                               autoCapitalize="off"
                               autoComplete="off"

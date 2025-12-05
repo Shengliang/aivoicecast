@@ -1,7 +1,7 @@
 // [FORCE-SYNC-v3.16.0] Timestamp: ${new Date().toISOString()}
 import { db, auth, storage } from './firebaseConfig';
 import firebase from 'firebase/compat/app';
-import { Channel, Group, UserProfile, Invitation, GeneratedLecture, CommunityDiscussion, Comment, Booking, RecordingSession, TranscriptItem } from '../types';
+import { Channel, Group, UserProfile, Invitation, GeneratedLecture, CommunityDiscussion, Comment, Booking, RecordingSession, TranscriptItem, CodeProject } from '../types';
 import { HANDCRAFTED_CHANNELS } from '../utils/initialData';
 import { SPOTLIGHT_DATA } from '../utils/spotlightContent';
 import { OFFLINE_LECTURES, OFFLINE_CHANNEL_ID } from '../utils/offlineContent';
@@ -776,4 +776,33 @@ export async function deleteBookingRecording(bookingId: string, recordingUrl?: s
   }
   
   logUserActivity('delete_recording', { bookingId });
+}
+
+// --- CODE PROJECTS ---
+
+export async function saveCodeProject(project: CodeProject): Promise<void> {
+  const user = auth.currentUser;
+  if (!user) throw new Error("Must be logged in to save project");
+  
+  const projectData = {
+    ...project,
+    ownerId: user.uid,
+    lastModified: Date.now()
+  };
+  
+  // Use project ID as document ID for consistency
+  await db.collection('code_projects').doc(project.id).set(sanitizeData(projectData), { merge: true });
+  logUserActivity('save_code_project', { projectId: project.id, name: project.name });
+}
+
+export async function getUserCodeProjects(uid: string): Promise<CodeProject[]> {
+  try {
+    const snap = await db.collection('code_projects')
+      .where("ownerId", "==", uid)
+      .get();
+    return snap.docs.map(d => d.data() as CodeProject).sort((a, b) => b.lastModified - a.lastModified);
+  } catch(e) {
+    console.warn("Failed to get code projects", e);
+    return [];
+  }
 }

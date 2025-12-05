@@ -173,4 +173,6 @@ export interface CodeProject {
   name: string;
   files: CodeFile[];
   lastModified: number;
+  review?: string;
+  ownerId?: string;
 }
