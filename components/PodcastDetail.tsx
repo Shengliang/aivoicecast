@@ -464,6 +464,50 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
     checkStatus();
   }, [activeLecture, teacherVoice, studentVoice]);
 
+  const handleGenerateAudio = async () => {
+    if (!activeLecture) return;
+    setIsGenerating(true);
+    const total = activeLecture.sections.length;
+    
+    // Ensure AudioContext is ready (needed for decoding checks inside synthesizeSpeech)
+    const ctx = getAudioContext();
+    if (ctx.state === 'suspended') {
+        try { await ctx.resume(); } catch(e) {}
+    }
+
+    for (let i = 0; i < total; i++) {
+        setGenerationProgress({ current: i + 1, total });
+        const section = activeLecture.sections[i];
+        const voice = section.speaker === 'Teacher' ? teacherVoice : studentVoice;
+        
+        // synthesizeSpeech handles caching internally (memory + IDB)
+        const result = await synthesizeSpeech(section.text, voice, ctx);
+        
+        if (result.errorType === 'quota') {
+            alert(t.quotaError);
+            setUseSystemVoice(true);
+            setIsGenerating(false);
+            setGenerationProgress(null);
+            return;
+        }
+        
+        if (result.errorType === 'network' || result.errorType === 'unknown') {
+             console.error("TTS Error details:", result.errorMessage);
+             if (!confirm(`${t.networkError}\n\nDetails: ${result.errorMessage || 'Unknown Error'}`)) {
+                 setIsGenerating(false);
+                 setGenerationProgress(null);
+                 return;
+             }
+             // Retry index
+             i--;
+        }
+    }
+    
+    setIsGenerating(false);
+    setGenerationProgress(null);
+    setIsAudioReady(true);
+  };
+
   const handleRegenerateLecture = async () => {
     if (!activeLecture) return;
     if (!isMember && !isOwner) {
@@ -1331,12 +1375,36 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
                             <span className="hidden sm:inline">{t.prev}</span>
                         </button>
 
-                        <button 
-                            onClick={togglePlayback}
-                            className={`w-16 h-16 rounded-full flex items-center justify-center transition-all shadow-lg ${isPlaying ? 'bg-slate-800 text-red-400 hover:bg-slate-700' : 'bg-indigo-600 text-white hover:bg-indigo-500 hover:scale-105'}`}
-                        >
-                            {isPlaying ? (isBuffering ? <Loader2 className="animate-spin" size={28}/> : <Pause fill="currentColor" size={28} />) : <Play fill="currentColor" size={28} />}
-                        </button>
+                        <div className="flex flex-col items-center gap-2">
+                            {!useSystemVoice && !isAudioReady && !isPlaying ? (
+                                <button
+                                    onClick={handleGenerateAudio}
+                                    disabled={isGenerating}
+                                    className="w-16 h-16 rounded-full flex items-center justify-center transition-all shadow-lg bg-indigo-600 text-white hover:bg-indigo-500 hover:scale-105 disabled:opacity-50 disabled:scale-100"
+                                    title={t.preGenDesc}
+                                >
+                                    {isGenerating ? (
+                                        <div className="flex flex-col items-center">
+                                            <Loader2 className="animate-spin mb-1" size={20} />
+                                            <span className="text-[10px] font-bold">{generationProgress ? `${Math.round((generationProgress.current / generationProgress.total) * 100)}%` : '...'}</span>
+                                        </div>
+                                    ) : (
+                                        <Zap fill="currentColor" size={28} />
+                                    )}
+                                </button>
+                            ) : (
+                                <button 
+                                    onClick={togglePlayback}
+                                    className={`w-16 h-16 rounded-full flex items-center justify-center transition-all shadow-lg ${isPlaying ? 'bg-slate-800 text-red-400 hover:bg-slate-700' : 'bg-emerald-600 text-white hover:bg-emerald-500 hover:scale-105'}`}
+                                >
+                                    {isPlaying ? (isBuffering ? <Loader2 className="animate-spin" size={28}/> : <Pause fill="currentColor" size={28} />) : <Play fill="currentColor" size={28} />}
+                                </button>
+                            )}
+                            
+                            {!isPlaying && !useSystemVoice && !isAudioReady && !isGenerating && (
+                                <span className="text-xs text-indigo-400 font-medium animate-pulse">Generate Audio First</span>
+                            )}
+                        </div>
 
                         <button onClick={() => navigateLesson('next')} disabled={currentLectureIndex === -1 || currentLectureIndex >= flatCurriculum.length - 1} className="text-slate-400 hover:text-white disabled:opacity-30 flex items-center space-x-2 text-sm font-bold transition-colors">
                             <span className="hidden sm:inline">{t.next}</span>
