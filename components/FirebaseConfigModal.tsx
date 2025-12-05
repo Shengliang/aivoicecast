@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { X, Save, Database, AlertTriangle, CheckCircle, Flame } from 'lucide-react';
+import { X, Save, Database, AlertTriangle, CheckCircle, Flame, ExternalLink, ShieldAlert } from 'lucide-react';
 
 interface FirebaseConfigModalProps {
   isOpen: boolean;
@@ -60,9 +60,37 @@ export const FirebaseConfigModal: React.FC<FirebaseConfigModalProps> = ({ isOpen
           <div className="bg-amber-900/10 border border-amber-900/30 p-4 rounded-lg flex items-start gap-3">
              <AlertTriangle className="text-amber-500 shrink-0 mt-0.5" size={18} />
              <div className="text-sm text-amber-200/80">
-                <p className="font-bold mb-1">Missing Environment Variables</p>
-                <p>The app is running in "Safe Mode". To enable Auth, Database, and Storage, you must provide your Firebase configuration.</p>
+                <p className="font-bold mb-1">Setup Required</p>
+                <p>The app is running in "Safe Mode". To enable Sign In, Database, and Cloud Storage, you must provide your Firebase configuration.</p>
              </div>
+          </div>
+
+          <div className="bg-red-900/10 border border-red-900/30 p-4 rounded-lg flex items-start gap-3">
+             <ShieldAlert className="text-red-500 shrink-0 mt-0.5" size={18} />
+             <div className="text-sm text-red-200/80">
+                <p className="font-bold mb-1">Was your key leaked?</p>
+                <p className="mb-2">If GitHub alerted you about a leaked key, you must <strong>revoke/delete</strong> it immediately in the Google Cloud Console.</p>
+                <a 
+                  href="https://console.cloud.google.com/apis/credentials" 
+                  target="_blank" 
+                  rel="noreferrer" 
+                  className="text-red-300 underline hover:text-white inline-flex items-center gap-1 font-bold"
+                >
+                  Manage Credentials <ExternalLink size={10}/>
+                </a>
+             </div>
+          </div>
+
+          <div className="space-y-2 bg-slate-800/50 p-4 rounded-lg border border-slate-700">
+             <h4 className="text-xs font-bold text-slate-300 uppercase mb-2">How to get your config:</h4>
+             <ol className="text-xs text-slate-400 space-y-2 list-decimal pl-4">
+                <li>Go to the <a href="https://console.firebase.google.com/" target="_blank" rel="noreferrer" className="text-indigo-400 hover:underline inline-flex items-center gap-1">Firebase Console <ExternalLink size={10}/></a>.</li>
+                <li>Open your project -> <strong>Project Settings</strong> (Gear Icon).</li>
+                <li>Scroll down to <strong>"Your apps"</strong>.</li>
+                <li>Select the <strong>Web (&lt;/&gt;)</strong> app (or create one).</li>
+                <li>Copy the <code>const firebaseConfig = &#123; ... &#125;;</code> object.</li>
+                <li>Paste it below.</li>
+             </ol>
           </div>
 
           <div className="space-y-2">
@@ -72,11 +100,11 @@ export const FirebaseConfigModal: React.FC<FirebaseConfigModalProps> = ({ isOpen
             <textarea
               value={configJson}
               onChange={(e) => { setConfigJson(e.target.value); setError(null); }}
-              placeholder={'{ "apiKey": "...", "authDomain": "...", "projectId": "..." }'}
-              className="w-full bg-slate-800 border border-slate-700 rounded-lg p-4 text-xs font-mono text-indigo-100 focus:ring-2 focus:ring-indigo-500 outline-none h-48"
+              placeholder={'{ "apiKey": "AIza...", "authDomain": "...", "projectId": "..." }'}
+              className="w-full bg-slate-800 border border-slate-700 rounded-lg p-4 text-xs font-mono text-indigo-100 focus:ring-2 focus:ring-indigo-500 outline-none h-32"
             />
             <p className="text-[10px] text-slate-500 text-right">
-                Values are saved to LocalStorage. Never paste secrets on shared computers.
+                Values are saved to LocalStorage.
             </p>
           </div>
 

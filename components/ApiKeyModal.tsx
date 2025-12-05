@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { X, Key, Save, Trash2, Eye, EyeOff, CheckCircle, AlertCircle } from 'lucide-react';
+import { X, Key, Save, Trash2, Eye, EyeOff, CheckCircle, AlertCircle, ExternalLink } from 'lucide-react';
 
 interface ApiKeyModalProps {
   isOpen: boolean;
@@ -49,7 +49,7 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose, onKey
         <div className="p-6 border-b border-slate-800 flex justify-between items-center bg-slate-900">
           <h2 className="text-xl font-bold text-white flex items-center space-x-2">
             <Key className="text-indigo-400 w-5 h-5" />
-            <span>Set API Key</span>
+            <span>Set Gemini API Key</span>
           </h2>
           <button onClick={onClose} className="text-slate-400 hover:text-white transition-colors">
             <X size={24} />
@@ -58,8 +58,16 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose, onKey
 
         <div className="p-6 space-y-6">
           <p className="text-sm text-slate-400">
-            To use this app, you need a Google Gemini API Key. The key is stored locally in your browser and never sent to our servers.
+            To use the AI features (Chat, Live API, TTS), you need a Google Gemini API Key. The key is stored locally in your browser.
           </p>
+
+          <div className="bg-red-900/10 border border-red-900/30 p-3 rounded-lg flex items-start gap-2">
+             <AlertCircle className="text-red-500 shrink-0 mt-0.5" size={16} />
+             <div className="text-xs text-red-200/80">
+                <p className="font-bold mb-1">Leaked Key?</p>
+                <p>If GitHub reported your key as leaked, delete it in Google AI Studio immediately.</p>
+             </div>
+          </div>
 
           <div className="space-y-2">
             <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider">
@@ -120,9 +128,9 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose, onKey
               href="https://aistudio.google.com/app/apikey" 
               target="_blank" 
               rel="noreferrer"
-              className="text-xs text-indigo-400 hover:text-indigo-300 underline"
+              className="text-xs text-indigo-400 hover:text-indigo-300 underline inline-flex items-center gap-1"
             >
-              Get a key from Google AI Studio
+              Get a new key from Google AI Studio <ExternalLink size={10} />
             </a>
           </div>
 

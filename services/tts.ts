@@ -1,5 +1,4 @@
-
-// [FORCE-SYNC-v3.0.4] Timestamp: ${new Date().toISOString()}
+// [FORCE-SYNC-v3.11.0] Timestamp: ${new Date().toISOString()}
 import { GoogleGenAI } from '@google/genai';
 import { base64ToBytes, decodeAudioData } from '../utils/audioUtils';
 import { getCachedAudioBuffer, cacheAudioBuffer } from '../utils/db';

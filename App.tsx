@@ -126,21 +126,23 @@ const App: React.FC = () => {
     const key = localStorage.getItem('gemini_api_key');
     setHasApiKey(!!key);
 
-    const unsubscribeAuth = auth.onAuthStateChanged(async (user) => {
-      setCurrentUser(user);
-      if (user) {
-        const profile = await getUserProfile(user.uid);
-        setUserProfile(profile);
-      } else {
-        setUserProfile(null);
-        setGroupChannels([]);
-      }
-    });
+    let unsubscribeAuth = () => {};
 
-    // Check Firebase Config
-    if (!isFirebaseConfigured) {
-        // Optional: Auto-open modal or just show a warning icon
-        // setIsFirebaseModalOpen(true);
+    // Only attempt to connect auth if we have a valid config, otherwise we risk a crash
+    if (isFirebaseConfigured) {
+        unsubscribeAuth = auth.onAuthStateChanged(async (user) => {
+          setCurrentUser(user);
+          if (user) {
+            const profile = await getUserProfile(user.uid);
+            setUserProfile(profile);
+          } else {
+            setUserProfile(null);
+            setGroupChannels([]);
+          }
+        });
+    } else {
+        // Auto-open modal if configuration is missing
+        setIsFirebaseModalOpen(true);
     }
 
     return () => unsubscribeAuth();
@@ -594,7 +596,7 @@ const App: React.FC = () => {
               </div>
            </div>
            <div className="text-center text-slate-700 text-xs mt-8">
-              v3.10.2 • Powered by Gemini 2.5 Flash & Firebase
+              v3.11.0 • Powered by Gemini 2.5 Flash & Firebase
            </div>
         </footer>
       )}

@@ -1349,7 +1349,7 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
                     {activeLecture.sections.map((section, idx) => (
                         <div 
                             key={idx} 
-                            ref={el => sectionRefs.current[idx] = el}
+                            ref={(el) => { sectionRefs.current[idx] = el; }}
                             className={`p-4 rounded-xl transition-all duration-500 ${currentSectionIndex === idx ? 'bg-indigo-900/40 border border-indigo-500/50 shadow-lg scale-[1.01]' : 'hover:bg-slate-800/30 border border-transparent'}`}
                         >
                             <div className="flex items-start space-x-4">
