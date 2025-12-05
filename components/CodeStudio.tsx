@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { GoogleGenAI } from '@google/genai';
 import { ArrowLeft, Play, Save, Folder, File, Code, Terminal, Plus, Trash2, Loader2, ChevronRight, ChevronDown, Download, Smartphone, X, MessageSquare, CheckCircle, FileCode, FileJson, FileType, Search, Coffee, Hash, Eye, CloudUpload, PenTool, Edit3 } from 'lucide-react';
@@ -534,7 +535,9 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
       // Auto expand folders
       const allFolders: Record<string, boolean> = {};
       const uniqueFolders = new Set(project.files.map(f => f.name.includes('/') ? f.name.split('/')[0] : 'root'));
-      uniqueFolders.forEach(f => allFolders[f] = true);
+      uniqueFolders.forEach(f => {
+          if (typeof f === 'string') allFolders[f] = true;
+      });
       setExpandedFolders(allFolders);
   }, [project.files]);
 
@@ -701,7 +704,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
   };
 
   const toggleFolder = (folderName: string) => {
-      setExpandedFolders((prev: Record<string, boolean>) => ({...prev, [folderName]: !prev[folderName]}));
+      setExpandedFolders(prev => ({...prev, [folderName]: !prev[folderName]}));
   };
 
   // Group files by folder

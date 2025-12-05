@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Channel, GeneratedLecture, Chapter, SubTopic, TranscriptItem } from '../types';
-import { ArrowLeft, Play, Pause, BookOpen, MessageCircle, Sparkles, User, GraduationCap, Loader2, ChevronDown, ChevronRight, SkipForward, SkipBack, Settings, X, Mic, Download, RefreshCw, Square, MoreVertical, Edit, Lock, Zap, ToggleLeft, ToggleRight, Users, Check, AlertTriangle, Activity, MessageSquare, FileText, Code, Video, Monitor, PlusCircle, Bot, ExternalLink, ChevronLeft, Menu, List, PanelLeftClose, PanelLeftOpen, CornerDownRight, Trash2, FileDown, Printer, FileJson, HelpCircle } from 'lucide-react';
+import { ArrowLeft, Play, Pause, BookOpen, MessageCircle, Sparkles, User, GraduationCap, Loader2, ChevronDown, ChevronRight, SkipForward, SkipBack, Settings, X, Mic, Download, RefreshCw, Square, MoreVertical, Edit, Lock, Zap, ToggleLeft, ToggleRight, Users, Check, AlertTriangle, Activity, MessageSquare, FileText, Code, Video, Monitor, PlusCircle, Bot, ExternalLink, ChevronLeft, Menu, List, PanelLeftClose, PanelLeftOpen, CornerDownRight, Trash2, FileDown, Printer, FileJson, HelpCircle, ListMusic, Copy } from 'lucide-react';
 import { generateLectureScript } from '../services/lectureGenerator';
 import { generateCurriculum } from '../services/curriculumGenerator';
 import { synthesizeSpeech, cleanTextForTTS, checkAudioCache, clearAudioCache } from '../services/tts';
@@ -25,7 +25,12 @@ interface PodcastDetailProps {
 
 const GEMINI_VOICES = ['Puck', 'Charon', 'Kore', 'Fenrir', 'Zephyr'];
 const BLOCKLIST = ['Fred', 'Trinoids', 'Albert', 'Bad News', 'Bells', 'Cellos', 'Good News', 'Organ', 'Zarvox', 'Deranged', 'Hysterical', 'Boing', 'Bubbles', 'Bahh', 'Whisper', 'Wobble'];
-const QUALITY_KEYWORDS = ['Google', 'Premium', 'Enhanced', 'Natural', 'Siri', 'Neural', 'Daniel', 'Samantha', 'Ting-Ting', 'Meijia'];
+// Updated to include common iOS high-quality internal names
+const QUALITY_KEYWORDS = [
+    'Google', 'Premium', 'Enhanced', 'Natural', 'Siri', 'Neural', 
+    'Daniel', 'Samantha', 'Karen', 'Rishi', 'Moira', 'Tessa', 'Arthur', 'Martha', 
+    'Ting-Ting', 'Meijia', 'Sin-ji'
+];
 
 const UI_TEXT = {
   en: {
@@ -181,6 +186,9 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
   const [studentVoice, setStudentVoice] = useState('Puck');
   const [useSystemVoice, setUseSystemVoice] = useState(true);
   const [systemVoices, setSystemVoices] = useState<SpeechSynthesisVoice[]>([]);
+  const [allRawVoices, setAllRawVoices] = useState<SpeechSynthesisVoice[]>([]);
+  const [showRawVoiceList, setShowRawVoiceList] = useState(false);
+  const [voicePage, setVoicePage] = useState(1);
   const [sysTeacherVoiceURI, setSysTeacherVoiceURI] = useState('');
   const [sysStudentVoiceURI, setSysStudentVoiceURI] = useState('');
   const [expandedChapterId, setExpandedChapterId] = useState<string | null>(null);
@@ -188,6 +196,8 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
   const [guestError, setGuestError] = useState<string | null>(null);
   const [showIOSHelp, setShowIOSHelp] = useState(false);
   
+  const [voiceDebugStatus, setVoiceDebugStatus] = useState<string>('Scanning system voices...');
+
   const [generationProgress, setGenerationProgress] = useState<GenProgress | null>(null);
   const [isAudioReady, setIsAudioReady] = useState(false);
   
@@ -274,11 +284,33 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
 
   const loadVoices = useCallback(() => {
     const voices = window.speechSynthesis.getVoices();
+    setAllRawVoices(voices); // Store all voices for debug
     const langCode = language === 'zh' ? 'zh' : 'en';
     
+    // --- DIAGNOSTICS LOGIC ---
+    let status = '';
+    if (voices.length === 0) {
+        status = "Browser reported 0 voices. (System TTS may be initializing...)";
+    } else {
+        // Find high quality voices for diagnostics
+        const siriCount = voices.filter(v => v.name.toLowerCase().includes('siri')).length;
+        const enhancedCount = voices.filter(v => v.name.toLowerCase().includes('enhanced') || v.name.toLowerCase().includes('premium')).length;
+        
+        // Grab first few names to show the user what the browser actually sees
+        const exampleNames = voices.slice(0, 3).map(v => v.name).join(', ');
+        
+        status = `Detected ${voices.length} voices. (e.g. ${exampleNames}...)`;
+        if (siriCount > 0) status += ` Found ${siriCount} "Siri" voices.`;
+        if (enhancedCount > 0) status += ` Found ${enhancedCount} "Enhanced" voices.`;
+        if (siriCount === 0 && enhancedCount === 0) status += ` No explicit "Siri" label found. Check the full list.`;
+    }
+    setVoiceDebugStatus(status);
+    // --- END DIAGNOSTICS ---
+
     // Filter logic: Match language OR if name contains Siri (to catch edge case locales)
     let filtered = voices.filter(v => {
         const isLangMatch = v.lang.startsWith(langCode) || (langCode === 'en' && v.lang.startsWith('en'));
+        // Relaxed matching: accept anything English or explicitly Siri
         const isSiri = v.name.toLowerCase().includes('siri');
         return (isLangMatch || isSiri) && !BLOCKLIST.some(bad => v.name.includes(bad));
     });
@@ -286,12 +318,12 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
     // Voice Scoring for Prioritization
     const getScore = (v: SpeechSynthesisVoice) => {
         const name = v.name.toLowerCase();
-        // Tier 1: Siri (Top priority)
+        // Tier 1: Explicit Siri
         if (name.includes('siri')) return 10;
-        // Tier 2: Enhanced/Premium
+        // Tier 2: Enhanced/Premium/Neural or known high-quality names (Samantha, etc)
         if (name.includes('enhanced') || name.includes('premium') || name.includes('neural') || name.includes('google')) return 5;
-        // Tier 3: Good standard
-        if (QUALITY_KEYWORDS.some(k => name.includes(k.toLowerCase()))) return 2;
+        // Tier 3: Known good names (iOS internals)
+        if (QUALITY_KEYWORDS.some(k => name.includes(k.toLowerCase()))) return 4;
         return 1;
     };
 
@@ -307,16 +339,17 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
     setSystemVoices(filtered);
     
     if (filtered.length > 0) {
-        // Find best teacher voice (Top of list, hopefully Siri)
+        // Find best teacher voice (Top of list)
         const bestTeacher = filtered[0];
         
         // Find best student voice (Attempt to find a distinct high-quality voice)
         let bestStudent = filtered.length > 1 ? filtered[1] : filtered[0];
         
-        // Smart student selection: If teacher is Siri, try to find another Siri for student
-        if (getScore(bestTeacher) >= 10) {
-             const otherSiri = filtered.find(v => v.voiceURI !== bestTeacher.voiceURI && getScore(v) >= 10);
-             if (otherSiri) bestStudent = otherSiri;
+        // Smart student selection: If teacher is high quality, try to find another high quality for student
+        // Avoid picking the exact same voice if possible
+        if (filtered.length > 1 && bestTeacher.voiceURI === bestStudent.voiceURI) {
+             const alternative = filtered.find(v => v.voiceURI !== bestTeacher.voiceURI && getScore(v) >= 4);
+             if (alternative) bestStudent = alternative;
         }
 
         setSysTeacherVoiceURI(prev => {
@@ -358,6 +391,17 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
         clearTimeout(timeoutId);
     };
   }, [loadVoices]);
+
+  const handleCopyVoices = () => {
+      const text = allRawVoices.map(v => 
+          `Name: ${v.name}\nLang: ${v.lang}\nURI: ${v.voiceURI}\nLocal: ${v.localService}\n---`
+      ).join('\n');
+      navigator.clipboard.writeText(text).then(() => {
+          alert(`Copied ${allRawVoices.length} voices to clipboard.`);
+      }).catch(err => {
+          console.error("Failed to copy", err);
+      });
+  };
 
   const getAudioContext = useCallback(() => {
     if (!audioContextRef.current || audioContextRef.current.state === 'closed') {
@@ -1411,6 +1455,98 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
                                     </div>
                                 </div>
                             </div>
+
+                            {/* SYSTEM VOICE DIAGNOSTICS */}
+                            {useSystemVoice && (
+                                <div className="mb-4 p-3 bg-slate-900 border border-slate-700 rounded-lg shadow-inner">
+                                    <div className="flex items-center gap-2 mb-2">
+                                        <div className={`w-2 h-2 rounded-full ${voiceDebugStatus.includes('Error') || voiceDebugStatus.includes('reported 0') ? 'bg-red-500 animate-pulse' : 'bg-emerald-500'}`}></div>
+                                        <span className="text-[10px] font-bold text-slate-400 uppercase">Engine Status</span>
+                                    </div>
+                                    <p className={`text-xs font-mono mb-2 text-slate-300`}>
+                                        {voiceDebugStatus}
+                                    </p>
+                                    
+                                    {!voiceDebugStatus.toLowerCase().includes('siri') && !voiceDebugStatus.toLowerCase().includes('success') && (
+                                        <div className="bg-amber-900/20 border border-amber-500/30 p-2 rounded text-[10px] text-amber-200">
+                                            <strong className="block mb-1 text-amber-400 flex items-center gap-1"><AlertTriangle size={10}/> iOS/macOS Note</strong>
+                                            <p className="opacity-80">
+                                                On iOS, high-quality voices like "Siri" often appear here as <strong>Samantha, Aaron, Arthur, or Martha</strong>. 
+                                                If you see "Voice 4" or "English (US)" in your settings, check if one of those names is available in the list below.
+                                            </p>
+                                        </div>
+                                    )}
+
+                                    {/* Raw Voice List for Debugging */}
+                                    <div className="mt-2">
+                                        <button 
+                                            onClick={() => setShowRawVoiceList(!showRawVoiceList)}
+                                            className="text-[10px] text-indigo-400 flex items-center gap-1 hover:text-indigo-300 bg-indigo-900/20 px-2 py-1 rounded border border-indigo-500/30"
+                                        >
+                                            <ListMusic size={12} /> {showRawVoiceList ? 'Hide' : 'Show All'} {allRawVoices.length} Voices
+                                        </button>
+                                        
+                                        {showRawVoiceList && (
+                                            <div className="mt-2 bg-black p-3 rounded border border-slate-800">
+                                                <div className="flex justify-between items-center mb-2 pb-2 border-b border-slate-800">
+                                                    <span className="text-[10px] text-slate-500 font-mono">
+                                                        Showing {(voicePage - 1) * 10 + 1}-{Math.min(voicePage * 10, allRawVoices.length)} of {allRawVoices.length}
+                                                    </span>
+                                                    <button 
+                                                        onClick={handleCopyVoices}
+                                                        className="flex items-center gap-1 text-[10px] text-emerald-400 hover:text-emerald-300"
+                                                    >
+                                                        <Copy size={10} /> Copy All
+                                                    </button>
+                                                </div>
+                                                
+                                                <div className="overflow-x-auto">
+                                                    <table className="w-full text-[10px] font-mono text-slate-400 text-left">
+                                                        <thead>
+                                                            <tr className="text-slate-500 border-b border-slate-800">
+                                                                <th className="pb-1">Name</th>
+                                                                <th className="pb-1">Lang</th>
+                                                                <th className="pb-1">URI</th>
+                                                            </tr>
+                                                        </thead>
+                                                        <tbody>
+                                                            {allRawVoices.slice((voicePage - 1) * 10, voicePage * 10).map((v, i) => (
+                                                                <tr key={i} className="hover:bg-slate-900 border-b border-slate-900/50">
+                                                                    <td className="py-1 pr-2 text-indigo-300">{v.name}</td>
+                                                                    <td className="py-1 pr-2">{v.lang}</td>
+                                                                    <td className="py-1 opacity-50 truncate max-w-[100px]" title={v.voiceURI}>{v.voiceURI}</td>
+                                                                </tr>
+                                                            ))}
+                                                        </tbody>
+                                                    </table>
+                                                </div>
+
+                                                {/* Pagination Controls */}
+                                                {allRawVoices.length > 10 && (
+                                                    <div className="flex justify-between items-center mt-3 pt-2 border-t border-slate-800">
+                                                        <button 
+                                                            onClick={() => setVoicePage(p => Math.max(1, p - 1))}
+                                                            disabled={voicePage === 1}
+                                                            className="p-1 hover:bg-slate-800 rounded disabled:opacity-30 text-slate-400 hover:text-white transition-colors"
+                                                        >
+                                                            <ChevronLeft size={14} />
+                                                        </button>
+                                                        <span className="text-[10px] text-slate-600">Page {voicePage} / {Math.ceil(allRawVoices.length / 10)}</span>
+                                                        <button 
+                                                            onClick={() => setVoicePage(p => Math.min(Math.ceil(allRawVoices.length / 10), p + 1))}
+                                                            disabled={voicePage === Math.ceil(allRawVoices.length / 10)}
+                                                            className="p-1 hover:bg-slate-800 rounded disabled:opacity-30 text-slate-400 hover:text-white transition-colors"
+                                                        >
+                                                            <ChevronRight size={14} />
+                                                        </button>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
                                     <label className="block text-[10px] text-slate-500 uppercase mb-1">{t.teacherVoice}</label>
@@ -1449,7 +1585,7 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
                                     className="flex items-center gap-2 text-xs text-indigo-400 hover:text-white transition-colors"
                                 >
                                     <HelpCircle size={14} />
-                                    <span>iPhone/iPad Users: Improve Voice Quality</span>
+                                    <span>Improve Voice Quality Guide</span>
                                 </button>
                                 {showIOSHelp && (
                                     <div className="mt-2 p-3 bg-indigo-900/20 border border-indigo-500/30 rounded-lg text-xs text-indigo-200">
