@@ -3,7 +3,7 @@ import { Channel, ViewState, UserProfile, TranscriptItem } from './types';
 import { 
   Podcast, Mic, Layout, Search, Sparkles, LogOut, 
   Settings, Menu, X, Plus, Github, Database, Cloud, Globe, 
-  Calendar, Briefcase, Users, Disc, FileText, AlertTriangle 
+  Calendar, Briefcase, Users, Disc, FileText, AlertTriangle, List
 } from 'lucide-react';
 import { LiveSession } from './components/LiveSession';
 import { PodcastDetail } from './components/PodcastDetail';
@@ -305,7 +305,7 @@ const App: React.FC = () => {
       // 1. Spotlight (Handcrafted)
       groups['Spotlight'] = HANDCRAFTED_CHANNELS;
 
-      // 2. Categories from Utils
+      // 2. Categories from Utils (Limited for Featured View)
       Object.keys(TOPIC_CATEGORIES).forEach(category => {
           // Simple keyword matching for demo purposes
           const keywords = category.toLowerCase().split(/[ &]/).filter(w => w.length > 3);
@@ -314,6 +314,22 @@ const App: React.FC = () => {
           );
           if (matches.length > 0) {
               groups[category] = matches.slice(0, 4); // Limit 4 per category
+          }
+      });
+
+      return groups;
+  }, [channels]);
+
+  const allCategoryGroups = useMemo(() => {
+      const groups: Record<string, Channel[]> = {};
+      
+      Object.keys(TOPIC_CATEGORIES).forEach(category => {
+          const keywords = category.toLowerCase().split(/[ &]/).filter(w => w.length > 3);
+          const matches = channels.filter(c => 
+              keywords.some(k => c.tags.some(t => t.toLowerCase().includes(k)) || c.title.toLowerCase().includes(k))
+          );
+          if (matches.length > 0) {
+              groups[category] = matches; // NO LIMIT
           }
       });
 
@@ -401,6 +417,7 @@ const App: React.FC = () => {
                {[
                  { id: 'all', label: t.all, icon: Layout },
                  { id: 'featured', label: t.featured, icon: Sparkles },
+                 { id: 'categories', label: t.categories, icon: List },
                  { id: 'calendar', label: t.calendar, icon: Calendar },
                  { id: 'mentorship', label: t.mentorship, icon: Briefcase },
                  { id: 'groups', label: t.groups, icon: Users },
@@ -439,7 +456,7 @@ const App: React.FC = () => {
                   </div>
                )}
 
-               {activeTab === 'featured' && featuredGroups ? (
+               {activeTab === 'featured' && featuredGroups && (
                     <div className="space-y-12">
                       {Object.entries(featuredGroups).map(([groupName, groupChannels]) => {
                         const channels = groupChannels as Channel[];
@@ -471,7 +488,42 @@ const App: React.FC = () => {
                         );
                       })}
                     </div>
-                  ) : null}
+                  )}
+
+               {activeTab === 'categories' && allCategoryGroups && (
+                    <div className="space-y-12">
+                      {Object.entries(allCategoryGroups).map(([groupName, groupChannels]) => {
+                        const channels = groupChannels as Channel[];
+                        if (!channels || channels.length === 0) return null;
+                        
+                        return (
+                          <div key={groupName} className="space-y-4">
+                            <h2 className="text-2xl font-bold text-white flex items-center gap-2">
+                               <div className="w-2 h-8 bg-indigo-500 rounded-full"></div>
+                               <span>{groupName}</span>
+                               <span className="text-sm font-normal text-slate-500 ml-2">({channels.length})</span>
+                            </h2>
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                              {channels.map(channel => (
+                                <ChannelCard 
+                                  key={channel.id} 
+                                  channel={channel} 
+                                  handleChannelClick={(id) => { setActiveChannelId(id); setViewState('podcast_detail'); }}
+                                  handleVote={handleVote}
+                                  currentUser={currentUser}
+                                  setChannelToEdit={setChannelToEdit}
+                                  setIsSettingsModalOpen={setIsSettingsModalOpen}
+                                  globalVoice={globalVoice}
+                                  t={t}
+                                  onCommentClick={handleCommentClick}
+                                />
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+               )}
 
                {activeTab === 'calendar' && (
                   <CalendarView 

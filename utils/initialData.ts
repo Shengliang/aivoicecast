@@ -203,6 +203,27 @@ export const HANDCRAFTED_CHANNELS: Channel[] = [
     createdAt: INITIAL_DATE
   },
   {
+    id: 'bst-masterclass',
+    title: 'Root to Leaf: The BST Masterclass',
+    description: 'Master Binary Search Trees. From basic validation (isBST) to advanced balancing (AVL, Red-Black) and traversals.',
+    author: 'Prof. Binary',
+    voiceName: 'Puck',
+    systemInstruction: 'You are a Computer Science professor specializing in Data Structures. You explain trees with visual metaphors.',
+    likes: 512,
+    dislikes: 2,
+    comments: [],
+    tags: ['CS', 'Algorithms', 'Data Structures'],
+    imageUrl: 'https://image.pollinations.ai/prompt/binary%20search%20tree%20roots%20leaves%20computer%20science%20nature?width=600&height=400&nologo=true',
+    welcomeMessage: "Welcome to the forest of nodes. Let's traverse.",
+    starterPrompts: [
+      "Explain AVL rotations",
+      "Iterative vs Recursive Traversal",
+      "Delete a node in BST",
+      "LCA of a BST"
+    ],
+    createdAt: INITIAL_DATE
+  },
+  {
     id: '2',
     title: 'Linux Kernel Voice',
     description: 'Deep dive into the Linux Kernel internals. Discussion about schedulers, memory management, and drivers.',
@@ -347,6 +368,111 @@ export const HANDCRAFTED_CHANNELS: Channel[] = [
       "Discuss the philosophy of Stoicism",
       "Read a passage about compassion",
       "What does ancient wisdom say about anxiety?"
+    ],
+    createdAt: INITIAL_DATE
+  },
+  {
+    id: 'health-101',
+    title: 'Longevity & Biohacking',
+    description: 'Evidence-based strategies for extending healthspan and optimizing performance. We discuss nutrition, sleep, cold exposure, and the science of aging.',
+    author: 'Dr. Wellness',
+    voiceName: 'Kore',
+    systemInstruction: 'You are a longevity researcher and biohacker. You explain scientific studies related to health, fitness, nutrition, and aging. You are objective, data-driven, but encouraging.',
+    likes: 310,
+    dislikes: 2,
+    comments: [],
+    tags: ['Health', 'Fitness', 'Wellness', 'Science'],
+    imageUrl: 'https://image.pollinations.ai/prompt/healthy%20food%20fitness%20running%20dna%20helix%20bright%20sunlight?width=600&height=400&nologo=true',
+    welcomeMessage: "Hello. Let's optimize your biology. What aspect of your health do you want to improve today?",
+    starterPrompts: [
+      "What are the benefits of intermittent fasting?",
+      "How does sleep affect longevity?",
+      "Explain zone 2 cardio training",
+      "Supplements for brain health"
+    ],
+    createdAt: INITIAL_DATE
+  },
+  {
+    id: 'rel-101',
+    title: 'The Relationship Coach',
+    description: 'Navigating modern dating, marriage, and family dynamics with emotional intelligence. Practical advice for better communication and deeper connection.',
+    author: 'Love Expert',
+    voiceName: 'Zephyr',
+    systemInstruction: 'You are a compassionate relationship coach and family therapist. You offer advice on communication, conflict resolution, dating, and parenting. You emphasize empathy and emotional intelligence.',
+    likes: 450,
+    dislikes: 5,
+    comments: [],
+    tags: ['Relationships', 'Family', 'Psychology'],
+    imageUrl: 'https://image.pollinations.ai/prompt/couple%20holding%20hands%20sunset%20warm%20lighting%20cozy%20home?width=600&height=400&nologo=true',
+    welcomeMessage: "Welcome. Relationships are the foundation of a happy life. How can I support your connection today?",
+    starterPrompts: [
+      "How to resolve conflicts without fighting?",
+      "Tips for long-distance relationships",
+      "Dealing with difficult in-laws",
+      "How to practice active listening?"
+    ],
+    createdAt: INITIAL_DATE
+  },
+  {
+    id: 'crime-101',
+    title: 'Solved & Unsolved',
+    description: 'Deep dives into famous criminal cases, forensic breakthroughs, and the psychology of crime. A serious look at true crime history.',
+    author: 'Investigator',
+    voiceName: 'Fenrir',
+    systemInstruction: 'You are a veteran detective and crime historian. You discuss true crime cases with respect for the victims and a focus on the facts, forensic science, and legal procedures. You have a serious, noir tone.',
+    likes: 890,
+    dislikes: 12,
+    comments: [],
+    tags: ['True Crime', 'Mystery', 'History'],
+    imageUrl: 'https://image.pollinations.ai/prompt/detective%20office%20noir%20files%20evidence%20board%20shadowy?width=600&height=400&nologo=true',
+    welcomeMessage: "The files are open. We are looking for the truth. Which case shall we examine?",
+    starterPrompts: [
+      "Tell me about the Golden State Killer case",
+      "How does DNA genealogy solve cold cases?",
+      "The mystery of D.B. Cooper",
+      "Psychology of serial killers"
+    ],
+    createdAt: INITIAL_DATE
+  },
+  {
+    id: 'pop-101',
+    title: 'Pop Culture Rewind',
+    description: 'Analyzing the biggest trends in movies, music, and internet culture. From Oscar winners to viral memes.',
+    author: 'Culture Critic',
+    voiceName: 'Puck',
+    systemInstruction: 'You are an energetic pop culture critic. You love movies, music, and internet trends. You analyze themes in entertainment, discuss celebrity news (respectfully), and explore the impact of media on society.',
+    likes: 230,
+    dislikes: 8,
+    comments: [],
+    tags: ['Entertainment', 'Pop Culture', 'Movies'],
+    imageUrl: 'https://image.pollinations.ai/prompt/cinema%20popcorn%20neon%20lights%20concert%20stage%20colorful?width=600&height=400&nologo=true',
+    welcomeMessage: "Hey! Ready to talk about the latest hits and flops? What are you watching or listening to?",
+    starterPrompts: [
+      "Best movies of the last decade?",
+      "Analyze the lyrics of a popular song",
+      "Evolution of superhero movies",
+      "Impact of streaming on music industry"
+    ],
+    createdAt: INITIAL_DATE
+  },
+  {
+    id: 'travel-101',
+    title: 'The Global Nomad',
+    description: 'Tips for travel, minimalism, and designing a life of freedom. Explore the world on a budget or in luxury.',
+    author: 'World Traveler',
+    voiceName: 'Charon',
+    systemInstruction: 'You are a seasoned world traveler and digital nomad. You share tips on travel hacking, cultural etiquette, packing light, and finding hidden gems. You inspire users to explore the world.',
+    likes: 340,
+    dislikes: 1,
+    comments: [],
+    tags: ['Lifestyle', 'Travel', 'Hobbies'],
+    imageUrl: 'https://image.pollinations.ai/prompt/travel%20backpack%20mountains%20map%20compass%20adventure?width=600&height=400&nologo=true',
+    welcomeMessage: "The world is waiting. Where is your next adventure taking you?",
+    starterPrompts: [
+      "Tips for solo travel safely",
+      "How to travel on a budget?",
+      "Packing list for 3 months in Asia",
+      "Best places for digital nomads"
     ],
     createdAt: INITIAL_DATE
   }
