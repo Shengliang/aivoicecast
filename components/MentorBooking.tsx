@@ -1,9 +1,9 @@
 
-import React, { useState, useEffect } from 'react';
-import { Channel, Booking } from '../types';
-import { Calendar, Clock, User, ArrowLeft, Search, Briefcase, Sparkles, CheckCircle, X, Loader2, Play, Users, Mail, Video, Mic, FileText, Download, Trash2, Monitor, UserPlus } from 'lucide-react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { Channel, Booking, UserProfile } from '../types';
+import { Calendar, Clock, User, ArrowLeft, Search, Briefcase, Sparkles, CheckCircle, X, Loader2, Play, Users, Mail, Video, Mic, FileText, Download, Trash2, Monitor, UserPlus, Grid, List, ArrowDown, ArrowUp, Heart, Share2, Info } from 'lucide-react';
 import { auth } from '../services/firebaseConfig';
-import { createBooking, getUserBookings, cancelBooking, sendInvitation, getPendingInvitations, updateBookingInvite, deleteBookingRecording } from '../services/firestoreService';
+import { createBooking, getUserBookings, cancelBooking, sendInvitation, getPendingInvitations, updateBookingInvite, deleteBookingRecording, getAllUsers, getUserProfileByEmail } from '../services/firestoreService';
 
 interface MentorBookingProps {
   currentUser: any;
@@ -15,8 +15,10 @@ const TIME_SLOTS = [
   '09:00', '10:00', '11:00', '13:00', '14:00', '15:00', '16:00', '17:00', '19:00', '20:00'
 ];
 
+type SortKey = 'displayName' | 'email' | 'createdAt';
+
 export const MentorBooking: React.FC<MentorBookingProps> = ({ currentUser, channels, onStartLiveSession }) => {
-  const [activeTab, setActiveTab] = useState<'browse' | 'p2p' | 'my_bookings'>('browse');
+  const [activeTab, setActiveTab] = useState<'members' | 'ai_mentors' | 'my_bookings'>('members');
   const [selectedMentor, setSelectedMentor] = useState<Channel | null>(null);
   
   // Booking Form State
@@ -25,12 +27,21 @@ export const MentorBooking: React.FC<MentorBookingProps> = ({ currentUser, chann
   const [topic, setTopic] = useState('');
   const [inviteEmail, setInviteEmail] = useState(''); // Used for Guest in AI or Invitee in P2P
   const [isBooking, setIsBooking] = useState(false);
+  const [bookingMember, setBookingMember] = useState<UserProfile | null>(null);
   
   // My Bookings State
   const [myBookings, setMyBookings] = useState<Booking[]>([]);
   const [isLoadingBookings, setIsLoadingBookings] = useState(false);
   const [playingBookingId, setPlayingBookingId] = useState<string | null>(null);
   const [audioError, setAudioError] = useState<string | null>(null);
+
+  // Members Directory State
+  const [members, setMembers] = useState<UserProfile[]>([]);
+  const [loadingMembers, setLoadingMembers] = useState(false);
+  const [viewMode, setViewMode] = useState<'grid' | 'table'>('grid');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [sortConfig, setSortConfig] = useState<{ key: SortKey; direction: 'asc' | 'desc' }>({ key: 'createdAt', direction: 'desc' });
+  const [isSearchingServer, setIsSearchingServer] = useState(false);
 
   // Session Start Modal State
   const [sessionStartBooking, setSessionStartBooking] = useState<Booking | null>(null);
@@ -40,14 +51,40 @@ export const MentorBooking: React.FC<MentorBookingProps> = ({ currentUser, chann
   const [extraGuestEmail, setExtraGuestEmail] = useState('');
   const [isSendingInvite, setIsSendingInvite] = useState(false);
 
-  // Filter mentors (handcrafted only to ensure quality, or high rated)
-  const mentors = channels.filter(c => c.likes > 20 || !Number.isNaN(Number(c.id)) === false); // Rough filter for quality/handcrafted
+  // Filter AI mentors (handcrafted only to ensure quality, or high rated)
+  const aiMentors = channels.filter(c => c.likes > 20 || !Number.isNaN(Number(c.id)) === false); 
 
   useEffect(() => {
     if (activeTab === 'my_bookings' && currentUser) {
       loadBookings();
     }
+    if (activeTab === 'members') {
+      loadMembers();
+    }
   }, [activeTab, currentUser]);
+
+  // Server-side search debouncer
+  useEffect(() => {
+      const delayDebounceFn = setTimeout(async () => {
+        if (searchQuery.includes('@') && searchQuery.length > 5) {
+             // Check if already in list
+             const exists = members.some(m => m.email.toLowerCase() === searchQuery.toLowerCase());
+             if (!exists) {
+                 setIsSearchingServer(true);
+                 const user = await getUserProfileByEmail(searchQuery);
+                 if (user) {
+                     setMembers(prev => {
+                         if (prev.some(m => m.uid === user.uid)) return prev;
+                         return [user, ...prev];
+                     });
+                 }
+                 setIsSearchingServer(false);
+             }
+        }
+      }, 800);
+
+      return () => clearTimeout(delayDebounceFn);
+  }, [searchQuery, members]);
 
   const loadBookings = async () => {
     if (!currentUser) return;
@@ -62,6 +99,49 @@ export const MentorBooking: React.FC<MentorBookingProps> = ({ currentUser, chann
     }
   };
 
+  const loadMembers = async () => {
+    setLoadingMembers(true);
+    try {
+      const users = await getAllUsers();
+      // Filter out self if logged in
+      const filtered = currentUser ? users.filter(u => u.uid !== currentUser.uid) : users;
+      setMembers(filtered);
+    } catch(e) {
+      console.error(e);
+    } finally {
+      setLoadingMembers(false);
+    }
+  };
+
+  const filteredMembers = useMemo(() => {
+    let result = [...members];
+    if (searchQuery) {
+      const q = searchQuery.toLowerCase();
+      result = result.filter(m => 
+        (m.displayName && m.displayName.toLowerCase().includes(q)) || 
+        (m.email && m.email.toLowerCase().includes(q))
+      );
+    }
+    
+    result.sort((a, b) => {
+        const valA = sortConfig.key === 'createdAt' ? (a.createdAt || 0) : (a[sortConfig.key] || '');
+        const valB = sortConfig.key === 'createdAt' ? (b.createdAt || 0) : (b[sortConfig.key] || '');
+        
+        if (valA < valB) return sortConfig.direction === 'asc' ? -1 : 1;
+        if (valA > valB) return sortConfig.direction === 'asc' ? 1 : -1;
+        return 0;
+    });
+    
+    return result;
+  }, [members, searchQuery, sortConfig]);
+
+  const handleSort = (key: SortKey) => {
+    setSortConfig(current => ({
+        key,
+        direction: current.key === key && current.direction === 'desc' ? 'asc' : 'desc'
+    }));
+  };
+
   const handleBookSession = async () => {
     if (!currentUser) {
         alert("Please sign in to book a session.");
@@ -73,11 +153,11 @@ export const MentorBooking: React.FC<MentorBookingProps> = ({ currentUser, chann
     }
 
     // Determine type (AI Mentor or P2P)
-    const isP2P = activeTab === 'p2p';
+    const isP2P = !!bookingMember;
+    const targetEmail = isP2P ? bookingMember!.email : inviteEmail;
     
-    if (!isP2P && !selectedMentor) return;
-    if (isP2P && !inviteEmail) {
-        alert("Please enter a peer email address.");
+    if (isP2P && !targetEmail) {
+        alert("Selected member has no email address.");
         return;
     }
 
@@ -88,23 +168,24 @@ export const MentorBooking: React.FC<MentorBookingProps> = ({ currentUser, chann
             userId: currentUser.uid,
             hostName: currentUser.displayName || currentUser.email,
             mentorId: isP2P ? 'p2p-meeting' : selectedMentor!.id,
-            mentorName: isP2P ? 'Peer Meeting' : selectedMentor!.title,
-            mentorImage: isP2P ? 'https://ui-avatars.com/api/?name=Peer&background=random' : selectedMentor!.imageUrl,
+            mentorName: isP2P ? `Meeting with ${bookingMember!.displayName}` : selectedMentor!.title,
+            mentorImage: isP2P ? (bookingMember!.photoURL || 'https://ui-avatars.com/api/?name=' + bookingMember!.displayName) : selectedMentor!.imageUrl,
             date: selectedDate,
             time: selectedTime,
             topic: topic,
-            invitedEmail: inviteEmail.trim() || undefined,
+            invitedEmail: targetEmail,
             status: isP2P ? 'pending' : 'scheduled',
             type: isP2P ? 'p2p' : 'ai',
             createdAt: Date.now()
         };
         
         await createBooking(newBooking);
-        alert(isP2P ? "Meeting request sent! Waiting for peer acceptance." : "Session Booked Successfully!");
+        alert(isP2P ? "Meeting request sent! Waiting for acceptance." : "Session Booked Successfully!");
         setActiveTab('my_bookings');
         
         // Reset
         setSelectedMentor(null);
+        setBookingMember(null);
         setTopic('');
         setInviteEmail('');
         setSelectedDate('');
@@ -115,6 +196,14 @@ export const MentorBooking: React.FC<MentorBookingProps> = ({ currentUser, chann
     } finally {
         setIsBooking(false);
     }
+  };
+
+  const handleOpenBooking = (member: UserProfile) => {
+      setBookingMember(member);
+      setInviteEmail(member.email);
+      setTopic('');
+      setSelectedDate('');
+      setSelectedTime('');
   };
 
   const handleCancel = async (id: string) => {
@@ -128,7 +217,7 @@ export const MentorBooking: React.FC<MentorBookingProps> = ({ currentUser, chann
   };
 
   const handleDeleteRecording = async (booking: Booking) => {
-      if (!confirm("Are you sure you want to delete this recording? This will permanently remove the audio/video and transcript.")) return;
+      if (!confirm("Are you sure you want to delete this recording?")) return;
       try {
           await deleteBookingRecording(booking.id, booking.recordingUrl, booking.transcriptUrl);
           loadBookings();
@@ -155,17 +244,11 @@ export const MentorBooking: React.FC<MentorBookingProps> = ({ currentUser, chann
 
       setIsSendingInvite(true);
       try {
-          // Update Firestore
           await updateBookingInvite(sessionStartBooking.id, extraGuestEmail);
-          
-          // Update local state
           const updatedBooking = { ...sessionStartBooking, invitedEmail: extraGuestEmail };
           setSessionStartBooking(updatedBooking);
-          
-          // Update list
           setMyBookings(prev => prev.map(b => b.id === updatedBooking.id ? updatedBooking : b));
-
-          alert(`Invitation sent to ${extraGuestEmail}! They will see this meeting in their calendar.`);
+          alert(`Invitation sent to ${extraGuestEmail}!`);
           setExtraGuestEmail('');
       } catch(e) {
           console.error(e);
@@ -178,18 +261,16 @@ export const MentorBooking: React.FC<MentorBookingProps> = ({ currentUser, chann
   const handleConfirmStart = () => {
       if (!sessionStartBooking) return;
       
-      // If P2P, we create a temporary channel/room for the meeting
       let channel: Channel | undefined;
       
       if (sessionStartBooking.type === 'p2p') {
-          // Use a generic channel for P2P meetings that defaults to Recording/Transcription mode
           channel = {
-              id: sessionStartBooking.id, // Use booking ID as channel ID so it's unique
+              id: sessionStartBooking.id, 
               title: sessionStartBooking.topic || "Peer Meeting",
               description: "Peer to Peer Meeting",
               author: "System",
               voiceName: "Zephyr",
-              systemInstruction: "You are a professional meeting scribe. Your task is to accurately transcribe the conversation. Do not speak unless there is a critical error. Format the transcript clearly.",
+              systemInstruction: "You are a professional meeting scribe. Transcribe the conversation accurately.",
               likes: 0,
               dislikes: 0,
               comments: [],
@@ -197,10 +278,8 @@ export const MentorBooking: React.FC<MentorBookingProps> = ({ currentUser, chann
               imageUrl: 'https://images.unsplash.com/photo-1522071820081-009f0129c71c?w=600&q=80',
               createdAt: Date.now()
           };
-          // P2P sessions usually imply recording the human conversation
           onStartLiveSession(channel, sessionStartBooking.topic, true, sessionStartBooking.id, recordScreen, recordCamera);
       } else {
-          // AI Mentor Session
           channel = channels.find(c => c.id === sessionStartBooking.mentorId);
           if (channel) {
               onStartLiveSession(channel, sessionStartBooking.topic, recordMeeting, sessionStartBooking.id, recordScreen, recordCamera);
@@ -224,6 +303,128 @@ export const MentorBooking: React.FC<MentorBookingProps> = ({ currentUser, chann
   const upcomingBookings = myBookings.filter(b => b.status === 'scheduled');
   const pastBookings = myBookings.filter(b => b.status === 'completed');
 
+  // If a booking is initiated (either AI or P2P), show the form
+  if (bookingMember || selectedMentor) {
+      return (
+        <div className="bg-slate-900 border border-slate-800 rounded-2xl shadow-xl overflow-hidden max-w-4xl mx-auto animate-fade-in">
+            <div className="p-6 border-b border-slate-800 flex items-center space-x-4 bg-slate-950/50">
+                <button onClick={() => { setSelectedMentor(null); setBookingMember(null); }} className="p-2 hover:bg-slate-800 rounded-full text-slate-400 hover:text-white">
+                    <ArrowLeft size={20} />
+                </button>
+                {bookingMember ? (
+                    <div className="flex items-center gap-3">
+                        {bookingMember.photoURL ? (
+                            <img src={bookingMember.photoURL} className="w-12 h-12 rounded-full border-2 border-indigo-500" />
+                        ) : (
+                            <div className="w-12 h-12 rounded-full bg-slate-700 flex items-center justify-center border-2 border-indigo-500"><User size={24}/></div>
+                        )}
+                        <div>
+                            <h2 className="text-xl font-bold text-white">Book {bookingMember.displayName}</h2>
+                            <p className="text-sm text-indigo-400">Community Peer</p>
+                        </div>
+                    </div>
+                ) : (
+                    <div className="flex items-center gap-3">
+                        <img src={selectedMentor!.imageUrl} className="w-12 h-12 rounded-full border-2 border-purple-500" />
+                        <div>
+                            <h2 className="text-xl font-bold text-white">{selectedMentor!.title}</h2>
+                            <p className="text-sm text-purple-400">AI Mentor</p>
+                        </div>
+                    </div>
+                )}
+            </div>
+            
+            <div className="p-8 space-y-8">
+                {/* 1. Pick Date */}
+                <div>
+                    <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-3 flex items-center space-x-2">
+                        <Calendar size={16} /> <span>Select Date</span>
+                    </h3>
+                    <div className="flex gap-2 overflow-x-auto pb-2">
+                        {getNextDays().map(date => {
+                            const dObj = new Date(date);
+                            const isSelected = selectedDate === date;
+                            return (
+                                <button 
+                                    key={date}
+                                    onClick={() => setSelectedDate(date)}
+                                    className={`flex-shrink-0 w-24 p-3 rounded-xl border flex flex-col items-center justify-center transition-all ${isSelected ? 'bg-indigo-600 border-indigo-500 text-white shadow-lg' : 'bg-slate-800 border-slate-700 text-slate-400 hover:border-slate-500 hover:text-white'}`}
+                                >
+                                    <span className="text-xs font-bold uppercase">{dObj.toLocaleDateString('en-US', { weekday: 'short' })}</span>
+                                    <span className="text-lg font-bold">{dObj.getDate()}</span>
+                                </button>
+                            );
+                        })}
+                    </div>
+                </div>
+
+                {/* 2. Pick Time */}
+                <div>
+                    <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-3 flex items-center space-x-2">
+                        <Clock size={16} /> <span>Select Time (EST)</span>
+                    </h3>
+                    <div className="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-8 gap-2">
+                        {TIME_SLOTS.map(time => (
+                            <button 
+                                key={time}
+                                onClick={() => setSelectedTime(time)}
+                                className={`py-2 rounded-lg text-sm font-medium border transition-all ${selectedTime === time ? 'bg-emerald-600 border-emerald-500 text-white' : 'bg-slate-800 border-slate-700 text-slate-300 hover:border-slate-500 hover:text-white'}`}
+                            >
+                                {time}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+
+                {/* 3. Topic & Invite */}
+                <div>
+                    <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-3 flex items-center space-x-2">
+                        <Sparkles size={16} /> <span>Discussion Topic</span>
+                    </h3>
+                    <textarea 
+                        value={topic}
+                        onChange={(e) => setTopic(e.target.value)}
+                        className="w-full bg-slate-800 border border-slate-700 rounded-xl p-4 text-white focus:ring-2 focus:ring-indigo-500 outline-none resize-none"
+                        rows={4}
+                        placeholder="What would you like to discuss or learn?"
+                    />
+                </div>
+                
+                {/* AI Mentor allows extra invite */}
+                {!bookingMember && (
+                    <div>
+                        <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-3 flex items-center space-x-2">
+                            <Users size={16} /> <span>Invite a Friend (Optional)</span>
+                        </h3>
+                        <div className="flex items-center space-x-2 bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 max-w-md">
+                            <Mail size={16} className="text-slate-400" />
+                            <input 
+                                type="email"
+                                value={inviteEmail}
+                                onChange={(e) => setInviteEmail(e.target.value)}
+                                className="bg-transparent text-sm text-white w-full focus:outline-none"
+                                placeholder="friend@email.com"
+                            />
+                        </div>
+                    </div>
+                )}
+
+                {/* Submit */}
+                <div className="pt-4 flex justify-end">
+                    <button 
+                        onClick={handleBookSession}
+                        disabled={isBooking || !selectedDate || !selectedTime || !topic}
+                        className="px-8 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold rounded-xl shadow-lg flex items-center space-x-2 transition-transform hover:scale-105"
+                    >
+                        {isBooking ? <Loader2 className="animate-spin" /> : <CheckCircle />}
+                        <span>Confirm Request</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+      );
+  }
+
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 animate-fade-in relative">
         
@@ -234,21 +435,22 @@ export const MentorBooking: React.FC<MentorBookingProps> = ({ currentUser, chann
                     <Briefcase className="text-indigo-400" />
                     <span>Mentorship Hub</span>
                 </h1>
-                <p className="text-slate-400 mt-1">Schedule sessions with AI Mentors or Peers.</p>
+                <p className="text-slate-400 mt-1">Connect, teach, and grow together.</p>
             </div>
             <div className="flex bg-slate-900 rounded-lg p-1 border border-slate-700">
                 <button 
-                    onClick={() => setActiveTab('browse')}
-                    className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${activeTab === 'browse' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'}`}
-                >
-                    Browse Mentors
-                </button>
-                <button 
-                    onClick={() => setActiveTab('p2p')}
-                    className={`px-4 py-2 text-sm font-medium rounded-md transition-colors flex items-center gap-1 ${activeTab === 'p2p' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'}`}
+                    onClick={() => setActiveTab('members')}
+                    className={`px-4 py-2 text-sm font-medium rounded-md transition-colors flex items-center gap-1 ${activeTab === 'members' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'}`}
                 >
                     <UserPlus size={14} />
-                    <span>Peer Meeting</span>
+                    <span>Community</span>
+                </button>
+                <button 
+                    onClick={() => setActiveTab('ai_mentors')}
+                    className={`px-4 py-2 text-sm font-medium rounded-md transition-colors flex items-center gap-1 ${activeTab === 'ai_mentors' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'}`}
+                >
+                    <Sparkles size={14} />
+                    <span>AI Mentors</span>
                 </button>
                 <button 
                     onClick={() => setActiveTab('my_bookings')}
@@ -259,255 +461,174 @@ export const MentorBooking: React.FC<MentorBookingProps> = ({ currentUser, chann
             </div>
         </div>
 
-        {/* P2P Booking Tab */}
-        {activeTab === 'p2p' && (
-            <div className="bg-slate-900 border border-slate-800 rounded-2xl shadow-xl overflow-hidden max-w-4xl mx-auto animate-fade-in">
-                <div className="p-6 border-b border-slate-800 bg-slate-950/50">
-                    <h2 className="text-xl font-bold text-white flex items-center gap-2"><UserPlus className="text-indigo-400"/> Book a Peer Meeting</h2>
-                    <p className="text-slate-400 text-sm mt-1">Schedule a time with another member. They will receive an invite to accept or reject.</p>
-                </div>
+        {/* --- MEMBER DIRECTORY TAB --- */}
+        {activeTab === 'members' && (
+            <div className="space-y-6">
                 
-                {!currentUser ? (
-                    <div className="p-12 text-center text-slate-400">
-                        <User size={48} className="mx-auto mb-4 opacity-50" />
-                        <p>You must be signed in to book a meeting.</p>
+                {/* Mission Banner */}
+                <div className="bg-gradient-to-r from-indigo-900/40 to-purple-900/40 border border-indigo-500/30 rounded-xl p-6 flex items-start gap-4">
+                    <div className="p-3 bg-indigo-500/20 rounded-full text-indigo-300">
+                        <Heart size={24} />
+                    </div>
+                    <div>
+                        <h3 className="text-lg font-bold text-white mb-1">Our Mentorship Mission</h3>
+                        <p className="text-sm text-indigo-200 leading-relaxed max-w-2xl">
+                            We encourage every member to teach and help each other grow. 
+                            Use this directory to find peers with shared interests, book learning sessions, 
+                            and build a stronger community together.
+                        </p>
+                    </div>
+                </div>
+
+                <div className="flex flex-col md:flex-row gap-4 justify-between items-center bg-slate-900/50 p-4 rounded-xl border border-slate-800">
+                    <div className="relative w-full md:w-96">
+                        <Search className={`absolute left-3 top-1/2 -translate-y-1/2 ${isSearchingServer ? 'text-indigo-400 animate-pulse' : 'text-slate-500'}`} size={16}/>
+                        <input 
+                            type="text" 
+                            placeholder="Find member by name or email ID..." 
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
+                            className="w-full bg-slate-800 border border-slate-700 rounded-lg pl-10 pr-4 py-2 text-white focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
+                        />
+                        {isSearchingServer && <div className="absolute right-3 top-1/2 -translate-y-1/2"><Loader2 size={14} className="animate-spin text-indigo-400"/></div>}
+                    </div>
+                    
+                    <div className="flex bg-slate-800 p-1 rounded-lg border border-slate-700">
+                        <button 
+                            onClick={() => setViewMode('grid')}
+                            className={`p-2 rounded-md transition-colors ${viewMode === 'grid' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-400 hover:text-white'}`}
+                            title="Grid View"
+                        >
+                            <Grid size={16} />
+                        </button>
+                        <button 
+                            onClick={() => setViewMode('table')}
+                            className={`p-2 rounded-md transition-colors ${viewMode === 'table' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-400 hover:text-white'}`}
+                            title="Table View"
+                        >
+                            <List size={16} />
+                        </button>
+                    </div>
+                </div>
+
+                {loadingMembers && !isSearchingServer ? (
+                    <div className="py-12 text-center text-indigo-400"><Loader2 className="animate-spin mx-auto" size={32}/></div>
+                ) : filteredMembers.length === 0 ? (
+                    <div className="py-12 text-center text-slate-500 bg-slate-900/30 rounded-xl border border-dashed border-slate-800">
+                        <p>No members found.</p>
+                        <p className="text-xs mt-2">Try searching for a specific Gmail ID.</p>
+                    </div>
+                ) : viewMode === 'grid' ? (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 animate-fade-in-up">
+                        {filteredMembers.map(member => (
+                            <div key={member.uid} className="bg-slate-900 border border-slate-800 rounded-xl p-6 flex flex-col items-center text-center hover:border-indigo-500/50 transition-all shadow-lg hover:shadow-indigo-500/10 group relative overflow-hidden">
+                                <div className="absolute top-0 right-0 p-16 bg-indigo-500/5 blur-[60px] rounded-full group-hover:bg-indigo-500/10 transition-all"></div>
+                                <div className="relative mb-4">
+                                    {member.photoURL ? (
+                                        <img src={member.photoURL} alt={member.displayName} className="w-20 h-20 rounded-full border-2 border-slate-700 group-hover:border-indigo-500 transition-colors object-cover" />
+                                    ) : (
+                                        <div className="w-20 h-20 rounded-full bg-slate-800 flex items-center justify-center border-2 border-slate-700 group-hover:border-indigo-500 transition-colors">
+                                            <User size={32} className="text-slate-400"/>
+                                        </div>
+                                    )}
+                                    <div className="absolute bottom-0 right-0 w-5 h-5 bg-emerald-500 rounded-full border-2 border-slate-900" title="Active Member"></div>
+                                </div>
+                                <h3 className="text-lg font-bold text-white relative z-10">{member.displayName}</h3>
+                                <p className="text-sm text-slate-400 mb-2 relative z-10">{member.email}</p>
+                                <p className="text-xs text-slate-600 font-mono mb-6 relative z-10">Joined {new Date(member.createdAt || 0).toLocaleDateString()}</p>
+                                
+                                <button 
+                                    onClick={() => handleOpenBooking(member)}
+                                    className="w-full py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg font-bold text-sm shadow-md transition-colors flex items-center justify-center gap-2 relative z-10"
+                                >
+                                    <Calendar size={14} />
+                                    Book Session
+                                </button>
+                            </div>
+                        ))}
                     </div>
                 ) : (
-                    <div className="p-8 space-y-8">
-                        {/* 1. Pick Date */}
-                        <div>
-                            <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-3 flex items-center space-x-2">
-                                <Calendar size={16} /> <span>Select Date</span>
-                            </h3>
-                            <div className="flex gap-2 overflow-x-auto pb-2">
-                                {getNextDays().map(date => {
-                                    const dObj = new Date(date);
-                                    const isSelected = selectedDate === date;
-                                    return (
-                                        <button 
-                                            key={date}
-                                            onClick={() => setSelectedDate(date)}
-                                            className={`flex-shrink-0 w-24 p-3 rounded-xl border flex flex-col items-center justify-center transition-all ${isSelected ? 'bg-indigo-600 border-indigo-500 text-white shadow-lg' : 'bg-slate-800 border-slate-700 text-slate-400 hover:border-slate-500 hover:text-white'}`}
-                                        >
-                                            <span className="text-xs font-bold uppercase">{dObj.toLocaleDateString('en-US', { weekday: 'short' })}</span>
-                                            <span className="text-lg font-bold">{dObj.getDate()}</span>
-                                        </button>
-                                    );
-                                })}
-                            </div>
-                        </div>
-
-                        {/* 2. Pick Time */}
-                        <div>
-                            <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-3 flex items-center space-x-2">
-                                <Clock size={16} /> <span>Select Time (EST)</span>
-                            </h3>
-                            <div className="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-8 gap-2">
-                                {TIME_SLOTS.map(time => (
-                                    <button 
-                                        key={time}
-                                        onClick={() => setSelectedTime(time)}
-                                        className={`py-2 rounded-lg text-sm font-medium border transition-all ${selectedTime === time ? 'bg-emerald-600 border-emerald-500 text-white' : 'bg-slate-800 border-slate-700 text-slate-300 hover:border-slate-500 hover:text-white'}`}
-                                    >
-                                        {time}
-                                    </button>
+                    // TABLE VIEW
+                    <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow-lg animate-fade-in">
+                        <table className="w-full text-left">
+                            <thead className="bg-slate-950 text-xs text-slate-400 uppercase font-bold border-b border-slate-800">
+                                <tr>
+                                    <th className="px-6 py-4 cursor-pointer hover:text-white transition-colors" onClick={() => handleSort('displayName')}>
+                                        <div className="flex items-center gap-1">Member {sortConfig.key === 'displayName' && (sortConfig.direction === 'asc' ? <ArrowUp size={12}/> : <ArrowDown size={12}/>)}</div>
+                                    </th>
+                                    <th className="px-6 py-4 cursor-pointer hover:text-white transition-colors" onClick={() => handleSort('email')}>
+                                        <div className="flex items-center gap-1">Email {sortConfig.key === 'email' && (sortConfig.direction === 'asc' ? <ArrowUp size={12}/> : <ArrowDown size={12}/>)}</div>
+                                    </th>
+                                    <th className="px-6 py-4 cursor-pointer hover:text-white transition-colors hidden md:table-cell" onClick={() => handleSort('createdAt')}>
+                                        <div className="flex items-center gap-1">Joined {sortConfig.key === 'createdAt' && (sortConfig.direction === 'asc' ? <ArrowUp size={12}/> : <ArrowDown size={12}/>)}</div>
+                                    </th>
+                                    <th className="px-6 py-4 text-right">Action</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-800 bg-slate-900/50">
+                                {filteredMembers.map(member => (
+                                    <tr key={member.uid} className="hover:bg-slate-800/80 transition-colors group">
+                                        <td className="px-6 py-4">
+                                            <div className="flex items-center gap-3">
+                                                {member.photoURL ? (
+                                                    <img src={member.photoURL} className="w-8 h-8 rounded-full border border-slate-700" />
+                                                ) : (
+                                                    <div className="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center border border-slate-700"><User size={14} className="text-slate-400"/></div>
+                                                )}
+                                                <span className="font-bold text-slate-200 group-hover:text-white transition-colors">{member.displayName}</span>
+                                            </div>
+                                        </td>
+                                        <td className="px-6 py-4 text-sm text-slate-400 group-hover:text-indigo-300 transition-colors">{member.email}</td>
+                                        <td className="px-6 py-4 text-xs text-slate-500 font-mono hidden md:table-cell">
+                                            {member.createdAt ? new Date(member.createdAt).toLocaleDateString() : '-'}
+                                        </td>
+                                        <td className="px-6 py-4 text-right">
+                                            <button 
+                                                onClick={() => handleOpenBooking(member)}
+                                                className="px-3 py-1.5 bg-slate-800 hover:bg-indigo-600 text-slate-300 hover:text-white rounded-lg text-xs font-bold transition-colors border border-slate-700"
+                                            >
+                                                Book
+                                            </button>
+                                        </td>
+                                    </tr>
                                 ))}
-                            </div>
-                        </div>
-
-                        {/* 3. Details */}
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                            <div>
-                                <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-3 flex items-center space-x-2">
-                                    <Mail size={16} /> <span>Peer Email</span>
-                                </h3>
-                                <div className="bg-slate-800 border border-slate-700 rounded-xl p-2 px-4 flex items-center gap-2">
-                                    <input 
-                                        type="email"
-                                        value={inviteEmail}
-                                        onChange={(e) => setInviteEmail(e.target.value)}
-                                        className="bg-transparent text-white w-full focus:outline-none py-2"
-                                        placeholder="colleague@example.com"
-                                    />
-                                </div>
-                            </div>
-                            
-                            <div>
-                                <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-3 flex items-center space-x-2">
-                                    <Sparkles size={16} /> <span>Meeting Topic</span>
-                                </h3>
-                                <input 
-                                    type="text"
-                                    value={topic}
-                                    onChange={(e) => setTopic(e.target.value)}
-                                    className="w-full bg-slate-800 border border-slate-700 rounded-xl p-3 text-white focus:ring-2 focus:ring-indigo-500 outline-none"
-                                    placeholder="e.g. Weekly Sync"
-                                />
-                            </div>
-                        </div>
-
-                        {/* Submit */}
-                        <div className="pt-4 flex justify-end">
-                            <button 
-                                onClick={handleBookSession}
-                                disabled={isBooking || !selectedDate || !selectedTime || !topic || !inviteEmail}
-                                className="px-8 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold rounded-xl shadow-lg flex items-center space-x-2 transition-transform hover:scale-105"
-                            >
-                                {isBooking ? <Loader2 className="animate-spin" /> : <CheckCircle />}
-                                <span>Request Meeting</span>
-                            </button>
-                        </div>
+                            </tbody>
+                        </table>
                     </div>
                 )}
             </div>
         )}
 
-        {/* Browse AI Mentors Tab */}
-        {activeTab === 'browse' && (
-            selectedMentor ? (
-                // Booking Form
-                <div className="bg-slate-900 border border-slate-800 rounded-2xl shadow-xl overflow-hidden max-w-4xl mx-auto">
-                    <div className="p-6 border-b border-slate-800 flex items-center space-x-4 bg-slate-950/50">
-                        <button onClick={() => setSelectedMentor(null)} className="p-2 hover:bg-slate-800 rounded-full text-slate-400 hover:text-white">
-                            <ArrowLeft size={20} />
-                        </button>
-                        <img src={selectedMentor.imageUrl} className="w-12 h-12 rounded-full object-cover border-2 border-indigo-500" />
-                        <div>
-                            <h2 className="text-xl font-bold text-white">{selectedMentor.title}</h2>
-                            <p className="text-sm text-indigo-400 font-bold uppercase tracking-wider">{selectedMentor.voiceName} • AI Mentor</p>
-                        </div>
-                    </div>
-                    
-                    {!currentUser ? (
-                       <div className="p-12 text-center text-slate-400">
-                          <User size={48} className="mx-auto mb-4 opacity-50" />
-                          <p>You must be signed in to book a session.</p>
-                       </div>
-                    ) : (
-                    <div className="p-8 space-y-8">
-                        {/* 1. Pick Date */}
-                        <div>
-                            <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-3 flex items-center space-x-2">
-                                <Calendar size={16} /> <span>Select Date</span>
-                            </h3>
-                            <div className="flex gap-2 overflow-x-auto pb-2">
-                                {getNextDays().map(date => {
-                                    const dObj = new Date(date);
-                                    const isSelected = selectedDate === date;
-                                    return (
-                                        <button 
-                                            key={date}
-                                            onClick={() => setSelectedDate(date)}
-                                            className={`flex-shrink-0 w-24 p-3 rounded-xl border flex flex-col items-center justify-center transition-all ${isSelected ? 'bg-indigo-600 border-indigo-500 text-white shadow-lg' : 'bg-slate-800 border-slate-700 text-slate-400 hover:border-slate-500 hover:text-white'}`}
-                                        >
-                                            <span className="text-xs font-bold uppercase">{dObj.toLocaleDateString('en-US', { weekday: 'short' })}</span>
-                                            <span className="text-lg font-bold">{dObj.getDate()}</span>
-                                        </button>
-                                    );
-                                })}
+        {/* --- AI MENTORS TAB --- */}
+        {activeTab === 'ai_mentors' && (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 animate-fade-in-up">
+                {aiMentors.map(channel => (
+                    <div key={channel.id} className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden hover:border-purple-500/50 transition-all hover:shadow-xl group">
+                        <div className="h-32 overflow-hidden relative">
+                            <img src={channel.imageUrl} alt={channel.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 opacity-60" />
+                            <div className="absolute inset-0 bg-gradient-to-t from-slate-900 to-transparent"></div>
+                            <div className="absolute bottom-3 left-4">
+                                <h3 className="text-lg font-bold text-white leading-tight">{channel.title}</h3>
+                                <p className="text-xs text-purple-300 font-bold uppercase tracking-wider">{channel.voiceName} • AI Mentor</p>
                             </div>
                         </div>
-
-                        {/* 2. Pick Time */}
-                        <div>
-                            <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-3 flex items-center space-x-2">
-                                <Clock size={16} /> <span>Select Time (EST)</span>
-                            </h3>
-                            <div className="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-8 gap-2">
-                                {TIME_SLOTS.map(time => (
-                                    <button 
-                                        key={time}
-                                        onClick={() => setSelectedTime(time)}
-                                        className={`py-2 rounded-lg text-sm font-medium border transition-all ${selectedTime === time ? 'bg-emerald-600 border-emerald-500 text-white' : 'bg-slate-800 border-slate-700 text-slate-300 hover:border-slate-500 hover:text-white'}`}
-                                    >
-                                        {time}
-                                    </button>
-                                ))}
-                            </div>
-                        </div>
-
-                        {/* 3. Topic & Invite */}
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                            <div>
-                                <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-3 flex items-center space-x-2">
-                                    <Sparkles size={16} /> <span>Discussion Topic</span>
-                                </h3>
-                                <textarea 
-                                    value={topic}
-                                    onChange={(e) => setTopic(e.target.value)}
-                                    className="w-full bg-slate-800 border border-slate-700 rounded-xl p-4 text-white focus:ring-2 focus:ring-indigo-500 outline-none resize-none"
-                                    rows={4}
-                                    placeholder="What would you like to focus on? (e.g. Mock interview for React role)"
-                                />
-                            </div>
-                            
-                            <div>
-                                <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-3 flex items-center space-x-2">
-                                    <Users size={16} /> <span>Invite a Friend (Optional)</span>
-                                </h3>
-                                <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-4 space-y-3">
-                                    <p className="text-xs text-slate-500">Invite another member to join this session. They will see it in their calendar.</p>
-                                    <div className="flex items-center space-x-2 bg-slate-900 border border-slate-600 rounded-lg px-3 py-2">
-                                        <Mail size={16} className="text-slate-400" />
-                                        <input 
-                                            type="email"
-                                            value={inviteEmail}
-                                            onChange={(e) => setInviteEmail(e.target.value)}
-                                            className="bg-transparent text-sm text-white w-full focus:outline-none"
-                                            placeholder="friend@email.com"
-                                        />
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-
-                        {/* Submit */}
-                        <div className="pt-4 flex justify-end">
+                        <div className="p-5">
+                            <p className="text-slate-400 text-sm line-clamp-3 mb-4">{channel.description}</p>
                             <button 
-                                onClick={handleBookSession}
-                                disabled={isBooking || !selectedDate || !selectedTime || !topic}
-                                className="px-8 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold rounded-xl shadow-lg flex items-center space-x-2 transition-transform hover:scale-105"
+                                onClick={() => setSelectedMentor(channel)}
+                                className="w-full py-2 bg-purple-600 hover:bg-purple-500 text-white rounded-lg font-bold text-sm transition-colors shadow-lg shadow-purple-500/20"
                             >
-                                {isBooking ? <Loader2 className="animate-spin" /> : <CheckCircle />}
-                                <span>Confirm Booking</span>
+                                Book AI Session
                             </button>
                         </div>
                     </div>
-                    )}
-                </div>
-            ) : (
-                // Mentor Grid
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    {mentors.map(channel => (
-                        <div key={channel.id} className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden hover:border-indigo-500/50 transition-all hover:shadow-xl group">
-                            <div className="h-32 overflow-hidden relative">
-                                <img src={channel.imageUrl} alt={channel.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 opacity-60" />
-                                <div className="absolute inset-0 bg-gradient-to-t from-slate-900 to-transparent"></div>
-                                <div className="absolute bottom-3 left-4">
-                                    <h3 className="text-lg font-bold text-white leading-tight">{channel.title}</h3>
-                                    <p className="text-xs text-indigo-300 font-bold uppercase tracking-wider">{channel.voiceName}</p>
-                                </div>
-                            </div>
-                            <div className="p-5">
-                                <p className="text-slate-400 text-sm line-clamp-3 mb-4">{channel.description}</p>
-                                <div className="flex flex-wrap gap-2 mb-4">
-                                    {channel.tags.slice(0,2).map(t => <span key={t} className="text-[10px] bg-slate-800 text-slate-400 px-2 py-1 rounded border border-slate-700">#{t}</span>)}
-                                </div>
-                                <button 
-                                    onClick={() => setSelectedMentor(channel)}
-                                    className="w-full py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg font-bold text-sm transition-colors shadow-lg shadow-indigo-500/20"
-                                >
-                                    Book Session
-                                </button>
-                            </div>
-                        </div>
-                    ))}
-                </div>
-            )
+                ))}
+            </div>
         )}
 
+        {/* --- MY SCHEDULE TAB --- */}
         {activeTab === 'my_bookings' && (
-            <div className="space-y-8">
+            <div className="space-y-8 animate-fade-in">
                 {!currentUser ? (
                     <div className="text-center py-12 text-slate-500 bg-slate-900/50 rounded-2xl border border-slate-800 border-dashed">
                         <User size={48} className="mx-auto mb-4 opacity-50" />

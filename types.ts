@@ -108,6 +108,8 @@ export interface UserProfile {
   photoURL: string;
   groups: string[]; // IDs of groups joined
   apiUsageCount?: number;
+  createdAt?: number; // Added for sorting
+  lastLogin?: any;
 }
 
 export interface Invitation {

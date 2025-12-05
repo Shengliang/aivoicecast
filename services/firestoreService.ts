@@ -128,7 +128,8 @@ export async function syncUserProfile(user: any): Promise<void> {
       displayName: user.displayName || 'Anonymous',
       photoURL: user.photoURL || '',
       groups: [],
-      apiUsageCount: 0
+      apiUsageCount: 0,
+      createdAt: Date.now()
     };
     await userRef.set(sanitizeData(newProfile));
   } else {
@@ -145,6 +146,29 @@ export async function getUserProfile(uid: string): Promise<UserProfile | null> {
   const ref = db.collection('users').doc(uid);
   const snap = await ref.get();
   return snap.exists ? (snap.data() as UserProfile) : null;
+}
+
+export async function getUserProfileByEmail(email: string): Promise<UserProfile | null> {
+  try {
+    const snap = await db.collection('users').where('email', '==', email).limit(1).get();
+    if (snap.empty) return null;
+    return snap.docs[0].data() as UserProfile;
+  } catch(e) {
+    console.warn("Failed to fetch user by email", e);
+    return null;
+  }
+}
+
+export async function getAllUsers(): Promise<UserProfile[]> {
+  try {
+    // Fetch all users to display in the member directory
+    // Limit to 50 for now to avoid massive reads
+    const snap = await db.collection('users').orderBy('createdAt', 'desc').limit(50).get();
+    return snap.docs.map(doc => doc.data() as UserProfile);
+  } catch (e) {
+    console.warn("Failed to fetch all users", e);
+    return [];
+  }
 }
 
 export async function incrementApiUsage(uid: string): Promise<void> {
