@@ -272,83 +272,92 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
       prefetchedIds.current.clear();
   }, [channel.id]);
 
-  useEffect(() => {
-    const loadVoices = () => {
-        const voices = window.speechSynthesis.getVoices();
-        const langCode = language === 'zh' ? 'zh' : 'en';
-        let filtered = voices.filter(v => v.lang.startsWith(langCode));
-        filtered = filtered.filter(v => !BLOCKLIST.some(bad => v.name.includes(bad)));
-        
-        // Prioritize Siri and Enhanced voices on iOS
-        filtered.sort((a, b) => {
-            const getScore = (v: SpeechSynthesisVoice) => {
-                const name = v.name.toLowerCase();
-                if (name.includes('siri')) return 4; // Top priority
-                if (name.includes('enhanced') || name.includes('premium') || name.includes('neural')) return 3;
-                if (QUALITY_KEYWORDS.some(k => name.includes(k.toLowerCase()))) return 2;
-                return 1;
-            };
-            return getScore(b) - getScore(a);
-        });
+  const loadVoices = useCallback(() => {
+    const voices = window.speechSynthesis.getVoices();
+    const langCode = language === 'zh' ? 'zh' : 'en';
+    
+    // Filter logic: Match language OR if name contains Siri (to catch edge case locales)
+    let filtered = voices.filter(v => {
+        const isLangMatch = v.lang.startsWith(langCode) || (langCode === 'en' && v.lang.startsWith('en'));
+        const isSiri = v.name.toLowerCase().includes('siri');
+        return (isLangMatch || isSiri) && !BLOCKLIST.some(bad => v.name.includes(bad));
+    });
 
-        if (filtered.length === 0) filtered = voices.filter(v => v.lang.startsWith(langCode));
-        if (filtered.length === 0) filtered = voices;
-        setSystemVoices(filtered);
-        
-        if (filtered.length > 0) {
-            // Find best teacher voice (Top of list)
-            const bestTeacher = filtered[0];
-            
-            // Find best student voice (Try to find a DIFFERENT Siri/Enhanced voice if possible)
-            let bestStudent = filtered.length > 1 ? filtered[1] : filtered[0];
-            
-            // If teacher is Siri, try to find another Siri for student
-            if (bestTeacher.name.toLowerCase().includes('siri')) {
-                 const otherSiri = filtered.find(v => v.voiceURI !== bestTeacher.voiceURI && v.name.toLowerCase().includes('siri'));
-                 if (otherSiri) bestStudent = otherSiri;
-            }
-
-            setSysTeacherVoiceURI(prev => {
-                // If we haven't selected anything yet, pick the best
-                if (!prev) return bestTeacher.voiceURI;
-                
-                const current = voices.find(v => v.voiceURI === prev);
-                
-                // If current selection is invalid (not in list anymore), pick best
-                if (!current) return bestTeacher.voiceURI;
-
-                // FORCE UPGRADE TO SIRI: 
-                // If the current voice is NOT Siri, but we FOUND a Siri voice in the filtered list, switch to Siri.
-                // This fixes the issue where "Samantha" might be persisted or selected by default before Siri loads.
-                const currentIsSiri = current.name.toLowerCase().includes('siri');
-                const bestIsSiri = bestTeacher.name.toLowerCase().includes('siri');
-
-                if (!currentIsSiri && bestIsSiri) {
-                    return bestTeacher.voiceURI;
-                }
-                
-                return prev;
-            });
-            
-            setSysStudentVoiceURI(prev => {
-                const current = voices.find(v => v.voiceURI === prev);
-                if (!prev) return bestStudent.voiceURI;
-                if (!current) return bestStudent.voiceURI;
-                
-                const currentIsSiri = current.name.toLowerCase().includes('siri');
-                const bestStudentIsSiri = bestStudent.name.toLowerCase().includes('siri');
-                
-                if (!currentIsSiri && bestStudentIsSiri) {
-                    return bestStudent.voiceURI;
-                }
-                
-                return prev;
-            });
-        }
+    // Voice Scoring for Prioritization
+    const getScore = (v: SpeechSynthesisVoice) => {
+        const name = v.name.toLowerCase();
+        // Tier 1: Siri (Top priority)
+        if (name.includes('siri')) return 10;
+        // Tier 2: Enhanced/Premium
+        if (name.includes('enhanced') || name.includes('premium') || name.includes('neural') || name.includes('google')) return 5;
+        // Tier 3: Good standard
+        if (QUALITY_KEYWORDS.some(k => name.includes(k.toLowerCase()))) return 2;
+        return 1;
     };
-    loadVoices();
-    if (window.speechSynthesis.onvoiceschanged !== undefined) window.speechSynthesis.onvoiceschanged = loadVoices;
+
+    // Sort Descending by Score
+    filtered.sort((a, b) => getScore(b) - getScore(a));
+
+    if (filtered.length === 0) {
+        // Fallback: If strict filter failed, just show all non-blocked
+        filtered = voices.filter(v => !BLOCKLIST.some(bad => v.name.includes(bad)));
+        filtered.sort((a, b) => getScore(b) - getScore(a));
+    }
+
+    setSystemVoices(filtered);
+    
+    if (filtered.length > 0) {
+        // Find best teacher voice (Top of list, hopefully Siri)
+        const bestTeacher = filtered[0];
+        
+        // Find best student voice (Attempt to find a distinct high-quality voice)
+        let bestStudent = filtered.length > 1 ? filtered[1] : filtered[0];
+        
+        // Smart student selection: If teacher is Siri, try to find another Siri for student
+        if (getScore(bestTeacher) >= 10) {
+             const otherSiri = filtered.find(v => v.voiceURI !== bestTeacher.voiceURI && getScore(v) >= 10);
+             if (otherSiri) bestStudent = otherSiri;
+        }
+
+        setSysTeacherVoiceURI(prev => {
+            if (!prev) return bestTeacher.voiceURI;
+            const current = voices.find(v => v.voiceURI === prev);
+            // If current selection is missing or we found a significantly better one (Auto Upgrade)
+            if (!current || getScore(bestTeacher) > getScore(current)) {
+                return bestTeacher.voiceURI;
+            }
+            return prev;
+        });
+        
+        setSysStudentVoiceURI(prev => {
+            if (!prev) return bestStudent.voiceURI;
+            const current = voices.find(v => v.voiceURI === prev);
+            if (!current || getScore(bestStudent) > getScore(current)) {
+                return bestStudent.voiceURI;
+            }
+            return prev;
+        });
+    }
   }, [language]);
+
+  useEffect(() => {
+    // Initial Load
+    loadVoices();
+    
+    // Web Speech API Event
+    if (window.speechSynthesis.onvoiceschanged !== undefined) {
+        window.speechSynthesis.onvoiceschanged = loadVoices;
+    }
+
+    // Polling backup for iOS which can be lazy loading voices
+    const intervalId = setInterval(loadVoices, 1000);
+    const timeoutId = setTimeout(() => clearInterval(intervalId), 5000); // Stop polling after 5s
+
+    return () => {
+        clearInterval(intervalId);
+        clearTimeout(timeoutId);
+    };
+  }, [loadVoices]);
 
   const getAudioContext = useCallback(() => {
     if (!audioContextRef.current || audioContextRef.current.state === 'closed') {
@@ -1388,9 +1397,18 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
                         <div className="mb-4 p-4 bg-slate-800/50 rounded-xl border border-slate-700 animate-fade-in">
                             <div className="flex justify-between items-center mb-3">
                                 <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider">{t.voiceSettings}</h4>
-                                <div className="flex items-center space-x-2 bg-slate-900 rounded-lg p-1 border border-slate-700">
-                                    <button onClick={() => handleVoiceSwitch(false)} className={`px-3 py-1 text-xs font-bold rounded-md transition-all ${!useSystemVoice ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:text-slate-300'}`}>Neural (AI)</button>
-                                    <button onClick={() => handleVoiceSwitch(true)} className={`px-3 py-1 text-xs font-bold rounded-md transition-all ${useSystemVoice ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:text-slate-300'}`}>System</button>
+                                <div className="flex items-center space-x-2 gap-2">
+                                    <button 
+                                        onClick={loadVoices} 
+                                        className="p-1.5 rounded-lg bg-slate-700 text-slate-300 hover:text-white hover:bg-slate-600 transition-colors"
+                                        title="Refresh Voices"
+                                    >
+                                        <RefreshCw size={14} />
+                                    </button>
+                                    <div className="flex items-center space-x-2 bg-slate-900 rounded-lg p-1 border border-slate-700">
+                                        <button onClick={() => handleVoiceSwitch(false)} className={`px-3 py-1 text-xs font-bold rounded-md transition-all ${!useSystemVoice ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:text-slate-300'}`}>Neural (AI)</button>
+                                        <button onClick={() => handleVoiceSwitch(true)} className={`px-3 py-1 text-xs font-bold rounded-md transition-all ${useSystemVoice ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:text-slate-300'}`}>System</button>
+                                    </div>
                                 </div>
                             </div>
                             <div className="grid grid-cols-2 gap-4">
@@ -1400,6 +1418,7 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
                                         className="w-full bg-slate-900 text-xs text-white p-2 rounded-lg border border-slate-700 outline-none"
                                         value={useSystemVoice ? sysTeacherVoiceURI : teacherVoice}
                                         onChange={(e) => useSystemVoice ? setSysTeacherVoiceURI(e.target.value) : setTeacherVoice(e.target.value)}
+                                        onPointerDown={loadVoices} // Force refresh on interact
                                     >
                                         {useSystemVoice 
                                             ? systemVoices.map(v => <option key={v.voiceURI} value={v.voiceURI}>{v.name}</option>)
@@ -1413,6 +1432,7 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
                                         className="w-full bg-slate-900 text-xs text-white p-2 rounded-lg border border-slate-700 outline-none"
                                         value={useSystemVoice ? sysStudentVoiceURI : studentVoice}
                                         onChange={(e) => useSystemVoice ? setSysStudentVoiceURI(e.target.value) : setStudentVoice(e.target.value)}
+                                        onPointerDown={loadVoices} // Force refresh on interact
                                     >
                                         {useSystemVoice 
                                             ? systemVoices.map(v => <option key={v.voiceURI} value={v.voiceURI}>{v.name}</option>)
