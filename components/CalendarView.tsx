@@ -1,9 +1,11 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { Channel, Booking } from '../types';
-import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, Clock, Briefcase, Plus, Video, CheckCircle, X, Users, Loader2, Mic, Play, Mail, Sparkles, ArrowLeft, Monitor, Filter, LayoutGrid, List, Languages } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, Clock, Briefcase, Plus, Video, CheckCircle, X, Users, Loader2, Mic, Play, Mail, Sparkles, ArrowLeft, Monitor, Filter, LayoutGrid, List, Languages, CloudSun, Wind, BookOpen } from 'lucide-react';
 import { ChannelCard } from './ChannelCard';
 import { getUserBookings, createBooking, updateBookingInvite } from '../services/firestoreService';
+import { fetchLocalWeather, getWeatherDescription, WeatherData } from '../utils/weatherService';
+import { getLunarDate, getDailyWord, getSeasonContext, DailyWord } from '../utils/lunarService';
 
 interface CalendarViewProps {
   channels: Channel[];
@@ -88,6 +90,11 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [bookings, setBookings] = useState<Booking[]>([]);
   
+  // Rich Context State
+  const [weather, setWeather] = useState<WeatherData | null>(null);
+  const [dailyWord, setDailyWord] = useState<DailyWord | null>(null);
+  const [season, setSeason] = useState('');
+  
   // View State
   const [viewMode, setViewMode] = useState<'day' | 'week' | 'month'>('day');
   const [currentPage, setCurrentPage] = useState(1);
@@ -127,12 +134,25 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
     }
   }, [currentUser, isBookingModalOpen]);
 
+  // Fetch Weather & Daily Content
+  useEffect(() => {
+    fetchLocalWeather().then(setWeather);
+    setDailyWord(getDailyWord(new Date()));
+    setSeason(getSeasonContext(new Date()));
+  }, []);
+
+  // Update Daily Word when selected date changes
+  useEffect(() => {
+      setDailyWord(getDailyWord(selectedDate));
+      setSeason(getSeasonContext(selectedDate));
+  }, [selectedDate]);
+
   const getDateKey = (date: Date | number | string) => {
     const d = new Date(date);
     return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
   };
 
-  // 1. Grid Indicators (Always derived from all events to show dots)
+  // 1. Grid Indicators
   const eventsByDate = useMemo(() => {
     const map: Record<string, { channels: Channel[], bookings: Booking[] }> = {};
     
@@ -162,7 +182,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
       const startDay = getStartOfDay(selectedDate);
       const startWeek = getStartOfWeek(selectedDate);
       const endWeek = getEndOfWeek(selectedDate);
-      const startMonth = getStartOfMonth(displayDate); // Use displayDate for month view to match grid
+      const startMonth = getStartOfMonth(displayDate); 
       const endMonth = getEndOfMonth(displayDate);
 
       // Filter Logic
@@ -172,7 +192,6 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
           } else if (viewMode === 'week') {
               return itemDate >= startWeek && itemDate <= endWeek;
           } else {
-              // Month view uses displayDate (grid view)
               return itemDate >= startMonth && itemDate <= endMonth;
           }
       };
@@ -183,14 +202,13 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
           return filterItem(bDate);
       });
 
-      // Sorting (Newest First for Channels, Earliest First for Bookings)
       filteredChannels.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
       filteredBookings.sort((a, b) => new Date(`${a.date}T${a.time}`).getTime() - new Date(`${b.date}T${b.time}`).getTime());
 
       return { channels: filteredChannels, bookings: filteredBookings };
   }, [channels, bookings, selectedDate, displayDate, viewMode]);
 
-  // Pagination for Channels (Month View can be heavy)
+  // Pagination for Channels
   const paginatedChannels = useMemo(() => {
       if (viewMode === 'month') {
           const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
@@ -213,7 +231,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
 
   const navigateMonth = (direction: -1 | 1) => {
     setDisplayDate(new Date(year, month + direction, 1));
-    setCurrentPage(1); // Reset pagination on month change
+    setCurrentPage(1); 
   };
 
   const handleBookingDateSelect = (date: string) => {
@@ -256,10 +274,9 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
 
   const handleStartRecorder = async () => {
       if (!meetingTitle.trim()) return;
-      
       const systemPrompt = recorderMode === 'silent' 
-        ? `You are a professional interpreter. Your task is to transcribe the conversation and provide real-time translation of the user's speech into ${targetLanguage}. Speak only the translations clearly. Do not answer questions or engage in conversation, simply act as a voice translator.`
-        : "You are a helpful meeting assistant. Participate in the discussion, take notes, and answer questions when asked.";
+        ? `You are a professional interpreter. Translate to ${targetLanguage}.`
+        : "You are a helpful meeting assistant.";
 
       const newChannel: Channel = {
           id: `meeting-${Date.now()}`,
@@ -292,86 +309,129 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
       return d;
   };
 
+  // Weather Icon Helper
+  const WeatherDisplay = () => {
+      if (!weather) return <div className="text-slate-500 text-xs flex items-center gap-1"><Loader2 size={12} className="animate-spin"/> Weather</div>;
+      const desc = getWeatherDescription(weather.weatherCode);
+      return (
+          <div className="flex items-center gap-2 bg-blue-900/20 px-3 py-1.5 rounded-lg border border-blue-800/50">
+              <span className="text-xl">{desc.icon}</span>
+              <div className="flex flex-col">
+                  <span className="text-xs font-bold text-blue-200">{weather.temperature}°C</span>
+                  <span className="text-[10px] text-blue-300">{desc.label}</span>
+              </div>
+              <div className="h-6 w-px bg-blue-800/50 mx-1"></div>
+              <div className="flex flex-col">
+                  <span className="text-xs font-bold text-slate-300 flex items-center gap-1"><Wind size={10}/> {weather.windSpeed}</span>
+                  <span className="text-[10px] text-slate-500">km/h</span>
+              </div>
+          </div>
+      );
+  };
+
   return (
     <div className="space-y-8 animate-fade-in relative">
       
+      {/* --- Daily Insight Hero --- */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Main Date Card */}
+          <div className="lg:col-span-2 bg-gradient-to-br from-indigo-900 via-slate-900 to-slate-950 border border-indigo-500/30 rounded-2xl p-6 shadow-xl relative overflow-hidden group">
+              <div className="absolute top-0 right-0 p-32 bg-indigo-500/10 blur-[80px] rounded-full group-hover:bg-indigo-500/20 transition-all"></div>
+              
+              <div className="relative z-10 flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
+                  <div>
+                      <div className="flex items-center gap-2 mb-1">
+                          <span className="px-2 py-0.5 rounded text-[10px] bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 font-bold uppercase tracking-wider">{season}</span>
+                          <span className="px-2 py-0.5 rounded text-[10px] bg-slate-800 text-slate-400 border border-slate-700 font-bold uppercase tracking-wider">{getLunarDate(selectedDate).zodiac} Year</span>
+                      </div>
+                      <h2 className="text-4xl md:text-5xl font-bold text-white tracking-tight">
+                          {selectedDate.toLocaleDateString('en-US', { weekday: 'long' })}
+                      </h2>
+                      <div className="flex items-baseline gap-3 mt-1">
+                          <span className="text-2xl text-indigo-200">{selectedDate.toLocaleDateString('en-US', { month: 'long', day: 'numeric' })}</span>
+                          <span className="text-lg text-slate-500 font-mono">
+                              {getLunarDate(selectedDate).month} {getLunarDate(selectedDate).day} (Lunar)
+                          </span>
+                      </div>
+                  </div>
+                  
+                  <div className="flex flex-col items-end gap-3">
+                      <WeatherDisplay />
+                      <div className="flex gap-2">
+                          <button 
+                             onClick={() => { setIsRecorderModalOpen(true); setRecordScreen(false); setRecordCamera(false); }}
+                             className="p-2 bg-red-600 hover:bg-red-500 text-white rounded-lg shadow-lg shadow-red-900/20 transition-all hover:scale-105" title="Quick Record"
+                          >
+                              <Video size={20} />
+                          </button>
+                          <button 
+                             onClick={() => setIsBookingModalOpen(true)}
+                             className="p-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg shadow-lg shadow-indigo-900/20 transition-all hover:scale-105" title="Book Session"
+                          >
+                              <Plus size={20} />
+                          </button>
+                      </div>
+                  </div>
+              </div>
+          </div>
+
+          {/* Word of the Day Card */}
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 relative overflow-hidden flex flex-col justify-center">
+              <div className="absolute top-0 left-0 w-1 h-full bg-emerald-500"></div>
+              {dailyWord ? (
+                  <>
+                      <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-3 flex items-center gap-2">
+                          <BookOpen size={14} className="text-emerald-500"/> Daily Word
+                      </h3>
+                      <div className="flex justify-between items-baseline mb-1">
+                          <span className="text-2xl font-bold text-white">{dailyWord.word}</span>
+                          <span className="text-sm font-serif text-slate-500 italic">{dailyWord.pronunciation}</span>
+                      </div>
+                      <p className="text-xs text-slate-400 mb-4">{dailyWord.meaning}</p>
+                      
+                      <div className="mt-auto pt-4 border-t border-slate-800">
+                          <div className="flex justify-between items-baseline">
+                              <span className="text-lg font-bold text-emerald-400">{dailyWord.chinese}</span>
+                              <span className="text-[10px] text-slate-500">{dailyWord.chineseMean}</span>
+                          </div>
+                      </div>
+                  </>
+              ) : (
+                  <div className="text-center text-slate-500">
+                      <Loader2 className="animate-spin mx-auto mb-2" />
+                      Loading wisdom...
+                  </div>
+              )}
+          </div>
+      </div>
+
       {/* Calendar Grid Container */}
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl shadow-xl overflow-hidden">
+      <div className="bg-slate-900 border border-slate-800 rounded-2xl shadow-xl overflow-hidden flex flex-col md:flex-row">
         
-        {/* Main Header */}
-        <div className="p-6 bg-slate-800/50 border-b border-slate-800 flex flex-col lg:flex-row items-center justify-between gap-4">
-          <div className="flex items-center space-x-4 w-full lg:w-auto">
-            <div className="p-2 bg-indigo-500/20 text-indigo-400 rounded-lg">
-                <CalendarIcon size={24} />
+        {/* Sidebar Controls (Month Nav + Toggles) */}
+        <div className="p-4 bg-slate-950/50 border-b md:border-b-0 md:border-r border-slate-800 md:w-64 flex flex-col gap-6">
+            <div className="flex items-center justify-between bg-slate-900 p-2 rounded-xl border border-slate-800">
+                <button onClick={() => navigateMonth(-1)} className="p-2 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white transition-colors"><ChevronLeft size={18}/></button>
+                <div className="text-sm font-bold text-white">{MONTHS[month]} {year}</div>
+                <button onClick={() => navigateMonth(1)} className="p-2 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white transition-colors"><ChevronRight size={18}/></button>
             </div>
-            <div>
-                <h2 className="text-xl font-bold text-white">Your Calendar</h2>
-                <p className="text-xs text-slate-400">Podcasts & Scheduled Mentor Sessions</p>
+
+            <div className="flex flex-col gap-2">
+                <button onClick={() => setViewMode('day')} className={`p-2 text-xs font-bold rounded-lg text-left pl-4 transition-all ${viewMode === 'day' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-400 hover:bg-slate-900'}`}>Daily Agenda</button>
+                <button onClick={() => setViewMode('week')} className={`p-2 text-xs font-bold rounded-lg text-left pl-4 transition-all ${viewMode === 'week' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-400 hover:bg-slate-900'}`}>Weekly Overview</button>
+                <button onClick={() => setViewMode('month')} className={`p-2 text-xs font-bold rounded-lg text-left pl-4 transition-all ${viewMode === 'month' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-400 hover:bg-slate-900'}`}>Monthly Grid</button>
             </div>
-          </div>
 
-          <div className="flex flex-wrap items-center gap-3 w-full lg:w-auto justify-center lg:justify-end">
-             {currentUser && (
-                 <>
-                    <button 
-                       onClick={() => setIsBookingModalOpen(true)}
-                       className="flex items-center space-x-2 px-3 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-lg border border-slate-700 transition-colors text-xs font-bold shadow-sm"
-                    >
-                       <Plus size={14} />
-                       <span className="hidden sm:inline">Book Session</span>
-                       <span className="sm:hidden">Book</span>
-                    </button>
-                    <button 
-                       onClick={() => { setIsRecorderModalOpen(true); setRecordScreen(false); setRecordCamera(false); }}
-                       className="flex items-center space-x-2 px-3 py-2 bg-red-600 hover:bg-red-500 text-white rounded-lg transition-colors text-xs font-bold shadow-md shadow-red-500/20"
-                    >
-                       <Video size={14} />
-                       <span className="hidden sm:inline">Record Meeting</span>
-                       <span className="sm:hidden">Record</span>
-                    </button>
-                 </>
-             )}
-
-             <div className="flex items-center bg-slate-900 rounded-lg border border-slate-700 p-1 ml-2">
-                <button onClick={() => navigateMonth(-1)} className="p-1.5 hover:bg-slate-800 rounded-md text-slate-400 hover:text-white transition-colors">
-                <ChevronLeft size={18} />
-                </button>
-                <div className="px-3 font-mono font-bold text-slate-200 min-w-[100px] text-center text-xs">
-                {MONTHS[month]} {year}
-                </div>
-                <button onClick={() => navigateMonth(1)} className="p-1.5 hover:bg-slate-800 rounded-md text-slate-400 hover:text-white transition-colors">
-                <ChevronRight size={18} />
-                </button>
-             </div>
-          </div>
-        </div>
-
-        {/* View Toggles */}
-        <div className="px-6 pt-4 flex justify-center lg:justify-start">
-            <div className="bg-slate-950 p-1 rounded-lg border border-slate-800 inline-flex">
-                <button 
-                    onClick={() => setViewMode('day')}
-                    className={`px-4 py-1.5 rounded-md text-xs font-bold transition-all ${viewMode === 'day' ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
-                >
-                    Day View
-                </button>
-                <button 
-                    onClick={() => setViewMode('week')}
-                    className={`px-4 py-1.5 rounded-md text-xs font-bold transition-all ${viewMode === 'week' ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
-                >
-                    Week View
-                </button>
-                <button 
-                    onClick={() => setViewMode('month')}
-                    className={`px-4 py-1.5 rounded-md text-xs font-bold transition-all ${viewMode === 'month' ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
-                >
-                    Month View
-                </button>
+            <div className="mt-auto bg-indigo-900/10 p-3 rounded-xl border border-indigo-500/20">
+                <p className="text-[10px] text-indigo-300 font-bold mb-1">PRO TIP</p>
+                <p className="text-[10px] text-indigo-400/80 leading-relaxed">
+                    Click any day on the grid to see the Lunar date and historical context for that specific day.
+                </p>
             </div>
         </div>
 
-        {/* Calendar Grid */}
-        <div className="p-6">
+        {/* Grid Area */}
+        <div className="p-6 flex-1">
           <div className="grid grid-cols-7 mb-2">
             {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(d => (
               <div key={d} className="text-center text-[10px] font-bold text-slate-500 uppercase tracking-wider py-2">
@@ -382,7 +442,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
 
           <div className="grid grid-cols-7 gap-2">
             {days.map((date, idx) => {
-              if (!date) return <div key={`empty-${idx}`} className="aspect-square"></div>;
+              if (!date) return <div key={`empty-${idx}`} className="aspect-square bg-slate-900/20 rounded-xl border border-transparent"></div>;
               
               const dateKey = getDateKey(date);
               const data = eventsByDate[dateKey] || { channels: [], bookings: [] };
@@ -390,41 +450,42 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
               const hasBookings = data.bookings.length > 0;
               const isSelected = dateKey === getDateKey(selectedDate);
               const isToday = dateKey === getDateKey(new Date());
+              const lunar = getLunarDate(date);
 
               return (
                 <button
                   key={date.toString()}
                   onClick={() => {
                       setSelectedDate(date);
-                      // Switch to day view to show content for this specific date
-                      if (viewMode !== 'day') {
-                          setViewMode('day');
-                      }
-                      // Navigate month if clicking a leading/trailing day
-                      if (date.getMonth() !== displayDate.getMonth()) {
-                          setDisplayDate(new Date(date.getFullYear(), date.getMonth(), 1));
-                      }
+                      if (viewMode !== 'day') setViewMode('day');
+                      if (date.getMonth() !== displayDate.getMonth()) setDisplayDate(new Date(date.getFullYear(), date.getMonth(), 1));
                   }}
-                  className={`relative aspect-square rounded-xl border flex flex-col items-center justify-center transition-all duration-200 group
+                  className={`relative aspect-square rounded-xl border flex flex-col p-1.5 transition-all duration-200 group
                     ${isSelected 
                       ? 'bg-indigo-600 border-indigo-500 text-white shadow-lg shadow-indigo-500/25 scale-105 z-10' 
                       : 'bg-slate-800/30 border-slate-700/50 text-slate-400 hover:bg-slate-800 hover:border-slate-600'
                     }
-                    ${isToday && !isSelected ? 'ring-1 ring-emerald-500/50' : ''}
+                    ${isToday && !isSelected ? 'ring-1 ring-emerald-500/50 bg-emerald-900/10' : ''}
                   `}
                 >
-                  <span className={`text-sm font-bold ${isSelected ? 'text-white' : 'text-slate-300'}`}>
-                    {date.getDate()}
-                  </span>
+                  <div className="w-full flex justify-between items-start">
+                      <span className={`text-sm font-bold ${isSelected ? 'text-white' : 'text-slate-300'}`}>
+                        {date.getDate()}
+                      </span>
+                      {/* Weather Icon Placeholder for Today */}
+                      {isToday && !isSelected && <span className="text-[10px]">☀️</span>}
+                  </div>
+                  
+                  <div className="mt-auto w-full text-right">
+                      <span className={`text-[9px] font-mono ${isSelected ? 'text-indigo-200' : 'text-slate-600'}`}>
+                          {lunar.day}
+                      </span>
+                  </div>
                   
                   {/* Indicators */}
-                  <div className="flex space-x-1 mt-1.5 h-1.5 justify-center">
-                    {hasChannels && (
-                       <span className={`w-1.5 h-1.5 rounded-full ${isSelected ? 'bg-white' : 'bg-indigo-400 shadow-sm shadow-indigo-500/50'}`} title="Podcast"></span>
-                    )}
-                    {hasBookings && (
-                       <span className={`w-1.5 h-1.5 rounded-full ${isSelected ? 'bg-purple-200' : 'bg-purple-500 shadow-sm shadow-purple-500/50'}`} title="Mentor Session"></span>
-                    )}
+                  <div className="absolute bottom-1 left-1.5 flex gap-0.5">
+                    {hasChannels && <div className={`w-1 h-1 rounded-full ${isSelected ? 'bg-white' : 'bg-indigo-400'}`}></div>}
+                    {hasBookings && <div className={`w-1 h-1 rounded-full ${isSelected ? 'bg-purple-200' : 'bg-purple-500'}`}></div>}
                   </div>
                 </button>
               );
@@ -657,7 +718,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                               </div>
                           </div>
 
-                          {/* Language Selection for Silent Scribe / Translator Mode */}
+                          {/* Language Selection */}
                           {recorderMode === 'silent' && (
                               <div className="animate-fade-in">
                                   <label className="text-xs font-bold text-emerald-400 uppercase flex items-center gap-2">

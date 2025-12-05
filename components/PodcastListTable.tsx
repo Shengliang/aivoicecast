@@ -1,7 +1,6 @@
-
 import React from 'react';
 import { Channel } from '../types';
-import { ArrowUp, ArrowDown, Play, MessageSquare, ThumbsUp, Calendar, Hash, Clock } from 'lucide-react';
+import { ArrowUp, ArrowDown, Play, MessageSquare, ThumbsUp, Calendar, Hash } from 'lucide-react';
 
 export type SortKey = 'title' | 'voiceName' | 'likes' | 'createdAt' | 'author';
 
@@ -55,9 +54,6 @@ export const PodcastListTable: React.FC<PodcastListTableProps> = ({
               </th>
               <HeaderCell label="Engagement" sortKey="likes" />
               <HeaderCell label="Date" sortKey="createdAt" className="hidden sm:table-cell" />
-              <th className="px-6 py-4 text-left text-xs font-bold text-slate-400 uppercase tracking-wider hidden md:table-cell">
-                 <div className="flex items-center gap-2"><Clock size={14} /> Time</div>
-              </th>
               <th className="px-6 py-4"></th>
             </tr>
           </thead>
@@ -134,12 +130,6 @@ export const PodcastListTable: React.FC<PodcastListTableProps> = ({
                   </div>
                 </td>
 
-                <td className="px-6 py-4 whitespace-nowrap hidden md:table-cell">
-                  <div className="text-xs text-slate-500 font-mono">
-                     {channel.createdAt ? new Date(channel.createdAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : '-'}
-                  </div>
-                </td>
-
                 <td className="px-6 py-4 text-right">
                    <div className="opacity-0 group-hover:opacity-100 transition-opacity">
                       <button className="text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-500 px-3 py-1.5 rounded shadow-lg flex items-center gap-1 ml-auto">
@@ -152,7 +142,7 @@ export const PodcastListTable: React.FC<PodcastListTableProps> = ({
             
             {channels.length === 0 && (
                 <tr>
-                    <td colSpan={8} className="px-6 py-12 text-center text-slate-500 italic">
+                    <td colSpan={7} className="px-6 py-12 text-center text-slate-500 italic">
                         No podcasts found matching your criteria.
                     </td>
                 </tr>
