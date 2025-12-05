@@ -282,10 +282,11 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
         // Prioritize Siri and Enhanced voices on iOS
         filtered.sort((a, b) => {
             const getScore = (v: SpeechSynthesisVoice) => {
-                if (v.name.includes('Siri')) return 3; // Top priority
-                if (v.name.includes('Enhanced') || v.name.includes('Premium') || v.name.includes('Neural')) return 2;
-                if (QUALITY_KEYWORDS.some(k => v.name.includes(k))) return 1;
-                return 0;
+                const name = v.name.toLowerCase();
+                if (name.includes('siri')) return 4; // Top priority
+                if (name.includes('enhanced') || name.includes('premium') || name.includes('neural')) return 3;
+                if (QUALITY_KEYWORDS.some(k => name.includes(k.toLowerCase()))) return 2;
+                return 1;
             };
             return getScore(b) - getScore(a);
         });
@@ -293,10 +294,56 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
         if (filtered.length === 0) filtered = voices.filter(v => v.lang.startsWith(langCode));
         if (filtered.length === 0) filtered = voices;
         setSystemVoices(filtered);
-        if (!sysTeacherVoiceURI && filtered.length > 0) {
-            setSysTeacherVoiceURI(filtered[0].voiceURI);
-            if (filtered.length > 1) setSysStudentVoiceURI(filtered[1].voiceURI);
-            else setSysStudentVoiceURI(filtered[0].voiceURI);
+        
+        if (filtered.length > 0) {
+            // Find best teacher voice (Top of list)
+            const bestTeacher = filtered[0];
+            
+            // Find best student voice (Try to find a DIFFERENT Siri/Enhanced voice if possible)
+            let bestStudent = filtered.length > 1 ? filtered[1] : filtered[0];
+            
+            // If teacher is Siri, try to find another Siri for student
+            if (bestTeacher.name.toLowerCase().includes('siri')) {
+                 const otherSiri = filtered.find(v => v.voiceURI !== bestTeacher.voiceURI && v.name.toLowerCase().includes('siri'));
+                 if (otherSiri) bestStudent = otherSiri;
+            }
+
+            setSysTeacherVoiceURI(prev => {
+                // If we haven't selected anything yet, pick the best
+                if (!prev) return bestTeacher.voiceURI;
+                
+                const current = voices.find(v => v.voiceURI === prev);
+                
+                // If current selection is invalid (not in list anymore), pick best
+                if (!current) return bestTeacher.voiceURI;
+
+                // FORCE UPGRADE TO SIRI: 
+                // If the current voice is NOT Siri, but we FOUND a Siri voice in the filtered list, switch to Siri.
+                // This fixes the issue where "Samantha" might be persisted or selected by default before Siri loads.
+                const currentIsSiri = current.name.toLowerCase().includes('siri');
+                const bestIsSiri = bestTeacher.name.toLowerCase().includes('siri');
+
+                if (!currentIsSiri && bestIsSiri) {
+                    return bestTeacher.voiceURI;
+                }
+                
+                return prev;
+            });
+            
+            setSysStudentVoiceURI(prev => {
+                const current = voices.find(v => v.voiceURI === prev);
+                if (!prev) return bestStudent.voiceURI;
+                if (!current) return bestStudent.voiceURI;
+                
+                const currentIsSiri = current.name.toLowerCase().includes('siri');
+                const bestStudentIsSiri = bestStudent.name.toLowerCase().includes('siri');
+                
+                if (!currentIsSiri && bestStudentIsSiri) {
+                    return bestStudent.voiceURI;
+                }
+                
+                return prev;
+            });
         }
     };
     loadVoices();

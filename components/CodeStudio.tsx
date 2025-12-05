@@ -701,7 +701,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
   };
 
   const toggleFolder = (folderName: string) => {
-      setExpandedFolders(prev => ({...prev, [folderName]: !prev[folderName]}));
+      setExpandedFolders((prev) => ({...prev, [folderName]: !prev[folderName]}));
   };
 
   // Group files by folder
@@ -709,9 +709,9 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
       const groups: Record<string, {file: CodeFile, index: number}[]> = {};
       project.files.forEach((file, index) => {
           const parts = file.name.split('/');
-          const folder = (parts.length > 1 && parts[0]) ? parts[0] : 'root';
-          if (!groups[folder]) groups[folder] = [];
-          groups[folder].push({ file, index });
+          const folderName = (parts.length > 1 && parts[0]) ? parts[0] : 'root';
+          if (!groups[folderName]) groups[folderName] = [];
+          groups[folderName].push({ file, index });
       });
       return groups;
   }, [project.files]);
