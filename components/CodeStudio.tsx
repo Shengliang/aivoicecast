@@ -1,7 +1,6 @@
-
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { GoogleGenAI } from '@google/genai';
-import { ArrowLeft, Play, Save, Folder, File, Code, Terminal, Plus, Trash2, Loader2, ChevronRight, ChevronDown, Download, Smartphone, X, MessageSquare, CheckCircle, FileCode, FileJson, FileType, Search, Coffee, Hash } from 'lucide-react';
+import { ArrowLeft, Play, Save, Folder, File, Code, Terminal, Plus, Trash2, Loader2, ChevronRight, ChevronDown, Download, Smartphone, X, MessageSquare, CheckCircle, FileCode, FileJson, FileType, Search, Coffee, Hash, Eye } from 'lucide-react';
 import { GEMINI_API_KEY } from '../services/private_keys';
 import { CodeProject, CodeFile } from '../types';
 import { MarkdownView } from './MarkdownView';
@@ -13,7 +12,7 @@ interface CodeStudioProps {
 
 const INITIAL_PROJECT: CodeProject = {
   id: 'proj-bst-polyglot',
-  name: 'BST Polyglot (Read/Write)',
+  name: 'BST Polyglot (Gold Standard)',
   lastModified: Date.now(),
   files: [
     {
@@ -25,22 +24,32 @@ const INITIAL_PROJECT: CodeProject = {
         self.left = left
         self.right = right
 
-# Approach 1: Recursive DFS
+# Gold Standard Approach 1: Recursive DFS with Range
+# Time Complexity: O(N) - visits every node once
+# Space Complexity: O(H) - recursion stack depth (H = height of tree)
 def is_valid_bst_recursive(root, min_val=float('-inf'), max_val=float('inf')):
     if not root:
         return True
+    
+    # The current node's value must be strictly between min and max
     if not (min_val < root.val < max_val):
         return False
+        
+    # Recursively validate subtrees with updated constraints
+    # Left child must be < root.val
+    # Right child must be > root.val
     return (is_valid_bst_recursive(root.left, min_val, root.val) and
             is_valid_bst_recursive(root.right, root.val, max_val))
 
-# Approach 2: Iterative DFS using Stack
+# Gold Standard Approach 2: Iterative DFS using Stack
+# Explicit stack avoids recursion depth limits in Python
 def is_valid_bst_iterative(root):
     if not root:
         return True
     
     # Stack stores tuple: (node, lower_limit, upper_limit)
     stack = [(root, float('-inf'), float('inf'))]
+    
     while stack:
         node, low, high = stack.pop()
         if not node:
@@ -49,6 +58,7 @@ def is_valid_bst_iterative(root):
         if not (low < node.val < high):
             return False
             
+        # Push children to stack with updated constraints
         stack.append((node.right, node.val, high))
         stack.append((node.left, low, node.val))
         
@@ -63,23 +73,26 @@ def is_valid_bst_iterative(root):
         self.left = left
         self.right = right
 
+# Construct BST from Preorder Traversal
+# Uses O(N) time complexity by passing bound constraints
 def bstFromPreorder(preorder: list[int]) -> TreeNode:
-    # Use a list to pass 'i' by reference (mutable)
+    # Use a list for 'idx' to emulate pass-by-reference mutable integer
     idx = [0]
+    n = len(preorder)
     
     def build(bound):
-        # Stop if we used all elements OR next element violates bound
-        if idx[0] == len(preorder) or preorder[idx[0]] > bound:
+        # Stop if we used all elements OR next element exceeds bound
+        if idx[0] == n or preorder[idx[0]] > bound:
             return None
             
         val = preorder[idx[0]]
         idx[0] += 1
         root = TreeNode(val)
         
-        # All elements in left subtree must be < current val
+        # Left child must be smaller than current val
         root.left = build(val)
         
-        # All elements in right subtree must be < parent's bound
+        # Right child must be smaller than the bound inherited from parent
         root.right = build(bound)
         
         return root
@@ -97,15 +110,26 @@ def bstFromPreorder(preorder: list[int]) -> TreeNode:
   }
 }
 
-// Approach 1: Recursive
+/**
+ * Validates a Binary Search Tree using Recursion.
+ * @param {TreeNode} root
+ * @param {number} min - Lower bound
+ * @param {number} max - Upper bound
+ * @return {boolean}
+ */
 function isValidBSTRecursive(root, min = -Infinity, max = Infinity) {
   if (!root) return true;
+  
   if (root.val <= min || root.val >= max) return false;
+  
   return isValidBSTRecursive(root.left, min, root.val) && 
          isValidBSTRecursive(root.right, root.val, max);
 }
 
-// Approach 2: Iterative
+/**
+ * Validates a BST using Iteration (Stack).
+ * Avoids call stack overflow for deep trees.
+ */
 function isValidBSTIterative(root) {
   if (!root) return true;
   const stack = [{ node: root, min: -Infinity, max: Infinity }];
@@ -123,39 +147,6 @@ function isValidBSTIterative(root) {
 }`
     },
     {
-      name: 'javascript/build_bst.js',
-      language: 'javascript',
-      content: `function TreeNode(val, left, right) {
-    this.val = (val===undefined ? 0 : val)
-    this.left = (left===undefined ? null : left)
-    this.right = (right===undefined ? null : right)
-}
-
-/**
- * @param {number[]} preorder
- * @return {TreeNode}
- */
-var bstFromPreorder = function(preorder) {
-    let i = 0;
-    
-    const build = (bound) => {
-        if (i === preorder.length || preorder[i] > bound) return null;
-        
-        const root = new TreeNode(preorder[i++]);
-        
-        // Left child bounded by root value
-        root.left = build(root.val);
-        
-        // Right child bounded by parent's bound
-        root.right = build(bound);
-        
-        return root;
-    }
-    
-    return build(Infinity);
-};`
-    },
-    {
       name: 'java/IsBST.java',
       language: 'java',
       content: `import java.util.Stack;
@@ -168,20 +159,24 @@ public class IsBST {
         TreeNode(int x) { val = x; }
     }
 
-    // Approach 1: Recursive
+    // Approach 1: Recursive with Integer constraints
+    // Using Integer object allows null to represent infinity
     public boolean isValidBSTRecursive(TreeNode root) {
         return validate(root, null, null);
     }
 
     private boolean validate(TreeNode node, Integer min, Integer max) {
         if (node == null) return true;
+        
         if ((min != null && node.val <= min) || (max != null && node.val >= max)) {
             return false;
         }
+        
         return validate(node.left, min, node.val) && validate(node.right, node.val, max);
     }
 
     // Approach 2: Iterative
+    // Generic approach suitable for interviews
     public boolean isValidBSTIterative(TreeNode root) {
         if (root == null) return true;
         Stack<State> stack = new Stack<>();
@@ -214,40 +209,6 @@ public class IsBST {
 }`
     },
     {
-      name: 'java/BuildBST.java',
-      language: 'java',
-      content: `public class BuildBST {
-    public static class TreeNode {
-        int val;
-        TreeNode left;
-        TreeNode right;
-        TreeNode(int x) { val = x; }
-    }
-
-    int i = 0;
-    
-    public TreeNode bstFromPreorder(int[] preorder) {
-        // Start with max possible bound
-        return build(preorder, Integer.MAX_VALUE);
-    }
-
-    private TreeNode build(int[] A, int bound) {
-        // Return null if all elements used OR next element violates bound
-        if (i == A.length || A[i] > bound) return null;
-        
-        TreeNode root = new TreeNode(A[i++]);
-        
-        // Left subtree values must be smaller than current root
-        root.left = build(A, root.val);
-        
-        // Right subtree values must be smaller than inherited bound
-        root.right = build(A, bound);
-        
-        return root;
-    }
-}`
-    },
-    {
       name: 'cpp/is_bst.cpp',
       language: 'c++',
       content: `#include <stack>
@@ -264,14 +225,17 @@ struct TreeNode {
 };
 
 // Approach 1: Recursive
+// Using long long to handle edge cases where val is INT_MAX or INT_MIN
 bool isValidBSTRecursive(TreeNode* root, long minVal = LONG_MIN, long maxVal = LONG_MAX) {
     if (!root) return true;
+    
     if (root->val <= minVal || root->val >= maxVal) return false;
+    
     return isValidBSTRecursive(root->left, minVal, root->val) &&
            isValidBSTRecursive(root->right, root->val, maxVal);
 }
 
-// Approach 2: Iterative
+// Approach 2: Iterative with std::stack
 bool isValidBSTIterative(TreeNode* root) {
     if (!root) return true;
     stack<tuple<TreeNode*, long, long>> s;
@@ -291,40 +255,6 @@ bool isValidBSTIterative(TreeNode* root) {
 }`
     },
     {
-      name: 'cpp/build_bst.cpp',
-      language: 'c++',
-      content: `#include <vector>
-#include <climits>
-
-using namespace std;
-
-struct TreeNode {
-    int val;
-    TreeNode *left;
-    TreeNode *right;
-    TreeNode(int x) : val(x), left(NULL), right(NULL) {}
-};
-
-class Solution {
-    int i = 0;
-public:
-    TreeNode* bstFromPreorder(vector<int>& preorder) {
-        return build(preorder, INT_MAX);
-    }
-    
-    TreeNode* build(vector<int>& A, int bound) {
-        if (i == A.size() || A[i] > bound) return NULL;
-        
-        TreeNode* root = new TreeNode(A[i++]);
-        
-        root->left = build(A, root.val);
-        root->right = build(A, bound);
-        
-        return root;
-    }
-};`
-    },
-    {
       name: 'c/is_bst.c',
       language: 'c',
       content: `#include <stdio.h>
@@ -338,10 +268,12 @@ struct TreeNode {
     struct TreeNode *right;
 };
 
-// Approach 1: Recursive
+// Approach 1: Recursive Helper
 bool isValidBSTRecursiveHelper(struct TreeNode* root, long min, long max) {
     if (root == NULL) return true;
+    
     if (root->val <= min || root->val >= max) return false;
+    
     return isValidBSTRecursiveHelper(root->left, min, root->val) &&
            isValidBSTRecursiveHelper(root->right, root->val, max);
 }
@@ -350,7 +282,7 @@ bool isValidBSTRecursive(struct TreeNode* root) {
     return isValidBSTRecursiveHelper(root, LONG_MIN, LONG_MAX);
 }
 
-// Approach 2: Iterative (Simulating stack with array)
+// Approach 2: Iterative (Manual Stack Management)
 struct State {
     struct TreeNode* node;
     long min;
@@ -359,7 +291,9 @@ struct State {
 
 bool isValidBSTIterative(struct TreeNode* root) {
     if (!root) return true;
-    struct State stack[1000]; // Fixed size for simplicity
+    
+    // Simple fixed-size stack for demo. In production, use dynamic array.
+    struct State stack[1000]; 
     int top = -1;
     
     stack[++top] = (struct State){root, LONG_MIN, LONG_MAX};
@@ -371,48 +305,11 @@ bool isValidBSTIterative(struct TreeNode* root) {
         if (!node) continue;
         if (node->val <= current.min || node->val >= current.max) return false;
         
+        // Push Right then Left
         stack[++top] = (struct State){node->right, node->val, current.max};
         stack[++top] = (struct State){node->left, current.min, node->val};
     }
     return true;
-}`
-    },
-    {
-      name: 'c/build_bst.c',
-      language: 'c',
-      content: `#include <stdio.h>
-#include <stdlib.h>
-#include <limits.h>
-
-struct TreeNode {
-    int val;
-    struct TreeNode *left;
-    struct TreeNode *right;
-};
-
-struct TreeNode* createNode(int val) {
-    struct TreeNode* node = (struct TreeNode*)malloc(sizeof(struct TreeNode));
-    node->val = val;
-    node->left = NULL;
-    node->right = NULL;
-    return node;
-}
-
-// We pass 'index' as a pointer to maintain state across recursive calls
-struct TreeNode* build(int* preorder, int size, int* idx, int bound) {
-    if (*idx == size || preorder[*idx] > bound) return NULL;
-    
-    struct TreeNode* root = createNode(preorder[(*idx)++]);
-    
-    root->left = build(preorder, size, idx, root->val);
-    root->right = build(preorder, size, idx, bound);
-    
-    return root;
-}
-
-struct TreeNode* bstFromPreorder(int* preorder, int preorderSize) {
-    int idx = 0;
-    return build(preorder, preorderSize, &idx, INT_MAX);
 }`
     },
     {
@@ -428,7 +325,8 @@ pub struct TreeNode {
   pub right: Option<Rc<RefCell<TreeNode>>>,
 }
 
-// Approach 1: Recursive
+// Approach 1: Recursive with Option types for bounds
+// Using i64 for bounds to cover full i32 range of node values
 pub fn is_valid_bst_recursive(root: Option<Rc<RefCell<TreeNode>>>) -> bool {
     fn validate(node: Option<Rc<RefCell<TreeNode>>>, min: Option<i64>, max: Option<i64>) -> bool {
         match node {
@@ -436,6 +334,8 @@ pub fn is_valid_bst_recursive(root: Option<Rc<RefCell<TreeNode>>>) -> bool {
                 let val = n.borrow().val as i64;
                 if let Some(min_val) = min { if val <= min_val { return false; } }
                 if let Some(max_val) = max { if val >= max_val { return false; } }
+                
+                // Recursively call for children
                 validate(n.borrow().left.clone(), min, Some(val)) &&
                 validate(n.borrow().right.clone(), Some(val), max)
             }
@@ -445,7 +345,7 @@ pub fn is_valid_bst_recursive(root: Option<Rc<RefCell<TreeNode>>>) -> bool {
     validate(root, None, None)
 }
 
-// Approach 2: Iterative
+// Approach 2: Iterative with Vector as Stack
 pub fn is_valid_bst_iterative(root: Option<Rc<RefCell<TreeNode>>>) -> bool {
     if root.is_none() { return true; }
     let mut stack = vec![(root, None::<i64>, None::<i64>)];
@@ -453,6 +353,7 @@ pub fn is_valid_bst_iterative(root: Option<Rc<RefCell<TreeNode>>>) -> bool {
     while let Some((node_opt, min, max)) = stack.pop() {
         if let Some(node) = node_opt {
             let val = node.borrow().val as i64;
+            
             if let Some(min_val) = min { if val <= min_val { return false; } }
             if let Some(max_val) = max { if val >= max_val { return false; } }
             
@@ -461,50 +362,6 @@ pub fn is_valid_bst_iterative(root: Option<Rc<RefCell<TreeNode>>>) -> bool {
         }
     }
     true
-}`
-    },
-    {
-      name: 'rust/build_bst.rs',
-      language: 'rust',
-      content: `use std::rc::Rc;
-use std::cell::RefCell;
-
-#[derive(Debug, PartialEq, Eq)]
-pub struct TreeNode {
-  pub val: i32,
-  pub left: Option<Rc<RefCell<TreeNode>>>,
-  pub right: Option<Rc<RefCell<TreeNode>>>,
-}
-
-impl TreeNode {
-  #[inline]
-  pub fn new(val: i32) -> Self {
-    TreeNode { val, left: None, right: None }
-  }
-}
-
-pub fn bst_from_preorder(preorder: Vec<i32>) -> Option<Rc<RefCell<TreeNode>>> {
-    let mut i = 0;
-    
-    // Helper function takes mutable reference to 'i'
-    fn build(preorder: &Vec<i32>, i: &mut usize, bound: i32) -> Option<Rc<RefCell<TreeNode>>> {
-        if *i == preorder.len() || preorder[*i] > bound {
-            return None;
-        }
-        
-        let val = preorder[*i];
-        *i += 1;
-        
-        let root = Rc::new(RefCell::new(TreeNode::new(val)));
-        
-        // Mutably borrow inner cell to link children
-        root.borrow_mut().left = build(preorder, i, val);
-        root.borrow_mut().right = build(preorder, i, bound);
-        
-        Some(root)
-    }
-    
-    build(&preorder, &mut i, i32::MAX)
 }`
     },
     {
@@ -536,7 +393,7 @@ func validate(node *TreeNode, min, max int64) bool {
 		validate(node.Right, int64(node.Val), max)
 }
 
-// Approach 2: Iterative
+// Approach 2: Iterative using Slice as Stack
 type State struct {
 	node *TreeNode
 	min  int64
@@ -566,197 +423,11 @@ func isValidBSTIterative(root *TreeNode) bool {
 	}
 	return true
 }`
-    },
-    {
-      name: 'go/build_bst.go',
-      language: 'go',
-      content: `package main
-
-import "math"
-
-type TreeNode struct {
-	Val   int
-	Left  *TreeNode
-	Right *TreeNode
-}
-
-func bstFromPreorder(preorder []int) *TreeNode {
-	i := 0
-	var build func(bound int) *TreeNode
-	
-	build = func(bound int) *TreeNode {
-		if i == len(preorder) || preorder[i] > bound {
-			return nil
-		}
-		
-		root := &TreeNode{Val: preorder[i]}
-		i++
-		root.Left = build(root.Val)
-		root.Right = build(bound)
-		
-		return root
-	}
-	
-	return build(math.MaxInt64)
-}`
-    },
-    {
-      name: 'csharp/IsBST.cs',
-      language: 'c#',
-      content: `using System;
-using System.Collections.Generic;
-
-public class TreeNode {
-    public int val;
-    public TreeNode left;
-    public TreeNode right;
-    public TreeNode(int val=0, TreeNode left=null, TreeNode right=null) {
-        this.val = val;
-        this.left = left;
-        this.right = right;
-    }
-}
-
-public class Solution {
-    // Approach 1: Recursive
-    public bool IsValidBSTRecursive(TreeNode root) {
-        return Validate(root, null, null);
-    }
-    
-    private bool Validate(TreeNode node, int? min, int? max) {
-        if (node == null) return true;
-        if ((min != null && node.val <= min) || (max != null && node.val >= max)) return false;
-        return Validate(node.left, min, node.val) && Validate(node.right, node.val, max);
-    }
-
-    // Approach 2: Iterative
-    public bool IsValidBSTIterative(TreeNode root) {
-        if (root == null) return true;
-        var stack = new Stack<(TreeNode node, int? min, int? max)>();
-        stack.Push((root, null, null));
-        
-        while (stack.Count > 0) {
-            var (node, min, max) = stack.Pop();
-            if (node == null) continue;
-            
-            if ((min != null && node.val <= min) || (max != null && node.val >= max)) return false;
-            
-            stack.Push((node.right, node.val, max));
-            stack.Push((node.left, min, node.val));
-        }
-        return true;
-    }
-}`
-    },
-    {
-      name: 'csharp/BuildBST.cs',
-      language: 'c#',
-      content: `public class TreeNode {
-    public int val;
-    public TreeNode left;
-    public TreeNode right;
-    public TreeNode(int x) { val = x; }
-}
-
-public class Solution {
-    int i = 0;
-    
-    public TreeNode BstFromPreorder(int[] preorder) {
-        return Build(preorder, int.MaxValue);
-    }
-    
-    private TreeNode Build(int[] A, int bound) {
-        if (i == A.Length || A[i] > bound) return null;
-        
-        TreeNode root = new TreeNode(A[i++]);
-        root.left = Build(A, root.val);
-        root.right = Build(A, bound);
-        
-        return root;
-    }
-}`
-    },
-    {
-      name: 'typescript/is_bst.ts',
-      language: 'typescript',
-      content: `class TreeNode {
-    val: number;
-    left: TreeNode | null;
-    right: TreeNode | null;
-    constructor(val?: number, left?: TreeNode | null, right?: TreeNode | null) {
-        this.val = (val===undefined ? 0 : val)
-        this.left = (left===undefined ? null : left)
-        this.right = (right===undefined ? null : right)
-    }
-}
-
-// Approach 1: Recursive
-function isValidBSTRecursive(root: TreeNode | null): boolean {
-    const validate = (node: TreeNode | null, min: number, max: number): boolean => {
-        if (!node) return true;
-        if (node.val <= min || node.val >= max) return false;
-        return validate(node.left, min, node.val) && validate(node.right, node.val, max);
-    }
-    return validate(root, -Infinity, Infinity);
-}
-
-// Approach 2: Iterative
-function isValidBSTIterative(root: TreeNode | null): boolean {
-    if (!root) return true;
-    const stack: Array<{node: TreeNode | null, min: number, max: number}> = [];
-    stack.push({node: root, min: -Infinity, max: Infinity});
-    
-    while (stack.length > 0) {
-        const { node, min, max } = stack.pop()!;
-        if (!node) continue;
-        
-        if (node.val <= min || node.val >= max) return false;
-        
-        stack.push({node: node.right, min: node.val, max});
-        stack.push({node: node.left, min, max: node.val});
-    }
-    return true;
-}`
-    },
-    {
-      name: 'typescript/build_bst.ts',
-      language: 'typescript',
-      content: `class TreeNode {
-    val: number;
-    left: TreeNode | null;
-    right: TreeNode | null;
-    constructor(val?: number, left?: TreeNode | null, right?: TreeNode | null) {
-        this.val = (val===undefined ? 0 : val)
-        this.left = (left===undefined ? null : left)
-        this.right = (right===undefined ? null : right)
-    }
-}
-
-function bstFromPreorder(preorder: number[]): TreeNode | null {
-    let i = 0;
-    
-    const build = (bound: number): TreeNode | null => {
-        if (i === preorder.length || preorder[i] > bound) return null;
-        
-        const root = new TreeNode(preorder[i++]);
-        root.left = build(root.val);
-        root.right = build(bound);
-        
-        return root;
-    }
-    
-    return build(Infinity);
-}`
     }
   ]
 };
 
 const WEB_PROJECT_FILES: CodeFile[] = [
-    {
-        name: 'public/index.html',
-        language: 'html',
-        content: '<!DOCTYPE html>\n<html>\n<head>\n  <title>React App</title>\n</head>\n<body>\n  <div id="root"></div>\n</body>\n</html>'
-    },
     {
         name: 'src/App.tsx',
         language: 'typescript (react)',
@@ -854,7 +525,12 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [expandedFolders, setExpandedFolders] = useState<Record<string, boolean>>({});
   const [activeTemplate, setActiveTemplate] = useState('all');
+  const [viewMode, setViewMode] = useState<'code' | 'review'>('code');
   
+  // Refs for scrolling sync
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const lineNumbersRef = useRef<HTMLDivElement>(null);
+
   // Mobile check
   useEffect(() => {
       if (window.innerWidth < 768) setIsSidebarOpen(false);
@@ -889,6 +565,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
         });
     }
     setActiveFileIndex(0);
+    setViewMode('code');
   };
 
   const handleCodeChange = (newContent: string) => {
@@ -900,8 +577,15 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
     setProject({ ...project, files: updatedFiles });
   };
 
+  const handleScroll = () => {
+      if (textareaRef.current && lineNumbersRef.current) {
+          lineNumbersRef.current.scrollTop = textareaRef.current.scrollTop;
+      }
+  };
+
   const handleReviewCode = async () => {
     setIsReviewing(true);
+    setViewMode('review'); // Switch to review tab immediately to show loading state
     setOutput('');
     
     try {
@@ -916,17 +600,20 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
         }).join('\n\n');
         
         const prompt = `
-            You are a Senior Principal Software Engineer conducting a thorough code review.
+            You are a Senior Principal Software Engineer explaining this code to a student.
             
             Project Context:
             ${fileContext}
             
             Task:
-            1. Analyze the code for logic errors, security vulnerabilities, performance bottlenecks, and code style issues.
-            2. Be specific. Reference file names and line numbers (approximate) where possible.
-            3. Suggest improvements or specific refactors.
-            4. Compare the approaches if multiple files exist.
-            5. Return the response in formatted Markdown.
+            1. Analyze the **Time and Space Complexity** of the implemented algorithms.
+            2. Explain the **Logic** clearly (how the recursion or stack works).
+            3. Compare this implementation with other common approaches (e.g., Recursion vs Iteration trade-offs).
+            4. Highlight **Language-Specific Best Practices** demonstrated in the code (e.g., Python's float('-inf'), C++ struct binding, Java Integer objects).
+            
+            This is "Gold Standard" educational code. Focus on *teaching* why it is good, rather than finding bugs (unless you see a critical flaw).
+            
+            Return the response in structured Markdown with clear headers.
         `;
 
         const response = await ai.models.generateContent({
@@ -952,7 +639,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
       setActiveFileIndex(newFiles.length - 1);
       if (name.includes('/')) {
           const folderName = name.split('/')[0];
-          setExpandedFolders(prev => ({...prev, [folderName]: true}));
+          setExpandedFolders((prev: Record<string, boolean>) => ({...prev, [folderName]: true}));
       }
   };
 
@@ -967,7 +654,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
   };
 
   const toggleFolder = (folderName: string) => {
-      setExpandedFolders(prev => ({...prev, [folderName]: !prev[folderName]}));
+      setExpandedFolders((prev: Record<string, boolean>) => ({...prev, [folderName]: !prev[folderName]}));
   };
 
   // Group files by folder
@@ -983,6 +670,8 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
   }, [project.files]);
 
   const sortedFolders = Object.keys(filesByFolder).sort((a,b) => a === 'root' ? -1 : b === 'root' ? 1 : a.localeCompare(b));
+
+  const lineNumbers = activeFile.content.split('\n').length;
 
   return (
     <div className="min-h-screen bg-[#1e1e1e] text-gray-300 flex flex-col font-mono overflow-hidden">
@@ -1006,6 +695,22 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
              </select>
          </div>
          <div className="flex items-center gap-2">
+             <div className="flex bg-[#1e1e1e] rounded p-0.5 border border-[#3d3d3d] mr-2">
+                 <button 
+                    onClick={() => setViewMode('code')}
+                    className={`px-3 py-1 text-xs font-bold rounded transition-colors ${viewMode === 'code' ? 'bg-[#37373d] text-white' : 'text-gray-500 hover:text-gray-300'}`}
+                 >
+                    Editor
+                 </button>
+                 <button 
+                    onClick={() => setViewMode('review')}
+                    className={`px-3 py-1 text-xs font-bold rounded transition-colors flex items-center gap-1 ${viewMode === 'review' ? 'bg-[#37373d] text-white' : 'text-gray-500 hover:text-gray-300'}`}
+                 >
+                    AI Review
+                    {output && viewMode !== 'review' && <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full"></span>}
+                 </button>
+             </div>
+
              <button 
                 onClick={handleReviewCode}
                 disabled={isReviewing}
@@ -1050,7 +755,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
                                   {filesByFolder[folder].map(({file, index}) => (
                                       <div
                                           key={index}
-                                          onClick={() => { setActiveFileIndex(index); if(window.innerWidth<768) setIsSidebarOpen(false); }}
+                                          onClick={() => { setActiveFileIndex(index); if(window.innerWidth<768) setIsSidebarOpen(false); setViewMode('code'); }}
                                           className={`w-full text-left px-4 py-1.5 flex items-center justify-between group cursor-pointer ${activeFileIndex === index ? 'bg-[#37373d] text-white' : 'text-gray-400 hover:bg-[#2a2d2e]'} ${folder !== 'root' ? 'pl-8' : ''}`}
                                       >
                                           <div className="flex items-center gap-2 text-sm truncate">
@@ -1082,14 +787,15 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
              <Folder size={20} />
           </button>
 
-          {/* Main Editor Area */}
+          {/* Main Content Area */}
           <div className="flex-1 flex flex-col min-w-0 bg-[#1e1e1e]">
-              {/* Tab Bar */}
-              <div className="flex overflow-x-auto bg-[#252526] scrollbar-thin scrollbar-thumb-[#3d3d3d]">
+              
+              {/* File Tabs */}
+              <div className="flex overflow-x-auto bg-[#252526] scrollbar-thin scrollbar-thumb-[#3d3d3d] shrink-0">
                   {project.files.map((file, idx) => (
                       <div 
                         key={idx}
-                        onClick={() => setActiveFileIndex(idx)}
+                        onClick={() => { setActiveFileIndex(idx); setViewMode('code'); }}
                         className={`px-4 py-2 text-xs border-r border-[#1e1e1e] cursor-pointer flex items-center gap-2 min-w-[120px] hover:bg-[#2d2d2d] transition-colors ${activeFileIndex === idx ? 'bg-[#1e1e1e] text-white border-t-2 border-t-indigo-500' : 'bg-[#2d2d2d] text-gray-500'}`}
                       >
                           <FileIcon filename={file.name} />
@@ -1098,44 +804,73 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
                   ))}
               </div>
 
-              {/* Code Area */}
-              <div className="flex-1 relative group">
-                  <textarea 
-                      value={activeFile.content}
-                      onChange={(e) => handleCodeChange(e.target.value)}
-                      className="w-full h-full bg-[#1e1e1e] text-gray-200 p-4 font-mono text-sm outline-none resize-none leading-relaxed"
-                      spellCheck={false}
-                      autoCapitalize="off"
-                      autoComplete="off"
-                      autoCorrect="off"
-                  />
-                  <div className="absolute top-2 right-4 text-xs text-gray-600 bg-[#1e1e1e]/80 px-2 py-1 rounded pointer-events-none border border-[#3d3d3d]">
-                      {getLanguageFromFilename(activeFile.name).toUpperCase()}
-                  </div>
-              </div>
-
-              {/* AI Review / Output Panel */}
-              <div className="h-2/5 bg-[#1e1e1e] border-t border-[#3d3d3d] flex flex-col">
-                  <div className="px-4 py-1.5 bg-[#252526] text-xs font-bold text-gray-400 flex items-center justify-between border-b border-[#3d3d3d]">
-                      <div className="flex items-center gap-2">
-                          <MessageSquare size={12} className="text-indigo-400" />
-                          <span>AI REVIEW / FEEDBACK</span>
+              {viewMode === 'code' ? (
+                  /* Code Editor View */
+                  <div className="flex-1 relative group flex">
+                      {/* Line Numbers Gutter */}
+                      <div 
+                        ref={lineNumbersRef}
+                        className="w-12 bg-[#1e1e1e] text-right pr-3 pt-4 text-slate-600 font-mono text-xs select-none border-r border-[#2d2d2d] overflow-hidden"
+                      >
+                          {Array.from({length: lineNumbers}).map((_, i) => (
+                              <div key={i} className="leading-relaxed">{i + 1}</div>
+                          ))}
                       </div>
-                      <button onClick={() => setOutput('')} className="hover:text-white"><Trash2 size={12}/></button>
-                  </div>
-                  <div className="flex-1 p-4 overflow-y-auto bg-[#1e1e1e]">
-                      {output ? (
-                          <div className="prose prose-invert prose-sm max-w-none text-gray-300">
-                              <MarkdownView content={output} />
+
+                      {/* Text Editor */}
+                      <div className="flex-1 relative">
+                          <textarea 
+                              ref={textareaRef}
+                              value={activeFile.content}
+                              onChange={(e) => handleCodeChange(e.target.value)}
+                              onScroll={handleScroll}
+                              className="w-full h-full bg-[#1e1e1e] text-gray-200 p-4 font-mono text-sm outline-none resize-none leading-relaxed whitespace-pre"
+                              spellCheck={false}
+                              autoCapitalize="off"
+                              autoComplete="off"
+                              autoCorrect="off"
+                          />
+                          <div className="absolute top-2 right-4 text-xs text-gray-500 bg-[#1e1e1e]/90 px-2 py-1 rounded pointer-events-none border border-[#3d3d3d]">
+                              {getLanguageFromFilename(activeFile.name).toUpperCase()}
                           </div>
-                      ) : (
-                          <div className="h-full flex flex-col items-center justify-center text-gray-600 space-y-2">
-                              <CheckCircle size={32} className="opacity-20" />
-                              <p className="text-xs">Ready to review. Click "REVIEW CODE" to analyze.</p>
-                          </div>
-                      )}
+                      </div>
                   </div>
-              </div>
+              ) : (
+                  /* AI Review View */
+                  <div className="flex-1 flex flex-col bg-[#1e1e1e] overflow-hidden">
+                      <div className="px-4 py-3 bg-[#252526] text-xs font-bold text-gray-400 flex items-center justify-between border-b border-[#3d3d3d]">
+                          <div className="flex items-center gap-2">
+                              <MessageSquare size={14} className="text-indigo-400" />
+                              <span>AI ANALYSIS & FEEDBACK</span>
+                          </div>
+                          {output && (
+                              <button onClick={() => setOutput('')} className="hover:text-white flex items-center gap-1">
+                                  <Trash2 size={12}/> Clear
+                              </button>
+                          )}
+                      </div>
+                      <div className="flex-1 p-8 overflow-y-auto">
+                          {isReviewing ? (
+                              <div className="h-full flex flex-col items-center justify-center text-indigo-400 space-y-4">
+                                  <Loader2 size={48} className="animate-spin" />
+                                  <p className="text-sm font-bold">Analyzing Code Structure...</p>
+                              </div>
+                          ) : output ? (
+                              <div className="prose prose-invert prose-sm max-w-4xl mx-auto text-gray-300">
+                                  <MarkdownView content={output} />
+                              </div>
+                          ) : (
+                              <div className="h-full flex flex-col items-center justify-center text-gray-600 space-y-4">
+                                  <Eye size={48} className="opacity-20" />
+                                  <div className="text-center">
+                                      <p className="text-sm font-bold text-gray-500">No Review Generated Yet</p>
+                                      <p className="text-xs mt-2 max-w-xs mx-auto">Click the "REVIEW CODE" button in the top bar to get an AI analysis of your current file.</p>
+                                  </div>
+                              </div>
+                          )}
+                      </div>
+                  </div>
+              )}
           </div>
       </div>
     </div>
