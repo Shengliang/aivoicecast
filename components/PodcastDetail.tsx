@@ -187,7 +187,7 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
   const [useSystemVoice, setUseSystemVoice] = useState(true);
   const [systemVoices, setSystemVoices] = useState<SpeechSynthesisVoice[]>([]);
   const [allRawVoices, setAllRawVoices] = useState<SpeechSynthesisVoice[]>([]);
-  const [showRawVoiceList, setShowRawVoiceList] = useState(false);
+  const [isVoiceDebugOpen, setIsVoiceDebugOpen] = useState(false);
   const [voicePage, setVoicePage] = useState(1);
   const [sysTeacherVoiceURI, setSysTeacherVoiceURI] = useState('');
   const [sysStudentVoiceURI, setSysStudentVoiceURI] = useState('');
@@ -292,17 +292,9 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
     if (voices.length === 0) {
         status = "Browser reported 0 voices. (System TTS may be initializing...)";
     } else {
-        // Find high quality voices for diagnostics
-        const siriCount = voices.filter(v => v.name.toLowerCase().includes('siri')).length;
-        const enhancedCount = voices.filter(v => v.name.toLowerCase().includes('enhanced') || v.name.toLowerCase().includes('premium')).length;
-        
         // Grab first few names to show the user what the browser actually sees
         const exampleNames = voices.slice(0, 3).map(v => v.name).join(', ');
-        
         status = `Detected ${voices.length} voices. (e.g. ${exampleNames}...)`;
-        if (siriCount > 0) status += ` Found ${siriCount} "Siri" voices.`;
-        if (enhancedCount > 0) status += ` Found ${enhancedCount} "Enhanced" voices.`;
-        if (siriCount === 0 && enhancedCount === 0) status += ` No explicit "Siri" label found. Check the full list.`;
     }
     setVoiceDebugStatus(status);
     // --- END DIAGNOSTICS ---
@@ -1467,82 +1459,22 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
                                         {voiceDebugStatus}
                                     </p>
                                     
-                                    {!voiceDebugStatus.toLowerCase().includes('siri') && !voiceDebugStatus.toLowerCase().includes('success') && (
-                                        <div className="bg-amber-900/20 border border-amber-500/30 p-2 rounded text-[10px] text-amber-200">
-                                            <strong className="block mb-1 text-amber-400 flex items-center gap-1"><AlertTriangle size={10}/> iOS/macOS Note</strong>
-                                            <p className="opacity-80">
-                                                On iOS, high-quality voices like "Siri" often appear here as <strong>Samantha, Aaron, Arthur, or Martha</strong>. 
-                                                If you see "Voice 4" or "English (US)" in your settings, check if one of those names is available in the list below.
-                                            </p>
-                                        </div>
-                                    )}
+                                    <div className="bg-amber-900/20 border border-amber-500/30 p-2 rounded text-[10px] text-amber-200">
+                                        <strong className="block mb-1 text-amber-400 flex items-center gap-1"><AlertTriangle size={10}/> Voice Availability</strong>
+                                        <p className="opacity-80">
+                                            Available voices depend on your browser and OS. Some high-quality voices (like Siri) may not be exposed to web apps.
+                                        </p>
+                                    </div>
 
-                                    {/* Raw Voice List for Debugging */}
-                                    <div className="mt-2">
+                                    {/* Raw Voice List Trigger */}
+                                    <div className="mt-3">
                                         <button 
-                                            onClick={() => setShowRawVoiceList(!showRawVoiceList)}
-                                            className="text-[10px] text-indigo-400 flex items-center gap-1 hover:text-indigo-300 bg-indigo-900/20 px-2 py-1 rounded border border-indigo-500/30"
+                                            onClick={() => setIsVoiceDebugOpen(true)}
+                                            className="w-full text-[10px] uppercase font-bold tracking-wider text-indigo-400 flex items-center justify-center gap-2 hover:text-white bg-indigo-900/20 hover:bg-indigo-900/40 py-2 rounded border border-indigo-500/30 transition-all"
                                         >
-                                            <ListMusic size={12} /> {showRawVoiceList ? 'Hide' : 'Show All'} {allRawVoices.length} Voices
+                                            <ListMusic size={14} /> 
+                                            {`Inspect ${allRawVoices.length} Detected Voices`}
                                         </button>
-                                        
-                                        {showRawVoiceList && (
-                                            <div className="mt-2 bg-black p-3 rounded border border-slate-800">
-                                                <div className="flex justify-between items-center mb-2 pb-2 border-b border-slate-800">
-                                                    <span className="text-[10px] text-slate-500 font-mono">
-                                                        Showing {(voicePage - 1) * 10 + 1}-{Math.min(voicePage * 10, allRawVoices.length)} of {allRawVoices.length}
-                                                    </span>
-                                                    <button 
-                                                        onClick={handleCopyVoices}
-                                                        className="flex items-center gap-1 text-[10px] text-emerald-400 hover:text-emerald-300"
-                                                    >
-                                                        <Copy size={10} /> Copy All
-                                                    </button>
-                                                </div>
-                                                
-                                                <div className="overflow-x-auto">
-                                                    <table className="w-full text-[10px] font-mono text-slate-400 text-left">
-                                                        <thead>
-                                                            <tr className="text-slate-500 border-b border-slate-800">
-                                                                <th className="pb-1">Name</th>
-                                                                <th className="pb-1">Lang</th>
-                                                                <th className="pb-1">URI</th>
-                                                            </tr>
-                                                        </thead>
-                                                        <tbody>
-                                                            {allRawVoices.slice((voicePage - 1) * 10, voicePage * 10).map((v, i) => (
-                                                                <tr key={i} className="hover:bg-slate-900 border-b border-slate-900/50">
-                                                                    <td className="py-1 pr-2 text-indigo-300">{v.name}</td>
-                                                                    <td className="py-1 pr-2">{v.lang}</td>
-                                                                    <td className="py-1 opacity-50 truncate max-w-[100px]" title={v.voiceURI}>{v.voiceURI}</td>
-                                                                </tr>
-                                                            ))}
-                                                        </tbody>
-                                                    </table>
-                                                </div>
-
-                                                {/* Pagination Controls */}
-                                                {allRawVoices.length > 10 && (
-                                                    <div className="flex justify-between items-center mt-3 pt-2 border-t border-slate-800">
-                                                        <button 
-                                                            onClick={() => setVoicePage(p => Math.max(1, p - 1))}
-                                                            disabled={voicePage === 1}
-                                                            className="p-1 hover:bg-slate-800 rounded disabled:opacity-30 text-slate-400 hover:text-white transition-colors"
-                                                        >
-                                                            <ChevronLeft size={14} />
-                                                        </button>
-                                                        <span className="text-[10px] text-slate-600">Page {voicePage} / {Math.ceil(allRawVoices.length / 10)}</span>
-                                                        <button 
-                                                            onClick={() => setVoicePage(p => Math.min(Math.ceil(allRawVoices.length / 10), p + 1))}
-                                                            disabled={voicePage === Math.ceil(allRawVoices.length / 10)}
-                                                            className="p-1 hover:bg-slate-800 rounded disabled:opacity-30 text-slate-400 hover:text-white transition-colors"
-                                                        >
-                                                            <ChevronRight size={14} />
-                                                        </button>
-                                                    </div>
-                                                )}
-                                            </div>
-                                        )}
                                     </div>
                                 </div>
                             )}
@@ -1595,7 +1527,7 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
                                             <li>Tap <strong>Spoken Content</strong> → <strong>Voices</strong>.</li>
                                             <li>Select <strong>English</strong>.</li>
                                             <li>Download <strong>Siri</strong> (Voice 1-4) or <strong>Samantha (Enhanced)</strong>.</li>
-                                            <li>Refresh this app. The new voices will appear in the "System Voice" list.</li>
+                                            <li>Refresh this app. New voices may appear as "Samantha" or similar names.</li>
                                         </ol>
                                     </div>
                                 )}
@@ -1794,6 +1726,78 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
                       >
                           <Play size={18} fill="currentColor"/>
                           <span>{t.start}</span>
+                      </button>
+                  </div>
+              </div>
+          </div>
+      )}
+
+      {/* Voice Debugger Modal */}
+      {isVoiceDebugOpen && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-950/90 backdrop-blur-md">
+              <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-2xl shadow-2xl flex flex-col max-h-[85vh] animate-fade-in-up">
+                  <div className="p-4 border-b border-slate-800 bg-slate-900 rounded-t-2xl flex justify-between items-center">
+                      <div>
+                          <h3 className="text-lg font-bold text-white">System Voice Registry</h3>
+                          <p className="text-xs text-slate-500">
+                              Page {voicePage} of {Math.ceil(allRawVoices.length / 10)} • Total: {allRawVoices.length}
+                          </p>
+                      </div>
+                      <button onClick={() => setIsVoiceDebugOpen(false)}><X size={20} className="text-slate-400 hover:text-white"/></button>
+                  </div>
+                  
+                  <div className="p-4 flex-1 overflow-y-auto">
+                      {allRawVoices.length > 0 ? (
+                          <div className="border border-slate-800 rounded-lg overflow-hidden">
+                              <table className="w-full text-xs text-left">
+                                  <thead className="bg-slate-950 text-slate-400 font-mono uppercase">
+                                      <tr>
+                                          <th className="p-3 border-b border-slate-800">Name</th>
+                                          <th className="p-3 border-b border-slate-800">Lang</th>
+                                          <th className="p-3 border-b border-slate-800">URI / ID</th>
+                                          <th className="p-3 border-b border-slate-800">Local</th>
+                                      </tr>
+                                  </thead>
+                                  <tbody className="divide-y divide-slate-800 bg-slate-900/50">
+                                      {allRawVoices.slice((voicePage - 1) * 10, voicePage * 10).map((v, i) => (
+                                          <tr key={i} className="hover:bg-slate-800/50">
+                                              <td className="p-3 text-indigo-300 font-bold">{v.name}</td>
+                                              <td className="p-3 text-slate-400">{v.lang}</td>
+                                              <td className="p-3 text-slate-500 font-mono text-[10px] break-all">{v.voiceURI}</td>
+                                              <td className="p-3 text-slate-400">{v.localService ? 'Yes' : 'No'}</td>
+                                          </tr>
+                                      ))}
+                                  </tbody>
+                              </table>
+                          </div>
+                      ) : (
+                          <p className="text-center text-slate-500 py-8">No voices detected.</p>
+                      )}
+                  </div>
+
+                  <div className="p-4 border-t border-slate-800 bg-slate-900 rounded-b-2xl flex justify-between items-center">
+                      <div className="flex gap-2">
+                          <button 
+                              onClick={() => setVoicePage(p => Math.max(1, p - 1))}
+                              disabled={voicePage === 1}
+                              className="px-4 py-2 bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-white rounded-lg text-xs font-bold transition-colors"
+                          >
+                              <ChevronLeft size={14} /> Prev
+                          </button>
+                          <button 
+                              onClick={() => setVoicePage(p => Math.min(Math.ceil(allRawVoices.length / 10), p + 1))}
+                              disabled={voicePage === Math.ceil(allRawVoices.length / 10)}
+                              className="px-4 py-2 bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-white rounded-lg text-xs font-bold transition-colors"
+                          >
+                              Next <ChevronRight size={14} />
+                          </button>
+                      </div>
+                      
+                      <button 
+                          onClick={handleCopyVoices}
+                          className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold shadow-lg shadow-emerald-500/20 transition-all"
+                      >
+                          <Copy size={14} /> Copy All List
                       </button>
                   </div>
               </div>
