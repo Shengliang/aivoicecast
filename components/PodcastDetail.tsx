@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Channel, GeneratedLecture, Chapter, SubTopic, TranscriptItem } from '../types';
-import { ArrowLeft, Play, Pause, BookOpen, MessageCircle, Sparkles, User, GraduationCap, Loader2, ChevronDown, ChevronRight, SkipForward, SkipBack, Settings, X, Mic, Download, RefreshCw, Square, MoreVertical, Edit, Lock, Zap, ToggleLeft, ToggleRight, Users, Check, AlertTriangle, Activity, MessageSquare, FileText, Code, Video, Monitor, PlusCircle, Bot, ExternalLink, ChevronLeft, Menu, List, PanelLeftClose, PanelLeftOpen, CornerDownRight, Trash2, FileDown, Printer, FileJson } from 'lucide-react';
+import { ArrowLeft, Play, Pause, BookOpen, MessageCircle, Sparkles, User, GraduationCap, Loader2, ChevronDown, ChevronRight, SkipForward, SkipBack, Settings, X, Mic, Download, RefreshCw, Square, MoreVertical, Edit, Lock, Zap, ToggleLeft, ToggleRight, Users, Check, AlertTriangle, Activity, MessageSquare, FileText, Code, Video, Monitor, PlusCircle, Bot, ExternalLink, ChevronLeft, Menu, List, PanelLeftClose, PanelLeftOpen, CornerDownRight, Trash2, FileDown, Printer, FileJson, HelpCircle } from 'lucide-react';
 import { generateLectureScript } from '../services/lectureGenerator';
 import { generateCurriculum } from '../services/curriculumGenerator';
 import { synthesizeSpeech, cleanTextForTTS, checkAudioCache, clearAudioCache } from '../services/tts';
@@ -186,6 +186,7 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
   const [expandedChapterId, setExpandedChapterId] = useState<string | null>(null);
   const [activeSubTopicId, setActiveSubTopicId] = useState<string | null>(null);
   const [guestError, setGuestError] = useState<string | null>(null);
+  const [showIOSHelp, setShowIOSHelp] = useState(false);
   
   const [generationProgress, setGenerationProgress] = useState<GenProgress | null>(null);
   const [isAudioReady, setIsAudioReady] = useState(false);
@@ -1366,6 +1367,29 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
                                     </select>
                                 </div>
                             </div>
+
+                            {/* Help Section for iOS Users */}
+                            <div className="mt-4 pt-3 border-t border-slate-700/50">
+                                <button 
+                                    onClick={() => setShowIOSHelp(!showIOSHelp)} 
+                                    className="flex items-center gap-2 text-xs text-indigo-400 hover:text-white transition-colors"
+                                >
+                                    <HelpCircle size={14} />
+                                    <span>iPhone/iPad Users: Improve Voice Quality</span>
+                                </button>
+                                {showIOSHelp && (
+                                    <div className="mt-2 p-3 bg-indigo-900/20 border border-indigo-500/30 rounded-lg text-xs text-indigo-200">
+                                        <p className="font-bold mb-2 text-white">How to enable high-quality "Neural" system voices:</p>
+                                        <ol className="list-decimal pl-4 space-y-1 text-indigo-200/80">
+                                            <li>Open iPhone <strong>Settings</strong> → <strong>Accessibility</strong>.</li>
+                                            <li>Tap <strong>Spoken Content</strong> → <strong>Voices</strong>.</li>
+                                            <li>Select <strong>English</strong>.</li>
+                                            <li>Download <strong>Siri</strong> (Voice 1-4) or <strong>Samantha (Enhanced)</strong>.</li>
+                                            <li>Refresh this app. The new voices will appear in the "System Voice" list.</li>
+                                        </ol>
+                                    </div>
+                                )}
+                            </div>
                         </div>
                     )}
 
@@ -1403,6 +1427,16 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
                             
                             {!isPlaying && !useSystemVoice && !isAudioReady && !isGenerating && (
                                 <span className="text-xs text-indigo-400 font-medium animate-pulse">Generate Audio First</span>
+                            )}
+
+                            {/* iOS System Voice Help Trigger */}
+                            {useSystemVoice && (
+                                <button 
+                                    onClick={() => { setShowVoiceSettings(true); setShowIOSHelp(true); }}
+                                    className="text-[10px] text-slate-500 hover:text-indigo-400 flex items-center gap-1 mt-1"
+                                >
+                                    <HelpCircle size={10} /> Improve Voice
+                                </button>
                             )}
                         </div>
 
@@ -1529,7 +1563,7 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
                                               <Video size={16} />
                                           </div>
                                           <div>
-                                              <p className={`font-bold text-xs ${isCameraRecordingEnabled ? 'text-indigo-400' : 'text-slate-400'}`}>Include Camera</p>
+                                              <p className={`font-bold text-xs ${isCameraRecordingEnabled ? 'text-indigo-400' : 'text-slate-400'}`}>Include Camera Video</p>
                                           </div>
                                       </div>
                                       <div className={`w-4 h-4 rounded-full border flex items-center justify-center ${isCameraRecordingEnabled ? 'border-indigo-500 bg-indigo-500 text-white' : 'border-slate-500'}`}>

@@ -684,9 +684,8 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
       const parts = name.split('/');
       if (parts.length > 1) {
           const folderName = parts[0];
-          // Fix for: Type 'unknown' cannot be used as an index type
           if (folderName) {
-             setExpandedFolders((prev: Record<string, boolean>) => ({...prev, [folderName as string]: true}));
+             setExpandedFolders(prev => ({...prev, [folderName]: true}));
           }
       }
   };
