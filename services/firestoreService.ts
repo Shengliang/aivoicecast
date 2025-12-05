@@ -20,6 +20,18 @@ function sanitizeData(data: any): any {
   return data;
 }
 
+// --- DEBUG / ADMIN ---
+
+export async function getDebugCollectionDocs(collectionName: string, limitVal = 20): Promise<any[]> {
+  try {
+    const snap = await db.collection(collectionName).limit(limitVal).get();
+    return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  } catch (e) {
+    console.error(`Error fetching ${collectionName}`, e);
+    throw e;
+  }
+}
+
 // --- STORAGE ---
 
 export async function uploadCommentAttachment(file: Blob, path: string): Promise<string> {

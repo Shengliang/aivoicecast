@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useMemo } from 'react';
 import { Channel, ViewState, UserProfile, TranscriptItem } from './types';
 import { 
@@ -17,6 +18,7 @@ import { FirebaseConfigModal } from './components/FirebaseConfigModal';
 import { DebugView } from './components/DebugView';
 import { CloudDebugView } from './components/CloudDebugView';
 import { PublicChannelInspector } from './components/PublicChannelInspector';
+import { FirestoreInspector } from './components/FirestoreInspector';
 import { StudioMenu } from './components/StudioMenu';
 import { ChannelSettingsModal } from './components/ChannelSettingsModal';
 import { CommentsModal } from './components/CommentsModal';
@@ -83,10 +85,13 @@ const UI_TEXT = {
   }
 };
 
+// Add to types.ts in real project, but here we extend locally for the new view state
+type ExtendedViewState = ViewState | 'firestore_debug';
+
 const App: React.FC = () => {
   const [language, setLanguage] = useState<'en' | 'zh'>('en');
   const t = UI_TEXT[language];
-  const [viewState, setViewState] = useState<ViewState>('directory');
+  const [viewState, setViewState] = useState<ExtendedViewState>('directory');
   const [activeChannelId, setActiveChannelId] = useState<string | null>(null);
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
   const [currentUser, setCurrentUser] = useState<any>(null);
@@ -653,6 +658,7 @@ const App: React.FC = () => {
         {viewState === 'debug' && <DebugView onBack={() => setViewState('directory')} />}
         {viewState === 'cloud_debug' && <CloudDebugView onBack={() => setViewState('directory')} />}
         {viewState === 'public_debug' && <PublicChannelInspector onBack={() => setViewState('directory')} />}
+        {viewState === 'firestore_debug' && <FirestoreInspector onBack={() => setViewState('directory')} />}
       </div>
 
       {/* --- Footer --- */}
@@ -669,9 +675,9 @@ const App: React.FC = () => {
               </div>
               
               <div className="flex flex-wrap justify-center gap-6 text-sm text-slate-400">
-                 <button onClick={() => setViewState('debug')} className="hover:text-indigo-400 flex items-center gap-2"><Database size={14}/> DB Inspector</button>
+                 <button onClick={() => setViewState('debug')} className="hover:text-indigo-400 flex items-center gap-2"><Database size={14}/> IndexedDB</button>
                  <button onClick={() => setViewState('cloud_debug')} className="hover:text-indigo-400 flex items-center gap-2"><Cloud size={14}/> Cloud Storage</button>
-                 <button onClick={() => setViewState('public_debug')} className="hover:text-indigo-400 flex items-center gap-2"><Globe size={14}/> Public Channels</button>
+                 <button onClick={() => setViewState('firestore_debug')} className="hover:text-indigo-400 flex items-center gap-2"><Database size={14}/> Firestore Data</button>
               </div>
            </div>
            <div className="text-center text-slate-700 text-xs mt-8">
