@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
-import { getDebugCollectionDocs } from '../services/firestoreService';
-import { ArrowLeft, RefreshCw, Database, Table, Code, Search } from 'lucide-react';
+import { getDebugCollectionDocs, seedDatabase } from '../services/firestoreService';
+import { ArrowLeft, RefreshCw, Database, Table, Code, Search, UploadCloud } from 'lucide-react';
 
 interface FirestoreInspectorProps {
   onBack: () => void;
@@ -22,7 +22,7 @@ export const FirestoreInspector: React.FC<FirestoreInspectorProps> = ({ onBack }
   const [activeCollection, setActiveCollection] = useState<string | null>(null);
   const [docs, setDocs] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(false);
-  const [viewMode, setViewMode] = useState<'table' | 'json'>('json');
+  const [viewMode, setViewMode] = useState<'table' | 'json'>('table');
   const [error, setError] = useState<string | null>(null);
 
   const fetchCollection = async (name: string) => {
@@ -37,6 +37,19 @@ export const FirestoreInspector: React.FC<FirestoreInspectorProps> = ({ onBack }
       setError(e.message || "Failed to fetch");
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleSeed = async () => {
+    if(!confirm("Upload all built-in podcasts to Firestore? This effectively makes them database-driven public channels.")) return;
+    setIsLoading(true);
+    try {
+        await seedDatabase();
+        alert("Seeding complete. Refreshing channels...");
+        await fetchCollection('channels');
+    } catch(e: any) {
+        alert("Seeding failed: " + e.message);
+        setIsLoading(false);
     }
   };
 
@@ -101,6 +114,17 @@ export const FirestoreInspector: React.FC<FirestoreInspectorProps> = ({ onBack }
                             <span className="text-xs text-slate-500 bg-slate-900 px-2 py-1 rounded border border-slate-800">
                                 {isLoading ? '...' : `${docs.length} docs (limit 20)`}
                             </span>
+                            {activeCollection === 'channels' && (
+                                <button 
+                                    onClick={handleSeed} 
+                                    disabled={isLoading}
+                                    className="flex items-center space-x-2 px-3 py-1 bg-emerald-900/30 hover:bg-emerald-900/50 border border-emerald-900 text-emerald-400 hover:text-emerald-200 rounded text-xs font-bold ml-2 transition-colors"
+                                    title="Upload built-in channels to Firestore"
+                                >
+                                    <UploadCloud size={14} />
+                                    <span>Seed DB</span>
+                                </button>
+                            )}
                         </div>
                         <div className="flex items-center space-x-2">
                             <div className="bg-slate-900 p-1 rounded-lg border border-slate-800 flex">

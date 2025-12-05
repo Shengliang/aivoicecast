@@ -2,6 +2,7 @@
 import { db, auth, storage } from './firebaseConfig';
 import firebase from 'firebase/compat/app';
 import { Channel, Group, UserProfile, Invitation, GeneratedLecture, CommunityDiscussion, Comment, Booking, RecordingSession, TranscriptItem } from '../types';
+import { HANDCRAFTED_CHANNELS } from '../utils/initialData';
 
 // Helper to remove undefined fields which Firestore rejects
 function sanitizeData(data: any): any {
@@ -30,6 +31,26 @@ export async function getDebugCollectionDocs(collectionName: string, limitVal = 
     console.error(`Error fetching ${collectionName}`, e);
     throw e;
   }
+}
+
+export async function seedDatabase(): Promise<void> {
+  const batch = db.batch();
+  let count = 0;
+  for (const channel of HANDCRAFTED_CHANNELS) {
+     const ref = db.collection('channels').doc(channel.id);
+     // Force visibility to public so they appear for everyone
+     // We preserve the existing ID so the app overrides the local version with this remote version
+     const data = { 
+         ...channel, 
+         visibility: 'public', 
+         createdAt: channel.createdAt || Date.now(),
+         updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+     }; 
+     batch.set(ref, sanitizeData(data), { merge: true });
+     count++;
+  }
+  await batch.commit();
+  console.log(`Seeded ${count} channels to Firestore.`);
 }
 
 // --- STORAGE ---
