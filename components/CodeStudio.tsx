@@ -147,6 +147,178 @@ function isValidBSTIterative(root) {
   }
   return true;
 }`
+    },
+    {
+      name: 'java/Solution.java',
+      language: 'java',
+      content: `class TreeNode {
+    int val;
+    TreeNode left;
+    TreeNode right;
+    TreeNode() {}
+    TreeNode(int val) { this.val = val; }
+    TreeNode(int val, TreeNode left, TreeNode right) {
+        this.val = val;
+        this.left = left;
+        this.right = right;
+    }
+}
+
+class Solution {
+    // Approach 1: Recursive with Range (Long to handle Integer.MAX_VALUE)
+    public boolean isValidBST(TreeNode root) {
+        return validate(root, Long.MIN_VALUE, Long.MAX_VALUE);
+    }
+
+    private boolean validate(TreeNode node, long min, long max) {
+        if (node == null) return true;
+        if (node.val <= min || node.val >= max) return false;
+        return validate(node.left, min, node.val) && validate(node.right, node.val, max);
+    }
+
+    // Approach 2: Iterative In-Order Traversal
+    public boolean isValidBSTIterative(TreeNode root) {
+        if (root == null) return true;
+        Stack<TreeNode> stack = new Stack<>();
+        TreeNode pre = null;
+        while (root != null || !stack.isEmpty()) {
+            while (root != null) {
+                stack.push(root);
+                root = root.left;
+            }
+            root = stack.pop();
+            if (pre != null && root.val <= pre.val) return false;
+            pre = root;
+            root = root.right;
+        }
+        return true;
+    }
+}`
+    },
+    {
+      name: 'cpp/solution.cpp',
+      language: 'c++',
+      content: `#include <climits>
+#include <stack>
+
+struct TreeNode {
+    int val;
+    TreeNode *left;
+    TreeNode *right;
+    TreeNode() : val(0), left(nullptr), right(nullptr) {}
+    TreeNode(int x) : val(x), left(nullptr), right(nullptr) {}
+};
+
+class Solution {
+public:
+    // Approach 1: Recursive using pointers for nullable min/max
+    bool isValidBST(TreeNode* root) {
+        return validate(root, nullptr, nullptr);
+    }
+
+    bool validate(TreeNode* node, TreeNode* minNode, TreeNode* maxNode) {
+        if (!node) return true;
+        if (minNode && node->val <= minNode->val) return false;
+        if (maxNode && node->val >= maxNode->val) return false;
+        return validate(node->left, minNode, node) && validate(node->right, node, maxNode);
+    }
+
+    // Approach 2: Iterative In-Order
+    bool isValidBSTIterative(TreeNode* root) {
+        std::stack<TreeNode*> stack;
+        TreeNode* prev = nullptr;
+        while (root || !stack.empty()) {
+            while (root) {
+                stack.push(root);
+                root = root->left;
+            }
+            root = stack.top();
+            stack.pop();
+            if (prev && root->val <= prev->val) return false;
+            prev = root;
+            root = root->right;
+        }
+        return true;
+    }
+};`
+    },
+    {
+      name: 'go/main.go',
+      language: 'go',
+      content: `package main
+
+import "math"
+
+type TreeNode struct {
+    Val   int
+    Left  *TreeNode
+    Right *TreeNode
+}
+
+// Approach: Recursive with Range
+func isValidBST(root *TreeNode) bool {
+    return validate(root, math.MinInt64, math.MaxInt64)
+}
+
+func validate(node *TreeNode, min, max int64) bool {
+    if node == nil {
+        return true
+    }
+    if int64(node.Val) <= min || int64(node.Val) >= max {
+        return false
+    }
+    return validate(node.Left, min, int64(node.Val)) && 
+           validate(node.Right, int64(node.Val), max)
+}`
+    },
+    {
+      name: 'rust/lib.rs',
+      language: 'rust',
+      content: `use std::cell::RefCell;
+use std::rc::Rc;
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct TreeNode {
+  pub val: i32,
+  pub left: Option<Rc<RefCell<TreeNode>>>,
+  pub right: Option<Rc<RefCell<TreeNode>>>,
+}
+
+impl TreeNode {
+  #[inline]
+  pub fn new(val: i32) -> Self {
+    TreeNode {
+      val,
+      left: None,
+      right: None,
+    }
+  }
+}
+
+pub struct Solution {}
+
+impl Solution {
+    pub fn is_valid_bst(root: Option<Rc<RefCell<TreeNode>>>) -> bool {
+        Self::validate(&root, None, None)
+    }
+
+    fn validate(node: &Option<Rc<RefCell<TreeNode>>>, min: Option<i32>, max: Option<i32>) -> bool {
+        match node {
+            Some(n) => {
+                let val = n.borrow().val;
+                if let Some(min_val) = min {
+                    if val <= min_val { return false; }
+                }
+                if let Some(max_val) = max {
+                    if val >= max_val { return false; }
+                }
+                Self::validate(&n.borrow().left, min, Some(val)) &&
+                Self::validate(&n.borrow().right, Some(val), max)
+            },
+            None => true,
+        }
+    }
+}`
     }
   ]
 };
@@ -277,7 +449,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
       setHumanComments(project.humanComments || '');
   }, [project]);
 
-  const activeFile = project.files[activeFileIndex];
+  const activeFile = project.files[activeFileIndex] || project.files[0];
 
   const handleTemplateChange = (tmpl: string) => {
     setActiveTemplate(tmpl);
@@ -436,7 +608,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
   };
 
   // Group files by folder
-  const filesByFolder: Record<string, {file: CodeFile, index: number}[]> = React.useMemo(() => {
+  const filesByFolder = React.useMemo<Record<string, {file: CodeFile, index: number}[]>>(() => {
       const groups: Record<string, {file: CodeFile, index: number}[]> = {};
       project.files.forEach((file, index) => {
           const parts = file.name.split('/');
@@ -447,9 +619,9 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
       return groups;
   }, [project.files]);
 
-  const sortedFolders: string[] = Object.keys(filesByFolder).sort((a,b) => a === 'root' ? -1 : b === 'root' ? 1 : a.localeCompare(b));
+  const sortedFolders = Object.keys(filesByFolder).sort((a,b) => a === 'root' ? -1 : b === 'root' ? 1 : a.localeCompare(b));
 
-  const lineNumbers = activeFile.content.split('\n').length;
+  const lineNumbers = activeFile ? activeFile.content.split('\n').length : 0;
 
   return (
     <div className="min-h-screen bg-[#1e1e1e] text-gray-300 flex flex-col font-mono overflow-hidden">
@@ -642,7 +814,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
                       <div className="flex-1 relative h-full">
                           <textarea 
                               ref={textareaRef}
-                              value={activeFile.content}
+                              value={activeFile?.content || ''}
                               onChange={(e) => handleCodeChange(e.target.value)}
                               onScroll={handleScroll}
                               className="w-full h-full bg-[#1e1e1e] text-gray-200 p-4 font-mono text-sm outline-none resize-none leading-relaxed whitespace-pre overflow-auto"
@@ -651,9 +823,11 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
                               autoComplete="off"
                               autoCorrect="off"
                           />
-                          <div className="absolute top-2 right-4 text-xs text-gray-500 bg-[#1e1e1e]/90 px-2 py-1 rounded pointer-events-none border border-[#3d3d3d]">
-                              {getLanguageFromFilename(activeFile.name).toUpperCase()}
-                          </div>
+                          {activeFile && (
+                              <div className="absolute top-2 right-4 text-xs text-gray-500 bg-[#1e1e1e]/90 px-2 py-1 rounded pointer-events-none border border-[#3d3d3d]">
+                                  {getLanguageFromFilename(activeFile.name).toUpperCase()}
+                              </div>
+                          )}
                       </div>
                   </div>
               ) : viewMode === 'notes' ? (
