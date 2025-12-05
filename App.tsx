@@ -40,7 +40,7 @@ import { HANDCRAFTED_CHANNELS, CATEGORY_STYLES, TOPIC_CATEGORIES } from './utils
 import { OFFLINE_CHANNEL_ID } from './utils/offlineContent';
 import { GEMINI_API_KEY } from './services/private_keys';
 
-const APP_VERSION = "v3.17.0";
+const APP_VERSION = "v3.17.1";
 
 const UI_TEXT = {
   en: {
@@ -98,6 +98,7 @@ const App: React.FC = () => {
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [activeTab, setActiveTab] = useState('categories');
   const [selectedCategory, setSelectedCategory] = useState('All');
+  const [searchQuery, setSearchQuery] = useState('');
   
   // Data State
   const [channels, setChannels] = useState<Channel[]>(HANDCRAFTED_CHANNELS);
@@ -361,6 +362,13 @@ const App: React.FC = () => {
                 type="text"
                 className="block w-full pl-10 pr-3 py-2 border border-slate-700 rounded-full leading-5 bg-slate-800/50 text-slate-300 placeholder-slate-500 focus:outline-none focus:bg-slate-800 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 sm:text-sm transition-all"
                 placeholder={t.search}
+                value={searchQuery}
+                onChange={(e) => {
+                    setSearchQuery(e.target.value);
+                    // Auto-switch to directory search view if user types
+                    if (e.target.value && viewState !== 'directory') setViewState('directory');
+                    if (e.target.value && activeTab !== 'categories') setActiveTab('categories');
+                }}
               />
             </div>
 
@@ -455,50 +463,25 @@ const App: React.FC = () => {
 
             {/* Content Area */}
             <div className="min-h-[60vh]">
-               {activeTab === 'categories' && allCategoryGroups && (
-                    <div className="space-y-6">
-                      {/* Filter Dropdown */}
-                      <div className="flex items-center justify-end px-2">
-                          <div className="relative">
-                              <select 
-                                value={selectedCategory} 
-                                onChange={(e) => setSelectedCategory(e.target.value)}
-                                className="appearance-none bg-slate-800 border border-slate-700 text-white pl-4 pr-10 py-2 rounded-lg text-sm font-bold focus:ring-2 focus:ring-indigo-500 focus:outline-none cursor-pointer hover:bg-slate-700 transition-colors shadow-sm"
-                              >
-                                <option value="All">All Categories</option>
-                                {Object.keys(allCategoryGroups).map(cat => (
-                                    <option key={cat} value={cat}>{cat}</option>
-                                ))}
-                              </select>
-                              <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-                          </div>
-                      </div>
-
-                      <div className="space-y-12">
-                        {Object.entries(allCategoryGroups)
-                          .filter(([name]) => selectedCategory === 'All' || selectedCategory === name)
-                          .map(([groupName, groupChannels]) => {
-                            const channels = groupChannels as Channel[];
-                            if (!channels || channels.length === 0) return null;
-                            
-                            return (
-                              <div key={groupName} className="space-y-4 animate-fade-in">
-                                <h2 className="text-2xl font-bold text-white flex items-center gap-2">
-                                  {groupName === 'Spotlight' ? (
-                                    <>
-                                      <Sparkles className="text-yellow-400" />
-                                      <span>{t.featured || 'Featured'}</span>
-                                    </>
-                                  ) : (
-                                    <>
-                                      <div className="w-2 h-8 bg-indigo-500 rounded-full"></div>
-                                      <span>{groupName}</span>
-                                      <span className="text-sm font-normal text-slate-500 ml-2">({channels.length})</span>
-                                    </>
-                                  )}
+               {activeTab === 'categories' && (
+                    <>
+                    {/* Search Result View */}
+                    {searchQuery ? (
+                        <div className="space-y-6">
+                            <div className="flex items-center justify-between">
+                                <h2 className="text-xl font-bold text-white flex items-center gap-2">
+                                    <Search className="text-indigo-400" />
+                                    <span>Search Results for "{searchQuery}"</span>
                                 </h2>
-                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                                  {channels.map(channel => (
+                                <button onClick={() => setSearchQuery('')} className="text-sm text-indigo-400 hover:text-white underline">Clear Search</button>
+                            </div>
+                            
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                                {channels.filter(c => 
+                                    c.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
+                                    c.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                                    c.tags.some(t => t.toLowerCase().includes(searchQuery.toLowerCase()))
+                                ).map(channel => (
                                     <ChannelCard 
                                       key={channel.id} 
                                       channel={channel} 
@@ -511,13 +494,88 @@ const App: React.FC = () => {
                                       t={t}
                                       onCommentClick={handleCommentClick}
                                     />
-                                  ))}
+                                ))}
+                            </div>
+                            
+                            {channels.filter(c => 
+                                c.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
+                                c.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                                c.tags.some(t => t.toLowerCase().includes(searchQuery.toLowerCase()))
+                            ).length === 0 && (
+                                <div className="text-center py-12 text-slate-500">
+                                    <Search size={48} className="mx-auto mb-4 opacity-20" />
+                                    <p>No podcasts found matching "{searchQuery}".</p>
                                 </div>
+                            )}
+                        </div>
+                    ) : (
+                        // Standard Category View
+                        allCategoryGroups && (
+                            <div className="space-y-6">
+                              {/* Filter Dropdown */}
+                              <div className="flex items-center justify-end px-2">
+                                  <div className="relative">
+                                      <select 
+                                        value={selectedCategory} 
+                                        onChange={(e) => setSelectedCategory(e.target.value)}
+                                        className="appearance-none bg-slate-800 border border-slate-700 text-white pl-4 pr-10 py-2 rounded-lg text-sm font-bold focus:ring-2 focus:ring-indigo-500 focus:outline-none cursor-pointer hover:bg-slate-700 transition-colors shadow-sm"
+                                      >
+                                        <option value="All">All Categories</option>
+                                        {Object.keys(allCategoryGroups).map(cat => (
+                                            <option key={cat} value={cat}>{cat}</option>
+                                        ))}
+                                      </select>
+                                      <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                                  </div>
                               </div>
-                            );
-                        })}
-                      </div>
-                    </div>
+
+                              <div className="space-y-12">
+                                {Object.entries(allCategoryGroups)
+                                  .filter(([name]) => selectedCategory === 'All' || selectedCategory === name)
+                                  .map(([groupName, groupChannels]) => {
+                                    const channels = groupChannels as Channel[];
+                                    if (!channels || channels.length === 0) return null;
+                                    
+                                    return (
+                                      <div key={groupName} className="space-y-4 animate-fade-in">
+                                        <h2 className="text-2xl font-bold text-white flex items-center gap-2">
+                                          {groupName === 'Spotlight' ? (
+                                            <>
+                                              <Sparkles className="text-yellow-400" />
+                                              <span>{t.featured || 'Featured'}</span>
+                                            </>
+                                          ) : (
+                                            <>
+                                              <div className="w-2 h-8 bg-indigo-500 rounded-full"></div>
+                                              <span>{groupName}</span>
+                                              <span className="text-sm font-normal text-slate-500 ml-2">({channels.length})</span>
+                                            </>
+                                          )}
+                                        </h2>
+                                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                                          {channels.map(channel => (
+                                            <ChannelCard 
+                                              key={channel.id} 
+                                              channel={channel} 
+                                              handleChannelClick={(id) => { setActiveChannelId(id); setViewState('podcast_detail'); }}
+                                              handleVote={handleVote}
+                                              currentUser={currentUser}
+                                              setChannelToEdit={setChannelToEdit}
+                                              setIsSettingsModalOpen={setIsSettingsModalOpen}
+                                              globalVoice={globalVoice}
+                                              t={t}
+                                              onCommentClick={handleCommentClick}
+                                            />
+                                          ))}
+                                        </div>
+                                      </div>
+                                    );
+                                })}
+                              </div>
+                            </div>
+                        )
+                    )}
+                    </>
                )}
 
                {activeTab === 'calendar' && (
