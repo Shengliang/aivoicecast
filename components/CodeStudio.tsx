@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { GoogleGenAI } from '@google/genai';
 import { ArrowLeft, Play, Save, Folder, File, Code, Terminal, Plus, Trash2, Loader2, ChevronRight, ChevronDown, Download, Smartphone, X, MessageSquare, CheckCircle, FileCode, FileJson, FileType, Search, Coffee, Hash, Eye, CloudUpload } from 'lucide-react';
@@ -148,6 +149,39 @@ function isValidBSTIterative(root) {
 }`
     },
     {
+      name: 'javascript/build_bst.js',
+      language: 'javascript',
+      content: `class TreeNode {
+  constructor(val, left = null, right = null) {
+    this.val = val;
+    this.left = left;
+    this.right = right;
+  }
+}
+
+/**
+ * Construct BST from Preorder Traversal
+ * Time Complexity: O(N)
+ */
+function bstFromPreorder(preorder) {
+  let idx = 0;
+  
+  function build(bound) {
+    if (idx === preorder.length || preorder[idx] > bound) {
+      return null;
+    }
+    
+    const root = new TreeNode(preorder[idx++]);
+    root.left = build(root.val);
+    root.right = build(bound);
+    
+    return root;
+  }
+  
+  return build(Infinity);
+}`
+    },
+    {
       name: 'java/IsBST.java',
       language: 'java',
       content: `import java.util.Stack;
@@ -210,6 +244,36 @@ public class IsBST {
 }`
     },
     {
+      name: 'java/BuildBST.java',
+      language: 'java',
+      content: `public class BuildBST {
+    public static class TreeNode {
+        int val;
+        TreeNode left, right;
+        TreeNode(int x) { val = x; }
+    }
+
+    private int idx = 0;
+
+    public TreeNode bstFromPreorder(int[] preorder) {
+        idx = 0; // reset index for new calls
+        return build(preorder, Integer.MAX_VALUE);
+    }
+
+    private TreeNode build(int[] preorder, int bound) {
+        if (idx == preorder.length || preorder[idx] > bound) {
+            return null;
+        }
+
+        TreeNode root = new TreeNode(preorder[idx++]);
+        root.left = build(preorder, root.val);
+        root.right = build(preorder, bound);
+
+        return root;
+    }
+}`
+    },
+    {
       name: 'cpp/is_bst.cpp',
       language: 'c++',
       content: `#include <stack>
@@ -254,6 +318,40 @@ bool isValidBSTIterative(TreeNode* root) {
     }
     return true;
 }`
+    },
+    {
+      name: 'cpp/build_bst.cpp',
+      language: 'c++',
+      content: `#include <vector>
+#include <climits>
+
+struct TreeNode {
+    int val;
+    TreeNode *left;
+    TreeNode *right;
+    TreeNode(int x) : val(x), left(NULL), right(NULL) {}
+};
+
+class Solution {
+    int idx = 0;
+public:
+    TreeNode* bstFromPreorder(std::vector<int>& preorder) {
+        idx = 0;
+        return build(preorder, INT_MAX);
+    }
+    
+    TreeNode* build(std::vector<int>& preorder, int bound) {
+        if (idx == preorder.size() || preorder[idx] > bound) {
+            return nullptr;
+        }
+        
+        TreeNode* root = new TreeNode(preorder[idx++]);
+        root.left = build(preorder, root->val);
+        root.right = build(preorder, bound);
+        
+        return root;
+    }
+};`
     },
     {
       name: 'c/is_bst.c',
@@ -314,6 +412,45 @@ bool isValidBSTIterative(struct TreeNode* root) {
 }`
     },
     {
+      name: 'c/build_bst.c',
+      language: 'c',
+      content: `#include <stdio.h>
+#include <stdlib.h>
+#include <limits.h>
+
+struct TreeNode {
+    int val;
+    struct TreeNode *left;
+    struct TreeNode *right;
+};
+
+struct TreeNode* createNode(int val) {
+    struct TreeNode* node = (struct TreeNode*)malloc(sizeof(struct TreeNode));
+    node->val = val;
+    node->left = NULL;
+    node->right = NULL;
+    return node;
+}
+
+struct TreeNode* build(int* preorder, int preorderSize, int* idx, int bound) {
+    if (*idx == preorderSize || preorder[*idx] > bound) {
+        return NULL;
+    }
+    
+    struct TreeNode* root = createNode(preorder[(*idx)++]);
+    
+    root->left = build(preorder, preorderSize, idx, root->val);
+    root->right = build(preorder, preorderSize, idx, bound);
+    
+    return root;
+}
+
+struct TreeNode* bstFromPreorder(int* preorder, int preorderSize) {
+    int idx = 0;
+    return build(preorder, preorderSize, &idx, INT_MAX);
+}`
+    },
+    {
       name: 'rust/is_bst.rs',
       language: 'rust',
       content: `use std::cell::RefCell;
@@ -363,6 +500,51 @@ pub fn is_valid_bst_iterative(root: Option<Rc<RefCell<TreeNode>>>) -> bool {
         }
     }
     true
+}`
+    },
+    {
+      name: 'rust/build_bst.rs',
+      language: 'rust',
+      content: `use std::cell::RefCell;
+use std::rc::Rc;
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct TreeNode {
+  pub val: i32,
+  pub left: Option<Rc<RefCell<TreeNode>>>,
+  pub right: Option<Rc<RefCell<TreeNode>>>,
+}
+
+impl TreeNode {
+  #[inline]
+  pub fn new(val: i32) -> Self {
+    TreeNode {
+      val,
+      left: None,
+      right: None
+    }
+  }
+}
+
+pub fn bst_from_preorder(preorder: Vec<i32>) -> Option<Rc<RefCell<TreeNode>>> {
+    let mut idx = 0;
+    
+    fn build(preorder: &Vec<i32>, idx: &mut usize, bound: i32) -> Option<Rc<RefCell<TreeNode>>> {
+        if *idx == preorder.len() || preorder[*idx] > bound {
+            return None;
+        }
+        
+        let val = preorder[*idx];
+        *idx += 1;
+        
+        let mut root = TreeNode::new(val);
+        root.left = build(preorder, idx, val);
+        root.right = build(preorder, idx, bound);
+        
+        Some(Rc::new(RefCell::new(root)))
+    }
+    
+    build(&preorder, &mut idx, i32::MAX)
 }`
     },
     {
@@ -423,6 +605,40 @@ func isValidBSTIterative(root *TreeNode) bool {
 		stack = append(stack, State{node.Left, curr.min, int64(node.Val)})
 	}
 	return true
+}`
+    },
+    {
+      name: 'go/build_bst.go',
+      language: 'go',
+      content: `package main
+
+import "math"
+
+type TreeNode struct {
+	Val   int
+	Left  *TreeNode
+	Right *TreeNode
+}
+
+func bstFromPreorder(preorder []int) *TreeNode {
+	idx := 0
+	
+	var build func(bound int) *TreeNode
+	build = func(bound int) *TreeNode {
+		if idx == len(preorder) || preorder[idx] > bound {
+			return nil
+		}
+		
+		root := &TreeNode{Val: preorder[idx]}
+		idx++
+		
+		root.Left = build(root.Val)
+		root.Right = build(bound)
+		
+		return root
+	}
+	
+	return build(math.MaxInt64)
 }`
     }
   ]
@@ -691,7 +907,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
   };
 
   // Group files by folder
-  const filesByFolder = React.useMemo<Record<string, {file: CodeFile, index: number}[]>>(() => {
+  const filesByFolder: Record<string, {file: CodeFile, index: number}[]> = React.useMemo(() => {
       const groups: Record<string, {file: CodeFile, index: number}[]> = {};
       project.files.forEach((file, index) => {
           const parts = file.name.split('/');
@@ -702,7 +918,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
       return groups;
   }, [project.files]);
 
-  const sortedFolders = Object.keys(filesByFolder).sort((a,b) => a === 'root' ? -1 : b === 'root' ? 1 : a.localeCompare(b));
+  const sortedFolders: string[] = Object.keys(filesByFolder).sort((a,b) => a === 'root' ? -1 : b === 'root' ? 1 : a.localeCompare(b));
 
   const lineNumbers = activeFile.content.split('\n').length;
 
@@ -776,7 +992,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
                   <button onClick={handleAddFile} className="hover:text-white p-1 hover:bg-[#37373d] rounded"><Plus size={14}/></button>
               </div>
               <div className="flex-1 overflow-y-auto mt-1">
-                  {sortedFolders.map(folder => (
+                  {sortedFolders.map((folder: string) => (
                       <div key={folder}>
                           {folder !== 'root' && (
                               <div 
@@ -849,7 +1065,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
                       {/* Line Numbers Gutter */}
                       <div 
                         ref={lineNumbersRef}
-                        className="w-12 bg-[#1e1e1e] text-right pr-3 pt-4 text-slate-600 font-mono text-xs select-none border-r border-[#2d2d2d] overflow-hidden h-full"
+                        className="w-12 bg-[#1e1e1e] text-right pr-3 pt-4 text-slate-600 font-mono text-sm select-none border-r border-[#2d2d2d] overflow-hidden h-full"
                       >
                           {Array.from({length: lineNumbers}).map((_, i) => (
                               <div key={i} className="leading-relaxed">{i + 1}</div>
