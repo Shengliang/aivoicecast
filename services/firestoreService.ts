@@ -1,8 +1,10 @@
-// [FORCE-SYNC-v3.15.0] Timestamp: ${new Date().toISOString()}
+// [FORCE-SYNC-v3.16.0] Timestamp: ${new Date().toISOString()}
 import { db, auth, storage } from './firebaseConfig';
 import firebase from 'firebase/compat/app';
 import { Channel, Group, UserProfile, Invitation, GeneratedLecture, CommunityDiscussion, Comment, Booking, RecordingSession, TranscriptItem } from '../types';
 import { HANDCRAFTED_CHANNELS } from '../utils/initialData';
+import { SPOTLIGHT_DATA } from '../utils/spotlightContent';
+import { OFFLINE_LECTURES, OFFLINE_CHANNEL_ID } from '../utils/offlineContent';
 
 // Helper to remove undefined fields which Firestore rejects
 function sanitizeData(data: any): any {
@@ -33,24 +35,68 @@ export async function getDebugCollectionDocs(collectionName: string, limitVal = 
   }
 }
 
+// Helper to find ID by title within a channel's curriculum
+function findSubTopicId(channel: Channel, title: string): string | null {
+    if (!channel.chapters) return null;
+    for(const ch of channel.chapters) {
+       for(const sub of ch.subTopics) {
+          if(sub.title === title) return sub.id;
+       }
+    }
+    return null;
+}
+
 export async function seedDatabase(): Promise<void> {
   const batch = db.batch();
-  let count = 0;
+  let channelCount = 0;
+  let lectureCount = 0;
+
   for (const channel of HANDCRAFTED_CHANNELS) {
-     const ref = db.collection('channels').doc(channel.id);
+     const channelRef = db.collection('channels').doc(channel.id);
+     
+     // 1. Seed Channel Metadata
      // Force visibility to public so they appear for everyone
-     // We preserve the existing ID so the app overrides the local version with this remote version
      const data = { 
          ...channel, 
          visibility: 'public', 
          createdAt: channel.createdAt || Date.now(),
          updatedAt: firebase.firestore.FieldValue.serverTimestamp()
      }; 
-     batch.set(ref, sanitizeData(data), { merge: true });
-     count++;
+     batch.set(channelRef, sanitizeData(data), { merge: true });
+     channelCount++;
+
+     // 2. Seed Lectures (Subcollection)
+     
+     // A. Check Spotlight Data
+     const spotlight = SPOTLIGHT_DATA[channel.id];
+     if (spotlight && spotlight.lectures) {
+        for (const title in spotlight.lectures) {
+           const lecture = spotlight.lectures[title];
+           const subId = findSubTopicId(channel, title);
+           if (subId) {
+              const lectureRef = channelRef.collection('lectures').doc(subId);
+              batch.set(lectureRef, sanitizeData(lecture), { merge: true });
+              lectureCount++;
+           }
+        }
+     }
+
+     // B. Check Offline Lectures (only for the offline channel)
+     if (channel.id === OFFLINE_CHANNEL_ID) {
+        for (const title in OFFLINE_LECTURES) {
+           const lecture = OFFLINE_LECTURES[title];
+           const subId = findSubTopicId(channel, title);
+           if (subId) {
+              const lectureRef = channelRef.collection('lectures').doc(subId);
+              batch.set(lectureRef, sanitizeData(lecture), { merge: true });
+              lectureCount++;
+           }
+        }
+     }
   }
+
   await batch.commit();
-  console.log(`Seeded ${count} channels to Firestore.`);
+  console.log(`Seeded ${channelCount} channels and ${lectureCount} lectures to Firestore.`);
 }
 
 // --- STORAGE ---
