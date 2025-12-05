@@ -6,6 +6,7 @@ import { HARDWARE_CONTENT } from './content/hardware';
 import { SOFTWARE_CONTENT } from './content/software';
 import { CULTURE_CONTENT } from './content/culture';
 import { BST_CONTENT } from './content/bst';
+import { LIFESTYLE_CONTENT } from './content/lifestyle';
 
 export interface SpotlightChannelData {
   curriculum: Chapter[];
@@ -19,5 +20,6 @@ export const SPOTLIGHT_DATA: Record<string, SpotlightChannelData> = {
   ...HARDWARE_CONTENT,
   ...SOFTWARE_CONTENT,
   ...CULTURE_CONTENT,
-  ...BST_CONTENT
+  ...BST_CONTENT,
+  ...LIFESTYLE_CONTENT
 };

@@ -38,7 +38,7 @@ import { HANDCRAFTED_CHANNELS, CATEGORY_STYLES, TOPIC_CATEGORIES } from './utils
 import { OFFLINE_CHANNEL_ID } from './utils/offlineContent';
 import { GEMINI_API_KEY } from './services/private_keys';
 
-const APP_VERSION = "v3.15.0";
+const APP_VERSION = "v3.15.1";
 
 const UI_TEXT = {
   en: {
@@ -378,14 +378,14 @@ const App: React.FC = () => {
 
             <div className="flex items-center space-x-2 sm:space-x-4">
               
-              {/* Podcast Count Badge */}
-              <div className="hidden lg:flex items-center px-3 py-1 bg-purple-900/30 border border-purple-500/30 rounded-full text-xs font-bold text-purple-300 shadow-sm">
+              {/* Podcast Count Badge - Visible on tablet/desktop */}
+              <div className="hidden sm:flex items-center px-3 py-1 bg-purple-900/30 border border-purple-500/30 rounded-full text-xs font-bold text-purple-300 shadow-sm">
                 <Podcast size={14} className="mr-1.5"/>
                 <span>{channels.length.toLocaleString()} {t.podcasts}</span>
               </div>
 
-              {/* Lecture Count Badge */}
-              <div className="hidden xl:flex items-center px-3 py-1 bg-indigo-900/30 border border-indigo-500/30 rounded-full text-xs font-bold text-indigo-300 shadow-sm">
+              {/* Lecture Count Badge - Visible on desktop */}
+              <div className="hidden md:flex items-center px-3 py-1 bg-indigo-900/30 border border-indigo-500/30 rounded-full text-xs font-bold text-indigo-300 shadow-sm">
                 <BookOpen size={14} className="mr-1.5"/>
                 <span>{totalLectures.toLocaleString()} {t.lectures}</span>
               </div>
