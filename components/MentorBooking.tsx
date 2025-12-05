@@ -559,28 +559,50 @@ export const MentorBooking: React.FC<MentorBookingProps> = ({ currentUser, chann
 
         {/* --- AI MENTORS TAB --- */}
         {activeTab === 'ai_mentors' && (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 animate-fade-in-up">
-                {aiMentors.map(channel => (
-                    <div key={channel.id} className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden hover:border-purple-500/50 transition-all hover:shadow-xl group">
-                        <div className="h-32 overflow-hidden relative">
-                            <img src={channel.imageUrl} alt={channel.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 opacity-60" />
-                            <div className="absolute inset-0 bg-gradient-to-t from-slate-900 to-transparent"></div>
-                            <div className="absolute bottom-3 left-4">
-                                <h3 className="text-lg font-bold text-white leading-tight">{channel.title}</h3>
-                                <p className="text-xs text-purple-300 font-bold uppercase tracking-wider">{channel.voiceName} • AI Mentor</p>
-                            </div>
-                        </div>
-                        <div className="p-5">
-                            <p className="text-slate-400 text-sm line-clamp-3 mb-4">{channel.description}</p>
-                            <button 
-                                onClick={() => setSelectedMentor(channel)}
-                                className="w-full py-2 bg-purple-600 hover:bg-purple-500 text-white rounded-lg font-bold text-sm transition-colors shadow-lg shadow-purple-500/20"
-                            >
-                                Book AI Session
-                            </button>
-                        </div>
-                    </div>
-                ))}
+            <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow-lg animate-fade-in-up">
+                <table className="w-full text-left">
+                    <thead className="bg-slate-950 text-xs text-slate-400 uppercase font-bold border-b border-slate-800">
+                        <tr>
+                            <th className="px-6 py-4">AI Mentor</th>
+                            <th className="px-6 py-4">Persona Voice</th>
+                            <th className="px-6 py-4 hidden md:table-cell">Focus Area</th>
+                            <th className="px-6 py-4 text-right">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-800 bg-slate-900/50">
+                        {aiMentors.map(channel => (
+                            <tr key={channel.id} className="hover:bg-slate-800/80 transition-colors group">
+                                <td className="px-6 py-4">
+                                    <div className="flex items-center gap-3">
+                                        <div className="relative">
+                                            <img src={channel.imageUrl} className="w-10 h-10 rounded-full object-cover border border-purple-500/50" />
+                                            <div className="absolute -bottom-1 -right-1 bg-purple-600 rounded-full p-0.5 border border-slate-900">
+                                                <Sparkles size={8} className="text-white" />
+                                            </div>
+                                        </div>
+                                        <span className="font-bold text-slate-200 group-hover:text-white transition-colors">{channel.title}</span>
+                                    </div>
+                                </td>
+                                <td className="px-6 py-4">
+                                    <span className="text-xs font-mono font-bold text-purple-300 bg-purple-900/20 px-2 py-1 rounded border border-purple-500/20">
+                                        {channel.voiceName}
+                                    </span>
+                                </td>
+                                <td className="px-6 py-4 hidden md:table-cell">
+                                    <p className="text-sm text-slate-400 line-clamp-1 max-w-md">{channel.description}</p>
+                                </td>
+                                <td className="px-6 py-4 text-right">
+                                    <button 
+                                        onClick={() => setSelectedMentor(channel)}
+                                        className="px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded-lg text-xs font-bold transition-colors shadow-lg shadow-purple-500/20"
+                                    >
+                                        Book Session
+                                    </button>
+                                </td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
             </div>
         )}
 
