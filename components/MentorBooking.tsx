@@ -38,7 +38,7 @@ export const MentorBooking: React.FC<MentorBookingProps> = ({ currentUser, chann
   // Members Directory State
   const [members, setMembers] = useState<UserProfile[]>([]);
   const [loadingMembers, setLoadingMembers] = useState(false);
-  const [viewMode, setViewMode] = useState<'grid' | 'table'>('grid');
+  // View mode removed - defaulting to Table view always
   const [searchQuery, setSearchQuery] = useState('');
   const [sortConfig, setSortConfig] = useState<{ key: SortKey; direction: 'asc' | 'desc' }>({ key: 'createdAt', direction: 'desc' });
   const [isSearchingServer, setIsSearchingServer] = useState(false);
@@ -115,6 +115,10 @@ export const MentorBooking: React.FC<MentorBookingProps> = ({ currentUser, chann
 
   const filteredMembers = useMemo(() => {
     let result = [...members];
+    
+    // SKIP INVALID EMAILS (Must contain '@')
+    result = result.filter(m => m.email && m.email.includes('@'));
+
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
       result = result.filter(m => 
@@ -492,23 +496,6 @@ export const MentorBooking: React.FC<MentorBookingProps> = ({ currentUser, chann
                         />
                         {isSearchingServer && <div className="absolute right-3 top-1/2 -translate-y-1/2"><Loader2 size={14} className="animate-spin text-indigo-400"/></div>}
                     </div>
-                    
-                    <div className="flex bg-slate-800 p-1 rounded-lg border border-slate-700">
-                        <button 
-                            onClick={() => setViewMode('grid')}
-                            className={`p-2 rounded-md transition-colors ${viewMode === 'grid' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-400 hover:text-white'}`}
-                            title="Grid View"
-                        >
-                            <Grid size={16} />
-                        </button>
-                        <button 
-                            onClick={() => setViewMode('table')}
-                            className={`p-2 rounded-md transition-colors ${viewMode === 'table' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-400 hover:text-white'}`}
-                            title="Table View"
-                        >
-                            <List size={16} />
-                        </button>
-                    </div>
                 </div>
 
                 {loadingMembers && !isSearchingServer ? (
@@ -517,35 +504,6 @@ export const MentorBooking: React.FC<MentorBookingProps> = ({ currentUser, chann
                     <div className="py-12 text-center text-slate-500 bg-slate-900/30 rounded-xl border border-dashed border-slate-800">
                         <p>No members found.</p>
                         <p className="text-xs mt-2">Try searching for a specific Gmail ID.</p>
-                    </div>
-                ) : viewMode === 'grid' ? (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 animate-fade-in-up">
-                        {filteredMembers.map(member => (
-                            <div key={member.uid} className="bg-slate-900 border border-slate-800 rounded-xl p-6 flex flex-col items-center text-center hover:border-indigo-500/50 transition-all shadow-lg hover:shadow-indigo-500/10 group relative overflow-hidden">
-                                <div className="absolute top-0 right-0 p-16 bg-indigo-500/5 blur-[60px] rounded-full group-hover:bg-indigo-500/10 transition-all"></div>
-                                <div className="relative mb-4">
-                                    {member.photoURL ? (
-                                        <img src={member.photoURL} alt={member.displayName} className="w-20 h-20 rounded-full border-2 border-slate-700 group-hover:border-indigo-500 transition-colors object-cover" />
-                                    ) : (
-                                        <div className="w-20 h-20 rounded-full bg-slate-800 flex items-center justify-center border-2 border-slate-700 group-hover:border-indigo-500 transition-colors">
-                                            <User size={32} className="text-slate-400"/>
-                                        </div>
-                                    )}
-                                    <div className="absolute bottom-0 right-0 w-5 h-5 bg-emerald-500 rounded-full border-2 border-slate-900" title="Active Member"></div>
-                                </div>
-                                <h3 className="text-lg font-bold text-white relative z-10">{member.displayName}</h3>
-                                <p className="text-sm text-slate-400 mb-2 relative z-10">{member.email}</p>
-                                <p className="text-xs text-slate-600 font-mono mb-6 relative z-10">Joined {new Date(member.createdAt || 0).toLocaleDateString()}</p>
-                                
-                                <button 
-                                    onClick={() => handleOpenBooking(member)}
-                                    className="w-full py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg font-bold text-sm shadow-md transition-colors flex items-center justify-center gap-2 relative z-10"
-                                >
-                                    <Calendar size={14} />
-                                    Book Session
-                                </button>
-                            </div>
-                        ))}
                     </div>
                 ) : (
                     // TABLE VIEW

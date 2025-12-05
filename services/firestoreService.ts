@@ -162,8 +162,8 @@ export async function getUserProfileByEmail(email: string): Promise<UserProfile 
 export async function getAllUsers(): Promise<UserProfile[]> {
   try {
     // Fetch all users to display in the member directory
-    // Limit to 50 for now to avoid massive reads
-    const snap = await db.collection('users').orderBy('createdAt', 'desc').limit(50).get();
+    // Limit to 100 to allow for filtering of invalid emails
+    const snap = await db.collection('users').orderBy('createdAt', 'desc').limit(100).get();
     return snap.docs.map(doc => doc.data() as UserProfile);
   } catch (e) {
     console.warn("Failed to fetch all users", e);
