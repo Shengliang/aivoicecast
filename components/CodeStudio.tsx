@@ -1,11 +1,12 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { GoogleGenAI } from '@google/genai';
-import { ArrowLeft, Save, Folder, File, Code, Plus, Trash2, Loader2, ChevronRight, ChevronDown, X, MessageSquare, FileCode, FileJson, FileType, Search, Coffee, Hash, CloudUpload, Edit3, BookOpen, Bot, Send, Maximize2, Minimize2, GripVertical, UserCheck, AlertTriangle, Archive } from 'lucide-react';
+import { ArrowLeft, Save, Folder, File, Code, Plus, Trash2, Loader2, ChevronRight, ChevronDown, X, MessageSquare, FileCode, FileJson, FileType, Search, Coffee, Hash, CloudUpload, Edit3, BookOpen, Bot, Send, Maximize2, Minimize2, GripVertical, UserCheck, AlertTriangle, Archive, Sparkles, Video, Mic, CheckCircle, Monitor, FileText } from 'lucide-react';
 import { GEMINI_API_KEY } from '../services/private_keys';
-import { CodeProject, CodeFile, ChatMessage } from '../types';
+import { CodeProject, CodeFile, ChatMessage, Channel } from '../types';
 import { MarkdownView } from './MarkdownView';
 import { saveCodeProject } from '../services/firestoreService';
+import { LiveSession } from './LiveSession';
 
 interface CodeStudioProps {
   onBack: () => void;
@@ -286,7 +287,7 @@ const FileIcon = ({ filename }: { filename: string }) => {
     return <Icon size={14} className={color} />;
 };
 
-const FileText = ({ size, className }: { size: number, className: string }) => (
+const FileTextIcon = ({ size, className }: { size: number, className: string }) => (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><line x1="10" y1="9" x2="8" y2="9"/></svg>
 );
 
@@ -313,6 +314,12 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
   const [chatWidth, setChatWidth] = useState(350);
   const [isResizing, setIsResizing] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
+  
+  // Interview Practice State
+  const [isGeneratingQuestions, setIsGeneratingQuestions] = useState(false);
+  const [isInterviewSession, setIsInterviewSession] = useState(false);
+  const [showInterviewSetup, setShowInterviewSetup] = useState(false);
+  const [recordInterview, setRecordInterview] = useState(false);
   
   // Refs for scrolling sync
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -430,13 +437,70 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
       }
   };
 
+  const handleGenerateQuestions = async () => {
+      setIsGeneratingQuestions(true);
+      try {
+          const apiKey = localStorage.getItem('gemini_api_key') || GEMINI_API_KEY || process.env.API_KEY || '';
+          if (!apiKey) throw new Error("API Key required.");
+          
+          const ai = new GoogleGenAI({ apiKey });
+          
+          const prompt = `
+            Generate 2 medium-difficulty coding interview questions (Algorithm/Data Structure focus).
+            Format the output as clear Markdown.
+            For each question include:
+            1. Problem Title
+            2. Problem Description
+            3. Example Input/Output
+            4. Constraints
+            
+            Do not provide the solution.
+          `;
+
+          const response = await ai.models.generateContent({
+              model: 'gemini-3-pro-preview',
+              contents: prompt
+          });
+
+          const content = response.text || "Failed to generate questions.";
+          const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+          const fileName = `interview_questions_${timestamp}.md`;
+          
+          const newFile: CodeFile = {
+              name: fileName,
+              language: 'markdown',
+              content: content
+          };
+          
+          setProject(prev => ({
+              ...prev,
+              files: [...prev.files, newFile]
+          }));
+          
+          // Switch to new file
+          setActiveFileIndex(project.files.length);
+          setViewMode('code');
+          alert("Questions generated!");
+
+      } catch(e: any) {
+          alert(`Error: ${e.message}`);
+      } finally {
+          setIsGeneratingQuestions(false);
+      }
+  };
+
+  const handleStartMockInterview = () => {
+      setShowInterviewSetup(true);
+  };
+
+  const confirmStartInterview = () => {
+      setShowInterviewSetup(false);
+      setIsInterviewSession(true);
+  };
+
   const handleReviewCode = async () => {
     setIsReviewing(true);
-    // Don't switch view mode to review tab, keep user in editor or move to chat
-    // Ensure Chat is Open
     setIsChatOpen(true);
-    
-    // Add pending message
     setChatMessages(prev => [...prev, { role: 'ai', text: "🔄 *Analyzing code... Please wait.*" }]);
 
     try {
@@ -444,8 +508,6 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
         if (!apiKey) throw new Error("API Key required for AI review.");
         
         const ai = new GoogleGenAI({ apiKey });
-        
-        // Only review code files, skip markdowns/chats
         const codeFiles = project.files.filter(f => !f.name.endsWith('.md'));
         
         const fileContext = codeFiles.map(f => {
@@ -455,7 +517,6 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
         
         const prompt = `
             You are a Senior Principal Software Engineer.
-            
             Project Context:
             ${fileContext}
             
@@ -474,11 +535,6 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
         });
         
         const reviewText = response.text || "No feedback generated.";
-        
-        // 1. Update Project State with Review
-        // 2. Add to Chat History
-        // 3. Save as a File in Explorer
-        
         const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
         const fileName = `reviews/Review_${timestamp}.md`;
         
@@ -488,7 +544,6 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
             content: reviewText
         };
         
-        // Remove the loading message and add result
         setChatMessages(prev => {
             const filtered = prev.filter(m => !m.text.includes("Analyzing code"));
             return [...filtered, { role: 'ai', text: `## Code Review\n\nI have analyzed your code. You can find the full report in **${fileName}**.\n\n` + reviewText }];
@@ -501,14 +556,8 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
                 chatHistory: [...prev.chatHistory || [], { role: 'ai', text: `## Code Review\n\n` + reviewText }],
                 files: [...prev.files, newFile] 
             };
-            
-            // Auto-expand reviews folder
             setExpandedFolders(f => ({...f, 'reviews': true}));
-            
-            // Auto-Save if user is logged in
-            if (currentUser) {
-                saveCodeProject(updated).catch(e => console.error("Auto-save review failed", e));
-            }
+            if (currentUser) saveCodeProject(updated).catch(e => console.error("Auto-save review failed", e));
             return updated;
         });
         
@@ -619,12 +668,10 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
 
   const handleSaveChatSession = async () => {
       if (chatMessages.length === 0) return;
-      
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-      const fileName = `chats/Session_${timestamp}.md`;
+      const fileName = `chats/Chat_${timestamp}.md`;
       
-      const content = `# Chat Session ${new Date().toLocaleString()}\n\n` + 
-                      chatMessages.map(m => `**${m.role.toUpperCase()}**: ${m.text}\n\n---\n`).join('\n');
+      const content = chatMessages.map(m => `**${m.role.toUpperCase()}**: ${m.text}`).join('\n\n');
       
       const newFile: CodeFile = {
           name: fileName,
@@ -637,34 +684,24 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
               ...prev,
               files: [...prev.files, newFile]
           };
-          if (currentUser) saveCodeProject(updated).catch(e => console.error("Failed to save chat file", e));
+          // Auto-expand chats folder logic here if needed
           return updated;
       });
       
-      setExpandedFolders(f => ({...f, 'chats': true}));
-      alert(`Chat saved as ${fileName}`);
-      
-      if (confirm("Start a new clean chat session?")) {
-          setChatMessages([]);
-          setProject(prev => ({ ...prev, chatHistory: [] }));
-      }
+      setChatMessages([]);
+      alert("Chat session saved to project file.");
   };
 
-  const handleSaveToCloud = async () => {
-      if (!currentUser) return alert("Please sign in to save projects.");
+  const handleSaveProject = async () => {
+      if (!currentUser) {
+          alert("Please sign in to save projects.");
+          return;
+      }
       setIsSaving(true);
       try {
-          const projectToSave = { 
-              ...project, 
-              review: output,
-              humanComments: humanComments,
-              chatHistory: chatMessages,
-              interviewFeedback: interviewFeedback
-          };
-          await saveCodeProject(projectToSave);
-          setProject(projectToSave);
-          alert("Project saved to Cloud!");
-      } catch (e: any) {
+          await saveCodeProject(project);
+          alert("Project saved successfully!");
+      } catch(e) {
           console.error(e);
           alert("Failed to save project.");
       } finally {
@@ -672,506 +709,312 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
       }
   };
 
-  const handleAddFile = () => {
-      const name = prompt("File name (e.g. script.py):");
-      if (!name) return;
-      const lang: any = getLanguageFromFilename(name);
-      const newFile: CodeFile = { name, language: lang, content: '// Start coding...' };
-      const newFiles = [...project.files, newFile];
-      setProject(prev => ({ ...prev, files: newFiles }));
-      setActiveFileIndex(newFiles.length - 1);
-      setViewMode('code'); // Switch to code view to see new file
-      
-      const parts = name.split('/');
-      if (parts.length > 1) {
-          const folderName = parts[0];
-          if (folderName) {
-             setExpandedFolders(prev => ({...prev, [folderName]: true}));
-          }
-      }
+  // Mock Channel for Interview
+  const interviewChannel: Channel = {
+      id: 'mock-interview',
+      title: 'Mock Interviewer',
+      description: 'Technical Interview Practice',
+      author: 'AI',
+      voiceName: 'Fenrir',
+      systemInstruction: 'You are a Senior Technical Interviewer at a FAANG company. Conduct a rigorous coding interview. Ask follow-up questions about complexity and edge cases.',
+      likes: 0,
+      dislikes: 0,
+      comments: [],
+      tags: ['Interview'],
+      imageUrl: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=600&q=80',
+      createdAt: Date.now()
   };
-
-  const handleDeleteFile = (idx: number, e: React.MouseEvent) => {
-      e.stopPropagation();
-      if (project.files.length <= 1) return alert("Cannot delete the last file.");
-      if (!confirm("Delete this file?")) return;
-      
-      const newFiles = project.files.filter((_, i) => i !== idx);
-      setProject(prev => ({ ...prev, files: newFiles }));
-      if (activeFileIndex >= idx) setActiveFileIndex(Math.max(0, activeFileIndex - 1));
-  };
-
-  const toggleFolder = (folderName: string) => {
-      setExpandedFolders(prev => ({...prev, [folderName]: !prev[folderName]}));
-  };
-
-  const filesByFolder = React.useMemo(() => {
-      const groups: Record<string, {file: CodeFile, index: number}[]> = {};
-      project.files.forEach((file, index) => {
-          const parts = file.name.split('/');
-          const folderName = (parts.length > 1 && parts[0]) ? String(parts[0]) : 'root';
-          if (!groups[folderName]) groups[folderName] = [];
-          groups[folderName].push({ file, index });
-      });
-      return groups;
-  }, [project.files]);
-
-  const sortedFolders = Object.keys(filesByFolder).sort((a,b) => a === 'root' ? -1 : b === 'root' ? 1 : a.localeCompare(b));
-
-  const lineNumbers = activeFile ? activeFile.content.split('\n').length : 0;
 
   return (
-    <div className={`${isFullScreen ? 'fixed inset-0 z-50' : 'h-screen'} bg-[#1e1e1e] text-gray-300 flex flex-col font-mono overflow-hidden`}>
+    <div className="flex flex-col h-screen bg-slate-950 text-slate-100 overflow-hidden">
       
-      {/* Top Bar */}
-      <div className="h-12 bg-[#2d2d2d] border-b border-[#1e1e1e] flex items-center justify-between px-4 shrink-0">
-         <div className="flex items-center gap-3">
-             <button onClick={onBack} className="hover:text-white"><ArrowLeft size={18}/></button>
-             <span className="text-sm font-bold text-white flex items-center gap-2">
-                 <Folder size={14} className="text-blue-400"/>
-                 <span className="hidden sm:inline">{project.name}</span>
-             </span>
-             
-             {/* Examples Dropdown */}
-             <div className="relative ml-2">
-                 <button 
-                    onClick={() => { setShowExamplesDropdown(!showExamplesDropdown); setShowLanguageDropdown(false); }}
-                    className="flex items-center gap-2 px-3 py-1.5 bg-[#3d3d3d] hover:bg-[#4d4d4d] text-white text-xs font-bold rounded border border-[#555] transition-colors"
-                 >
-                    <BookOpen size={14} />
-                    <span>Examples</span>
-                    <ChevronDown size={14} />
-                 </button>
-                 
-                 {showExamplesDropdown && (
-                     <>
-                        <div className="fixed inset-0 z-40" onClick={() => setShowExamplesDropdown(false)}></div>
-                        <div className="absolute top-full left-0 mt-2 w-56 bg-[#252526] border border-[#3d3d3d] rounded-lg shadow-xl z-50 overflow-hidden py-1">
-                            {Object.keys(EXAMPLE_PROJECTS).map(key => (
-                                <button
-                                    key={key}
-                                    onClick={() => handleExampleSwitch(key)}
-                                    className="w-full text-left px-4 py-2 text-xs text-gray-300 hover:bg-[#37373d] hover:text-white transition-colors"
-                                >
-                                    {EXAMPLE_PROJECTS[key].name}
-                                </button>
-                            ))}
-                        </div>
-                     </>
-                 )}
-             </div>
-
-             {/* Language Switcher Dropdown */}
-             <div className="relative">
-                 <button 
-                    onClick={() => { setShowLanguageDropdown(!showLanguageDropdown); setShowExamplesDropdown(false); }}
-                    className="flex items-center gap-2 px-3 py-1.5 bg-[#3d3d3d] hover:bg-[#4d4d4d] text-white text-xs font-bold rounded border border-[#555] transition-colors"
-                 >
-                    <span>Language</span>
-                    <ChevronDown size={14} />
-                 </button>
-                 
-                 {showLanguageDropdown && (
-                     <>
-                        <div className="fixed inset-0 z-40" onClick={() => setShowLanguageDropdown(false)}></div>
-                        <div className="absolute top-full left-0 mt-2 w-48 bg-[#252526] border border-[#3d3d3d] rounded-lg shadow-xl z-50 overflow-hidden py-1">
-                            {LANGUAGES.map(lang => (
-                                <button
-                                    key={lang.id}
-                                    onClick={() => handleLanguageSwitch(lang.id)}
-                                    className="w-full text-left px-4 py-2 text-xs text-gray-300 hover:bg-[#37373d] hover:text-white transition-colors flex items-center justify-between group"
-                                >
-                                    <span>{lang.label}</span>
-                                    <span className="text-[10px] text-gray-500 font-mono group-hover:text-gray-400">.{lang.ext}</span>
-                                </button>
-                            ))}
-                        </div>
-                     </>
-                 )}
-             </div>
+      {/* Header */}
+      <header className="h-14 bg-slate-900 border-b border-slate-800 flex items-center justify-between px-4 shrink-0 z-20">
+         <div className="flex items-center space-x-4">
+            <button onClick={onBack} className="p-2 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white transition-colors">
+               <ArrowLeft size={20} />
+            </button>
+            <div className="flex items-center space-x-2">
+               <div className="bg-indigo-600 p-1.5 rounded-lg">
+                  <Code size={18} className="text-white" />
+               </div>
+               <h1 className="font-bold text-white hidden sm:block truncate max-w-[200px]">{project.name}</h1>
+            </div>
+            
+            {/* Project Actions */}
+            <div className="flex items-center space-x-1 bg-slate-800 rounded-lg p-1 border border-slate-700">
+               <button onClick={handleSaveProject} disabled={isSaving} className="p-2 hover:bg-slate-700 rounded text-slate-400 hover:text-white transition-colors" title="Save Project">
+                  {isSaving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
+               </button>
+               <button onClick={() => setViewMode(viewMode === 'code' ? 'review' : 'code')} className={`p-2 rounded transition-colors ${viewMode === 'review' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-700'}`} title="Code Review">
+                  <CheckCircle size={16} />
+               </button>
+               <button onClick={() => setIsChatOpen(!isChatOpen)} className={`p-2 rounded transition-colors ${isChatOpen ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-700'}`} title="AI Assistant">
+                  <Bot size={16} />
+               </button>
+            </div>
          </div>
 
-         <div className="flex items-center gap-2">
-             <div className="flex bg-[#1e1e1e] rounded p-0.5 border border-[#3d3d3d] mr-2">
-                 <button 
-                    onClick={() => setViewMode('code')}
-                    className={`px-3 py-1 text-xs font-bold rounded transition-colors ${viewMode === 'code' ? 'bg-[#37373d] text-white' : 'text-gray-500 hover:text-gray-300'}`}
-                 >
-                    Editor
-                 </button>
-                 <button 
-                    onClick={() => setViewMode('review')}
-                    className={`px-3 py-1 text-xs font-bold rounded transition-colors flex items-center gap-1 ${viewMode === 'review' ? 'bg-[#37373d] text-white' : 'text-gray-500 hover:text-gray-300'}`}
-                 >
-                    AI Review
-                    {output && viewMode !== 'review' && <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full"></span>}
-                 </button>
-                 <button 
-                    onClick={() => setViewMode('notes')}
-                    className={`px-3 py-1 text-xs font-bold rounded transition-colors flex items-center gap-1 ${viewMode === 'notes' ? 'bg-[#37373d] text-white' : 'text-gray-500 hover:text-gray-300'}`}
-                 >
-                    Notes
-                    {humanComments && viewMode !== 'notes' && <span className="w-1.5 h-1.5 bg-blue-500 rounded-full"></span>}
-                 </button>
-                 <button 
-                    onClick={() => setViewMode('interview')}
-                    className={`px-3 py-1 text-xs font-bold rounded transition-colors flex items-center gap-1 ${viewMode === 'interview' ? 'bg-[#37373d] text-white' : 'text-gray-500 hover:text-gray-300'}`}
-                 >
-                    Evaluation
-                    {interviewFeedback && viewMode !== 'interview' && <span className="w-1.5 h-1.5 bg-purple-500 rounded-full"></span>}
-                 </button>
-             </div>
+         <div className="flex items-center space-x-3">
+            <div className="relative">
+                <button 
+                    onClick={() => setShowLanguageDropdown(!showLanguageDropdown)}
+                    className="flex items-center space-x-2 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg text-xs font-bold transition-colors"
+                >
+                    <Plus size={14} /> <span>New File</span>
+                </button>
+                {showLanguageDropdown && (
+                    <>
+                    <div className="fixed inset-0 z-30" onClick={() => setShowLanguageDropdown(false)}></div>
+                    <div className="absolute top-full right-0 mt-2 w-40 bg-slate-900 border border-slate-700 rounded-xl shadow-xl z-40 overflow-hidden py-1">
+                        {LANGUAGES.map(lang => (
+                            <button key={lang.id} onClick={() => handleLanguageSwitch(lang.id)} className="w-full text-left px-4 py-2 hover:bg-slate-800 text-xs text-slate-300 hover:text-white">
+                                {lang.label}
+                            </button>
+                        ))}
+                    </div>
+                    </>
+                )}
+            </div>
 
-             <button 
-                onClick={() => setIsChatOpen(!isChatOpen)}
-                className={`p-2 rounded-lg transition-colors ${isChatOpen ? 'bg-indigo-600 text-white' : 'bg-[#3d3d3d] text-gray-300 hover:text-white'}`}
-                title="Toggle AI Chat"
-             >
-                <Bot size={16} />
-             </button>
-
-             {/* Action Buttons */}
-             <div className="flex bg-[#3d3d3d] rounded-sm p-0.5 border border-[#555]">
-                 <button 
-                    onClick={handleReviewCode}
-                    disabled={isReviewing}
-                    className="flex items-center gap-2 px-3 py-1.5 hover:bg-[#4d4d4d] text-white rounded-sm text-xs font-bold transition-colors"
-                    title="Generate Review & Save to File"
-                 >
-                    {isReviewing ? <Loader2 size={14} className="animate-spin"/> : <Search size={14} />}
-                    <span>REVIEW CODE</span>
-                 </button>
-                 <div className="w-px bg-[#555] my-1 mx-1"></div>
-                 <button 
-                    onClick={handleEvaluateInterview}
-                    disabled={isReviewing}
-                    className="flex items-center gap-2 px-3 py-1.5 hover:bg-[#4d4d4d] text-purple-300 hover:text-purple-200 rounded-sm text-xs font-bold transition-colors"
-                    title="Evaluate as Full Interview"
-                 >
-                    <UserCheck size={14} />
-                    <span>EVALUATE</span>
-                 </button>
-             </div>
-
-             <button 
-                onClick={handleSaveToCloud}
-                disabled={isSaving}
-                className="flex items-center gap-2 px-3 py-1.5 bg-[#3d3d3d] hover:bg-[#4d4d4d] text-white rounded-sm text-xs font-bold transition-colors border border-gray-600"
-                title="Save Project to Firebase"
-             >
-                {isSaving ? <Loader2 size={14} className="animate-spin" /> : <CloudUpload size={14} />}
-                <span className="hidden sm:inline">SAVE</span>
-             </button>
-
-             <button 
-                onClick={() => setIsFullScreen(!isFullScreen)}
-                className="p-2 rounded hover:bg-[#4d4d4d] text-gray-400 hover:text-white"
-                title="Toggle Full Screen"
-             >
-                {isFullScreen ? <Minimize2 size={16}/> : <Maximize2 size={16}/>}
-             </button>
+            <div className="relative">
+                <button 
+                    onClick={() => setShowExamplesDropdown(!showExamplesDropdown)}
+                    className="flex items-center space-x-2 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-bold transition-colors shadow-lg shadow-indigo-500/20"
+                >
+                    <BookOpen size={14} /> <span>Examples</span>
+                </button>
+                {showExamplesDropdown && (
+                    <>
+                    <div className="fixed inset-0 z-30" onClick={() => setShowExamplesDropdown(false)}></div>
+                    <div className="absolute top-full right-0 mt-2 w-48 bg-slate-900 border border-slate-700 rounded-xl shadow-xl z-40 overflow-hidden py-1">
+                        {Object.keys(EXAMPLE_PROJECTS).map(key => (
+                            <button key={key} onClick={() => handleExampleSwitch(key)} className="w-full text-left px-4 py-2 hover:bg-slate-800 text-xs text-slate-300 hover:text-white">
+                                {EXAMPLE_PROJECTS[key].name}
+                            </button>
+                        ))}
+                    </div>
+                    </>
+                )}
+            </div>
          </div>
-      </div>
+      </header>
 
       <div className="flex-1 flex overflow-hidden relative">
-          
-          {/* Sidebar (File Explorer) */}
-          <div className={`
-              absolute md:relative z-20 h-full w-64 bg-[#252526] border-r border-[#1e1e1e] transform transition-transform duration-200 flex flex-col shrink-0
-              ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0 md:w-64'}
-          `}>
-              <div className="p-2 text-xs font-bold text-gray-500 uppercase tracking-wider flex justify-between items-center border-b border-[#3d3d3d]">
-                  <span>Explorer</span>
-                  <button onClick={handleAddFile} className="hover:text-white p-1 hover:bg-[#37373d] rounded"><Plus size={14}/></button>
-              </div>
-              <div className="flex-1 overflow-y-auto mt-1">
-                  {sortedFolders.map((folder: string) => (
-                      <div key={folder}>
-                          {folder !== 'root' && (
-                              <div 
-                                onClick={() => toggleFolder(folder)}
-                                className="flex items-center gap-1 px-2 py-1 cursor-pointer hover:bg-[#2a2d2e] text-xs font-bold text-gray-400 select-none"
-                              >
-                                  {expandedFolders[folder] ? <ChevronDown size={14}/> : <ChevronRight size={14}/>}
-                                  <Folder size={14} className="text-blue-300/50" />
-                                  <span>{folder}</span>
-                              </div>
-                          )}
-                          
-                          {(folder === 'root' || expandedFolders[folder]) && (
-                              <div>
-                                  {filesByFolder[folder].map(({file, index}) => (
-                                      <div
-                                          key={index}
-                                          onClick={() => { setActiveFileIndex(index); if(window.innerWidth<768) setIsSidebarOpen(false); setViewMode('code'); }}
-                                          className={`w-full text-left px-4 py-1.5 flex items-center justify-between group cursor-pointer ${activeFileIndex === index ? 'bg-[#37373d] text-white' : 'text-gray-400 hover:bg-[#2a2d2e]'} ${folder !== 'root' ? 'pl-8' : ''}`}
-                                      >
-                                          <div className="flex items-center gap-2 text-sm truncate">
-                                              <FileIcon filename={file.name} />
-                                              <span>{folder !== 'root' ? file.name.split('/')[1] : file.name}</span>
-                                          </div>
-                                          {project.files.length > 1 && (
-                                              <button 
-                                                onClick={(e) => handleDeleteFile(index, e)}
-                                                className="opacity-0 group-hover:opacity-100 text-gray-500 hover:text-red-400"
-                                              >
-                                                  <X size={12} />
-                                              </button>
-                                          )}
-                                      </div>
-                                  ))}
-                              </div>
-                          )}
-                      </div>
+         
+         {/* Sidebar File Tree */}
+         <div className={`${isSidebarOpen ? 'w-64' : 'w-0'} bg-slate-900 border-r border-slate-800 flex-shrink-0 transition-all duration-300 overflow-y-auto`}>
+            <div className="p-4">
+               <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-4">Files</h3>
+               <div className="space-y-1">
+                  {project.files.map((file, idx) => (
+                     <button 
+                        key={idx} 
+                        onClick={() => { setActiveFileIndex(idx); setViewMode('code'); }}
+                        className={`w-full flex items-center space-x-2 px-3 py-2 rounded-lg text-sm transition-colors ${activeFileIndex === idx ? 'bg-slate-800 text-white border border-slate-700' : 'text-slate-400 hover:text-white hover:bg-slate-800/50'}`}
+                     >
+                        <FileIcon filename={file.name} />
+                        <span className="truncate">{file.name}</span>
+                     </button>
                   ))}
-              </div>
-          </div>
+               </div>
+            </div>
+            
+            <div className="p-4 border-t border-slate-800">
+               <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Tools</h3>
+               <div className="space-y-2">
+                   <button 
+                      onClick={handleGenerateQuestions} 
+                      disabled={isGeneratingQuestions}
+                      className="w-full flex items-center space-x-2 px-3 py-2 bg-slate-800 hover:bg-indigo-600 hover:text-white text-slate-400 rounded-lg text-xs font-medium transition-colors border border-slate-700"
+                   >
+                      {isGeneratingQuestions ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
+                      <span>Generate Questions</span>
+                   </button>
+                   <button 
+                      onClick={handleStartMockInterview}
+                      className="w-full flex items-center space-x-2 px-3 py-2 bg-slate-800 hover:bg-emerald-600 hover:text-white text-slate-400 rounded-lg text-xs font-medium transition-colors border border-slate-700"
+                   >
+                      <Mic size={14} />
+                      <span>Live Mock Interview</span>
+                   </button>
+               </div>
+            </div>
+         </div>
 
-          {/* Toggle Sidebar (Mobile) */}
-          <button 
-             onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-             className="absolute bottom-4 left-4 z-30 md:hidden p-3 bg-indigo-600 rounded-full text-white shadow-lg"
-          >
-             <Folder size={20} />
-          </button>
-
-          {/* Main Content Area */}
-          <div className="flex-1 flex flex-col min-w-0 bg-[#1e1e1e] overflow-hidden">
-              
-              {/* File Tabs (Only show in Code mode) */}
-              {viewMode === 'code' && (
-                  <div className="flex overflow-x-auto bg-[#252526] scrollbar-thin scrollbar-thumb-[#3d3d3d] shrink-0 border-b border-[#1e1e1e]">
-                      {project.files.map((file, idx) => (
-                          <div 
-                            key={idx}
-                            onClick={() => { setActiveFileIndex(idx); }}
-                            className={`px-4 py-2 text-xs border-r border-[#1e1e1e] cursor-pointer flex items-center gap-2 min-w-[120px] hover:bg-[#2d2d2d] transition-colors ${activeFileIndex === idx ? 'bg-[#1e1e1e] text-white border-t-2 border-t-indigo-500' : 'bg-[#2d2d2d] text-gray-500'}`}
-                          >
-                              <FileIcon filename={file.name} />
-                              <span>{file.name.split('/').pop()}</span>
-                          </div>
-                      ))}
-                  </div>
-              )}
-
-              {viewMode === 'code' ? (
-                  /* Code Editor View */
-                  <div className="flex-1 relative group flex h-full overflow-hidden">
-                      {/* Line Numbers Gutter */}
-                      <div 
-                        ref={lineNumbersRef}
-                        className="w-12 bg-[#1e1e1e] text-right pr-3 pt-4 text-slate-600 font-mono text-sm select-none border-r border-[#2d2d2d] overflow-hidden h-full shrink-0"
-                      >
-                          {Array.from({length: lineNumbers}).map((_, i) => (
-                              <div key={i} className="leading-relaxed">{i + 1}</div>
-                          ))}
-                      </div>
-
-                      {/* Text Editor */}
-                      <div className="flex-1 relative h-full overflow-hidden">
-                          {activeFile?.name.endsWith('.md') ? (
-                              <div className="w-full h-full bg-[#1e1e1e] text-gray-300 p-8 overflow-y-auto prose prose-invert max-w-none">
-                                  <MarkdownView content={activeFile.content} />
-                              </div>
-                          ) : (
-                              <textarea 
-                                  ref={textareaRef}
-                                  value={activeFile?.content || ''}
-                                  onChange={(e) => handleCodeChange(e.target.value)}
-                                  onScroll={handleScroll}
-                                  className="w-full h-full bg-[#1e1e1e] text-gray-200 p-4 font-mono text-sm outline-none resize-none leading-relaxed whitespace-pre overflow-auto"
-                                  spellCheck={false}
-                                  autoCapitalize="off"
-                                  autoComplete="off"
-                                  autoCorrect="off"
-                              />
-                          )}
-                          {activeFile && (
-                              <div className="absolute top-2 right-4 text-xs text-gray-500 bg-[#1e1e1e]/90 px-2 py-1 rounded pointer-events-none border border-[#3d3d3d]">
-                                  {getLanguageFromFilename(activeFile.name).toUpperCase()}
-                              </div>
-                          )}
-                      </div>
-                  </div>
-              ) : viewMode === 'notes' ? (
-                  /* Human Comments View */
-                  <div className="flex-1 flex flex-col bg-[#1e1e1e] overflow-hidden">
-                      <div className="px-4 py-3 bg-[#252526] text-xs font-bold text-gray-400 flex items-center justify-between border-b border-[#3d3d3d] shrink-0">
-                          <div className="flex items-center gap-2">
-                              <Edit3 size={14} className="text-blue-400" />
-                              <span>INTERVIEWER / HUMAN NOTES</span>
-                          </div>
-                      </div>
-                      <div className="flex-1 p-4 overflow-hidden">
-                          <textarea 
-                              value={humanComments}
-                              onChange={(e) => setHumanComments(e.target.value)}
-                              className="w-full h-full bg-[#252526] text-gray-300 p-4 rounded-lg border border-[#3d3d3d] focus:border-blue-500 outline-none resize-none font-sans text-sm leading-relaxed"
-                              placeholder="Type interview notes, feedback, or scratchpad ideas here..."
-                          />
-                      </div>
-                  </div>
-              ) : viewMode === 'interview' ? (
-                  /* Interview Feedback View */
-                  <div className="flex-1 flex flex-col bg-[#1e1e1e] overflow-hidden">
-                      <div className="px-4 py-3 bg-[#252526] text-xs font-bold text-gray-400 flex items-center justify-between border-b border-[#3d3d3d] shrink-0">
-                          <div className="flex items-center gap-2">
-                              <UserCheck size={14} className="text-purple-400" />
-                              <span>INTERVIEW PERFORMANCE EVALUATION</span>
-                          </div>
-                          {interviewFeedback && (
-                              <button onClick={() => setInterviewFeedback('')} className="hover:text-white flex items-center gap-1">
-                                  <Trash2 size={12}/> Clear
-                              </button>
-                          )}
-                      </div>
-                      <div className="flex-1 p-8 overflow-y-auto">
-                          {isReviewing ? (
-                              <div className="h-full flex flex-col items-center justify-center text-purple-400 space-y-4">
-                                  <Loader2 size={48} className="animate-spin" />
-                                  <p className="text-sm font-bold">Evaluating Code, Chat History, and Notes...</p>
-                              </div>
-                          ) : interviewFeedback ? (
-                              <div className="prose prose-invert prose-sm max-w-4xl mx-auto text-gray-300">
-                                  <MarkdownView content={interviewFeedback} />
-                              </div>
-                          ) : (
-                              <div className="h-full flex flex-col items-center justify-center text-gray-600 space-y-4">
-                                  <UserCheck size={48} className="opacity-20" />
-                                  <div className="text-center">
-                                      <p className="text-sm font-bold text-gray-500">No Evaluation Yet</p>
-                                      <p className="text-xs mt-2 max-w-xs mx-auto">Click "EVALUATE" to generate a hiring report based on code, notes, and Q&A history.</p>
-                                  </div>
-                              </div>
-                          )}
-                      </div>
-                  </div>
-              ) : (
-                  /* AI Review View */
-                  <div className="flex-1 flex flex-col bg-[#1e1e1e] overflow-hidden">
-                      <div className="px-4 py-3 bg-[#252526] text-xs font-bold text-gray-400 flex items-center justify-between border-b border-[#3d3d3d] shrink-0">
-                          <div className="flex items-center gap-2">
-                              <MessageSquare size={14} className="text-indigo-400" />
-                              <span>AI ANALYSIS & FEEDBACK</span>
-                          </div>
-                          {output && (
-                              <button onClick={() => setOutput('')} className="hover:text-white flex items-center gap-1">
-                                  <Trash2 size={12}/> Clear
-                              </button>
-                          )}
-                      </div>
-                      <div className="flex-1 p-8 overflow-y-auto">
-                          {isReviewing ? (
-                              <div className="h-full flex flex-col items-center justify-center text-indigo-400 space-y-4">
-                                  <Loader2 size={48} className="animate-spin" />
-                                  <p className="text-sm font-bold">Analyzing Code Structure...</p>
-                              </div>
-                          ) : output ? (
-                              <div className="prose prose-invert prose-sm max-w-4xl mx-auto text-gray-300">
-                                  <MarkdownView content={output} />
-                              </div>
-                          ) : (
-                              <div className="h-full flex flex-col items-center justify-center text-gray-600 space-y-4">
-                                  <Search size={48} className="opacity-20" />
-                                  <div className="text-center">
-                                      <p className="text-sm font-bold text-gray-500">No Review Generated Yet</p>
-                                      <p className="text-xs mt-2 max-w-xs mx-auto">Click the "REVIEW CODE" button in the top bar to get an AI analysis of your current file.</p>
-                                  </div>
-                              </div>
-                          )}
-                      </div>
-                  </div>
-              )}
-          </div>
-
-          {/* Resizable Chat Panel */}
-          {isChatOpen && (
-              <>
+         {/* Main Editor Area */}
+         <div className="flex-1 flex flex-col min-w-0 relative">
+            
+            {/* Editor Tabs */}
+            <div className="flex items-center bg-slate-900 border-b border-slate-800 px-2 overflow-x-auto scrollbar-hide">
+               <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="p-2 text-slate-500 hover:text-white mr-2">
+                  {isSidebarOpen ? <Minimize2 size={16}/> : <Maximize2 size={16}/>}
+               </button>
+               
+               {project.files.map((file, idx) => (
                   <div 
-                    className="w-1 cursor-col-resize hover:bg-indigo-500 bg-[#3d3d3d] transition-colors flex items-center justify-center shrink-0 z-40"
+                    key={idx}
+                    onClick={() => setActiveFileIndex(idx)}
+                    className={`flex items-center space-x-2 px-4 py-2.5 border-r border-slate-800 cursor-pointer min-w-[120px] max-w-[200px] ${activeFileIndex === idx ? 'bg-slate-950 text-white border-t-2 border-t-indigo-500' : 'bg-slate-900 text-slate-500 hover:bg-slate-800 hover:text-slate-300'}`}
+                  >
+                     <FileIcon filename={file.name} />
+                     <span className="text-xs font-medium truncate">{file.name}</span>
+                     {activeFileIndex === idx && (
+                        <button className="ml-auto text-slate-500 hover:text-red-400" onClick={(e) => { e.stopPropagation(); /* close file logic */ }}>
+                           <X size={12} />
+                        </button>
+                     )}
+                  </div>
+               ))}
+            </div>
+
+            {/* Editor Content */}
+            <div className="flex-1 relative bg-slate-950 flex overflow-hidden">
+                {/* Line Numbers */}
+                <div 
+                    ref={lineNumbersRef}
+                    className="w-12 bg-slate-900 border-r border-slate-800 text-right text-slate-600 font-mono text-sm py-4 pr-3 select-none overflow-hidden"
+                >
+                    {activeFile.content.split('\n').map((_, i) => (
+                        <div key={i} className="leading-6">{i + 1}</div>
+                    ))}
+                </div>
+                
+                {/* Code Textarea */}
+                <textarea
+                    ref={textareaRef}
+                    value={activeFile.content}
+                    onChange={(e) => handleCodeChange(e.target.value)}
+                    onScroll={handleScroll}
+                    className="flex-1 bg-transparent text-slate-300 font-mono text-sm p-4 outline-none resize-none leading-6 whitespace-pre"
+                    spellCheck={false}
+                />
+                
+                {/* Live Session Overlay */}
+                {isInterviewSession && (
+                    <div className="absolute right-4 bottom-4 w-80 h-96 z-50 bg-slate-900 rounded-xl shadow-2xl border border-indigo-500/50 overflow-hidden flex flex-col animate-fade-in-up">
+                        <div className="bg-indigo-900/20 p-2 flex justify-between items-center border-b border-indigo-500/20">
+                            <span className="text-xs font-bold text-indigo-300 flex items-center gap-2"><Mic size={12}/> Live Interview</span>
+                            <button onClick={() => setIsInterviewSession(false)} className="text-indigo-400 hover:text-white"><X size={14}/></button>
+                        </div>
+                        <div className="flex-1 relative">
+                            <LiveSession 
+                                channel={interviewChannel}
+                                recordingEnabled={recordInterview}
+                                onEndSession={() => setIsInterviewSession(false)}
+                                language="en"
+                            />
+                        </div>
+                    </div>
+                )}
+            </div>
+         </div>
+
+         {/* Resizable Chat/Review Panel */}
+         {isChatOpen && (
+             <>
+                <div 
+                    className="w-1 bg-slate-800 hover:bg-indigo-500 cursor-col-resize z-30 transition-colors"
                     onMouseDown={startResizing}
-                  >
-                      <GripVertical size={12} className="text-gray-500"/>
+                />
+                <div style={{ width: chatWidth }} className="bg-slate-900 border-l border-slate-800 flex flex-col flex-shrink-0 relative">
+                    <div className="p-3 border-b border-slate-800 flex justify-between items-center">
+                        <h3 className="text-sm font-bold text-white flex items-center gap-2"><Bot size={16} className="text-indigo-400"/> AI Assistant</h3>
+                        <div className="flex gap-1">
+                            <button onClick={handleSaveChatSession} className="p-1.5 text-slate-400 hover:text-emerald-400 rounded hover:bg-slate-800" title="Save Chat">
+                                <Archive size={16} />
+                            </button>
+                            <button onClick={() => setIsChatOpen(false)} className="p-1.5 text-slate-400 hover:text-white rounded hover:bg-slate-800">
+                                <X size={16} />
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <div className="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-thin scrollbar-thumb-slate-700">
+                        {chatMessages.length === 0 && (
+                            <div className="text-center text-slate-500 mt-10">
+                                <Bot size={32} className="mx-auto mb-2 opacity-50"/>
+                                <p className="text-xs">Ask me to explain code, find bugs, or optimize algorithms.</p>
+                            </div>
+                        )}
+                        {chatMessages.map((msg, idx) => (
+                            <div key={idx} className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
+                                <div className={`max-w-[90%] p-3 rounded-xl text-sm ${msg.role === 'user' ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-300'}`}>
+                                    <MarkdownView content={msg.text} />
+                                </div>
+                            </div>
+                        ))}
+                        {isChatLoading && (
+                            <div className="flex items-center space-x-2 text-slate-500 text-xs">
+                                <Loader2 size={12} className="animate-spin"/>
+                                <span>Thinking...</span>
+                            </div>
+                        )}
+                        <div ref={chatEndRef} />
+                    </div>
+
+                    <div className="p-3 border-t border-slate-800 bg-slate-900">
+                        <div className="flex items-center gap-2 bg-slate-800 border border-slate-700 rounded-lg p-1">
+                            <input 
+                                type="text" 
+                                value={chatInput}
+                                onChange={(e) => setChatInput(e.target.value)}
+                                onKeyDown={(e) => e.key === 'Enter' && handleChatSubmit()}
+                                placeholder="Type a message..."
+                                className="flex-1 bg-transparent text-sm text-white px-2 focus:outline-none"
+                            />
+                            <button onClick={handleChatSubmit} disabled={!chatInput.trim() || isChatLoading} className="p-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white rounded-md">
+                                <Send size={14} />
+                            </button>
+                        </div>
+                        <div className="flex justify-between mt-2">
+                            <button onClick={handleReviewCode} disabled={isReviewing} className="text-[10px] text-slate-400 hover:text-indigo-400 flex items-center gap-1">
+                                <Search size={10}/> Review Code
+                            </button>
+                            <button onClick={handleEvaluateInterview} disabled={isReviewing} className="text-[10px] text-slate-400 hover:text-emerald-400 flex items-center gap-1">
+                                <UserCheck size={10}/> Evaluate Interview
+                            </button>
+                        </div>
+                    </div>
+                </div>
+             </>
+         )}
+      </div>
+
+      {/* Interview Setup Modal */}
+      {showInterviewSetup && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
+              <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-sm shadow-2xl p-6 animate-fade-in-up">
+                  <div className="text-center mb-6">
+                      <div className="w-16 h-16 bg-indigo-500/20 rounded-full flex items-center justify-center mx-auto mb-3">
+                          <Mic size={32} className="text-indigo-400" />
+                      </div>
+                      <h3 className="text-xl font-bold text-white">Start Mock Interview</h3>
+                      <p className="text-sm text-slate-400 mt-1">Real-time voice conversation with AI interviewer.</p>
                   </div>
-                  <div 
-                    style={{ width: chatWidth }}
-                    className="bg-[#1e1e1e] border-l border-[#3d3d3d] flex flex-col shrink-0 transition-all duration-75 relative z-30"
-                  >
-                      <div className="p-3 border-b border-[#3d3d3d] flex justify-between items-center bg-[#252526] shrink-0">
-                          <h3 className="text-xs font-bold text-gray-300 flex items-center gap-2">
-                              <Bot size={14} className="text-indigo-400"/> AI Assistant
-                          </h3>
-                          <div className="flex items-center gap-2">
-                              {chatMessages.length > 0 && (
-                                <button onClick={handleSaveChatSession} className="text-xs text-gray-400 hover:text-white flex items-center gap-1 bg-[#3d3d3d] px-2 py-1 rounded" title="Save Chat to File">
-                                    <Archive size={12} /> Save
-                                </button>
-                              )}
-                              <button onClick={() => setIsChatOpen(false)} className="text-gray-500 hover:text-white">
-                                  <X size={14} />
-                              </button>
+                  
+                  <div className="space-y-4">
+                      <div 
+                          onClick={() => setRecordInterview(!recordInterview)}
+                          className={`p-3 rounded-xl border cursor-pointer flex items-center justify-between ${recordInterview ? 'bg-red-900/20 border-red-500/50' : 'bg-slate-800 border-slate-700'}`}
+                      >
+                          <span className={`text-sm font-bold ${recordInterview ? 'text-red-400' : 'text-slate-400'}`}>Record Session</span>
+                          <div className={`w-5 h-5 rounded-full border flex items-center justify-center ${recordInterview ? 'border-red-500 bg-red-500 text-white' : 'border-slate-500'}`}>
+                              {recordInterview && <CheckCircle size={12}/>}
                           </div>
                       </div>
                       
-                      <div className="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-thin scrollbar-thumb-[#3d3d3d]">
-                          {chatMessages.length === 0 ? (
-                              <div className="text-center text-gray-600 text-xs mt-10 space-y-2">
-                                  <p>Ask me anything about your code.</p>
-                                  <p className="italic">"How do I fix this error?"</p>
-                                  <p className="italic">"Optimize this loop."</p>
-                              </div>
-                          ) : (
-                              chatMessages.map((msg, i) => (
-                                  <div key={i} className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
-                                      <div className={`max-w-[90%] px-3 py-2 rounded-lg text-xs leading-relaxed whitespace-pre-wrap ${msg.role === 'user' ? 'bg-indigo-600 text-white' : 'bg-[#2d2d2d] text-gray-300 border border-[#3d3d3d]'}`}>
-                                          {msg.role === 'ai' ? <MarkdownView content={msg.text} /> : msg.text}
-                                      </div>
-                                  </div>
-                              ))
-                          )}
-                          
-                          {/* Long Session Warning */}
-                          {chatMessages.length > 20 && (
-                              <div className="bg-amber-900/20 border border-amber-600/30 p-2 rounded text-center my-4 animate-fade-in">
-                                  <div className="text-xs text-amber-400 flex items-center justify-center gap-1 mb-1 font-bold">
-                                      <AlertTriangle size={12} /> Long Session
-                                  </div>
-                                  <p className="text-[10px] text-gray-400">Context limit approaching. Save and start new?</p>
-                                  <button onClick={handleSaveChatSession} className="mt-2 text-xs bg-amber-700 hover:bg-amber-600 text-white px-3 py-1 rounded w-full">Save & Reset</button>
-                              </div>
-                          )}
-
-                          {isChatLoading && (
-                              <div className="flex items-center gap-2 text-gray-500 text-xs">
-                                  <Loader2 size={12} className="animate-spin" /> Thinking...
-                              </div>
-                          )}
-                          <div ref={chatEndRef} />
-                      </div>
-
-                      <div className="p-3 border-t border-[#3d3d3d] bg-[#252526] shrink-0">
-                          <div className="flex gap-2">
-                              <input 
-                                  type="text" 
-                                  value={chatInput}
-                                  onChange={e => setChatInput(e.target.value)}
-                                  onKeyDown={e => e.key === 'Enter' && handleChatSubmit()}
-                                  placeholder="Ask a question..."
-                                  className="flex-1 bg-[#1e1e1e] border border-[#3d3d3d] rounded px-3 py-2 text-xs text-white focus:border-indigo-500 outline-none"
-                              />
-                              <button 
-                                  onClick={handleChatSubmit}
-                                  disabled={isChatLoading || !chatInput.trim()}
-                                  className="p-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded disabled:opacity-50"
-                              >
-                                  <Send size={14} />
-                              </button>
-                          </div>
-                      </div>
+                      <button onClick={confirmStartInterview} className="w-full py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl shadow-lg">
+                          Begin Interview
+                      </button>
+                      <button onClick={() => setShowInterviewSetup(false)} className="w-full py-2 text-slate-400 hover:text-white text-sm">
+                          Cancel
+                      </button>
                   </div>
-              </>
-          )}
-      </div>
+              </div>
+          </div>
+      )}
+
     </div>
   );
 };
