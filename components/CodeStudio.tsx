@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { GoogleGenAI } from '@google/genai';
-import { ArrowLeft, Save, Folder, File, Code, Plus, Trash2, Loader2, ChevronRight, ChevronDown, X, MessageSquare, FileCode, FileJson, FileType, Search, Coffee, Hash, CloudUpload, Edit3, BookOpen, Bot, Send, Maximize2, Minimize2, GripVertical, UserCheck, AlertTriangle, Archive, Sparkles, Video, Mic, CheckCircle, Monitor, FileText } from 'lucide-react';
+import { ArrowLeft, Save, Folder, File, Code, Plus, Trash2, Loader2, ChevronRight, ChevronDown, X, MessageSquare, FileCode, FileJson, FileType, Search, Coffee, Hash, CloudUpload, Edit3, BookOpen, Bot, Send, Maximize2, Minimize2, GripVertical, UserCheck, AlertTriangle, Archive, Sparkles, Video, Mic, CheckCircle, Monitor, FileText, Eye } from 'lucide-react';
 import { GEMINI_API_KEY } from '../services/private_keys';
 import { CodeProject, CodeFile, ChatMessage, Channel } from '../types';
 import { MarkdownView } from './MarkdownView';
@@ -305,6 +305,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
   const [showLanguageDropdown, setShowLanguageDropdown] = useState(false);
   const [showExamplesDropdown, setShowExamplesDropdown] = useState(false);
   const [isFullScreen, setIsFullScreen] = useState(false);
+  const [isPreviewMode, setIsPreviewMode] = useState(false);
   
   // Chat State
   const [isChatOpen, setIsChatOpen] = useState(false);
@@ -324,6 +325,9 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
   // Refs for scrolling sync
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const lineNumbersRef = useRef<HTMLDivElement>(null);
+
+  const activeFile = project.files[activeFileIndex] || project.files[0];
+  const isMarkdown = activeFile ? activeFile.name.toLowerCase().endsWith('.md') : false;
 
   // Mobile check
   useEffect(() => {
@@ -351,8 +355,6 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
           chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
       }
   }, [chatMessages, isChatOpen]);
-
-  const activeFile = project.files[activeFileIndex] || project.files[0];
 
   // Resizing Logic
   const startResizing = (mouseDownEvent: React.MouseEvent) => {
@@ -403,6 +405,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
       setInterviewFeedback('');
       setOutput('');
       setChatMessages([]);
+      setIsPreviewMode(false);
   };
 
   const handleExampleSwitch = (exampleKey: string) => {
@@ -420,6 +423,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
       setInterviewFeedback('');
       setOutput('');
       setChatMessages([]);
+      setIsPreviewMode(false);
   };
 
   const handleCodeChange = (newContent: string) => {
@@ -477,9 +481,10 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
               files: [...prev.files, newFile]
           }));
           
-          // Switch to new file
+          // Switch to new file and enable preview
           setActiveFileIndex(project.files.length);
           setViewMode('code');
+          setIsPreviewMode(true);
           alert("Questions generated!");
 
       } catch(e: any) {
@@ -870,25 +875,46 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
 
             {/* Editor Content */}
             <div className="flex-1 relative bg-slate-950 flex overflow-hidden">
-                {/* Line Numbers */}
-                <div 
-                    ref={lineNumbersRef}
-                    className="w-12 bg-slate-900 border-r border-slate-800 text-right text-slate-600 font-mono text-sm py-4 pr-3 select-none overflow-hidden"
-                >
-                    {activeFile.content.split('\n').map((_, i) => (
-                        <div key={i} className="leading-6">{i + 1}</div>
-                    ))}
-                </div>
-                
-                {/* Code Textarea */}
-                <textarea
-                    ref={textareaRef}
-                    value={activeFile.content}
-                    onChange={(e) => handleCodeChange(e.target.value)}
-                    onScroll={handleScroll}
-                    className="flex-1 bg-transparent text-slate-300 font-mono text-sm p-4 outline-none resize-none leading-6 whitespace-pre"
-                    spellCheck={false}
-                />
+                {/* Markdown Preview Toggle */}
+                {isMarkdown && (
+                    <button
+                        onClick={() => setIsPreviewMode(!isPreviewMode)}
+                        className="absolute top-2 right-6 z-20 px-3 py-1.5 bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-white text-xs font-bold rounded-lg border border-slate-700 shadow-lg flex items-center gap-2 backdrop-blur-sm transition-all"
+                    >
+                        {isPreviewMode ? <Code size={14}/> : <Eye size={14}/>}
+                        <span>{isPreviewMode ? "Edit Source" : "Preview"}</span>
+                    </button>
+                )}
+
+                {isMarkdown && isPreviewMode ? (
+                    <div className="flex-1 overflow-y-auto p-8 bg-slate-950">
+                        <div className="max-w-3xl mx-auto pb-20">
+                            <MarkdownView content={activeFile.content} />
+                        </div>
+                    </div>
+                ) : (
+                    <>
+                        {/* Line Numbers */}
+                        <div 
+                            ref={lineNumbersRef}
+                            className="w-12 bg-slate-900 border-r border-slate-800 text-right text-slate-600 font-mono text-sm py-4 pr-3 select-none overflow-hidden flex-shrink-0"
+                        >
+                            {activeFile.content.split('\n').map((_, i) => (
+                                <div key={i} className="leading-6">{i + 1}</div>
+                            ))}
+                        </div>
+                        
+                        {/* Code Textarea */}
+                        <textarea
+                            ref={textareaRef}
+                            value={activeFile.content}
+                            onChange={(e) => handleCodeChange(e.target.value)}
+                            onScroll={handleScroll}
+                            className="flex-1 bg-transparent text-slate-300 font-mono text-sm p-4 outline-none resize-none leading-6 whitespace-pre"
+                            spellCheck={false}
+                        />
+                    </>
+                )}
                 
                 {/* Live Session Overlay */}
                 {isInterviewSession && (
