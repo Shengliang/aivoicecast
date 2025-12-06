@@ -1,4 +1,5 @@
 
+
 export type AttachmentType = 'image' | 'audio' | 'video' | 'file';
 
 export interface Attachment {
@@ -168,12 +169,19 @@ export interface CodeFile {
   content: string;
 }
 
+export interface ChatMessage {
+  role: 'user' | 'ai';
+  text: string;
+}
+
 export interface CodeProject {
   id: string;
   name: string;
   files: CodeFile[];
   lastModified: number;
-  review?: string;
+  review?: string; // Code Review
   humanComments?: string; // Interviewer/Human notes
   ownerId?: string;
+  chatHistory?: ChatMessage[]; // Chat with AI assistant
+  interviewFeedback?: string; // Holistic interview feedback
 }

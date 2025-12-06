@@ -1,9 +1,9 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { GoogleGenAI } from '@google/genai';
-import { ArrowLeft, Save, Folder, File, Code, Plus, Trash2, Loader2, ChevronRight, ChevronDown, X, MessageSquare, FileCode, FileJson, FileType, Search, Coffee, Hash, CloudUpload, Edit3, BookOpen, Bot, Send } from 'lucide-react';
+import { ArrowLeft, Save, Folder, File, Code, Plus, Trash2, Loader2, ChevronRight, ChevronDown, X, MessageSquare, FileCode, FileJson, FileType, Search, Coffee, Hash, CloudUpload, Edit3, BookOpen, Bot, Send, Maximize2, Minimize2, GripVertical, UserCheck } from 'lucide-react';
 import { GEMINI_API_KEY } from '../services/private_keys';
-import { CodeProject, CodeFile } from '../types';
+import { CodeProject, CodeFile, ChatMessage } from '../types';
 import { MarkdownView } from './MarkdownView';
 import { saveCodeProject } from '../services/firestoreService';
 
@@ -288,19 +288,23 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
   const [activeFileIndex, setActiveFileIndex] = useState(0);
   const [output, setOutput] = useState('');
   const [humanComments, setHumanComments] = useState('');
+  const [interviewFeedback, setInterviewFeedback] = useState('');
   const [isReviewing, setIsReviewing] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [expandedFolders, setExpandedFolders] = useState<Record<string, boolean>>({});
-  const [viewMode, setViewMode] = useState<'code' | 'review' | 'notes'>('code');
+  const [viewMode, setViewMode] = useState<'code' | 'review' | 'notes' | 'interview'>('code');
   const [isSaving, setIsSaving] = useState(false);
   const [showLanguageDropdown, setShowLanguageDropdown] = useState(false);
   const [showExamplesDropdown, setShowExamplesDropdown] = useState(false);
+  const [isFullScreen, setIsFullScreen] = useState(false);
   
   // Chat State
   const [isChatOpen, setIsChatOpen] = useState(false);
-  const [chatMessages, setChatMessages] = useState<{role: 'user' | 'ai', text: string}[]>([]);
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [chatInput, setChatInput] = useState('');
   const [isChatLoading, setIsChatLoading] = useState(false);
+  const [chatWidth, setChatWidth] = useState(350);
+  const [isResizing, setIsResizing] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
   
   // Refs for scrolling sync
@@ -319,10 +323,12 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
       setExpandedFolders(allFolders);
   }, [project.files]);
 
-  // Load project review and comments if available
+  // Load project review, comments, and history
   useEffect(() => {
       setOutput(project.review || '');
       setHumanComments(project.humanComments || '');
+      setInterviewFeedback(project.interviewFeedback || '');
+      if (project.chatHistory) setChatMessages(project.chatHistory);
   }, [project]);
 
   // Scroll chat to bottom
@@ -333,6 +339,29 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
   }, [chatMessages, isChatOpen]);
 
   const activeFile = project.files[activeFileIndex] || project.files[0];
+
+  // Resizing Logic
+  const startResizing = (mouseDownEvent: React.MouseEvent) => {
+      mouseDownEvent.preventDefault();
+      const startX = mouseDownEvent.clientX;
+      const startWidth = chatWidth;
+
+      const doDrag = (dragEvent: MouseEvent) => {
+          // Chat is on right, dragging left increases width
+          const newWidth = startWidth + (startX - dragEvent.clientX);
+          setChatWidth(Math.max(250, Math.min(newWidth, 800)));
+      };
+
+      const stopDrag = () => {
+          document.removeEventListener('mousemove', doDrag);
+          document.removeEventListener('mouseup', stopDrag);
+          setIsResizing(false);
+      };
+
+      document.addEventListener('mousemove', doDrag);
+      document.addEventListener('mouseup', stopDrag);
+      setIsResizing(true);
+  };
 
   const handleLanguageSwitch = (langId: string) => {
       const langConfig = LANGUAGES.find(l => l.id === langId);
@@ -348,7 +377,8 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
               content: langConfig.defaultCode
           }],
           humanComments: '',
-          review: ''
+          review: '',
+          interviewFeedback: ''
       };
 
       setProject(newProject);
@@ -356,6 +386,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
       setViewMode('code');
       setShowLanguageDropdown(false);
       setHumanComments('');
+      setInterviewFeedback('');
       setOutput('');
       setChatMessages([]);
   };
@@ -372,6 +403,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
       setViewMode('code');
       setShowExamplesDropdown(false);
       setHumanComments('');
+      setInterviewFeedback('');
       setOutput('');
       setChatMessages([]);
   };
@@ -429,7 +461,6 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
         
         const reviewText = response.text || "No feedback generated.";
         setOutput(reviewText);
-        // Persist review in local project state
         setProject(prev => ({ ...prev, review: reviewText }));
         
     } catch (e: any) {
@@ -439,11 +470,66 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
     }
   };
 
+  const handleEvaluateInterview = async () => {
+      setIsReviewing(true);
+      setViewMode('interview');
+      setInterviewFeedback('');
+
+      try {
+          const apiKey = localStorage.getItem('gemini_api_key') || GEMINI_API_KEY || process.env.API_KEY || '';
+          if (!apiKey) throw new Error("API Key required.");
+          
+          const ai = new GoogleGenAI({ apiKey });
+          
+          const fileContext = project.files.map(f => `File: ${f.name}\n${f.content}`).join('\n\n');
+          const chatContext = chatMessages.map(m => `${m.role.toUpperCase()}: ${m.text}`).join('\n');
+          
+          const prompt = `
+            You are a Hiring Manager at a top-tier tech company (like Google or Meta).
+            Evaluate this candidate's interview performance based on the artifacts below.
+            
+            1. **Code Submitted**:
+            ${fileContext}
+            
+            2. **Candidate's Scratchpad Notes**:
+            ${humanComments}
+            
+            3. **Chat History with AI Assistant**:
+            ${chatContext}
+            
+            TASK:
+            Provide a comprehensive Interview Feedback Report (Markdown).
+            
+            Structure:
+            - **Recommendation**: Strong Hire / Hire / No Hire
+            - **Communication**: Did they ask good questions in the chat? Did they use notes effectively?
+            - **Problem Solving**: Is the approach optimal? 
+            - **Code Quality**: Cleanliness, edge case handling.
+            - **Areas for Improvement**: Constructive feedback.
+          `;
+
+          const response = await ai.models.generateContent({
+              model: 'gemini-3-pro-preview',
+              contents: prompt
+          });
+
+          const feedbackText = response.text || "Evaluation unavailable.";
+          setInterviewFeedback(feedbackText);
+          setProject(prev => ({ ...prev, interviewFeedback: feedbackText }));
+
+      } catch(e: any) {
+          setInterviewFeedback(`Evaluation Error: ${e.message}`);
+      } finally {
+          setIsReviewing(false);
+      }
+  };
+
   const handleChatSubmit = async () => {
       if (!chatInput.trim()) return;
       
       const userMsg = chatInput;
-      setChatMessages(prev => [...prev, { role: 'user', text: userMsg }]);
+      const newHistory: ChatMessage[] = [...chatMessages, { role: 'user', text: userMsg }];
+      setChatMessages(newHistory);
       setChatInput('');
       setIsChatLoading(true);
 
@@ -455,7 +541,8 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
           
           // Contextual Prompt Construction
           const fileContext = activeFile ? `--- CURRENT FILE: ${activeFile.name} ---\n${activeFile.content}` : "No file active.";
-          const historyText = chatMessages.map(m => `${m.role.toUpperCase()}: ${m.text}`).join('\n');
+          // Limit history to last 10 turns to save tokens
+          const historyText = newHistory.slice(-20).map(m => `${m.role.toUpperCase()}: ${m.text}`).join('\n');
           
           const prompt = `
             You are an expert Coding Assistant built into an IDE.
@@ -479,6 +566,10 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
 
           const aiMsg = response.text || "I couldn't generate a response.";
           setChatMessages(prev => [...prev, { role: 'ai', text: aiMsg }]);
+          
+          // Auto-save chat history to project state
+          setProject(prev => ({ ...prev, chatHistory: [...newHistory, { role: 'ai', text: aiMsg }] }));
+
       } catch(e: any) {
           setChatMessages(prev => [...prev, { role: 'ai', text: `Error: ${e.message}` }]);
       } finally {
@@ -490,15 +581,17 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
       if (!currentUser) return alert("Please sign in to save projects.");
       setIsSaving(true);
       try {
-          // Save everything: Code, AI Review, and Human Comments
+          // Save everything: Code, AI Review, Human Comments, Chat History, Interview Feedback
           const projectToSave = { 
               ...project, 
               review: output,
-              humanComments: humanComments
+              humanComments: humanComments,
+              chatHistory: chatMessages,
+              interviewFeedback: interviewFeedback
           };
           await saveCodeProject(projectToSave);
           setProject(projectToSave); // Ensure local state matches saved
-          alert("Project (Code, Comments, Review) saved to Cloud!");
+          alert("Project (Code, Chat History, Reviews) saved to Cloud!");
       } catch (e: any) {
           console.error(e);
           alert("Failed to save project.");
@@ -556,7 +649,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
   const lineNumbers = activeFile ? activeFile.content.split('\n').length : 0;
 
   return (
-    <div className="min-h-screen bg-[#1e1e1e] text-gray-300 flex flex-col font-mono overflow-hidden">
+    <div className={`${isFullScreen ? 'fixed inset-0 z-50' : 'h-screen'} bg-[#1e1e1e] text-gray-300 flex flex-col font-mono overflow-hidden`}>
       
       {/* Top Bar */}
       <div className="h-12 bg-[#2d2d2d] border-b border-[#1e1e1e] flex items-center justify-between px-4 shrink-0">
@@ -658,6 +751,13 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
                     Notes
                     {humanComments && viewMode !== 'notes' && <span className="w-1.5 h-1.5 bg-blue-500 rounded-full"></span>}
                  </button>
+                 <button 
+                    onClick={() => setViewMode('interview')}
+                    className={`px-3 py-1 text-xs font-bold rounded transition-colors flex items-center gap-1 ${viewMode === 'interview' ? 'bg-[#37373d] text-white' : 'text-gray-500 hover:text-gray-300'}`}
+                 >
+                    Evaluation
+                    {interviewFeedback && viewMode !== 'interview' && <span className="w-1.5 h-1.5 bg-purple-500 rounded-full"></span>}
+                 </button>
              </div>
 
              <button 
@@ -668,22 +768,45 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
                 <Bot size={16} />
              </button>
 
-             <button 
-                onClick={handleReviewCode}
-                disabled={isReviewing}
-                className="flex items-center gap-2 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-sm text-xs font-bold transition-colors"
-             >
-                {isReviewing ? <Loader2 size={14} className="animate-spin"/> : <Search size={14} />}
-                <span>{isReviewing ? 'ANALYZING...' : 'REVIEW CODE'}</span>
-             </button>
+             {/* Action Buttons */}
+             <div className="flex bg-[#3d3d3d] rounded-sm p-0.5 border border-[#555]">
+                 <button 
+                    onClick={handleReviewCode}
+                    disabled={isReviewing}
+                    className="flex items-center gap-2 px-3 py-1.5 hover:bg-[#4d4d4d] text-white rounded-sm text-xs font-bold transition-colors"
+                    title="Review Code Only"
+                 >
+                    {isReviewing ? <Loader2 size={14} className="animate-spin"/> : <Search size={14} />}
+                    <span>REVIEW CODE</span>
+                 </button>
+                 <div className="w-px bg-[#555] my-1 mx-1"></div>
+                 <button 
+                    onClick={handleEvaluateInterview}
+                    disabled={isReviewing}
+                    className="flex items-center gap-2 px-3 py-1.5 hover:bg-[#4d4d4d] text-purple-300 hover:text-purple-200 rounded-sm text-xs font-bold transition-colors"
+                    title="Evaluate as Full Interview (Code + Notes + Chat)"
+                 >
+                    <UserCheck size={14} />
+                    <span>EVALUATE CANDIDATE</span>
+                 </button>
+             </div>
+
              <button 
                 onClick={handleSaveToCloud}
                 disabled={isSaving}
                 className="flex items-center gap-2 px-3 py-1.5 bg-[#3d3d3d] hover:bg-[#4d4d4d] text-white rounded-sm text-xs font-bold transition-colors border border-gray-600"
-                title="Save Project (Code, Comments, AI Review) to Firebase"
+                title="Save Project (Code, Comments, Reviews, Chat) to Firebase"
              >
                 {isSaving ? <Loader2 size={14} className="animate-spin" /> : <CloudUpload size={14} />}
                 <span className="hidden sm:inline">SAVE</span>
+             </button>
+
+             <button 
+                onClick={() => setIsFullScreen(!isFullScreen)}
+                className="p-2 rounded hover:bg-[#4d4d4d] text-gray-400 hover:text-white"
+                title="Toggle Full Screen"
+             >
+                {isFullScreen ? <Minimize2 size={16}/> : <Maximize2 size={16}/>}
              </button>
          </div>
       </div>
@@ -751,11 +874,11 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
           </button>
 
           {/* Main Content Area */}
-          <div className="flex-1 flex flex-col min-w-0 bg-[#1e1e1e]">
+          <div className="flex-1 flex flex-col min-w-0 bg-[#1e1e1e] overflow-hidden">
               
               {/* File Tabs (Only show in Code mode) */}
               {viewMode === 'code' && (
-                  <div className="flex overflow-x-auto bg-[#252526] scrollbar-thin scrollbar-thumb-[#3d3d3d] shrink-0">
+                  <div className="flex overflow-x-auto bg-[#252526] scrollbar-thin scrollbar-thumb-[#3d3d3d] shrink-0 border-b border-[#1e1e1e]">
                       {project.files.map((file, idx) => (
                           <div 
                             key={idx}
@@ -771,11 +894,11 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
 
               {viewMode === 'code' ? (
                   /* Code Editor View */
-                  <div className="flex-1 relative group flex h-full">
+                  <div className="flex-1 relative group flex h-full overflow-hidden">
                       {/* Line Numbers Gutter */}
                       <div 
                         ref={lineNumbersRef}
-                        className="w-12 bg-[#1e1e1e] text-right pr-3 pt-4 text-slate-600 font-mono text-sm select-none border-r border-[#2d2d2d] overflow-hidden h-full"
+                        className="w-12 bg-[#1e1e1e] text-right pr-3 pt-4 text-slate-600 font-mono text-sm select-none border-r border-[#2d2d2d] overflow-hidden h-full shrink-0"
                       >
                           {Array.from({length: lineNumbers}).map((_, i) => (
                               <div key={i} className="leading-relaxed">{i + 1}</div>
@@ -783,7 +906,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
                       </div>
 
                       {/* Text Editor */}
-                      <div className="flex-1 relative h-full">
+                      <div className="flex-1 relative h-full overflow-hidden">
                           <textarea 
                               ref={textareaRef}
                               value={activeFile?.content || ''}
@@ -804,14 +927,14 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
                   </div>
               ) : viewMode === 'notes' ? (
                   /* Human Comments View */
-                  <div className="flex-1 flex flex-col bg-[#1e1e1e]">
-                      <div className="px-4 py-3 bg-[#252526] text-xs font-bold text-gray-400 flex items-center justify-between border-b border-[#3d3d3d]">
+                  <div className="flex-1 flex flex-col bg-[#1e1e1e] overflow-hidden">
+                      <div className="px-4 py-3 bg-[#252526] text-xs font-bold text-gray-400 flex items-center justify-between border-b border-[#3d3d3d] shrink-0">
                           <div className="flex items-center gap-2">
                               <Edit3 size={14} className="text-blue-400" />
                               <span>INTERVIEWER / HUMAN NOTES</span>
                           </div>
                       </div>
-                      <div className="flex-1 p-4">
+                      <div className="flex-1 p-4 overflow-hidden">
                           <textarea 
                               value={humanComments}
                               onChange={(e) => setHumanComments(e.target.value)}
@@ -820,10 +943,45 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
                           />
                       </div>
                   </div>
+              ) : viewMode === 'interview' ? (
+                  /* Interview Feedback View */
+                  <div className="flex-1 flex flex-col bg-[#1e1e1e] overflow-hidden">
+                      <div className="px-4 py-3 bg-[#252526] text-xs font-bold text-gray-400 flex items-center justify-between border-b border-[#3d3d3d] shrink-0">
+                          <div className="flex items-center gap-2">
+                              <UserCheck size={14} className="text-purple-400" />
+                              <span>INTERVIEW PERFORMANCE EVALUATION</span>
+                          </div>
+                          {interviewFeedback && (
+                              <button onClick={() => setInterviewFeedback('')} className="hover:text-white flex items-center gap-1">
+                                  <Trash2 size={12}/> Clear
+                              </button>
+                          )}
+                      </div>
+                      <div className="flex-1 p-8 overflow-y-auto">
+                          {isReviewing ? (
+                              <div className="h-full flex flex-col items-center justify-center text-purple-400 space-y-4">
+                                  <Loader2 size={48} className="animate-spin" />
+                                  <p className="text-sm font-bold">Evaluating Code, Chat History, and Notes...</p>
+                              </div>
+                          ) : interviewFeedback ? (
+                              <div className="prose prose-invert prose-sm max-w-4xl mx-auto text-gray-300">
+                                  <MarkdownView content={interviewFeedback} />
+                              </div>
+                          ) : (
+                              <div className="h-full flex flex-col items-center justify-center text-gray-600 space-y-4">
+                                  <UserCheck size={48} className="opacity-20" />
+                                  <div className="text-center">
+                                      <p className="text-sm font-bold text-gray-500">No Evaluation Yet</p>
+                                      <p className="text-xs mt-2 max-w-xs mx-auto">Click "EVALUATE CANDIDATE" to generate a hiring report based on code, notes, and Q&A history.</p>
+                                  </div>
+                              </div>
+                          )}
+                      </div>
+                  </div>
               ) : (
                   /* AI Review View */
                   <div className="flex-1 flex flex-col bg-[#1e1e1e] overflow-hidden">
-                      <div className="px-4 py-3 bg-[#252526] text-xs font-bold text-gray-400 flex items-center justify-between border-b border-[#3d3d3d]">
+                      <div className="px-4 py-3 bg-[#252526] text-xs font-bold text-gray-400 flex items-center justify-between border-b border-[#3d3d3d] shrink-0">
                           <div className="flex items-center gap-2">
                               <MessageSquare size={14} className="text-indigo-400" />
                               <span>AI ANALYSIS & FEEDBACK</span>
@@ -858,62 +1016,73 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
               )}
           </div>
 
-          {/* AI Chat Panel (Right Side) */}
+          {/* Resizable Chat Panel */}
           {isChatOpen && (
-              <div className="w-80 bg-[#1e1e1e] border-l border-[#3d3d3d] flex flex-col shrink-0 transition-all duration-300 relative z-30">
-                  <div className="p-3 border-b border-[#3d3d3d] flex justify-between items-center bg-[#252526]">
-                      <h3 className="text-xs font-bold text-gray-300 flex items-center gap-2">
-                          <Bot size={14} className="text-indigo-400"/> AI Assistant
-                      </h3>
-                      <button onClick={() => setIsChatOpen(false)} className="text-gray-500 hover:text-white">
-                          <X size={14} />
-                      </button>
+              <>
+                  <div 
+                    className="w-1 cursor-col-resize hover:bg-indigo-500 bg-[#3d3d3d] transition-colors flex items-center justify-center shrink-0 z-40"
+                    onMouseDown={startResizing}
+                  >
+                      <GripVertical size={12} className="text-gray-500"/>
                   </div>
-                  
-                  <div className="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-thin scrollbar-thumb-[#3d3d3d]">
-                      {chatMessages.length === 0 ? (
-                          <div className="text-center text-gray-600 text-xs mt-10 space-y-2">
-                              <p>Ask me anything about your code.</p>
-                              <p className="italic">"How do I fix this error?"</p>
-                              <p className="italic">"Optimize this loop."</p>
-                          </div>
-                      ) : (
-                          chatMessages.map((msg, i) => (
-                              <div key={i} className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
-                                  <div className={`max-w-[90%] px-3 py-2 rounded-lg text-xs leading-relaxed whitespace-pre-wrap ${msg.role === 'user' ? 'bg-indigo-600 text-white' : 'bg-[#2d2d2d] text-gray-300 border border-[#3d3d3d]'}`}>
-                                      {msg.role === 'ai' ? <MarkdownView content={msg.text} /> : msg.text}
-                                  </div>
-                              </div>
-                          ))
-                      )}
-                      {isChatLoading && (
-                          <div className="flex items-center gap-2 text-gray-500 text-xs">
-                              <Loader2 size={12} className="animate-spin" /> Thinking...
-                          </div>
-                      )}
-                      <div ref={chatEndRef} />
-                  </div>
-
-                  <div className="p-3 border-t border-[#3d3d3d] bg-[#252526]">
-                      <div className="flex gap-2">
-                          <input 
-                              type="text" 
-                              value={chatInput}
-                              onChange={e => setChatInput(e.target.value)}
-                              onKeyDown={e => e.key === 'Enter' && handleChatSubmit()}
-                              placeholder="Ask a question..."
-                              className="flex-1 bg-[#1e1e1e] border border-[#3d3d3d] rounded px-3 py-2 text-xs text-white focus:border-indigo-500 outline-none"
-                          />
-                          <button 
-                              onClick={handleChatSubmit}
-                              disabled={isChatLoading || !chatInput.trim()}
-                              className="p-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded disabled:opacity-50"
-                          >
-                              <Send size={14} />
+                  <div 
+                    style={{ width: chatWidth }}
+                    className="bg-[#1e1e1e] border-l border-[#3d3d3d] flex flex-col shrink-0 transition-all duration-75 relative z-30"
+                  >
+                      <div className="p-3 border-b border-[#3d3d3d] flex justify-between items-center bg-[#252526] shrink-0">
+                          <h3 className="text-xs font-bold text-gray-300 flex items-center gap-2">
+                              <Bot size={14} className="text-indigo-400"/> AI Assistant
+                          </h3>
+                          <button onClick={() => setIsChatOpen(false)} className="text-gray-500 hover:text-white">
+                              <X size={14} />
                           </button>
                       </div>
+                      
+                      <div className="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-thin scrollbar-thumb-[#3d3d3d]">
+                          {chatMessages.length === 0 ? (
+                              <div className="text-center text-gray-600 text-xs mt-10 space-y-2">
+                                  <p>Ask me anything about your code.</p>
+                                  <p className="italic">"How do I fix this error?"</p>
+                                  <p className="italic">"Optimize this loop."</p>
+                              </div>
+                          ) : (
+                              chatMessages.map((msg, i) => (
+                                  <div key={i} className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
+                                      <div className={`max-w-[90%] px-3 py-2 rounded-lg text-xs leading-relaxed whitespace-pre-wrap ${msg.role === 'user' ? 'bg-indigo-600 text-white' : 'bg-[#2d2d2d] text-gray-300 border border-[#3d3d3d]'}`}>
+                                          {msg.role === 'ai' ? <MarkdownView content={msg.text} /> : msg.text}
+                                      </div>
+                                  </div>
+                              ))
+                          )}
+                          {isChatLoading && (
+                              <div className="flex items-center gap-2 text-gray-500 text-xs">
+                                  <Loader2 size={12} className="animate-spin" /> Thinking...
+                              </div>
+                          )}
+                          <div ref={chatEndRef} />
+                      </div>
+
+                      <div className="p-3 border-t border-[#3d3d3d] bg-[#252526] shrink-0">
+                          <div className="flex gap-2">
+                              <input 
+                                  type="text" 
+                                  value={chatInput}
+                                  onChange={e => setChatInput(e.target.value)}
+                                  onKeyDown={e => e.key === 'Enter' && handleChatSubmit()}
+                                  placeholder="Ask a question..."
+                                  className="flex-1 bg-[#1e1e1e] border border-[#3d3d3d] rounded px-3 py-2 text-xs text-white focus:border-indigo-500 outline-none"
+                              />
+                              <button 
+                                  onClick={handleChatSubmit}
+                                  disabled={isChatLoading || !chatInput.trim()}
+                                  className="p-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded disabled:opacity-50"
+                              >
+                                  <Send size={14} />
+                              </button>
+                          </div>
+                      </div>
                   </div>
-              </div>
+              </>
           )}
       </div>
     </div>
