@@ -1,13 +1,14 @@
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { Channel, Booking, TodoItem } from '../types';
-import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, Clock, Briefcase, Plus, Video, CheckCircle, X, Users, Loader2, Mic, Play, Mail, Sparkles, ArrowLeft, Monitor, Filter, LayoutGrid, List, Languages, CloudSun, Wind, BookOpen, CheckSquare, Square, Trash2 } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, Clock, Briefcase, Plus, Video, CheckCircle, X, Users, Loader2, Mic, Play, Mail, Sparkles, ArrowLeft, Monitor, Filter, LayoutGrid, List, Languages, CloudSun, Wind, BookOpen, CheckSquare, Square, Trash2, StopCircle } from 'lucide-react';
 import { ChannelCard } from './ChannelCard';
 import { getUserBookings, createBooking, updateBookingInvite } from '../services/firestoreService';
 import { fetchLocalWeather, getWeatherDescription, WeatherData } from '../utils/weatherService';
 import { getLunarDate, getDailyWord, getSeasonContext, DailyWord } from '../utils/lunarService';
 import { GoogleGenAI } from '@google/genai';
 import { GEMINI_API_KEY } from '../services/private_keys';
+import { synthesizeSpeech } from '../services/tts';
 
 interface CalendarViewProps {
   channels: Channel[];
@@ -97,6 +98,11 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
   const [dailyWord, setDailyWord] = useState<DailyWord | null>(null);
   const [season, setSeason] = useState('');
   
+  // Daily Word Audio State
+  const [isPlayingDailyWord, setIsPlayingDailyWord] = useState(false);
+  const wordAudioCtxRef = useRef<AudioContext | null>(null);
+  const wordSourceRef = useRef<AudioBufferSourceNode | null>(null);
+  
   // TODO List State
   const [todos, setTodos] = useState<TodoItem[]>([]);
   const [newTodo, setNewTodo] = useState('');
@@ -137,7 +143,6 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
         .then(data => setBookings(data.filter(b => b.status !== 'cancelled' && b.status !== 'rejected')))
         .catch(console.error);
         
-      // Load Todos from LocalStorage (Simulated DB for now)
       const savedTodos = localStorage.getItem(`todos_${currentUser.uid}`);
       if (savedTodos) setTodos(JSON.parse(savedTodos));
     } else {
@@ -165,6 +170,104 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
       setDailyWord(getDailyWord(selectedDate));
       setSeason(getSeasonContext(selectedDate));
   }, [selectedDate]);
+
+  // Clean up audio on unmount
+  useEffect(() => {
+      return () => {
+          if (wordAudioCtxRef.current) {
+              try { wordAudioCtxRef.current.close(); } catch(e) {}
+          }
+          window.speechSynthesis.cancel();
+      };
+  }, []);
+
+  const handlePlayDailyWord = async () => {
+      // Toggle Off / Stop
+      if (isPlayingDailyWord) {
+          if (wordSourceRef.current) {
+              try { wordSourceRef.current.stop(); } catch(e) {}
+          }
+          if (wordAudioCtxRef.current) {
+              try { wordAudioCtxRef.current.close(); } catch(e) {}
+              wordAudioCtxRef.current = null;
+          }
+          window.speechSynthesis.cancel();
+          setIsPlayingDailyWord(false);
+          return;
+      }
+
+      if (!dailyWord) return;
+      setIsPlayingDailyWord(true); 
+
+      try {
+          const apiKey = localStorage.getItem('gemini_api_key') || GEMINI_API_KEY || process.env.API_KEY || '';
+          if (!apiKey) {
+             alert("Please set API Key in settings to use AI features.");
+             setIsPlayingDailyWord(false);
+             return;
+          }
+          
+          const ai = new GoogleGenAI({ apiKey });
+          
+          // SHORTENED PROMPT to prevent TTS Timeouts (30s limit)
+          const prompt = `
+            You are a bilingual English/Chinese teacher.
+            Word: "${dailyWord.word}" (${dailyWord.chinese}).
+            
+            Create a concise audio lesson:
+            1. Pronounce the word.
+            2. Simple English definition.
+            3. TWO short example sentences (English followed by Chinese translation).
+            
+            Output ONLY the text to be spoken. Keep it brief.
+          `;
+
+          const response = await ai.models.generateContent({
+              model: 'gemini-2.5-flash',
+              contents: prompt
+          });
+
+          const script = response.text;
+          if (!script) throw new Error("No script generated");
+
+          // Initialize Audio Context
+          const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+          wordAudioCtxRef.current = ctx;
+          
+          // Try Neural TTS first
+          const result = await synthesizeSpeech(script, 'Zephyr', ctx);
+          
+          if (result.buffer) {
+              // High Quality Success
+              const source = ctx.createBufferSource();
+              source.buffer = result.buffer;
+              source.connect(ctx.destination);
+              source.onended = () => {
+                  setIsPlayingDailyWord(false);
+              };
+              source.start(0);
+              wordSourceRef.current = source;
+          } else {
+              // Fallback to System TTS on Error/Timeout/Quota
+              console.warn("Neural TTS failed or timed out. Falling back to system voice.", result.errorMessage);
+              
+              const u = new SpeechSynthesisUtterance(script);
+              
+              // Attempt to pick a decent English voice
+              const voices = window.speechSynthesis.getVoices();
+              const preferred = voices.find(v => v.lang.includes('en') && (v.name.includes('Google') || v.name.includes('Samantha') || v.name.includes('Premium'))) || voices.find(v => v.lang.includes('en'));
+              if (preferred) u.voice = preferred;
+              
+              u.onend = () => setIsPlayingDailyWord(false);
+              window.speechSynthesis.speak(u);
+          }
+
+      } catch (e) {
+          console.error("Daily word play failed", e);
+          setIsPlayingDailyWord(false);
+          alert("Audio generation failed. Please try again.");
+      }
+  };
 
   const getDateKey = (date: Date | number | string) => {
     const d = new Date(date);
@@ -464,9 +567,25 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
               <div className="absolute top-0 left-0 w-1 h-full bg-emerald-500"></div>
               {dailyWord ? (
                   <>
-                      <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-3 flex items-center gap-2">
-                          <BookOpen size={14} className="text-emerald-500"/> Daily Word
-                      </h3>
+                      <div className="flex justify-between items-start mb-3">
+                          <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2">
+                              <BookOpen size={14} className="text-emerald-500"/> Daily Word
+                          </h3>
+                          <button 
+                             onClick={handlePlayDailyWord}
+                             className={`p-2 rounded-full transition-all ${isPlayingDailyWord ? 'bg-red-500 text-white animate-pulse' : 'bg-emerald-900/30 text-emerald-400 hover:bg-emerald-500 hover:text-white'}`}
+                             title="Listen to explanation with examples"
+                          >
+                             {isPlayingDailyWord && !wordSourceRef.current ? (
+                                <Loader2 size={16} className="animate-spin" />
+                             ) : isPlayingDailyWord ? (
+                                <StopCircle size={16} fill="currentColor" />
+                             ) : (
+                                <Play size={16} fill="currentColor" />
+                             )}
+                          </button>
+                      </div>
+                      
                       <div className="flex justify-between items-baseline mb-1">
                           <span className="text-2xl font-bold text-white">{dailyWord.word}</span>
                           <span className="text-sm font-serif text-slate-500 italic">{dailyWord.pronunciation}</span>
