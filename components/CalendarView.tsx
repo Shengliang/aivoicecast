@@ -1,9 +1,9 @@
 
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { Channel, Booking, TodoItem } from '../types';
-import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, Clock, Briefcase, Plus, Video, CheckCircle, X, Users, Loader2, Mic, Play, Mail, Sparkles, ArrowLeft, Monitor, Filter, LayoutGrid, List, Languages, CloudSun, Wind, BookOpen, CheckSquare, Square, Trash2, StopCircle } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, Clock, Briefcase, Plus, Video, CheckCircle, X, Users, Loader2, Mic, Play, Mail, Sparkles, ArrowLeft, Monitor, Filter, LayoutGrid, List, Languages, CloudSun, Wind, BookOpen, CheckSquare, Square, Trash2, StopCircle, Download, FileText, Check } from 'lucide-react';
 import { ChannelCard } from './ChannelCard';
-import { getUserBookings, createBooking, updateBookingInvite } from '../services/firestoreService';
+import { getUserBookings, createBooking, updateBookingInvite, saveSavedWord } from '../services/firestoreService';
 import { fetchLocalWeather, getWeatherDescription, WeatherData } from '../utils/weatherService';
 import { getLunarDate, getDailyWord, getSeasonContext, DailyWord } from '../utils/lunarService';
 import { GoogleGenAI } from '@google/genai';
@@ -98,8 +98,10 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
   const [dailyWord, setDailyWord] = useState<DailyWord | null>(null);
   const [season, setSeason] = useState('');
   
-  // Daily Word Audio State
+  // Daily Word Audio & Content State
   const [isPlayingDailyWord, setIsPlayingDailyWord] = useState(false);
+  const [explanationText, setExplanationText] = useState<string | null>(null);
+  const [isSaved, setIsSaved] = useState(false);
   const wordAudioCtxRef = useRef<AudioContext | null>(null);
   const wordSourceRef = useRef<AudioBufferSourceNode | null>(null);
   
@@ -169,6 +171,8 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
   useEffect(() => {
       setDailyWord(getDailyWord(selectedDate));
       setSeason(getSeasonContext(selectedDate));
+      setExplanationText(null); // Reset explanation when day changes
+      setIsSaved(false);
   }, [selectedDate]);
 
   // Clean up audio on unmount
@@ -229,6 +233,20 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
 
           const script = response.text;
           if (!script) throw new Error("No script generated");
+          
+          // Store script for display
+          setExplanationText(script);
+
+          // Save to Cloud immediately if user is logged in
+          if (currentUser) {
+              saveSavedWord(currentUser.uid, {
+                  word: dailyWord.word,
+                  chinese: dailyWord.chinese,
+                  explanation: script,
+                  date: selectedDate.toISOString(),
+                  metadata: dailyWord
+              }).then(() => setIsSaved(true)).catch(e => console.warn("Auto-save failed", e));
+          }
 
           // Initialize Audio Context
           const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
@@ -267,6 +285,26 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
           setIsPlayingDailyWord(false);
           alert("Audio generation failed. Please try again.");
       }
+  };
+
+  const handleDownloadWord = () => {
+      if (!dailyWord || !explanationText) return;
+      
+      const content = `Word of the Day: ${dailyWord.word} (${dailyWord.chinese})\n` +
+                      `Date: ${selectedDate.toLocaleDateString()}\n\n` +
+                      `Definition: ${dailyWord.meaning}\n` + 
+                      `-------------------\n` +
+                      `Audio Transcript:\n${explanationText}`;
+      
+      const blob = new Blob([content], { type: 'text/plain' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `daily_word_${dailyWord.word}_${selectedDate.toISOString().split('T')[0]}.txt`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
   };
 
   const getDateKey = (date: Date | number | string) => {
@@ -598,6 +636,28 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                               <span className="text-[10px] text-slate-500">{dailyWord.chineseMean}</span>
                           </div>
                       </div>
+
+                      {/* Explanation Content (Shows after playing) */}
+                      {explanationText && (
+                          <div className="mt-4 pt-4 border-t border-slate-700 animate-fade-in">
+                              <div className="flex justify-between items-center mb-2">
+                                  <span className="text-[10px] font-bold text-slate-500 uppercase flex items-center gap-1">
+                                      <FileText size={10} /> Transcript
+                                  </span>
+                                  <div className="flex gap-2">
+                                      {isSaved && <span className="text-[10px] text-emerald-400 flex items-center gap-1"><Check size={10}/> Saved</span>}
+                                      <button onClick={handleDownloadWord} className="text-slate-400 hover:text-white" title="Download">
+                                          <Download size={14} />
+                                      </button>
+                                  </div>
+                              </div>
+                              <div className="max-h-32 overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-slate-700">
+                                  <p className="text-xs text-slate-300 whitespace-pre-wrap leading-relaxed">
+                                      {explanationText}
+                                  </p>
+                              </div>
+                          </div>
+                      )}
                   </>
               ) : (
                   <div className="text-center text-slate-500">

@@ -23,6 +23,30 @@ function sanitizeData(data: any): any {
   return data;
 }
 
+// --- SAVED WORDS (VOCABULARY) ---
+
+export async function saveSavedWord(userId: string, wordData: any): Promise<void> {
+  await db.collection('saved_words').add(sanitizeData({
+    userId,
+    ...wordData,
+    savedAt: Date.now()
+  }));
+  logUserActivity('save_word', { word: wordData.word });
+}
+
+export async function getUserSavedWords(userId: string): Promise<any[]> {
+  try {
+    const snap = await db.collection('saved_words')
+      .where("userId", "==", userId)
+      .orderBy("savedAt", "desc")
+      .get();
+    return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  } catch (e) {
+    console.warn("Failed to fetch saved words", e);
+    return [];
+  }
+}
+
 // --- DEBUG / ADMIN ---
 
 export async function getDebugCollectionDocs(collectionName: string, limitVal = 20): Promise<any[]> {
