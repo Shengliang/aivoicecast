@@ -47,6 +47,24 @@ export async function getUserSavedWords(userId: string): Promise<any[]> {
   }
 }
 
+export async function getSavedWordForUser(userId: string, word: string): Promise<any | null> {
+  try {
+    const snap = await db.collection('saved_words')
+      .where("userId", "==", userId)
+      .where("word", "==", word)
+      .limit(1)
+      .get();
+    
+    if (!snap.empty) {
+      return snap.docs[0].data();
+    }
+    return null;
+  } catch (e) {
+    console.warn("Failed to fetch specific saved word", e);
+    return null;
+  }
+}
+
 // --- DEBUG / ADMIN ---
 
 export async function getDebugCollectionDocs(collectionName: string, limitVal = 20): Promise<any[]> {

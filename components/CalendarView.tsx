@@ -1,9 +1,8 @@
-
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { Channel, Booking, TodoItem } from '../types';
 import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, Clock, Briefcase, Plus, Video, CheckCircle, X, Users, Loader2, Mic, Play, Mail, Sparkles, ArrowLeft, Monitor, Filter, LayoutGrid, List, Languages, CloudSun, Wind, BookOpen, CheckSquare, Square, Trash2, StopCircle, Download, FileText, Check } from 'lucide-react';
 import { ChannelCard } from './ChannelCard';
-import { getUserBookings, createBooking, updateBookingInvite, saveSavedWord } from '../services/firestoreService';
+import { getUserBookings, createBooking, updateBookingInvite, saveSavedWord, getSavedWordForUser } from '../services/firestoreService';
 import { fetchLocalWeather, getWeatherDescription, WeatherData } from '../utils/weatherService';
 import { getLunarDate, getDailyWord, getSeasonContext, DailyWord } from '../utils/lunarService';
 import { GoogleGenAI } from '@google/genai';
@@ -160,20 +159,28 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
       }
   }, [todos, currentUser]);
 
-  // Fetch Weather & Daily Content
+  // Fetch Weather
   useEffect(() => {
     fetchLocalWeather().then(setWeather);
-    setDailyWord(getDailyWord(new Date()));
-    setSeason(getSeasonContext(new Date()));
   }, []);
 
-  // Update Daily Word when selected date changes
+  // Update Daily Word when selected date changes & Check Cached Explanation
   useEffect(() => {
-      setDailyWord(getDailyWord(selectedDate));
+      const newDailyWord = getDailyWord(selectedDate);
+      setDailyWord(newDailyWord);
       setSeason(getSeasonContext(selectedDate));
-      setExplanationText(null); // Reset explanation when day changes
+      setExplanationText(null); 
       setIsSaved(false);
-  }, [selectedDate]);
+
+      if (currentUser && newDailyWord) {
+          getSavedWordForUser(currentUser.uid, newDailyWord.word).then(saved => {
+              if (saved && saved.explanation) {
+                  setExplanationText(saved.explanation);
+                  setIsSaved(true);
+              }
+          }).catch(e => console.error("Failed to check saved word", e));
+      }
+  }, [selectedDate, currentUser]);
 
   // Clean up audio on unmount
   useEffect(() => {
@@ -204,55 +211,61 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
       setIsPlayingDailyWord(true); 
 
       try {
-          const apiKey = localStorage.getItem('gemini_api_key') || GEMINI_API_KEY || process.env.API_KEY || '';
-          if (!apiKey) {
-             alert("Please set API Key in settings to use AI features.");
-             setIsPlayingDailyWord(false);
-             return;
-          }
-          
-          const ai = new GoogleGenAI({ apiKey });
-          
-          // SHORTENED PROMPT to prevent TTS Timeouts (30s limit)
-          const prompt = `
-            You are a bilingual English/Chinese teacher.
-            Word: "${dailyWord.word}" (${dailyWord.chinese}).
-            
-            Create a concise audio lesson:
-            1. Pronounce the word.
-            2. Simple English definition.
-            3. TWO short example sentences (English followed by Chinese translation).
-            
-            Output ONLY the text to be spoken. Keep it brief.
-          `;
-
-          const response = await ai.models.generateContent({
-              model: 'gemini-2.5-flash',
-              contents: prompt
-          });
-
-          const script = response.text;
-          if (!script) throw new Error("No script generated");
-          
-          // Store script for display
-          setExplanationText(script);
-
-          // Save to Cloud immediately if user is logged in
-          if (currentUser) {
-              saveSavedWord(currentUser.uid, {
-                  word: dailyWord.word,
-                  chinese: dailyWord.chinese,
-                  explanation: script,
-                  date: selectedDate.toISOString(),
-                  metadata: dailyWord
-              }).then(() => setIsSaved(true)).catch(e => console.warn("Auto-save failed", e));
-          }
-
           // Initialize Audio Context
           const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
           wordAudioCtxRef.current = ctx;
+
+          // Check if we already have the explanation script
+          let script = explanationText;
+
+          // If not, generate it
+          if (!script) {
+              const apiKey = localStorage.getItem('gemini_api_key') || GEMINI_API_KEY || process.env.API_KEY || '';
+              if (!apiKey) {
+                 alert("Please set API Key in settings to use AI features.");
+                 setIsPlayingDailyWord(false);
+                 return;
+              }
+              
+              const ai = new GoogleGenAI({ apiKey });
+              
+              // SHORTENED PROMPT to prevent TTS Timeouts (30s limit)
+              const prompt = `
+                You are a bilingual English/Chinese teacher.
+                Word: "${dailyWord.word}" (${dailyWord.chinese}).
+                
+                Create a concise audio lesson:
+                1. Pronounce the word.
+                2. Simple English definition.
+                3. TWO short example sentences (English followed by Chinese translation).
+                
+                Output ONLY the text to be spoken. Keep it brief.
+              `;
+
+              const response = await ai.models.generateContent({
+                  model: 'gemini-2.5-flash',
+                  contents: prompt
+              });
+
+              script = response.text;
+              if (!script) throw new Error("No script generated");
+              
+              // Update state so we don't regenerate next time
+              setExplanationText(script);
+
+              // Save to Cloud immediately if user is logged in
+              if (currentUser) {
+                  saveSavedWord(currentUser.uid, {
+                      word: dailyWord.word,
+                      chinese: dailyWord.chinese,
+                      explanation: script,
+                      date: selectedDate.toISOString(),
+                      metadata: dailyWord
+                  }).then(() => setIsSaved(true)).catch(e => console.warn("Auto-save failed", e));
+              }
+          }
           
-          // Try Neural TTS first
+          // Try Neural TTS first (uses IndexedDB cache for audio)
           const result = await synthesizeSpeech(script, 'Zephyr', ctx);
           
           if (result.buffer) {
