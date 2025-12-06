@@ -4,7 +4,7 @@ import { Channel, ViewState, UserProfile, TranscriptItem } from './types';
 import { 
   Podcast, Mic, Layout, Search, Sparkles, LogOut, 
   Settings, Menu, X, Plus, Github, Database, Cloud, Globe, 
-  Calendar, Briefcase, Users, Disc, FileText, AlertTriangle, List, BookOpen, ChevronDown, Table as TableIcon, LayoutGrid, Rocket, Code
+  Calendar, Briefcase, Users, Disc, FileText, AlertTriangle, List, BookOpen, ChevronDown, Table as TableIcon, LayoutGrid, Rocket, Code, Wand2
 } from 'lucide-react';
 import { LiveSession } from './components/LiveSession';
 import { PodcastDetail } from './components/PodcastDetail';
@@ -555,6 +555,26 @@ const App: React.FC = () => {
                         </div>
 
                         <div className="flex items-center gap-3 w-full md:w-auto">
+                            
+                            {/* NEW ACTIONS: Create & Magic */}
+                            <button 
+                                onClick={() => setIsCreateModalOpen(true)}
+                                className="flex items-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-bold rounded-lg transition-colors shadow-lg shadow-indigo-500/20 whitespace-nowrap"
+                                title="Create New Podcast"
+                            >
+                                <Plus size={16} />
+                                <span className="hidden sm:inline">{t.create}</span>
+                            </button>
+
+                            <button 
+                                onClick={() => setIsVoiceCreateOpen(true)}
+                                className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-pink-600 to-purple-600 hover:from-pink-500 hover:to-purple-500 text-white text-sm font-bold rounded-lg transition-all shadow-lg shadow-pink-500/20 whitespace-nowrap"
+                                title="Magic Voice Create"
+                            >
+                                <Wand2 size={16} />
+                                <span className="hidden sm:inline">Magic</span>
+                            </button>
+
                             {/* Layout Toggle */}
                             <div className="flex bg-slate-800 p-1 rounded-lg border border-slate-700">
                                 <button 
