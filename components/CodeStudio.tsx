@@ -287,10 +287,6 @@ const FileIcon = ({ filename }: { filename: string }) => {
     return <Icon size={14} className={color} />;
 };
 
-const FileTextIcon = ({ size, className }: { size: number, className: string }) => (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><line x1="10" y1="9" x2="8" y2="9"/></svg>
-);
-
 export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) => {
   const [project, setProject] = useState<CodeProject>(EXAMPLE_PROJECTS['is_bst']);
   const [activeFileIndex, setActiveFileIndex] = useState(0);
@@ -379,32 +375,33 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
       setIsResizing(true);
   };
 
-  const handleLanguageSwitch = (langId: string) => {
+  const handleAddFile = (langId: string) => {
       const langConfig = LANGUAGES.find(l => l.id === langId);
       if (!langConfig) return;
 
-      const newProject: CodeProject = {
-          id: `proj-${langId}-${Date.now()}`,
-          name: `${langConfig.label} Playground`,
-          lastModified: Date.now(),
-          files: [{
-              name: `solution.${langConfig.ext}`,
-              language: langConfig.id as any,
-              content: langConfig.defaultCode
-          }],
-          humanComments: '',
-          review: '',
-          interviewFeedback: ''
+      const baseName = "code";
+      let fileName = `${baseName}.${langConfig.ext}`;
+      let counter = 1;
+      
+      // Find unique filename
+      while (project.files.some(f => f.name === fileName)) {
+          fileName = `${baseName}_${counter}.${langConfig.ext}`;
+          counter++;
+      }
+
+      const newFile: CodeFile = {
+          name: fileName,
+          language: langConfig.id as any,
+          content: langConfig.defaultCode
       };
 
-      setProject(newProject);
-      setActiveFileIndex(0);
-      setViewMode('code');
+      setProject(prev => ({
+          ...prev,
+          files: [...prev.files, newFile]
+      }));
+      
+      setActiveFileIndex(project.files.length); // Append to end (current length is index of new last item)
       setShowLanguageDropdown(false);
-      setHumanComments('');
-      setInterviewFeedback('');
-      setOutput('');
-      setChatMessages([]);
       setIsPreviewMode(false);
   };
 
@@ -467,25 +464,42 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
           });
 
           const content = response.text || "Failed to generate questions.";
-          const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-          const fileName = `interview_questions_${timestamp}.md`;
+          const timestamp = Date.now();
+          const qFileName = `interview_q_${timestamp}.md`;
           
-          const newFile: CodeFile = {
-              name: fileName,
+          // 1. Create Question File
+          const qFile: CodeFile = {
+              name: qFileName,
               language: 'markdown',
               content: content
           };
           
+          // 2. Create Solution File (Auto-detected Language)
+          const currentExt = project.files[activeFileIndex]?.name.split('.').pop() || 'cpp';
+          const langConfig = LANGUAGES.find(l => l.ext === currentExt) || LANGUAGES[0];
+          const sFileName = `solution_${timestamp}.${langConfig.ext}`;
+          
+          const sFile: CodeFile = {
+              name: sFileName,
+              language: langConfig.id as any,
+              content: langConfig.defaultCode
+          };
+          
+          // 3. Update Project State
           setProject(prev => ({
               ...prev,
-              files: [...prev.files, newFile]
+              files: [...prev.files, qFile, sFile]
           }));
           
-          // Switch to new file and enable preview
-          setActiveFileIndex(project.files.length);
-          setViewMode('code');
-          setIsPreviewMode(true);
-          alert("Questions generated!");
+          // 4. Post to Chat
+          const aiMsg = `### Interview Questions Generated\n\nI've created a file **${qFileName}** with the questions.\n\nI also created **${sFileName}** for you to start coding your solution.\n\nHere are the questions for reference:\n\n${content}`;
+          setChatMessages(prev => [...prev, { role: 'ai', text: aiMsg }]);
+          
+          // 5. UX Updates
+          setActiveFileIndex(project.files.length + 1); // Switch to the NEW Solution file (Index: old_len + 1)
+          setIsPreviewMode(false);
+          setIsSidebarOpen(true);
+          setIsChatOpen(true); // Open chat so they see questions while coding
 
       } catch(e: any) {
           alert(`Error: ${e.message}`);
@@ -689,7 +703,6 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
               ...prev,
               files: [...prev.files, newFile]
           };
-          // Auto-expand chats folder logic here if needed
           return updated;
       });
       
@@ -773,7 +786,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
                     <div className="fixed inset-0 z-30" onClick={() => setShowLanguageDropdown(false)}></div>
                     <div className="absolute top-full right-0 mt-2 w-40 bg-slate-900 border border-slate-700 rounded-xl shadow-xl z-40 overflow-hidden py-1">
                         {LANGUAGES.map(lang => (
-                            <button key={lang.id} onClick={() => handleLanguageSwitch(lang.id)} className="w-full text-left px-4 py-2 hover:bg-slate-800 text-xs text-slate-300 hover:text-white">
+                            <button key={lang.id} onClick={() => handleAddFile(lang.id)} className="w-full text-left px-4 py-2 hover:bg-slate-800 text-xs text-slate-300 hover:text-white">
                                 {lang.label}
                             </button>
                         ))}
