@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { GoogleGenAI } from '@google/genai';
-import { ArrowLeft, Save, Folder, File, Code, Plus, Trash2, Loader2, ChevronRight, ChevronDown, X, MessageSquare, FileCode, FileJson, FileType, Search, Coffee, Hash, CloudUpload, Edit3, BookOpen } from 'lucide-react';
+import { ArrowLeft, Save, Folder, File, Code, Plus, Trash2, Loader2, ChevronRight, ChevronDown, X, MessageSquare, FileCode, FileJson, FileType, Search, Coffee, Hash, CloudUpload, Edit3, BookOpen, Bot, Send } from 'lucide-react';
 import { GEMINI_API_KEY } from '../services/private_keys';
 import { CodeProject, CodeFile } from '../types';
 import { MarkdownView } from './MarkdownView';
@@ -296,6 +296,13 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
   const [showLanguageDropdown, setShowLanguageDropdown] = useState(false);
   const [showExamplesDropdown, setShowExamplesDropdown] = useState(false);
   
+  // Chat State
+  const [isChatOpen, setIsChatOpen] = useState(false);
+  const [chatMessages, setChatMessages] = useState<{role: 'user' | 'ai', text: string}[]>([]);
+  const [chatInput, setChatInput] = useState('');
+  const [isChatLoading, setIsChatLoading] = useState(false);
+  const chatEndRef = useRef<HTMLDivElement>(null);
+  
   // Refs for scrolling sync
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const lineNumbersRef = useRef<HTMLDivElement>(null);
@@ -317,6 +324,13 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
       setOutput(project.review || '');
       setHumanComments(project.humanComments || '');
   }, [project]);
+
+  // Scroll chat to bottom
+  useEffect(() => {
+      if (isChatOpen) {
+          chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      }
+  }, [chatMessages, isChatOpen]);
 
   const activeFile = project.files[activeFileIndex] || project.files[0];
 
@@ -343,6 +357,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
       setShowLanguageDropdown(false);
       setHumanComments('');
       setOutput('');
+      setChatMessages([]);
   };
 
   const handleExampleSwitch = (exampleKey: string) => {
@@ -358,6 +373,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
       setShowExamplesDropdown(false);
       setHumanComments('');
       setOutput('');
+      setChatMessages([]);
   };
 
   const handleCodeChange = (newContent: string) => {
@@ -421,6 +437,53 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
     } finally {
         setIsReviewing(false);
     }
+  };
+
+  const handleChatSubmit = async () => {
+      if (!chatInput.trim()) return;
+      
+      const userMsg = chatInput;
+      setChatMessages(prev => [...prev, { role: 'user', text: userMsg }]);
+      setChatInput('');
+      setIsChatLoading(true);
+
+      try {
+          const apiKey = localStorage.getItem('gemini_api_key') || GEMINI_API_KEY || process.env.API_KEY || '';
+          if (!apiKey) throw new Error("API Key required.");
+          
+          const ai = new GoogleGenAI({ apiKey });
+          
+          // Contextual Prompt Construction
+          const fileContext = activeFile ? `--- CURRENT FILE: ${activeFile.name} ---\n${activeFile.content}` : "No file active.";
+          const historyText = chatMessages.map(m => `${m.role.toUpperCase()}: ${m.text}`).join('\n');
+          
+          const prompt = `
+            You are an expert Coding Assistant built into an IDE.
+            
+            CONTEXT:
+            ${fileContext}
+            
+            CHAT HISTORY:
+            ${historyText}
+            
+            USER QUESTION:
+            ${userMsg}
+            
+            Provide a helpful, concise response. If you provide code, wrap it in markdown code blocks.
+          `;
+
+          const response = await ai.models.generateContent({
+              model: 'gemini-2.5-flash',
+              contents: prompt
+          });
+
+          const aiMsg = response.text || "I couldn't generate a response.";
+          setChatMessages(prev => [...prev, { role: 'ai', text: aiMsg }]);
+      } catch(e: any) {
+          setChatMessages(prev => [...prev, { role: 'ai', text: `Error: ${e.message}` }]);
+      } finally {
+          setIsChatLoading(false);
+      }
   };
 
   const handleSaveToCloud = async () => {
@@ -598,6 +661,14 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
              </div>
 
              <button 
+                onClick={() => setIsChatOpen(!isChatOpen)}
+                className={`p-2 rounded-lg transition-colors ${isChatOpen ? 'bg-indigo-600 text-white' : 'bg-[#3d3d3d] text-gray-300 hover:text-white'}`}
+                title="Toggle AI Chat"
+             >
+                <Bot size={16} />
+             </button>
+
+             <button 
                 onClick={handleReviewCode}
                 disabled={isReviewing}
                 className="flex items-center gap-2 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-sm text-xs font-bold transition-colors"
@@ -621,7 +692,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
           
           {/* Sidebar (File Explorer) */}
           <div className={`
-              absolute md:relative z-20 h-full w-64 bg-[#252526] border-r border-[#1e1e1e] transform transition-transform duration-200 flex flex-col
+              absolute md:relative z-20 h-full w-64 bg-[#252526] border-r border-[#1e1e1e] transform transition-transform duration-200 flex flex-col shrink-0
               ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0 md:w-64'}
           `}>
               <div className="p-2 text-xs font-bold text-gray-500 uppercase tracking-wider flex justify-between items-center border-b border-[#3d3d3d]">
@@ -786,6 +857,64 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
                   </div>
               )}
           </div>
+
+          {/* AI Chat Panel (Right Side) */}
+          {isChatOpen && (
+              <div className="w-80 bg-[#1e1e1e] border-l border-[#3d3d3d] flex flex-col shrink-0 transition-all duration-300 relative z-30">
+                  <div className="p-3 border-b border-[#3d3d3d] flex justify-between items-center bg-[#252526]">
+                      <h3 className="text-xs font-bold text-gray-300 flex items-center gap-2">
+                          <Bot size={14} className="text-indigo-400"/> AI Assistant
+                      </h3>
+                      <button onClick={() => setIsChatOpen(false)} className="text-gray-500 hover:text-white">
+                          <X size={14} />
+                      </button>
+                  </div>
+                  
+                  <div className="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-thin scrollbar-thumb-[#3d3d3d]">
+                      {chatMessages.length === 0 ? (
+                          <div className="text-center text-gray-600 text-xs mt-10 space-y-2">
+                              <p>Ask me anything about your code.</p>
+                              <p className="italic">"How do I fix this error?"</p>
+                              <p className="italic">"Optimize this loop."</p>
+                          </div>
+                      ) : (
+                          chatMessages.map((msg, i) => (
+                              <div key={i} className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
+                                  <div className={`max-w-[90%] px-3 py-2 rounded-lg text-xs leading-relaxed whitespace-pre-wrap ${msg.role === 'user' ? 'bg-indigo-600 text-white' : 'bg-[#2d2d2d] text-gray-300 border border-[#3d3d3d]'}`}>
+                                      {msg.role === 'ai' ? <MarkdownView content={msg.text} /> : msg.text}
+                                  </div>
+                              </div>
+                          ))
+                      )}
+                      {isChatLoading && (
+                          <div className="flex items-center gap-2 text-gray-500 text-xs">
+                              <Loader2 size={12} className="animate-spin" /> Thinking...
+                          </div>
+                      )}
+                      <div ref={chatEndRef} />
+                  </div>
+
+                  <div className="p-3 border-t border-[#3d3d3d] bg-[#252526]">
+                      <div className="flex gap-2">
+                          <input 
+                              type="text" 
+                              value={chatInput}
+                              onChange={e => setChatInput(e.target.value)}
+                              onKeyDown={e => e.key === 'Enter' && handleChatSubmit()}
+                              placeholder="Ask a question..."
+                              className="flex-1 bg-[#1e1e1e] border border-[#3d3d3d] rounded px-3 py-2 text-xs text-white focus:border-indigo-500 outline-none"
+                          />
+                          <button 
+                              onClick={handleChatSubmit}
+                              disabled={isChatLoading || !chatInput.trim()}
+                              className="p-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded disabled:opacity-50"
+                          >
+                              <Send size={14} />
+                          </button>
+                      </div>
+                  </div>
+              </div>
+          )}
       </div>
     </div>
   );
