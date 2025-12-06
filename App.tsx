@@ -517,7 +517,7 @@ const App: React.FC = () => {
             {/* Tabs */}
             <div className="flex space-x-2 overflow-x-auto pb-4 mb-4 scrollbar-hide">
                {[
-                 { id: 'categories', label: t.categories, icon: Layout },
+                 { id: 'categories', label: t.podcasts, icon: Layout },
                  { id: 'calendar', label: t.calendar, icon: Calendar },
                  { id: 'code', label: t.code, icon: Code },
                  { id: 'mentorship', label: t.mentorship, icon: Briefcase },
