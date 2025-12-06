@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { GoogleGenAI } from '@google/genai';
-import { ArrowLeft, Save, Folder, File, Code, Plus, Trash2, Loader2, ChevronRight, ChevronDown, X, MessageSquare, FileCode, FileJson, FileType, Search, Coffee, Hash, CloudUpload, Edit3, BookOpen, Bot, Send, Maximize2, Minimize2, GripVertical, UserCheck } from 'lucide-react';
+import { ArrowLeft, Save, Folder, File, Code, Plus, Trash2, Loader2, ChevronRight, ChevronDown, X, MessageSquare, FileCode, FileJson, FileType, Search, Coffee, Hash, CloudUpload, Edit3, BookOpen, Bot, Send, Maximize2, Minimize2, GripVertical, UserCheck, AlertTriangle, Archive } from 'lucide-react';
 import { GEMINI_API_KEY } from '../services/private_keys';
 import { CodeProject, CodeFile, ChatMessage } from '../types';
 import { MarkdownView } from './MarkdownView';
@@ -278,10 +278,17 @@ const FileIcon = ({ filename }: { filename: string }) => {
     } else if (ext === 'cs') {
         color = 'text-purple-400';
         Icon = Hash;
+    } else if (ext === 'md') {
+        color = 'text-gray-400';
+        Icon = FileText;
     }
 
     return <Icon size={14} className={color} />;
 };
+
+const FileText = ({ size, className }: { size: number, className: string }) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><line x1="10" y1="9" x2="8" y2="9"/></svg>
+);
 
 export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) => {
   const [project, setProject] = useState<CodeProject>(EXAMPLE_PROJECTS['is_bst']);
@@ -425,33 +432,40 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
 
   const handleReviewCode = async () => {
     setIsReviewing(true);
-    setViewMode('review'); // Switch to review tab immediately to show loading state
-    setOutput('');
+    // Don't switch view mode to review tab, keep user in editor or move to chat
+    // Ensure Chat is Open
+    setIsChatOpen(true);
     
+    // Add pending message
+    setChatMessages(prev => [...prev, { role: 'ai', text: "🔄 *Analyzing code... Please wait.*" }]);
+
     try {
         const apiKey = localStorage.getItem('gemini_api_key') || GEMINI_API_KEY || process.env.API_KEY || '';
         if (!apiKey) throw new Error("API Key required for AI review.");
         
         const ai = new GoogleGenAI({ apiKey });
         
-        const fileContext = project.files.map(f => {
+        // Only review code files, skip markdowns/chats
+        const codeFiles = project.files.filter(f => !f.name.endsWith('.md'));
+        
+        const fileContext = codeFiles.map(f => {
             const lang = getLanguageFromFilename(f.name);
             return `--- File: ${f.name} (Language: ${lang}) ---\n${f.content}`;
         }).join('\n\n');
         
         const prompt = `
-            You are a Senior Principal Software Engineer explaining this code to a student.
+            You are a Senior Principal Software Engineer.
             
             Project Context:
             ${fileContext}
             
             Task:
-            1. Analyze the **Time and Space Complexity** of the implemented algorithms.
-            2. Explain the **Logic** clearly (how the recursion or stack works).
-            3. Compare this implementation with other common approaches (e.g., Recursion vs Iteration trade-offs).
-            4. Highlight **Language-Specific Best Practices** demonstrated in the code.
+            1. Analyze **Time and Space Complexity**.
+            2. Explain the **Logic** clearly.
+            3. Highlight **Potential Bugs** or **Edge Cases**.
+            4. Suggest **Refactoring** for readability/performance.
             
-            Return the response in structured Markdown with clear headers.
+            Return the response in detailed Markdown.
         `;
 
         const response = await ai.models.generateContent({
@@ -460,11 +474,46 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
         });
         
         const reviewText = response.text || "No feedback generated.";
-        setOutput(reviewText);
-        setProject(prev => ({ ...prev, review: reviewText }));
+        
+        // 1. Update Project State with Review
+        // 2. Add to Chat History
+        // 3. Save as a File in Explorer
+        
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+        const fileName = `reviews/Review_${timestamp}.md`;
+        
+        const newFile: CodeFile = {
+            name: fileName,
+            language: 'markdown',
+            content: reviewText
+        };
+        
+        // Remove the loading message and add result
+        setChatMessages(prev => {
+            const filtered = prev.filter(m => !m.text.includes("Analyzing code"));
+            return [...filtered, { role: 'ai', text: `## Code Review\n\nI have analyzed your code. You can find the full report in **${fileName}**.\n\n` + reviewText }];
+        });
+
+        setProject(prev => {
+            const updated = { 
+                ...prev, 
+                review: reviewText,
+                chatHistory: [...prev.chatHistory || [], { role: 'ai', text: `## Code Review\n\n` + reviewText }],
+                files: [...prev.files, newFile] 
+            };
+            
+            // Auto-expand reviews folder
+            setExpandedFolders(f => ({...f, 'reviews': true}));
+            
+            // Auto-Save if user is logged in
+            if (currentUser) {
+                saveCodeProject(updated).catch(e => console.error("Auto-save review failed", e));
+            }
+            return updated;
+        });
         
     } catch (e: any) {
-        setOutput(`Review Error: ${e.message}`);
+        setChatMessages(prev => [...prev, { role: 'ai', text: `Review Error: ${e.message}` }]);
     } finally {
         setIsReviewing(false);
     }
@@ -485,27 +534,21 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
           const chatContext = chatMessages.map(m => `${m.role.toUpperCase()}: ${m.text}`).join('\n');
           
           const prompt = `
-            You are a Hiring Manager at a top-tier tech company (like Google or Meta).
-            Evaluate this candidate's interview performance based on the artifacts below.
+            You are a Hiring Manager at a top-tier tech company.
+            Evaluate this candidate's interview performance.
             
-            1. **Code Submitted**:
+            1. **Code**:
             ${fileContext}
             
-            2. **Candidate's Scratchpad Notes**:
+            2. **Notes**:
             ${humanComments}
             
-            3. **Chat History with AI Assistant**:
+            3. **Chat History**:
             ${chatContext}
             
             TASK:
             Provide a comprehensive Interview Feedback Report (Markdown).
-            
-            Structure:
-            - **Recommendation**: Strong Hire / Hire / No Hire
-            - **Communication**: Did they ask good questions in the chat? Did they use notes effectively?
-            - **Problem Solving**: Is the approach optimal? 
-            - **Code Quality**: Cleanliness, edge case handling.
-            - **Areas for Improvement**: Constructive feedback.
+            Include Recommendation (Strong Hire/No Hire), Problem Solving, Code Quality, and Communication.
           `;
 
           const response = await ai.models.generateContent({
@@ -539,9 +582,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
           
           const ai = new GoogleGenAI({ apiKey });
           
-          // Contextual Prompt Construction
           const fileContext = activeFile ? `--- CURRENT FILE: ${activeFile.name} ---\n${activeFile.content}` : "No file active.";
-          // Limit history to last 10 turns to save tokens
           const historyText = newHistory.slice(-20).map(m => `${m.role.toUpperCase()}: ${m.text}`).join('\n');
           
           const prompt = `
@@ -567,7 +608,6 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
           const aiMsg = response.text || "I couldn't generate a response.";
           setChatMessages(prev => [...prev, { role: 'ai', text: aiMsg }]);
           
-          // Auto-save chat history to project state
           setProject(prev => ({ ...prev, chatHistory: [...newHistory, { role: 'ai', text: aiMsg }] }));
 
       } catch(e: any) {
@@ -577,11 +617,43 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
       }
   };
 
+  const handleSaveChatSession = async () => {
+      if (chatMessages.length === 0) return;
+      
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+      const fileName = `chats/Session_${timestamp}.md`;
+      
+      const content = `# Chat Session ${new Date().toLocaleString()}\n\n` + 
+                      chatMessages.map(m => `**${m.role.toUpperCase()}**: ${m.text}\n\n---\n`).join('\n');
+      
+      const newFile: CodeFile = {
+          name: fileName,
+          language: 'markdown',
+          content: content
+      };
+      
+      setProject(prev => {
+          const updated = {
+              ...prev,
+              files: [...prev.files, newFile]
+          };
+          if (currentUser) saveCodeProject(updated).catch(e => console.error("Failed to save chat file", e));
+          return updated;
+      });
+      
+      setExpandedFolders(f => ({...f, 'chats': true}));
+      alert(`Chat saved as ${fileName}`);
+      
+      if (confirm("Start a new clean chat session?")) {
+          setChatMessages([]);
+          setProject(prev => ({ ...prev, chatHistory: [] }));
+      }
+  };
+
   const handleSaveToCloud = async () => {
       if (!currentUser) return alert("Please sign in to save projects.");
       setIsSaving(true);
       try {
-          // Save everything: Code, AI Review, Human Comments, Chat History, Interview Feedback
           const projectToSave = { 
               ...project, 
               review: output,
@@ -590,8 +662,8 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
               interviewFeedback: interviewFeedback
           };
           await saveCodeProject(projectToSave);
-          setProject(projectToSave); // Ensure local state matches saved
-          alert("Project (Code, Chat History, Reviews) saved to Cloud!");
+          setProject(projectToSave);
+          alert("Project saved to Cloud!");
       } catch (e: any) {
           console.error(e);
           alert("Failed to save project.");
@@ -608,6 +680,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
       const newFiles = [...project.files, newFile];
       setProject(prev => ({ ...prev, files: newFiles }));
       setActiveFileIndex(newFiles.length - 1);
+      setViewMode('code'); // Switch to code view to see new file
       
       const parts = name.split('/');
       if (parts.length > 1) {
@@ -632,7 +705,6 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
       setExpandedFolders(prev => ({...prev, [folderName]: !prev[folderName]}));
   };
 
-  // Group files by folder
   const filesByFolder = React.useMemo(() => {
       const groups: Record<string, {file: CodeFile, index: number}[]> = {};
       project.files.forEach((file, index) => {
@@ -675,25 +747,15 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
                      <>
                         <div className="fixed inset-0 z-40" onClick={() => setShowExamplesDropdown(false)}></div>
                         <div className="absolute top-full left-0 mt-2 w-56 bg-[#252526] border border-[#3d3d3d] rounded-lg shadow-xl z-50 overflow-hidden py-1">
-                            <button
-                                onClick={() => handleExampleSwitch('is_bst')}
-                                className="w-full text-left px-4 py-2 text-xs text-gray-300 hover:bg-[#37373d] hover:text-white transition-colors"
-                            >
-                                Example: Validate BST
-                            </button>
-                            <button
-                                onClick={() => handleExampleSwitch('build_bst')}
-                                className="w-full text-left px-4 py-2 text-xs text-gray-300 hover:bg-[#37373d] hover:text-white transition-colors"
-                            >
-                                Example: Build BST
-                            </button>
-                            <div className="h-px bg-[#3d3d3d] my-1"></div>
-                            <button
-                                onClick={() => handleExampleSwitch('empty_cpp')}
-                                className="w-full text-left px-4 py-2 text-xs text-emerald-400 hover:bg-[#37373d] hover:text-emerald-300 transition-colors font-bold"
-                            >
-                                Interview: Empty C++ Solution
-                            </button>
+                            {Object.keys(EXAMPLE_PROJECTS).map(key => (
+                                <button
+                                    key={key}
+                                    onClick={() => handleExampleSwitch(key)}
+                                    className="w-full text-left px-4 py-2 text-xs text-gray-300 hover:bg-[#37373d] hover:text-white transition-colors"
+                                >
+                                    {EXAMPLE_PROJECTS[key].name}
+                                </button>
+                            ))}
                         </div>
                      </>
                  )}
@@ -774,7 +836,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
                     onClick={handleReviewCode}
                     disabled={isReviewing}
                     className="flex items-center gap-2 px-3 py-1.5 hover:bg-[#4d4d4d] text-white rounded-sm text-xs font-bold transition-colors"
-                    title="Review Code Only"
+                    title="Generate Review & Save to File"
                  >
                     {isReviewing ? <Loader2 size={14} className="animate-spin"/> : <Search size={14} />}
                     <span>REVIEW CODE</span>
@@ -784,10 +846,10 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
                     onClick={handleEvaluateInterview}
                     disabled={isReviewing}
                     className="flex items-center gap-2 px-3 py-1.5 hover:bg-[#4d4d4d] text-purple-300 hover:text-purple-200 rounded-sm text-xs font-bold transition-colors"
-                    title="Evaluate as Full Interview (Code + Notes + Chat)"
+                    title="Evaluate as Full Interview"
                  >
                     <UserCheck size={14} />
-                    <span>EVALUATE CANDIDATE</span>
+                    <span>EVALUATE</span>
                  </button>
              </div>
 
@@ -795,7 +857,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
                 onClick={handleSaveToCloud}
                 disabled={isSaving}
                 className="flex items-center gap-2 px-3 py-1.5 bg-[#3d3d3d] hover:bg-[#4d4d4d] text-white rounded-sm text-xs font-bold transition-colors border border-gray-600"
-                title="Save Project (Code, Comments, Reviews, Chat) to Firebase"
+                title="Save Project to Firebase"
              >
                 {isSaving ? <Loader2 size={14} className="animate-spin" /> : <CloudUpload size={14} />}
                 <span className="hidden sm:inline">SAVE</span>
@@ -907,17 +969,23 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
 
                       {/* Text Editor */}
                       <div className="flex-1 relative h-full overflow-hidden">
-                          <textarea 
-                              ref={textareaRef}
-                              value={activeFile?.content || ''}
-                              onChange={(e) => handleCodeChange(e.target.value)}
-                              onScroll={handleScroll}
-                              className="w-full h-full bg-[#1e1e1e] text-gray-200 p-4 font-mono text-sm outline-none resize-none leading-relaxed whitespace-pre overflow-auto"
-                              spellCheck={false}
-                              autoCapitalize="off"
-                              autoComplete="off"
-                              autoCorrect="off"
-                          />
+                          {activeFile?.name.endsWith('.md') ? (
+                              <div className="w-full h-full bg-[#1e1e1e] text-gray-300 p-8 overflow-y-auto prose prose-invert max-w-none">
+                                  <MarkdownView content={activeFile.content} />
+                              </div>
+                          ) : (
+                              <textarea 
+                                  ref={textareaRef}
+                                  value={activeFile?.content || ''}
+                                  onChange={(e) => handleCodeChange(e.target.value)}
+                                  onScroll={handleScroll}
+                                  className="w-full h-full bg-[#1e1e1e] text-gray-200 p-4 font-mono text-sm outline-none resize-none leading-relaxed whitespace-pre overflow-auto"
+                                  spellCheck={false}
+                                  autoCapitalize="off"
+                                  autoComplete="off"
+                                  autoCorrect="off"
+                              />
+                          )}
                           {activeFile && (
                               <div className="absolute top-2 right-4 text-xs text-gray-500 bg-[#1e1e1e]/90 px-2 py-1 rounded pointer-events-none border border-[#3d3d3d]">
                                   {getLanguageFromFilename(activeFile.name).toUpperCase()}
@@ -972,7 +1040,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
                                   <UserCheck size={48} className="opacity-20" />
                                   <div className="text-center">
                                       <p className="text-sm font-bold text-gray-500">No Evaluation Yet</p>
-                                      <p className="text-xs mt-2 max-w-xs mx-auto">Click "EVALUATE CANDIDATE" to generate a hiring report based on code, notes, and Q&A history.</p>
+                                      <p className="text-xs mt-2 max-w-xs mx-auto">Click "EVALUATE" to generate a hiring report based on code, notes, and Q&A history.</p>
                                   </div>
                               </div>
                           )}
@@ -1033,9 +1101,16 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
                           <h3 className="text-xs font-bold text-gray-300 flex items-center gap-2">
                               <Bot size={14} className="text-indigo-400"/> AI Assistant
                           </h3>
-                          <button onClick={() => setIsChatOpen(false)} className="text-gray-500 hover:text-white">
-                              <X size={14} />
-                          </button>
+                          <div className="flex items-center gap-2">
+                              {chatMessages.length > 0 && (
+                                <button onClick={handleSaveChatSession} className="text-xs text-gray-400 hover:text-white flex items-center gap-1 bg-[#3d3d3d] px-2 py-1 rounded" title="Save Chat to File">
+                                    <Archive size={12} /> Save
+                                </button>
+                              )}
+                              <button onClick={() => setIsChatOpen(false)} className="text-gray-500 hover:text-white">
+                                  <X size={14} />
+                              </button>
+                          </div>
                       </div>
                       
                       <div className="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-thin scrollbar-thumb-[#3d3d3d]">
@@ -1054,6 +1129,18 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
                                   </div>
                               ))
                           )}
+                          
+                          {/* Long Session Warning */}
+                          {chatMessages.length > 20 && (
+                              <div className="bg-amber-900/20 border border-amber-600/30 p-2 rounded text-center my-4 animate-fade-in">
+                                  <div className="text-xs text-amber-400 flex items-center justify-center gap-1 mb-1 font-bold">
+                                      <AlertTriangle size={12} /> Long Session
+                                  </div>
+                                  <p className="text-[10px] text-gray-400">Context limit approaching. Save and start new?</p>
+                                  <button onClick={handleSaveChatSession} className="mt-2 text-xs bg-amber-700 hover:bg-amber-600 text-white px-3 py-1 rounded w-full">Save & Reset</button>
+                              </div>
+                          )}
+
                           {isChatLoading && (
                               <div className="flex items-center gap-2 text-gray-500 text-xs">
                                   <Loader2 size={12} className="animate-spin" /> Thinking...
