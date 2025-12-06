@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { GoogleGenAI } from '@google/genai';
-import { ArrowLeft, Play, Save, Folder, File, Code, Terminal, Plus, Trash2, Loader2, ChevronRight, ChevronDown, Download, Smartphone, X, MessageSquare, CheckCircle, FileCode, FileJson, FileType, Search, Coffee, Hash, Eye, CloudUpload, PenTool, Edit3 } from 'lucide-react';
+import { ArrowLeft, Save, Folder, File, Code, Plus, Trash2, Loader2, ChevronRight, ChevronDown, X, MessageSquare, FileCode, FileJson, FileType, Search, Coffee, Hash, CloudUpload, Edit3, BookOpen } from 'lucide-react';
 import { GEMINI_API_KEY } from '../services/private_keys';
 import { CodeProject, CodeFile } from '../types';
 import { MarkdownView } from './MarkdownView';
@@ -12,317 +12,74 @@ interface CodeStudioProps {
   currentUser: any;
 }
 
-const INITIAL_PROJECT: CodeProject = {
-  id: 'proj-bst-polyglot',
-  name: 'BST Polyglot (Gold Standard)',
-  lastModified: Date.now(),
-  files: [
-    {
-      name: 'python/is_bst.py',
-      language: 'python',
-      content: `class TreeNode:
-    def __init__(self, val=0, left=None, right=None):
-        self.val = val
-        self.left = left
-        self.right = right
-
-# Gold Standard Approach 1: Recursive DFS with Range
-# Time Complexity: O(N) - visits every node once
-# Space Complexity: O(H) - recursion stack depth (H = height of tree)
-def is_valid_bst_recursive(root, min_val=float('-inf'), max_val=float('inf')):
-    if not root:
-        return True
-    
-    # The current node's value must be strictly between min and max
-    if not (min_val < root.val < max_val):
-        return False
-        
-    # Recursively validate subtrees with updated constraints
-    # Left child must be < root.val
-    # Right child must be > root.val
-    return (is_valid_bst_recursive(root.left, min_val, root.val) and
-            is_valid_bst_recursive(root.right, root.val, max_val))
-
-# Gold Standard Approach 2: Iterative DFS using Stack
-# Explicit stack avoids recursion depth limits in Python
-def is_valid_bst_iterative(root):
-    if not root:
-        return True
-    
-    # Stack stores tuple: (node, lower_limit, upper_limit)
-    stack = [(root, float('-inf'), float('inf'))]
-    
-    while stack:
-        node, low, high = stack.pop()
-        if not node:
-            continue
-        
-        if not (low < node.val < high):
-            return False
-            
-        # Push children to stack with updated constraints
-        stack.append((node.right, node.val, high))
-        stack.append((node.left, low, node.val))
-        
-    return True`
+const LANGUAGES = [
+    { 
+        id: 'cpp', label: 'C++', ext: 'cpp', 
+        defaultCode: `#include <iostream>\n#include <vector>\n\nint main() {\n    std::cout << "Hello C++" << std::endl;\n    return 0;\n}` 
     },
-    {
-      name: 'typescript/solution.ts',
-      language: 'typescript',
-      content: `class TreeNode {
-    val: number;
-    left: TreeNode | null;
-    right: TreeNode | null;
-    constructor(val?: number, left?: TreeNode | null, right?: TreeNode | null) {
-        this.val = (val === undefined ? 0 : val);
-        this.left = (left === undefined ? null : left);
-        this.right = (right === undefined ? null : right);
-    }
-}
-
-// Approach 1: Recursive with Type Safety
-function isValidBST(root: TreeNode | null): boolean {
-    return validate(root, -Infinity, Infinity);
-}
-
-function validate(node: TreeNode | null, min: number, max: number): boolean {
-    if (!node) return true;
-    
-    if (node.val <= min || node.val >= max) return false;
-    
-    return validate(node.left, min, node.val) && 
-           validate(node.right, node.val, max);
-}
-
-// Approach 2: Iterative with Type Alias
-type StackFrame = { node: TreeNode, min: number, max: number };
-
-function isValidBSTIterative(root: TreeNode | null): boolean {
-    if (!root) return true;
-    const stack: StackFrame[] = [{ node: root, min: -Infinity, max: Infinity }];
-    
-    while (stack.length) {
-        const { node, min, max } = stack.pop()!;
-        
-        if (node.val <= min || node.val >= max) return false;
-        
-        if (node.right) stack.push({ node: node.right, min: node.val, max });
-        if (node.left) stack.push({ node: node.left, min, max: node.val });
-    }
-    return true;
-}`
+    { 
+        id: 'python', label: 'Python', ext: 'py', 
+        defaultCode: `def main():\n    print("Hello Python")\n\nif __name__ == "__main__":\n    main()` 
     },
-    {
-      name: 'csharp/Solution.cs',
-      language: 'c#',
-      content: `using System;
-using System.Collections.Generic;
-
-public class TreeNode {
-    public int val;
-    public TreeNode left;
-    public TreeNode right;
-    public TreeNode(int val=0, TreeNode left=null, TreeNode right=null) {
-        this.val = val;
-        this.left = left;
-        this.right = right;
-    }
-}
-
-public class Solution {
-    // Approach 1: Recursive using nullable long to handle Int32.MaxValue bounds
-    public bool IsValidBST(TreeNode root) {
-        return Validate(root, long.MinValue, long.MaxValue);
-    }
-
-    private bool Validate(TreeNode node, long min, long max) {
-        if (node == null) return true;
-        
-        if (node.val <= min || node.val >= max) return false;
-        
-        return Validate(node.left, min, node.val) &&
-               Validate(node.right, node.val, max);
-    }
-
-    // Approach 2: Iterative In-Order Traversal
-    public bool IsValidBSTIterative(TreeNode root) {
-        var stack = new Stack<TreeNode>();
-        TreeNode prev = null;
-        
-        while (root != null || stack.Count > 0) {
-            while (root != null) {
-                stack.Push(root);
-                root = root.left;
-            }
-            
-            root = stack.Pop();
-            
-            // If next element in in-order traversal is smaller/equal to previous, invalid
-            if (prev != null && root.val <= prev.val) return false;
-            
-            prev = root;
-            root = root.right;
-        }
-        return true;
-    }
-}`
+    { 
+        id: 'java', label: 'Java', ext: 'java', 
+        defaultCode: `public class Main {\n    public static void main(String[] args) {\n        System.out.println("Hello Java");\n    }\n}` 
     },
-    {
-      name: 'c/main.c',
-      language: 'c',
-      content: `#include <stdbool.h>
-#include <limits.h>
-#include <stdlib.h>
-
-struct TreeNode {
-    int val;
-    struct TreeNode *left;
-    struct TreeNode *right;
-};
-
-// Helper function using long long to prevent integer overflow on boundary checks
-bool validate(struct TreeNode* root, long long min, long long max) {
-    if (root == NULL) return true;
-    
-    // Check constraints
-    if (root->val <= min || root->val >= max) return false;
-    
-    // Recursively validate subtrees
-    return validate(root->left, min, root->val) &&
-           validate(root->right, root->val, max);
-}
-
-bool isValidBST(struct TreeNode* root) {
-    // LLONG_MIN/MAX are needed because a valid BST node can contain INT_MIN/INT_MAX
-    return validate(root, LLONG_MIN, LLONG_MAX);
-}`
+    { 
+        id: 'javascript', label: 'JavaScript', ext: 'js', 
+        defaultCode: `console.log("Hello JavaScript");` 
     },
-    {
-      name: 'javascript/is_bst.js',
-      language: 'javascript',
-      content: `class TreeNode {
-  constructor(val, left = null, right = null) {
-    this.val = val;
-    this.left = left;
-    this.right = right;
-  }
-}
-
-/**
- * Validates a Binary Search Tree using Recursion.
- * @param {TreeNode} root
- * @param {number} min - Lower bound
- * @param {number} max - Upper bound
- * @return {boolean}
- */
-function isValidBSTRecursive(root, min = -Infinity, max = Infinity) {
-  if (!root) return true;
-  
-  if (root.val <= min || root.val >= max) return false;
-  
-  return isValidBSTRecursive(root.left, min, root.val) && 
-         isValidBSTRecursive(root.right, root.val, max);
-}
-
-/**
- * Validates a BST using Iteration (Stack).
- * Avoids call stack overflow for deep trees.
- */
-function isValidBSTIterative(root) {
-  if (!root) return true;
-  const stack = [{ node: root, min: -Infinity, max: Infinity }];
-  
-  while (stack.length > 0) {
-    const { node, min, max } = stack.pop();
-    if (!node) continue;
-    
-    if (node.val <= min || node.val >= max) return false;
-    
-    stack.push({ node: node.right, min: node.val, max });
-    stack.push({ node: node.left, min, max: node.val });
-  }
-  return true;
-}`
+    { 
+        id: 'csharp', label: 'C#', ext: 'cs', 
+        defaultCode: `using System;\n\nclass Program {\n    static void Main() {\n        Console.WriteLine("Hello C#");\n    }\n}` 
     },
-    {
-      name: 'java/Solution.java',
-      language: 'java',
-      content: `class TreeNode {
-    int val;
-    TreeNode left;
-    TreeNode right;
-    TreeNode() {}
-    TreeNode(int val) { this.val = val; }
-    TreeNode(int val, TreeNode left, TreeNode right) {
-        this.val = val;
-        this.left = left;
-        this.right = right;
-    }
-}
-
-class Solution {
-    // Approach 1: Recursive with Range (Long to handle Integer.MAX_VALUE)
-    public boolean isValidBST(TreeNode root) {
-        return validate(root, Long.MIN_VALUE, Long.MAX_VALUE);
-    }
-
-    private boolean validate(TreeNode node, long min, long max) {
-        if (node == null) return true;
-        if (node.val <= min || node.val >= max) return false;
-        return validate(node.left, min, node.val) && validate(node.right, node.val, max);
-    }
-
-    // Approach 2: Iterative In-Order Traversal
-    public boolean isValidBSTIterative(TreeNode root) {
-        if (root == null) return true;
-        Stack<TreeNode> stack = new Stack<>();
-        TreeNode pre = null;
-        while (root != null || !stack.isEmpty()) {
-            while (root != null) {
-                stack.push(root);
-                root = root.left;
-            }
-            root = stack.pop();
-            if (pre != null && root.val <= pre.val) return false;
-            pre = root;
-            root = root.right;
-        }
-        return true;
-    }
-}`
+    { 
+        id: 'c', label: 'C', ext: 'c', 
+        defaultCode: `#include <stdio.h>\n\nint main() {\n    printf("Hello C\\n");\n    return 0;\n}` 
     },
-    {
-      name: 'cpp/solution.cpp',
-      language: 'c++',
-      content: `#include <climits>
+    { 
+        id: 'go', label: 'Go', ext: 'go', 
+        defaultCode: `package main\n\nimport "fmt"\n\nfunc main() {\n    fmt.Println("Hello Go")\n}` 
+    },
+    { 
+        id: 'rust', label: 'Rust', ext: 'rs', 
+        defaultCode: `fn main() {\n    println!("Hello Rust");\n}` 
+    },
+    { 
+        id: 'typescript', label: 'TypeScript', ext: 'ts', 
+        defaultCode: `console.log("Hello TypeScript");` 
+    },
+];
+
+const EXAMPLE_PROJECTS: Record<string, CodeProject> = {
+  is_bst: {
+    id: 'proj-is-bst',
+    name: 'Example: Validate BST',
+    lastModified: Date.now(),
+    files: [
+      {
+        name: 'validate_bst.cpp',
+        language: 'c++',
+        content: `#include <climits>
 #include <stack>
+#include <iostream>
 
 struct TreeNode {
     int val;
     TreeNode *left;
     TreeNode *right;
-    TreeNode() : val(0), left(nullptr), right(nullptr) {}
     TreeNode(int x) : val(x), left(nullptr), right(nullptr) {}
 };
 
 class Solution {
 public:
-    // Approach 1: Recursive using pointers for nullable min/max
+    // Approach: Iterative In-Order Traversal
+    // Time Complexity: O(N)
+    // Space Complexity: O(N) in worst case (stack)
     bool isValidBST(TreeNode* root) {
-        return validate(root, nullptr, nullptr);
-    }
-
-    bool validate(TreeNode* node, TreeNode* minNode, TreeNode* maxNode) {
-        if (!node) return true;
-        if (minNode && node->val <= minNode->val) return false;
-        if (maxNode && node->val >= maxNode->val) return false;
-        return validate(node->left, minNode, node) && validate(node->right, node, maxNode);
-    }
-
-    // Approach 2: Iterative In-Order
-    bool isValidBSTIterative(TreeNode* root) {
         std::stack<TreeNode*> stack;
         TreeNode* prev = nullptr;
+        
         while (root || !stack.empty()) {
             while (root) {
                 stack.push(root);
@@ -330,107 +87,138 @@ public:
             }
             root = stack.top();
             stack.pop();
+            
             if (prev && root->val <= prev->val) return false;
+            
             prev = root;
             root = root->right;
         }
         return true;
     }
-};`
-    },
-    {
-      name: 'go/main.go',
-      language: 'go',
-      content: `package main
-
-import "math"
-
-type TreeNode struct {
-    Val   int
-    Left  *TreeNode
-    Right *TreeNode
-}
-
-// Approach: Recursive with Range
-func isValidBST(root *TreeNode) bool {
-    return validate(root, math.MinInt64, math.MaxInt64)
-}
-
-func validate(node *TreeNode, min, max int64) bool {
-    if node == nil {
-        return true
-    }
-    if int64(node.Val) <= min || int64(node.Val) >= max {
-        return false
-    }
-    return validate(node.Left, min, int64(node.Val)) && 
-           validate(node.Right, int64(node.Val), max)
-}`
-    },
-    {
-      name: 'rust/lib.rs',
-      language: 'rust',
-      content: `use std::cell::RefCell;
-use std::rc::Rc;
-
-#[derive(Debug, PartialEq, Eq)]
-pub struct TreeNode {
-  pub val: i32,
-  pub left: Option<Rc<RefCell<TreeNode>>>,
-  pub right: Option<Rc<RefCell<TreeNode>>>,
-}
-
-impl TreeNode {
-  #[inline]
-  pub fn new(val: i32) -> Self {
-    TreeNode {
-      val,
-      left: None,
-      right: None,
-    }
-  }
-}
-
-pub struct Solution {}
-
-impl Solution {
-    pub fn is_valid_bst(root: Option<Rc<RefCell<TreeNode>>>) -> bool {
-        Self::validate(&root, None, None)
-    }
-
-    fn validate(node: &Option<Rc<RefCell<TreeNode>>>, min: Option<i32>, max: Option<i32>) -> bool {
-        match node {
-            Some(n) => {
-                let val = n.borrow().val;
-                if let Some(min_val) = min {
-                    if val <= min_val { return false; }
-                }
-                if let Some(max_val) = max {
-                    if val >= max_val { return false; }
-                }
-                Self::validate(&n.borrow().left, min, Some(val)) &&
-                Self::validate(&n.borrow().right, Some(val), max)
-            },
-            None => true,
-        }
-    }
-}`
-    }
-  ]
 };
 
-const WEB_PROJECT_FILES: CodeFile[] = [
-    {
-        name: 'src/App.tsx',
-        language: 'typescript (react)',
-        content: `import React from 'react';\n\nexport default function App() {\n  return (\n    <div style={{padding: 20}}>\n      <h1>Hello from CodeStudio</h1>\n      <p>This is a simulated React environment.</p>\n    </div>\n  );\n}`
-    },
-    {
-        name: 'src/styles.css',
-        language: 'css',
-        content: 'body { font-family: sans-serif; background: #1e1e1e; color: white; }'
+int main() {
+    // Constructing a sample BST: 
+    //   2
+    //  / \\
+    // 1   3
+    TreeNode* root = new TreeNode(2);
+    root->left = new TreeNode(1);
+    root->right = new TreeNode(3);
+
+    Solution s;
+    std::cout << "Is Valid BST: " << (s.isValidBST(root) ? "Yes" : "No") << std::endl;
+    return 0;
+}`
+      }
+    ]
+  },
+  build_bst: {
+    id: 'proj-build-bst',
+    name: 'Example: Build BST',
+    lastModified: Date.now(),
+    files: [
+      {
+        name: 'build_bst.cpp',
+        language: 'c++',
+        content: `#include <iostream>
+#include <vector>
+
+struct TreeNode {
+    int val;
+    TreeNode *left;
+    TreeNode *right;
+    TreeNode(int x) : val(x), left(nullptr), right(nullptr) {}
+};
+
+class Solution {
+public:
+    // Convert Sorted Array to Height Balanced BST
+    TreeNode* sortedArrayToBST(std::vector<int>& nums) {
+        return build(nums, 0, nums.size() - 1);
     }
-];
+    
+    TreeNode* build(std::vector<int>& nums, int left, int right) {
+        if (left > right) return nullptr;
+        
+        int mid = left + (right - left) / 2;
+        TreeNode* node = new TreeNode(nums[mid]);
+        
+        node->left = build(nums, left, mid - 1);
+        node->right = build(nums, mid + 1, right);
+        
+        return node;
+    }
+    
+    // Helper to print tree (Pre-order)
+    void printTree(TreeNode* node) {
+        if (!node) return;
+        std::cout << node->val << " ";
+        printTree(node->left);
+        printTree(node->right);
+    }
+};
+
+int main() {
+    std::vector<int> nums = {-10, -3, 0, 5, 9};
+    Solution s;
+    TreeNode* root = s.sortedArrayToBST(nums);
+    
+    std::cout << "BST Created (Pre-order): ";
+    s.printTree(root);
+    std::cout << std::endl;
+    
+    return 0;
+}`
+      }
+    ]
+  },
+  empty_cpp: {
+    id: 'proj-empty-cpp',
+    name: 'Interview: Empty C++',
+    lastModified: Date.now(),
+    files: [
+      {
+        name: 'solution.cpp',
+        language: 'c++',
+        content: `#include <iostream>
+#include <vector>
+#include <string>
+#include <algorithm>
+#include <map>
+#include <set>
+#include <stack>
+#include <queue>
+
+using namespace std;
+
+// Definition for a binary tree node.
+struct TreeNode {
+    int val;
+    TreeNode *left;
+    TreeNode *right;
+    TreeNode() : val(0), left(nullptr), right(nullptr) {}
+    TreeNode(int x) : val(x), left(nullptr), right(nullptr) {}
+    TreeNode(int x, TreeNode *left, TreeNode *right) : val(x), left(left), right(right) {}
+};
+
+class Solution {
+public:
+    void solve() {
+        // Your code here
+    }
+};
+
+int main() {
+    Solution s;
+    s.solve();
+    cout << "Execution Complete" << endl;
+    return 0;
+}`
+      }
+    ]
+  }
+};
 
 // Helper to detect language from filename
 const getLanguageFromFilename = (filename: string): string => {
@@ -495,35 +283,18 @@ const FileIcon = ({ filename }: { filename: string }) => {
     return <Icon size={14} className={color} />;
 };
 
-const TEMPLATES = [
-    { id: 'all', label: 'Polyglot Example' },
-    { id: 'web', label: 'React Web App' }
-];
-
-const INTERVIEW_LANGUAGES = [
-    { id: 'python', label: 'Python', ext: 'py' },
-    { id: 'javascript', label: 'JavaScript', ext: 'js' },
-    { id: 'typescript', label: 'TypeScript', ext: 'ts' },
-    { id: 'java', label: 'Java', ext: 'java' },
-    { id: 'cpp', label: 'C++', ext: 'cpp' },
-    { id: 'c', label: 'C', ext: 'c' },
-    { id: 'csharp', label: 'C#', ext: 'cs' },
-    { id: 'rust', label: 'Rust', ext: 'rs' },
-    { id: 'go', label: 'Go', ext: 'go' },
-];
-
 export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) => {
-  const [project, setProject] = useState<CodeProject>(INITIAL_PROJECT);
+  const [project, setProject] = useState<CodeProject>(EXAMPLE_PROJECTS['is_bst']);
   const [activeFileIndex, setActiveFileIndex] = useState(0);
   const [output, setOutput] = useState('');
   const [humanComments, setHumanComments] = useState('');
   const [isReviewing, setIsReviewing] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [expandedFolders, setExpandedFolders] = useState<Record<string, boolean>>({});
-  const [activeTemplate, setActiveTemplate] = useState('all');
   const [viewMode, setViewMode] = useState<'code' | 'review' | 'notes'>('code');
   const [isSaving, setIsSaving] = useState(false);
-  const [showLanguageSelect, setShowLanguageSelect] = useState(false);
+  const [showLanguageDropdown, setShowLanguageDropdown] = useState(false);
+  const [showExamplesDropdown, setShowExamplesDropdown] = useState(false);
   
   // Refs for scrolling sync
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -549,35 +320,18 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
 
   const activeFile = project.files[activeFileIndex] || project.files[0];
 
-  const handleTemplateChange = (tmpl: string) => {
-    setActiveTemplate(tmpl);
-    if (tmpl === 'all') {
-        setProject(INITIAL_PROJECT);
-    } else if (tmpl === 'web') {
-        setProject({
-            id: 'proj-web',
-            name: 'React Web Starter',
-            lastModified: Date.now(),
-            files: WEB_PROJECT_FILES,
-            humanComments: ''
-        });
-    }
-    setActiveFileIndex(0);
-    setViewMode('code');
-  };
-
-  const startNewInterview = (langId: string) => {
-      const langConfig = INTERVIEW_LANGUAGES.find(l => l.id === langId);
+  const handleLanguageSwitch = (langId: string) => {
+      const langConfig = LANGUAGES.find(l => l.id === langId);
       if (!langConfig) return;
 
       const newProject: CodeProject = {
-          id: `interview-${Date.now()}`,
-          name: `${langConfig.label} Interview`,
+          id: `proj-${langId}-${Date.now()}`,
+          name: `${langConfig.label} Playground`,
           lastModified: Date.now(),
           files: [{
               name: `solution.${langConfig.ext}`,
               language: langConfig.id as any,
-              content: `// Write your ${langConfig.label} solution here...\n\n`
+              content: langConfig.defaultCode
           }],
           humanComments: '',
           review: ''
@@ -586,7 +340,22 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
       setProject(newProject);
       setActiveFileIndex(0);
       setViewMode('code');
-      setShowLanguageSelect(false);
+      setShowLanguageDropdown(false);
+      setHumanComments('');
+      setOutput('');
+  };
+
+  const handleExampleSwitch = (exampleKey: string) => {
+      const example = EXAMPLE_PROJECTS[exampleKey];
+      if (!example) return;
+      
+      setProject({
+          ...example,
+          id: `proj-${exampleKey}-${Date.now()}` // Unique ID for current session
+      });
+      setActiveFileIndex(0);
+      setViewMode('code');
+      setShowExamplesDropdown(false);
       setHumanComments('');
       setOutput('');
   };
@@ -676,7 +445,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
   };
 
   const handleAddFile = () => {
-      const name = prompt("File name (e.g. python/script.py):");
+      const name = prompt("File name (e.g. script.py):");
       if (!name) return;
       const lang: any = getLanguageFromFilename(name);
       const newFile: CodeFile = { name, language: lang, content: '// Start coding...' };
@@ -735,43 +504,75 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
                  <span className="hidden sm:inline">{project.name}</span>
              </span>
              
-             {/* New Interview Button with Dropdown */}
+             {/* Examples Dropdown */}
+             <div className="relative ml-2">
+                 <button 
+                    onClick={() => { setShowExamplesDropdown(!showExamplesDropdown); setShowLanguageDropdown(false); }}
+                    className="flex items-center gap-2 px-3 py-1.5 bg-[#3d3d3d] hover:bg-[#4d4d4d] text-white text-xs font-bold rounded border border-[#555] transition-colors"
+                 >
+                    <BookOpen size={14} />
+                    <span>Examples</span>
+                    <ChevronDown size={14} />
+                 </button>
+                 
+                 {showExamplesDropdown && (
+                     <>
+                        <div className="fixed inset-0 z-40" onClick={() => setShowExamplesDropdown(false)}></div>
+                        <div className="absolute top-full left-0 mt-2 w-56 bg-[#252526] border border-[#3d3d3d] rounded-lg shadow-xl z-50 overflow-hidden py-1">
+                            <button
+                                onClick={() => handleExampleSwitch('is_bst')}
+                                className="w-full text-left px-4 py-2 text-xs text-gray-300 hover:bg-[#37373d] hover:text-white transition-colors"
+                            >
+                                Example: Validate BST
+                            </button>
+                            <button
+                                onClick={() => handleExampleSwitch('build_bst')}
+                                className="w-full text-left px-4 py-2 text-xs text-gray-300 hover:bg-[#37373d] hover:text-white transition-colors"
+                            >
+                                Example: Build BST
+                            </button>
+                            <div className="h-px bg-[#3d3d3d] my-1"></div>
+                            <button
+                                onClick={() => handleExampleSwitch('empty_cpp')}
+                                className="w-full text-left px-4 py-2 text-xs text-emerald-400 hover:bg-[#37373d] hover:text-emerald-300 transition-colors font-bold"
+                            >
+                                Interview: Empty C++ Solution
+                            </button>
+                        </div>
+                     </>
+                 )}
+             </div>
+
+             {/* Language Switcher Dropdown */}
              <div className="relative">
                  <button 
-                    onClick={() => setShowLanguageSelect(!showLanguageSelect)}
-                    className="flex items-center gap-2 px-3 py-1 bg-emerald-700 hover:bg-emerald-600 text-white text-xs font-bold rounded ml-4 transition-colors"
+                    onClick={() => { setShowLanguageDropdown(!showLanguageDropdown); setShowExamplesDropdown(false); }}
+                    className="flex items-center gap-2 px-3 py-1.5 bg-[#3d3d3d] hover:bg-[#4d4d4d] text-white text-xs font-bold rounded border border-[#555] transition-colors"
                  >
-                    <Plus size={14} /> Start Interview
+                    <span>Language</span>
+                    <ChevronDown size={14} />
                  </button>
-                 {showLanguageSelect && (
+                 
+                 {showLanguageDropdown && (
                      <>
-                        <div className="fixed inset-0 z-40" onClick={() => setShowLanguageSelect(false)}></div>
-                        <div className="absolute top-full left-0 mt-2 w-48 bg-[#252526] border border-[#3d3d3d] rounded-lg shadow-xl z-50 overflow-hidden">
-                            <div className="p-2 text-xs font-bold text-gray-500 uppercase">Select Language</div>
-                            {INTERVIEW_LANGUAGES.map(lang => (
+                        <div className="fixed inset-0 z-40" onClick={() => setShowLanguageDropdown(false)}></div>
+                        <div className="absolute top-full left-0 mt-2 w-48 bg-[#252526] border border-[#3d3d3d] rounded-lg shadow-xl z-50 overflow-hidden py-1">
+                            {LANGUAGES.map(lang => (
                                 <button
                                     key={lang.id}
-                                    onClick={() => startNewInterview(lang.id)}
-                                    className="w-full text-left px-4 py-2 text-xs text-gray-300 hover:bg-[#37373d] hover:text-white transition-colors"
+                                    onClick={() => handleLanguageSwitch(lang.id)}
+                                    className="w-full text-left px-4 py-2 text-xs text-gray-300 hover:bg-[#37373d] hover:text-white transition-colors flex items-center justify-between group"
                                 >
-                                    {lang.label}
+                                    <span>{lang.label}</span>
+                                    <span className="text-[10px] text-gray-500 font-mono group-hover:text-gray-400">.{lang.ext}</span>
                                 </button>
                             ))}
                         </div>
                      </>
                  )}
              </div>
-
-             <select
-                value={activeTemplate}
-                onChange={(e) => handleTemplateChange(e.target.value)}
-                className="bg-[#3d3d3d] text-white text-xs rounded border border-[#555] outline-none px-2 py-1 ml-2 hover:border-indigo-500 transition-colors cursor-pointer"
-             >
-                {TEMPLATES.map(t => (
-                    <option key={t.id} value={t.id}>{t.label}</option>
-                ))}
-             </select>
          </div>
+
          <div className="flex items-center gap-2">
              <div className="flex bg-[#1e1e1e] rounded p-0.5 border border-[#3d3d3d] mr-2">
                  <button 
@@ -974,7 +775,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
                               </div>
                           ) : (
                               <div className="h-full flex flex-col items-center justify-center text-gray-600 space-y-4">
-                                  <Eye size={48} className="opacity-20" />
+                                  <Search size={48} className="opacity-20" />
                                   <div className="text-center">
                                       <p className="text-sm font-bold text-gray-500">No Review Generated Yet</p>
                                       <p className="text-xs mt-2 max-w-xs mx-auto">Click the "REVIEW CODE" button in the top bar to get an AI analysis of your current file.</p>
