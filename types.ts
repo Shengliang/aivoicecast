@@ -169,6 +169,7 @@ export interface CodeFile {
   content: string;
   sha?: string; // GitHub blob SHA for updates
   path?: string; // Full path in repo
+  loaded?: boolean; // For lazy loading large repos
 }
 
 export interface ChatMessage {

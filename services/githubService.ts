@@ -40,6 +40,56 @@ export async function fetchUserRepos(token: string): Promise<GithubRepo[]> {
   return await response.json();
 }
 
+// Helper to determine language
+function getLanguageFromExt(path: string): any {
+    const ext = path.split('.').pop()?.toLowerCase();
+    let language: any = 'text';
+    if (['js', 'jsx'].includes(ext || '')) language = 'javascript';
+    else if (['ts', 'tsx'].includes(ext || '')) language = 'typescript';
+    else if (ext === 'py') language = 'python';
+    else if (['cpp', 'c', 'h', 'hpp', 'cc', 'hh', 'cxx'].includes(ext || '')) language = 'c++';
+    else if (ext === 'java') language = 'java';
+    else if (ext === 'go') language = 'go';
+    else if (ext === 'rs') language = 'rust';
+    else if (ext === 'json') language = 'json';
+    else if (ext === 'md') language = 'markdown';
+    else if (ext === 'html') language = 'html';
+    else if (ext === 'css') language = 'css';
+    return language;
+}
+
+// Fetch single file content (Lazy Load)
+export async function fetchFileContent(token: string | null, owner: string, repo: string, path: string, branch: string = 'main'): Promise<string> {
+    const headers: Record<string, string> = {};
+    if (token) {
+        headers.Authorization = `token ${token}`;
+    }
+
+    // Use Raw CDN for public/anonymous access to avoid API limits on content
+    if (!token) {
+        const encodedPath = path.split('/').map(encodeURIComponent).join('/');
+        const rawUrl = `https://raw.githubusercontent.com/${owner}/${repo}/${branch}/${encodedPath}`;
+        try {
+            const res = await fetch(rawUrl);
+            if (!res.ok) throw new Error("Failed to fetch raw content");
+            return await res.text();
+        } catch (e) {
+            console.warn("Raw fetch failed, trying API fallback", e);
+        }
+    }
+
+    // API Fallback (or primary for private repos)
+    const url = `${GITHUB_API_BASE}/repos/${owner}/${repo}/contents/${path}?ref=${branch}`;
+    const res = await fetch(url, { headers });
+    if (!res.ok) throw new Error(`Failed to fetch file content: ${res.status}`);
+    
+    const data = await res.json();
+    if (data.encoding === 'base64' && data.content) {
+        return atob(data.content.replace(/\n/g, ''));
+    }
+    return "// Unable to decode file content";
+}
+
 // Fetch the file tree of a specific repository (Token optional for public repos)
 export async function fetchRepoContents(token: string | null, owner: string, repo: string, branch: string): Promise<{ files: CodeFile[], latestSha: string }> {
   const headers: Record<string, string> = {};
@@ -79,69 +129,66 @@ export async function fetchRepoContents(token: string | null, owner: string, rep
   
   const blobEntries = treeData.tree.filter((item: any) => 
     item.type === 'blob' && 
-    validExtensions.some(ext => item.path.toLowerCase().endsWith(ext)) &&
-    item.size < 1000000 // Limit file size to ~1MB
+    validExtensions.some(ext => item.path.toLowerCase().endsWith(ext))
   );
 
-  // 4. Fetch content for each file
-  // Increased limit to 100 files to capture deeper trees
-  const filesToFetch = blobEntries.slice(0, 100); 
+  // 4. Construct File List (Lazy Load Strategy)
+  // We allow up to 3000 files in the tree structure to support large repos like MySQL.
+  // But we only fetch content for the first 10 to start quickly.
+  const filesListLimit = 3000;
+  const filteredEntries = blobEntries.slice(0, filesListLimit); 
+  const initialFetchCount = 10;
 
-  const files: CodeFile[] = await Promise.all(filesToFetch.map(async (item: any) => {
-    let content = '';
-
-    // STRATEGY: Use Raw Content CDN for anonymous requests to bypass API Rate Limits
-    if (!token) {
-        // Raw URL: https://raw.githubusercontent.com/{owner}/{repo}/{branch}/{path}
-        // We must encode the path to handle spaces or special characters
-        const encodedPath = item.path.split('/').map(encodeURIComponent).join('/');
-        const rawUrl = `https://raw.githubusercontent.com/${owner}/${repo}/${branch}/${encodedPath}`;
+  const files: CodeFile[] = await Promise.all(filteredEntries.map(async (item: any, index: number) => {
+    // Determine language
+    const language = getLanguageFromExt(item.path);
+    
+    // Only fetch content for the first few files
+    if (index < initialFetchCount && item.size < 1000000) {
+        let content = '';
+        if (!token) {
+             // Try raw fetch for speed
+             const encodedPath = item.path.split('/').map(encodeURIComponent).join('/');
+             const rawUrl = `https://raw.githubusercontent.com/${owner}/${repo}/${branch}/${encodedPath}`;
+             try {
+                 const res = await fetch(rawUrl);
+                 if (res.ok) content = await res.text();
+                 else throw new Error("Raw fetch fail");
+             } catch(e) {
+                 // API fallback logic would be complex inside map, simplistically we might skip or fail here for anon
+                 content = "// Failed to load content via CDN.";
+             }
+        } else {
+             try {
+                const blobRes = await fetch(item.url, { headers });
+                if (blobRes.ok) {
+                    const blobData = await blobRes.json();
+                    content = atob(blobData.content.replace(/\n/g, ''));
+                } else {
+                    content = "// Error fetching content";
+                }
+             } catch(e) { content = "// Error fetching content"; }
+        }
         
-        try {
-            const res = await fetch(rawUrl);
-            if (!res.ok) throw new Error(`Failed to fetch raw content: ${res.status}`);
-            content = await res.text();
-        } catch (e) {
-            console.warn(`Failed to fetch raw ${item.path}`, e);
-            content = "// Failed to load content from raw.githubusercontent.com";
-        }
+        return {
+            name: item.path,
+            language,
+            content,
+            sha: item.sha,
+            path: item.path,
+            loaded: true
+        };
     } else {
-        // Authenticated: Use API Blob (Better for private repos or specific SHAs)
-        try {
-            const blobRes = await fetch(item.url, { headers });
-            // If individual blob fetch fails due to rate limit, we might want to fail the whole operation
-            if (!blobRes.ok && blobRes.status === 403) throw new Error('GitHub API rate limit exceeded during file fetch.');
-            
-            const blobData = await blobRes.json();
-            // Content is base64 encoded in API response
-            content = atob(blobData.content.replace(/\n/g, ''));
-        } catch(e) {
-            content = "// Binary content or encoding error";
-        }
+        // Deferred / Lazy Load
+        return {
+            name: item.path,
+            language,
+            content: "", // Placeholder
+            sha: item.sha,
+            path: item.path,
+            loaded: false // Flag for lazy loading
+        };
     }
-
-    // Determine language based on extension
-    const ext = item.path.split('.').pop()?.toLowerCase();
-    let language: any = 'text';
-    if (['js', 'jsx'].includes(ext)) language = 'javascript';
-    else if (['ts', 'tsx'].includes(ext)) language = 'typescript';
-    else if (ext === 'py') language = 'python';
-    else if (['cpp', 'c', 'h', 'hpp', 'cc', 'hh', 'cxx'].includes(ext)) language = 'c++';
-    else if (ext === 'java') language = 'java';
-    else if (ext === 'go') language = 'go';
-    else if (ext === 'rs') language = 'rust';
-    else if (ext === 'json') language = 'json';
-    else if (ext === 'md') language = 'markdown';
-    else if (ext === 'html') language = 'html';
-    else if (ext === 'css') language = 'css';
-
-    return {
-      name: item.path, // Use full path as name
-      language: language,
-      content: content,
-      sha: item.sha,
-      path: item.path
-    };
   }));
 
   return { files, latestSha };
@@ -157,8 +204,10 @@ export async function commitToRepo(
   const { owner, repo, branch, sha: parentSha } = project.github;
 
   // 1. Create Blobs for changed files
-  // (In a full implementation, we'd check diffs. Here we just upload current state of all files)
-  const treeItems = await Promise.all(project.files.map(async (file) => {
+  // Filter out files that were not loaded (lazy loaded files that user didn't touch shouldn't be overwritten with empty string)
+  const filesToCommit = project.files.filter(f => f.loaded !== false);
+
+  const treeItems = await Promise.all(filesToCommit.map(async (file) => {
     const blobRes = await fetch(`${GITHUB_API_BASE}/repos/${owner}/${repo}/git/blobs`, {
       method: 'POST',
       headers: {

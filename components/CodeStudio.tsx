@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { GoogleGenAI } from '@google/genai';
 import { ArrowLeft, Save, Folder, File, Code, Plus, Trash2, Loader2, ChevronRight, ChevronDown, X, MessageSquare, FileCode, FileJson, FileType, Search, Coffee, Hash, CloudUpload, Edit3, BookOpen, Bot, Send, Maximize2, Minimize2, GripVertical, UserCheck, AlertTriangle, Archive, Sparkles, Video, Mic, CheckCircle, Monitor, FileText, Eye, Github, GitBranch, GitCommit, FolderOpen, RefreshCw, GraduationCap, DownloadCloud } from 'lucide-react';
@@ -7,7 +6,7 @@ import { CodeProject, CodeFile, ChatMessage, Channel, GithubMetadata } from '../
 import { MarkdownView } from './MarkdownView';
 import { saveCodeProject } from '../services/firestoreService';
 import { signInWithGitHub, reauthenticateWithGitHub } from '../services/authService';
-import { fetchUserRepos, fetchRepoContents, commitToRepo, fetchPublicRepoInfo } from '../services/githubService';
+import { fetchUserRepos, fetchRepoContents, commitToRepo, fetchPublicRepoInfo, fetchFileContent } from '../services/githubService';
 import { LiveSession } from './LiveSession';
 
 interface CodeStudioProps {
@@ -479,7 +478,7 @@ const generateHighlightedHTML = (code: string, language: string) => {
   return processed;
 };
 
-const EnhancedEditor = ({ code, language, onChange, onScroll, onSelect, textAreaRef, lineNumbersRef }: any) => {
+const EnhancedEditor = ({ code, language, onChange, onScroll, onSelect, textAreaRef, lineNumbersRef, isLoadingContent }: any) => {
   return (
     <div className="flex-1 relative bg-slate-950 flex overflow-hidden font-mono text-sm">
         {/* Line Numbers */}
@@ -493,6 +492,14 @@ const EnhancedEditor = ({ code, language, onChange, onScroll, onSelect, textArea
         </div>
         
         <div className="relative flex-1 h-full overflow-hidden">
+            {/* Loading Indicator */}
+            {isLoadingContent && (
+               <div className="absolute inset-0 bg-slate-950/80 z-20 flex flex-col items-center justify-center">
+                  <Loader2 className="animate-spin text-indigo-400 mb-2" size={32} />
+                  <span className="text-slate-400 text-xs">Fetching file content...</span>
+               </div>
+            )}
+
             {/* Syntax Highlight Layer (Background) */}
             <pre
                 className="absolute top-0 left-0 w-full h-full p-4 pointer-events-none margin-0 whitespace-pre overflow-hidden leading-6"
@@ -537,6 +544,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
   const [showExamplesDropdown, setShowExamplesDropdown] = useState(false);
   const [isPreviewMode, setIsPreviewMode] = useState(false);
   const [isReviewing, setIsReviewing] = useState(false);
+  const [isLoadingFile, setIsLoadingFile] = useState(false);
   
   // Selection State for Context Awareness
   const [selection, setSelection] = useState('');
@@ -581,6 +589,53 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
 
   // Build Tree
   const fileTree = React.useMemo(() => buildFileTree(project.files), [project.files]);
+
+  // Lazy Loading Effect
+  useEffect(() => {
+      const loadContent = async () => {
+          // If active file is not loaded (and not currently loading to prevent double triggers), fetch it
+          if (activeFile && activeFile.loaded === false && !isLoadingFile) {
+              setIsLoadingFile(true);
+              try {
+                  const content = await fetchFileContent(
+                      githubToken, 
+                      project.github?.owner || '', 
+                      project.github?.repo || '', 
+                      activeFile.path || activeFile.name,
+                      project.github?.branch
+                  );
+                  
+                  // Update project state with new file content
+                  setProject(prev => {
+                      const newFiles = [...prev.files];
+                      newFiles[activeFileIndex] = {
+                          ...activeFile,
+                          content,
+                          loaded: true
+                      };
+                      return { ...prev, files: newFiles };
+                  });
+              } catch(e) {
+                  console.error("Failed to lazy load file", e);
+                  setProject(prev => {
+                      const newFiles = [...prev.files];
+                      newFiles[activeFileIndex] = {
+                          ...activeFile,
+                          content: "// Failed to load file content.",
+                          loaded: true // Mark as loaded to stop retrying
+                      };
+                      return { ...prev, files: newFiles };
+                  });
+              } finally {
+                  setIsLoadingFile(false);
+              }
+          }
+      };
+      
+      // Small debounce to prevent rapid switching causing issues
+      const timeout = setTimeout(loadContent, 50);
+      return () => clearTimeout(timeout);
+  }, [activeFileIndex, project.github, githubToken]);
 
   // Mobile check
   useEffect(() => {
@@ -664,7 +719,8 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
       const newFile: CodeFile = {
           name: fileName,
           language: langConfig.id as any,
-          content: langConfig.defaultCode
+          content: langConfig.defaultCode,
+          loaded: true
       };
 
       setProject(prev => ({
@@ -699,7 +755,8 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
     const updatedFiles = [...project.files];
     updatedFiles[activeFileIndex] = { 
         ...activeFile, 
-        content: newContent 
+        content: newContent,
+        loaded: true
     };
     setProject({ ...project, files: updatedFiles });
   };
@@ -709,12 +766,6 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
           lineNumbersRef.current.scrollTop = e.currentTarget.scrollTop;
       }
       
-      // Also sync the pre tag if using EnhancedEditor manually, 
-      // but EnhancedEditor structure handles this by having pre and textarea same size.
-      // However, if textarea scrolls, we need to ensure PRE scrolls (or they are both in a scrolling container).
-      // The EnhancedEditor puts textarea absolute on top. 
-      // Wait, standard trick is to scroll the container, but textarea needs to capture input.
-      // Better trick: Sync `scrollTop` of pre to textarea.
       const pre = e.currentTarget.previousElementSibling as HTMLPreElement;
       if (pre) {
           pre.scrollTop = e.currentTarget.scrollTop;
@@ -909,7 +960,8 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
           const qFile: CodeFile = {
               name: qFileName,
               language: 'markdown',
-              content: content
+              content: content,
+              loaded: true
           };
           
           // 2. Create Solution File (Auto-detected Language)
@@ -920,7 +972,8 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
           const sFile: CodeFile = {
               name: sFileName,
               language: langConfig.id as any,
-              content: langConfig.defaultCode
+              content: langConfig.defaultCode,
+              loaded: true
           };
           
           // 3. Update Project State
@@ -969,7 +1022,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
         if (!apiKey) throw new Error("API Key required for AI review.");
         
         const ai = new GoogleGenAI({ apiKey });
-        const codeFiles = project.files.filter(f => !f.name.endsWith('.md'));
+        const codeFiles = project.files.filter(f => !f.name.endsWith('.md') && f.loaded !== false); // Only loaded code files
         
         const fileContext = codeFiles.map(f => {
             const lang = getLanguageFromFilename(f.name);
@@ -1002,7 +1055,8 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
         const newFile: CodeFile = {
             name: fileName,
             language: 'markdown',
-            content: reviewText
+            content: reviewText,
+            loaded: true
         };
         
         setChatMessages(prev => {
@@ -1049,7 +1103,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
           
           const ai = new GoogleGenAI({ apiKey });
           
-          const fileContext = activeFile ? `--- CURRENT FILE: ${activeFile.name} ---\n${activeFile.content}` : "No file active.";
+          const fileContext = activeFile && activeFile.loaded ? `--- CURRENT FILE: ${activeFile.name} ---\n${activeFile.content}` : "No file active or not loaded.";
           const historyText = newHistory.slice(-20).map(m => `${m.role.toUpperCase()}: ${m.text}`).join('\n');
           
           const prompt = `
@@ -1094,7 +1148,8 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
       const newFile: CodeFile = {
           name: fileName,
           language: 'markdown',
-          content: content
+          content: content,
+          loaded: true
       };
       
       setProject(prev => {
@@ -1363,6 +1418,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
                         onSelect={handleTextSelect}
                         textAreaRef={textareaRef}
                         lineNumbersRef={lineNumbersRef}
+                        isLoadingContent={isLoadingFile}
                     />
                 )}
                 
