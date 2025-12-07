@@ -667,7 +667,13 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
           setChatMessages(prev => [...prev, {role: 'ai', text: `Loaded public repository **${info.full_name}**.`}]);
 
       } catch (e: any) {
-          alert("Failed to load public repo: " + e.message);
+          if (e.message.includes('rate limit')) {
+              if(confirm("GitHub API Rate Limit Exceeded.\n\nAnonymous requests are limited to 60/hour.\n\nWould you like to sign in with GitHub to increase your limit to 5000/hour?")) {
+                  // Keep modal open, let user click the button
+              }
+          } else {
+              alert("Failed to load public repo: " + e.message);
+          }
       } finally {
           setIsLoadingPublic(false);
       }
@@ -1045,9 +1051,9 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
                    <button 
                        onClick={() => setShowImportModal(true)} 
                        className={`p-2 hover:bg-slate-700 rounded transition-colors ${(needsGitHubReauth || isGithubLinked) ? 'text-amber-400 hover:text-amber-200' : 'text-slate-400 hover:text-white'}`} 
-                       title="Import Project"
+                       title="Import Project from GitHub"
                    >
-                       {(needsGitHubReauth || isGithubLinked) ? <RefreshCw size={16} /> : <DownloadCloud size={16} />}
+                       {(needsGitHubReauth || isGithubLinked) ? <RefreshCw size={16} /> : <Github size={16} />}
                    </button>
                )}
                <button onClick={() => setActiveSideView(activeSideView === 'review' ? 'none' : 'review')} className={`p-2 rounded transition-colors ${activeSideView === 'review' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-700'}`} title="Code Review">

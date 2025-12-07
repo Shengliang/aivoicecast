@@ -33,7 +33,10 @@ export async function fetchUserRepos(token: string): Promise<GithubRepo[]> {
     },
   });
 
-  if (!response.ok) throw new Error('Failed to fetch repositories');
+  if (!response.ok) {
+      if (response.status === 403) throw new Error('GitHub API rate limit exceeded.');
+      throw new Error('Failed to fetch repositories');
+  }
   return await response.json();
 }
 
@@ -46,13 +49,20 @@ export async function fetchRepoContents(token: string | null, owner: string, rep
 
   // 1. Get the reference of the branch (latest commit SHA)
   const refRes = await fetch(`${GITHUB_API_BASE}/repos/${owner}/${repo}/git/ref/heads/${branch}`, { headers });
-  if (!refRes.ok) throw new Error('Failed to fetch branch reference');
+  if (!refRes.ok) {
+      if (refRes.status === 403) throw new Error('GitHub API rate limit exceeded. Please sign in.');
+      if (refRes.status === 404) throw new Error('Branch not found or repo is empty.');
+      throw new Error('Failed to fetch branch reference');
+  }
   const refData = await refRes.json();
   const latestSha = refData.object.sha;
 
   // 2. Get the Tree (Recursive to get all files)
   const treeRes = await fetch(`${GITHUB_API_BASE}/repos/${owner}/${repo}/git/trees/${latestSha}?recursive=1`, { headers });
-  if (!treeRes.ok) throw new Error('Failed to fetch repository tree');
+  if (!treeRes.ok) {
+      if (treeRes.status === 403) throw new Error('GitHub API rate limit exceeded. Please sign in.');
+      throw new Error('Failed to fetch repository tree');
+  }
   const treeData = await treeRes.json();
 
   // 3. Filter for blobs (files), ignore extremely large files or images for the web editor
@@ -79,6 +89,9 @@ export async function fetchRepoContents(token: string | null, owner: string, rep
 
   const files: CodeFile[] = await Promise.all(filesToFetch.map(async (item: any) => {
     const blobRes = await fetch(item.url, { headers });
+    // If individual blob fetch fails due to rate limit, we might want to fail the whole operation
+    if (!blobRes.ok && blobRes.status === 403) throw new Error('GitHub API rate limit exceeded during file fetch.');
+    
     const blobData = await blobRes.json();
     
     // Content is base64 encoded
