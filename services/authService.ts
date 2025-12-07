@@ -1,4 +1,5 @@
 
+
 import { auth } from './firebaseConfig';
 import firebase from 'firebase/compat/app';
 
@@ -21,6 +22,26 @@ export async function signInWithGoogle(): Promise<firebase.User | null> {
     return result.user;
   } catch (error) {
     console.error("Login failed:", error);
+    throw error;
+  }
+}
+
+export async function signInWithGitHub(): Promise<{ user: firebase.User | null, token: string | null }> {
+  try {
+    const provider = new firebase.auth.GithubAuthProvider();
+    // Request repo scope to allow reading and writing private/public repositories
+    provider.addScope('repo');
+    provider.addScope('user');
+
+    const result = await auth.signInWithPopup(provider);
+    
+    // This gives you a GitHub Access Token. You can use it to access the GitHub API.
+    const credential = result.credential as firebase.auth.OAuthCredential;
+    const token = credential?.accessToken || null;
+
+    return { user: result.user, token };
+  } catch (error) {
+    console.error("GitHub Login failed:", error);
     throw error;
   }
 }

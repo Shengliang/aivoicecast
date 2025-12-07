@@ -167,11 +167,20 @@ export interface CodeFile {
   name: string;
   language: 'python' | 'javascript' | 'typescript' | 'html' | 'css' | 'java' | 'c++' | 'c' | 'rust' | 'go' | 'c#' | 'json' | 'markdown' | 'text' | 'typescript (react)' | 'javascript (react)';
   content: string;
+  sha?: string; // GitHub blob SHA for updates
+  path?: string; // Full path in repo
 }
 
 export interface ChatMessage {
   role: 'user' | 'ai';
   text: string;
+}
+
+export interface GithubMetadata {
+  owner: string;
+  repo: string;
+  branch: string;
+  sha: string; // Commit SHA
 }
 
 export interface CodeProject {
@@ -184,4 +193,5 @@ export interface CodeProject {
   ownerId?: string;
   chatHistory?: ChatMessage[]; // Chat with AI assistant
   interviewFeedback?: string; // Holistic interview feedback
+  github?: GithubMetadata; // Linked Repository Info
 }

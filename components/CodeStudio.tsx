@@ -1,11 +1,14 @@
 
+
 import React, { useState, useEffect, useRef } from 'react';
 import { GoogleGenAI } from '@google/genai';
-import { ArrowLeft, Save, Folder, File, Code, Plus, Trash2, Loader2, ChevronRight, ChevronDown, X, MessageSquare, FileCode, FileJson, FileType, Search, Coffee, Hash, CloudUpload, Edit3, BookOpen, Bot, Send, Maximize2, Minimize2, GripVertical, UserCheck, AlertTriangle, Archive, Sparkles, Video, Mic, CheckCircle, Monitor, FileText, Eye } from 'lucide-react';
+import { ArrowLeft, Save, Folder, File, Code, Plus, Trash2, Loader2, ChevronRight, ChevronDown, X, MessageSquare, FileCode, FileJson, FileType, Search, Coffee, Hash, CloudUpload, Edit3, BookOpen, Bot, Send, Maximize2, Minimize2, GripVertical, UserCheck, AlertTriangle, Archive, Sparkles, Video, Mic, CheckCircle, Monitor, FileText, Eye, Github, GitBranch, GitCommit } from 'lucide-react';
 import { GEMINI_API_KEY } from '../services/private_keys';
-import { CodeProject, CodeFile, ChatMessage, Channel } from '../types';
+import { CodeProject, CodeFile, ChatMessage, Channel, GithubMetadata } from '../types';
 import { MarkdownView } from './MarkdownView';
 import { saveCodeProject } from '../services/firestoreService';
+import { signInWithGitHub } from '../services/authService';
+import { fetchUserRepos, fetchRepoContents, commitToRepo } from '../services/githubService';
 import { LiveSession } from './LiveSession';
 
 interface CodeStudioProps {
@@ -317,6 +320,15 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
   const [isInterviewSession, setIsInterviewSession] = useState(false);
   const [showInterviewSetup, setShowInterviewSetup] = useState(false);
   const [recordInterview, setRecordInterview] = useState(false);
+
+  // GitHub State
+  const [githubToken, setGithubToken] = useState<string | null>(null);
+  const [showGithubModal, setShowGithubModal] = useState(false);
+  const [repos, setRepos] = useState<any[]>([]);
+  const [isLoadingRepos, setIsLoadingRepos] = useState(false);
+  const [isCommitting, setIsCommitting] = useState(false);
+  const [commitMessage, setCommitMessage] = useState('');
+  const [showCommitModal, setShowCommitModal] = useState(false);
   
   // Refs for scrolling sync
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -435,6 +447,74 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
   const handleScroll = () => {
       if (textareaRef.current && lineNumbersRef.current) {
           lineNumbersRef.current.scrollTop = textareaRef.current.scrollTop;
+      }
+  };
+
+  // --- GITHUB INTEGRATION ---
+
+  const handleGitHubConnect = async () => {
+      try {
+          const { user, token } = await signInWithGitHub();
+          if (token) {
+              setGithubToken(token);
+              setShowGithubModal(true);
+              setIsLoadingRepos(true);
+              const repos = await fetchUserRepos(token);
+              setRepos(repos);
+              setIsLoadingRepos(false);
+          }
+      } catch(e: any) {
+          alert("GitHub Login Failed: " + e.message);
+      }
+  };
+
+  const handleRepoSelect = async (repo: any) => {
+      setIsLoadingRepos(true);
+      try {
+          if (!githubToken) throw new Error("No token");
+          const { files, latestSha } = await fetchRepoContents(githubToken, repo.owner.login, repo.name, repo.default_branch);
+          
+          setProject({
+              id: `gh-${repo.id}`,
+              name: repo.full_name,
+              files: files,
+              lastModified: Date.now(),
+              github: {
+                  owner: repo.owner.login,
+                  repo: repo.name,
+                  branch: repo.default_branch,
+                  sha: latestSha
+              }
+          });
+          
+          setActiveFileIndex(0);
+          setShowGithubModal(false);
+          setChatMessages(prev => [...prev, {role: 'ai', text: `Loaded repository **${repo.full_name}** successfully.`}]);
+      } catch(e: any) {
+          alert("Failed to load repo: " + e.message);
+      } finally {
+          setIsLoadingRepos(false);
+      }
+  };
+
+  const handleCommit = async () => {
+      if (!commitMessage.trim()) return;
+      if (!githubToken || !project.github) return;
+      
+      setIsCommitting(true);
+      try {
+          const newSha = await commitToRepo(githubToken, project, commitMessage);
+          setProject(prev => ({
+              ...prev,
+              github: prev.github ? { ...prev.github, sha: newSha } : undefined
+          }));
+          alert("Changes committed and pushed successfully!");
+          setShowCommitModal(false);
+          setCommitMessage('');
+      } catch(e: any) {
+          alert("Commit failed: " + e.message);
+      } finally {
+          setIsCommitting(false);
       }
   };
 
@@ -762,7 +842,10 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
                <div className="bg-indigo-600 p-1.5 rounded-lg">
                   <Code size={18} className="text-white" />
                </div>
-               <h1 className="font-bold text-white hidden sm:block truncate max-w-[200px]">{project.name}</h1>
+               <div className="flex flex-col">
+                   <h1 className="font-bold text-white hidden sm:block truncate max-w-[200px] text-sm">{project.name}</h1>
+                   {project.github && <span className="text-[10px] text-slate-500 font-mono flex items-center gap-1"><GitBranch size={10}/> {project.github.branch}</span>}
+               </div>
             </div>
             
             {/* Project Actions */}
@@ -770,6 +853,15 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
                <button onClick={handleSaveProject} disabled={isSaving} className="p-2 hover:bg-slate-700 rounded text-slate-400 hover:text-white transition-colors" title="Save Project">
                   {isSaving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
                </button>
+               {project.github ? (
+                   <button onClick={() => setShowCommitModal(true)} className="p-2 hover:bg-slate-700 rounded text-emerald-400 hover:text-white transition-colors" title="Commit to GitHub">
+                       <GitCommit size={16} />
+                   </button>
+               ) : (
+                   <button onClick={handleGitHubConnect} className="p-2 hover:bg-slate-700 rounded text-slate-400 hover:text-white transition-colors" title="Import from GitHub">
+                       <Github size={16} />
+                   </button>
+               )}
                <button onClick={() => setViewMode(viewMode === 'code' ? 'review' : 'code')} className={`p-2 rounded transition-colors ${viewMode === 'review' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-700'}`} title="Code Review">
                   <CheckCircle size={16} />
                </button>
@@ -838,7 +930,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
                         className={`w-full flex items-center space-x-2 px-3 py-2 rounded-lg text-sm transition-colors ${activeFileIndex === idx ? 'bg-slate-800 text-white border border-slate-700' : 'text-slate-400 hover:text-white hover:bg-slate-800/50'}`}
                      >
                         <FileIcon filename={file.name} />
-                        <span className="truncate">{file.name}</span>
+                        <span className="truncate" title={file.name}>{file.name.split('/').pop()}</span>
                      </button>
                   ))}
                </div>
@@ -882,7 +974,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
                     className={`flex items-center space-x-2 px-4 py-2.5 border-r border-slate-800 cursor-pointer min-w-[120px] max-w-[200px] ${activeFileIndex === idx ? 'bg-slate-950 text-white border-t-2 border-t-indigo-500' : 'bg-slate-900 text-slate-500 hover:bg-slate-800 hover:text-slate-300'}`}
                   >
                      <FileIcon filename={file.name} />
-                     <span className="text-xs font-medium truncate">{file.name}</span>
+                     <span className="text-xs font-medium truncate">{file.name.split('/').pop()}</span>
                      {activeFileIndex === idx && (
                         <button className="ml-auto text-slate-500 hover:text-red-400" onClick={(e) => { e.stopPropagation(); /* close file logic */ }}>
                            <X size={12} />
@@ -1054,6 +1146,81 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
                       </button>
                       <button onClick={() => setShowInterviewSetup(false)} className="w-full py-2 text-slate-400 hover:text-white text-sm">
                           Cancel
+                      </button>
+                  </div>
+              </div>
+          </div>
+      )}
+
+      {/* GitHub Repo Selection Modal */}
+      {showGithubModal && (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
+              <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-lg shadow-2xl p-6 flex flex-col max-h-[80vh]">
+                  <div className="flex justify-between items-center mb-4">
+                      <h3 className="text-xl font-bold text-white flex items-center gap-2"><Github size={24} className="text-white"/> Select Repository</h3>
+                      <button onClick={() => setShowGithubModal(false)} className="text-slate-400 hover:text-white"><X size={20}/></button>
+                  </div>
+                  <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar">
+                      {isLoadingRepos ? (
+                          <div className="py-10 text-center"><Loader2 className="animate-spin mx-auto text-indigo-400"/></div>
+                      ) : repos.length === 0 ? (
+                          <div className="py-10 text-center text-slate-500">No repositories found.</div>
+                      ) : (
+                          <div className="space-y-2">
+                              {repos.map((repo: any) => (
+                                  <button key={repo.id} onClick={() => handleRepoSelect(repo)} className="w-full text-left p-3 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 flex items-center justify-between group">
+                                      <div>
+                                          <div className="font-bold text-white text-sm">{repo.full_name}</div>
+                                          <div className="text-xs text-slate-400 flex items-center gap-2">
+                                              <span>{repo.private ? "Private" : "Public"}</span>
+                                              <span>•</span>
+                                              <span>{repo.default_branch}</span>
+                                          </div>
+                                      </div>
+                                      <ChevronRight size={16} className="text-slate-500 group-hover:text-white"/>
+                                  </button>
+                              ))}
+                          </div>
+                      )}
+                  </div>
+              </div>
+          </div>
+      )}
+
+      {/* Commit Modal */}
+      {showCommitModal && (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
+              <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-md shadow-2xl p-6">
+                  <div className="flex justify-between items-center mb-4">
+                      <h3 className="text-xl font-bold text-white flex items-center gap-2"><GitCommit size={20} className="text-emerald-400"/> Commit & Push</h3>
+                      <button onClick={() => setShowCommitModal(false)} className="text-slate-400 hover:text-white"><X size={20}/></button>
+                  </div>
+                  
+                  <div className="space-y-4">
+                      <div>
+                          <label className="text-xs font-bold text-slate-500 uppercase">Repository</label>
+                          <div className="text-sm text-white font-mono bg-slate-800 p-2 rounded mt-1 border border-slate-700">
+                              {project.github?.owner}/{project.github?.repo} ({project.github?.branch})
+                          </div>
+                      </div>
+                      
+                      <div>
+                          <label className="text-xs font-bold text-slate-500 uppercase">Commit Message</label>
+                          <textarea 
+                              value={commitMessage}
+                              onChange={e => setCommitMessage(e.target.value)}
+                              className="w-full bg-slate-950 border border-slate-700 rounded-lg p-3 text-sm text-white mt-1 h-24 focus:outline-none focus:border-emerald-500"
+                              placeholder="Update solution..."
+                          />
+                      </div>
+                      
+                      <button 
+                          onClick={handleCommit}
+                          disabled={isCommitting || !commitMessage}
+                          className="w-full py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-bold rounded-lg flex items-center justify-center gap-2"
+                      >
+                          {isCommitting ? <Loader2 size={16} className="animate-spin"/> : <CloudUpload size={16}/>}
+                          <span>Push Changes</span>
                       </button>
                   </div>
               </div>
