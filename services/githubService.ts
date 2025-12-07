@@ -83,23 +83,41 @@ export async function fetchRepoContents(token: string | null, owner: string, rep
     item.size < 1000000 // Limit file size to ~1MB
   );
 
-  // 4. Fetch content for each file (in parallel - limited batching would be better for huge repos)
+  // 4. Fetch content for each file
   // Increased limit to 100 files to capture deeper trees
   const filesToFetch = blobEntries.slice(0, 100); 
 
   const files: CodeFile[] = await Promise.all(filesToFetch.map(async (item: any) => {
-    const blobRes = await fetch(item.url, { headers });
-    // If individual blob fetch fails due to rate limit, we might want to fail the whole operation
-    if (!blobRes.ok && blobRes.status === 403) throw new Error('GitHub API rate limit exceeded during file fetch.');
-    
-    const blobData = await blobRes.json();
-    
-    // Content is base64 encoded
     let content = '';
-    try {
-        content = atob(blobData.content.replace(/\n/g, ''));
-    } catch(e) {
-        content = "// Binary content or encoding error";
+
+    // STRATEGY: Use Raw Content CDN for anonymous requests to bypass API Rate Limits
+    if (!token) {
+        // Raw URL: https://raw.githubusercontent.com/{owner}/{repo}/{branch}/{path}
+        // We must encode the path to handle spaces or special characters
+        const encodedPath = item.path.split('/').map(encodeURIComponent).join('/');
+        const rawUrl = `https://raw.githubusercontent.com/${owner}/${repo}/${branch}/${encodedPath}`;
+        
+        try {
+            const res = await fetch(rawUrl);
+            if (!res.ok) throw new Error(`Failed to fetch raw content: ${res.status}`);
+            content = await res.text();
+        } catch (e) {
+            console.warn(`Failed to fetch raw ${item.path}`, e);
+            content = "// Failed to load content from raw.githubusercontent.com";
+        }
+    } else {
+        // Authenticated: Use API Blob (Better for private repos or specific SHAs)
+        try {
+            const blobRes = await fetch(item.url, { headers });
+            // If individual blob fetch fails due to rate limit, we might want to fail the whole operation
+            if (!blobRes.ok && blobRes.status === 403) throw new Error('GitHub API rate limit exceeded during file fetch.');
+            
+            const blobData = await blobRes.json();
+            // Content is base64 encoded in API response
+            content = atob(blobData.content.replace(/\n/g, ''));
+        } catch(e) {
+            content = "// Binary content or encoding error";
+        }
     }
 
     // Determine language based on extension
