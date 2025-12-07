@@ -565,18 +565,24 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
         
         setChatMessages(prev => {
             const filtered = prev.filter(m => !m.text.includes("Analyzing code"));
-            return [...filtered, { role: 'ai', text: `## Code Review\n\nI have analyzed your code. You can find the full report in **${fileName}**.\n\n` + reviewText }];
+            const newMsg: ChatMessage = { role: 'ai', text: `## Code Review\n\nI have analyzed your code. You can find the full report in **${fileName}**.\n\n` + reviewText };
+            return [...filtered, newMsg];
         });
 
-        setProject(prev => {
-            const updated = { 
-                ...prev, 
+        setProject((currentProject) => {
+            const updated: CodeProject = { 
+                ...currentProject, 
                 review: reviewText,
-                chatHistory: [...prev.chatHistory || [], { role: 'ai', text: `## Code Review\n\n` + reviewText }],
-                files: [...prev.files, newFile] 
+                chatHistory: [...(currentProject.chatHistory || []), { role: 'ai', text: `## Code Review\n\n` + reviewText }],
+                files: [...currentProject.files, newFile] 
             };
-            setExpandedFolders(f => ({...f, 'reviews': true}));
-            if (currentUser) saveCodeProject(updated).catch(e => console.error("Auto-save review failed", e));
+            
+            // Move side effects out of the state updater to avoid React warnings and double invocation
+            setTimeout(() => {
+                setExpandedFolders(f => ({...f, 'reviews': true}));
+                if (currentUser) saveCodeProject(updated).catch(e => console.error("Auto-save review failed", e));
+            }, 0);
+
             return updated;
         });
         
@@ -676,7 +682,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
           const aiMsg = response.text || "I couldn't generate a response.";
           setChatMessages(prev => [...prev, { role: 'ai', text: aiMsg }]);
           
-          setProject(prev => ({ ...prev, chatHistory: [...newHistory, { role: 'ai', text: aiMsg }] }));
+          setProject(prev => ({ ...prev, chatHistory: [...newHistory, { role: 'ai' as const, text: aiMsg }] }));
 
       } catch(e: any) {
           setChatMessages(prev => [...prev, { role: 'ai', text: `Error: ${e.message}` }]);
