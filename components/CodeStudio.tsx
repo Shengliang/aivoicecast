@@ -53,6 +53,14 @@ const LANGUAGES = [
     },
 ];
 
+const QUICK_REPOS = [
+  { name: "Shengliang/aivoicecast", value: "Shengliang/aivoicecast" },
+  { name: "torvalds/linux", value: "torvalds/linux" },
+  { name: "postgres/postgres", value: "postgres/postgres" },
+  { name: "mysql/mysql-server", value: "mysql/mysql-server" },
+  { name: "redis/redis", value: "redis/redis" }
+];
+
 const EXAMPLE_PROJECTS: Record<string, CodeProject> = {
   is_bst: {
     id: 'proj-is-bst',
@@ -1398,6 +1406,24 @@ If the user asks questions, answer based on this new context. If they just switc
                                   {isLoadingPublic ? <Loader2 size={14} className="animate-spin"/> : 'Load'}
                               </button>
                           </div>
+                          
+                          {/* Quick Select Dropdown */}
+                          <div className="relative">
+                              <select
+                                  onChange={(e) => setPublicRepoPath(e.target.value)}
+                                  className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-400 focus:text-white focus:border-indigo-500 outline-none appearance-none cursor-pointer"
+                                  defaultValue=""
+                              >
+                                  <option value="" disabled>Select a popular repository...</option>
+                                  {QUICK_REPOS.map(repo => (
+                                      <option key={repo.value} value={repo.value}>{repo.name}</option>
+                                  ))}
+                              </select>
+                              <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-slate-500">
+                                  <ChevronDown size={14} />
+                              </div>
+                          </div>
+
                           <p className="text-[10px] text-slate-500">Fast load. No login required. Changes cannot be pushed back.</p>
                       </div>
 
