@@ -1,3 +1,4 @@
+
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { Channel, TranscriptItem, GeneratedLecture, CommunityDiscussion, RecordingSession } from '../types';
 import { GeminiLiveService } from '../services/geminiLive';
@@ -66,7 +67,8 @@ const UI_TEXT = {
     uploading: "Uploading Session...",
     uploadComplete: "Upload Complete",
     saveAndLink: "Save & Link to Segment",
-    start: "Start Session"
+    start: "Start Session",
+    saveSession: "Save Session"
   },
   zh: {
     welcomePrefix: "试着问...",
@@ -94,7 +96,8 @@ const UI_TEXT = {
     uploading: "正在上传会话...",
     uploadComplete: "上传完成",
     saveAndLink: "保存并链接到段落",
-    start: "开始会话"
+    start: "开始会话",
+    saveSession: "保存会话"
   }
 };
 
@@ -146,6 +149,7 @@ export const LiveSession: React.FC<LiveSessionProps> = ({ channel, initialContex
   const [isSharing, setIsSharing] = useState(false);
   const [isUploadingRecording, setIsUploadingRecording] = useState(false);
   const [isLinking, setIsLinking] = useState(false);
+  const [isSavingGeneric, setIsSavingGeneric] = useState(false);
   
   // Recording State
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -698,6 +702,32 @@ export const LiveSession: React.FC<LiveSessionProps> = ({ channel, initialContex
     }
   };
 
+  const handleSaveGeneric = async () => {
+      if (!currentUser || !lectureId) return;
+      const fullTranscript = currentLine ? [...transcript, currentLine] : transcript;
+      if (fullTranscript.length === 0) return;
+
+      setIsSavingGeneric(true);
+      try {
+          const discussion: CommunityDiscussion = {
+              id: '', 
+              lectureId,
+              channelId: channel.id,
+              userId: currentUser.uid,
+              userName: currentUser.displayName || 'Anonymous',
+              transcript: fullTranscript,
+              createdAt: Date.now()
+          };
+          await saveDiscussion(discussion);
+          alert("Session saved to your history.");
+      } catch(e) {
+          console.error(e);
+          alert("Failed to save session.");
+      } finally {
+          setIsSavingGeneric(false);
+      }
+  };
+
   const handleAppendToLecture = async () => {
     if (!isOwner || !lectureId) return;
     const fullTranscript = currentLine ? [...transcript, currentLine] : transcript;
@@ -977,9 +1007,15 @@ export const LiveSession: React.FC<LiveSessionProps> = ({ channel, initialContex
                         </button>
                     ) : (
                         currentUser && lectureId && !lectureId.startsWith('p2p') && (
-                            <button onClick={handleShareToCommunity} disabled={isSharing} className="p-2 bg-emerald-900/30 hover:bg-emerald-900/50 text-emerald-400 border border-emerald-900/50 rounded-lg transition-colors" title={t.sharePublic}>
-                                {isSharing ? <Loader2 size={16} className="animate-spin" /> : <Globe size={16} />}
-                            </button>
+                            <>
+                                <button onClick={handleShareToCommunity} disabled={isSharing} className="p-2 bg-emerald-900/30 hover:bg-emerald-900/50 text-emerald-400 border border-emerald-900/50 rounded-lg transition-colors" title={t.sharePublic}>
+                                    {isSharing ? <Loader2 size={16} className="animate-spin" /> : <Globe size={16} />}
+                                </button>
+                                {/* Generic Save for non-course sessions (e.g. Code Tutor) */}
+                                <button onClick={handleSaveGeneric} disabled={isSavingGeneric} className="p-2 bg-indigo-900/30 hover:bg-indigo-900/50 text-indigo-400 border border-indigo-900/50 rounded-lg transition-colors" title={t.saveSession}>
+                                    {isSavingGeneric ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
+                                </button>
+                            </>
                         )
                     )}
                     {isOwner && lectureId && (

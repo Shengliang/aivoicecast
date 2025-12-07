@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { GoogleGenAI } from '@google/genai';
 import { ArrowLeft, Save, Folder, File, Code, Plus, Trash2, Loader2, ChevronRight, ChevronDown, X, MessageSquare, FileCode, FileJson, FileType, Search, Coffee, Hash, CloudUpload, Edit3, BookOpen, Bot, Send, Maximize2, Minimize2, GripVertical, UserCheck, AlertTriangle, Archive, Sparkles, Video, Mic, CheckCircle, Monitor, FileText, Eye, Github, GitBranch, GitCommit, FolderOpen, RefreshCw, GraduationCap } from 'lucide-react';
@@ -405,21 +404,20 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
   const [output, setOutput] = useState('');
   const [humanComments, setHumanComments] = useState('');
   const [interviewFeedback, setInterviewFeedback] = useState('');
-  const [isReviewing, setIsReviewing] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [expandedFolders, setExpandedFolders] = useState<Record<string, boolean>>({});
-  const [viewMode, setViewMode] = useState<'code' | 'review' | 'notes' | 'interview'>('code');
+  const [activeSideView, setActiveSideView] = useState<'none' | 'chat' | 'tutor' | 'review'>('none');
   const [isSaving, setIsSaving] = useState(false);
   const [showLanguageDropdown, setShowLanguageDropdown] = useState(false);
   const [showExamplesDropdown, setShowExamplesDropdown] = useState(false);
   const [isPreviewMode, setIsPreviewMode] = useState(false);
+  const [isReviewing, setIsReviewing] = useState(false);
   
   // Chat State
-  const [isChatOpen, setIsChatOpen] = useState(false);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [chatInput, setChatInput] = useState('');
   const [isChatLoading, setIsChatLoading] = useState(false);
-  const [chatWidth, setChatWidth] = useState(350);
+  const [chatWidth, setChatWidth] = useState(400);
   const [isResizing, setIsResizing] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
   
@@ -428,9 +426,6 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
   const [isInterviewSession, setIsInterviewSession] = useState(false);
   const [showInterviewSetup, setShowInterviewSetup] = useState(false);
   const [recordInterview, setRecordInterview] = useState(false);
-
-  // Tutor Session State (New Feature)
-  const [isTutorSession, setIsTutorSession] = useState(false);
 
   // GitHub State
   const [githubToken, setGithubToken] = useState<string | null>(null);
@@ -479,10 +474,10 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
 
   // Scroll chat to bottom
   useEffect(() => {
-      if (isChatOpen) {
+      if (activeSideView === 'chat') {
           chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
       }
-  }, [chatMessages, isChatOpen]);
+  }, [chatMessages, activeSideView]);
 
   // Resizing Logic
   const startResizing = (mouseDownEvent: React.MouseEvent) => {
@@ -546,7 +541,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
           id: `proj-${exampleKey}-${Date.now()}` // Unique ID for current session
       });
       setActiveFileIndex(0);
-      setViewMode('code');
+      setActiveSideView('none');
       setShowExamplesDropdown(false);
       setHumanComments('');
       setInterviewFeedback('');
@@ -724,7 +719,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
           setActiveFileIndex(project.files.length + 1); // Switch to the NEW Solution file (Index: old_len + 1)
           setIsPreviewMode(false);
           setIsSidebarOpen(true);
-          setIsChatOpen(true); // Open chat so they see questions while coding
+          setActiveSideView('chat'); // Open chat so they see questions while coding
 
       } catch(e: any) {
           alert(`Error: ${e.message}`);
@@ -739,7 +734,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
 
   const handleStartTutorSession = () => {
       if (!activeFile) return;
-      setIsTutorSession(true);
+      setActiveSideView('tutor');
   };
 
   const confirmStartInterview = () => {
@@ -749,7 +744,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
 
   const handleReviewCode = async () => {
     setIsReviewing(true);
-    setIsChatOpen(true);
+    // setActiveSideView('chat'); // Commented out to keep user in review view
     setChatMessages(prev => [...prev, { role: 'ai', text: "🔄 *Analyzing code... Please wait.*" }]);
 
     try {
@@ -824,8 +819,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
   };
 
   const handleEvaluateInterview = async () => {
-      setIsReviewing(true);
-      setViewMode('interview');
+      setActiveSideView('review');
       setInterviewFeedback('');
 
       try {
@@ -866,8 +860,6 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
 
       } catch(e: any) {
           setInterviewFeedback(`Evaluation Error: ${e.message}`);
-      } finally {
-          setIsReviewing(false);
       }
   };
 
@@ -1032,17 +1024,17 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
                        {needsGitHubReauth ? <RefreshCw size={16} /> : <Github size={16} />}
                    </button>
                )}
-               <button onClick={() => setViewMode(viewMode === 'code' ? 'review' : 'code')} className={`p-2 rounded transition-colors ${viewMode === 'review' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-700'}`} title="Code Review">
+               <button onClick={() => setActiveSideView(activeSideView === 'review' ? 'none' : 'review')} className={`p-2 rounded transition-colors ${activeSideView === 'review' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-700'}`} title="Code Review">
                   <CheckCircle size={16} />
                </button>
-               <button onClick={() => setIsChatOpen(!isChatOpen)} className={`p-2 rounded transition-colors ${isChatOpen ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-700'}`} title="AI Assistant">
+               <button onClick={() => setActiveSideView(activeSideView === 'chat' ? 'none' : 'chat')} className={`p-2 rounded transition-colors ${activeSideView === 'chat' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-700'}`} title="AI Assistant">
                   <Bot size={16} />
                </button>
                
                {/* Teach Me Button */}
                <button 
                    onClick={handleStartTutorSession}
-                   className="flex items-center space-x-2 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold transition-colors shadow-lg shadow-emerald-500/20 ml-2"
+                   className={`flex items-center space-x-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors shadow-lg ml-2 ${activeSideView === 'tutor' ? 'bg-emerald-500 text-white' : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-500/20'}`}
                    title="Start interactive lesson about this file"
                >
                    <GraduationCap size={14} /> <span className="hidden xl:inline">Teach Me</span>
@@ -1108,7 +1100,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
                         node={node}
                         depth={0}
                         activeFileIndex={activeFileIndex}
-                        onSelect={(idx) => { setActiveFileIndex(idx); setViewMode('code'); }}
+                        onSelect={(idx) => { setActiveFileIndex(idx); setActiveSideView('none'); }}
                         expandedFolders={expandedFolders}
                         toggleFolder={toggleFolder}
                     />
@@ -1225,15 +1217,38 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
                         </div>
                     </div>
                 )}
+            </div>
+         </div>
 
-                {/* Tutor Session Overlay */}
-                {isTutorSession && (
-                    <div className="absolute right-4 bottom-4 w-96 h-[500px] z-50 bg-slate-900 rounded-xl shadow-2xl border border-emerald-500/50 overflow-hidden flex flex-col animate-fade-in-up">
-                        <div className="bg-emerald-900/20 p-3 flex justify-between items-center border-b border-emerald-500/20">
-                            <span className="text-sm font-bold text-emerald-300 flex items-center gap-2"><GraduationCap size={16}/> Code Tutor</span>
-                            <button onClick={() => setIsTutorSession(false)} className="text-emerald-400 hover:text-white"><X size={16}/></button>
+         {/* Resizable Chat/Review/Tutor Panel */}
+         {activeSideView !== 'none' && (
+             <>
+                <div 
+                    className="w-1 bg-slate-800 hover:bg-indigo-500 cursor-col-resize z-30 transition-colors"
+                    onMouseDown={startResizing}
+                />
+                <div style={{ width: chatWidth }} className="bg-slate-900 border-l border-slate-800 flex flex-col flex-shrink-0 relative">
+                    <div className="p-3 border-b border-slate-800 flex justify-between items-center bg-slate-950/50">
+                        <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                            {activeSideView === 'tutor' && <><GraduationCap size={16} className="text-emerald-400"/> Code Tutor</>}
+                            {activeSideView === 'chat' && <><Bot size={16} className="text-indigo-400"/> AI Assistant</>}
+                            {activeSideView === 'review' && <><CheckCircle size={16} className="text-purple-400"/> Code Review</>}
+                        </h3>
+                        <div className="flex gap-1">
+                            {activeSideView === 'chat' && (
+                                <button onClick={handleSaveChatSession} className="p-1.5 text-slate-400 hover:text-emerald-400 rounded hover:bg-slate-800" title="Save Chat">
+                                    <Archive size={16} />
+                                </button>
+                            )}
+                            <button onClick={() => setActiveSideView('none')} className="p-1.5 text-slate-400 hover:text-white rounded hover:bg-slate-800">
+                                <X size={16} />
+                            </button>
                         </div>
-                        <div className="flex-1 relative">
+                    </div>
+                    
+                    {/* Content Area */}
+                    <div className="flex-1 overflow-y-auto relative scrollbar-thin scrollbar-thumb-slate-700">
+                        {activeSideView === 'tutor' ? (
                             <LiveSession 
                                 channel={tutorChannel}
                                 initialContext={`
@@ -1249,81 +1264,69 @@ Please explain this file to me. What does it do? How does it work?
 `}
                                 lectureId={`tutor-${project.id}-${activeFile.name.replace(/[^a-zA-Z0-9]/g, '_')}`}
                                 recordingEnabled={false}
-                                onEndSession={() => setIsTutorSession(false)}
+                                onEndSession={() => setActiveSideView('none')}
                                 language="en"
                             />
-                        </div>
-                    </div>
-                )}
-            </div>
-         </div>
-
-         {/* Resizable Chat/Review Panel */}
-         {isChatOpen && (
-             <>
-                <div 
-                    className="w-1 bg-slate-800 hover:bg-indigo-500 cursor-col-resize z-30 transition-colors"
-                    onMouseDown={startResizing}
-                />
-                <div style={{ width: chatWidth }} className="bg-slate-900 border-l border-slate-800 flex flex-col flex-shrink-0 relative">
-                    <div className="p-3 border-b border-slate-800 flex justify-between items-center">
-                        <h3 className="text-sm font-bold text-white flex items-center gap-2"><Bot size={16} className="text-indigo-400"/> AI Assistant</h3>
-                        <div className="flex gap-1">
-                            <button onClick={handleSaveChatSession} className="p-1.5 text-slate-400 hover:text-emerald-400 rounded hover:bg-slate-800" title="Save Chat">
-                                <Archive size={16} />
-                            </button>
-                            <button onClick={() => setIsChatOpen(false)} className="p-1.5 text-slate-400 hover:text-white rounded hover:bg-slate-800">
-                                <X size={16} />
-                            </button>
-                        </div>
-                    </div>
-                    
-                    <div className="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-thin scrollbar-thumb-slate-700">
-                        {chatMessages.length === 0 && (
-                            <div className="text-center text-slate-500 mt-10">
-                                <Bot size={32} className="mx-auto mb-2 opacity-50"/>
-                                <p className="text-xs">Ask me to explain code, find bugs, or optimize algorithms.</p>
-                            </div>
-                        )}
-                        {chatMessages.map((msg, idx) => (
-                            <div key={idx} className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
-                                <div className={`max-w-[90%] p-3 rounded-xl text-sm ${msg.role === 'user' ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-300'}`}>
-                                    <MarkdownView content={msg.text} />
+                        ) : activeSideView === 'review' ? (
+                            <div className="p-4 space-y-4">
+                                <div className="text-center mb-4">
+                                    <button onClick={handleReviewCode} disabled={isReviewing} className="w-full py-2 bg-indigo-600 hover:bg-indigo-500 rounded-lg text-white text-xs font-bold shadow-lg transition-colors flex items-center justify-center gap-2">
+                                        <Search size={14}/> Run New Analysis
+                                    </button>
                                 </div>
+                                {isReviewing ? (
+                                    <div className="text-center text-slate-500"><Loader2 className="animate-spin mx-auto mb-2"/> Analyzing code...</div>
+                                ) : project.review ? (
+                                    <MarkdownView content={project.review} />
+                                ) : (
+                                    <p className="text-slate-500 text-center text-sm">No review generated yet.</p>
+                                )}
                             </div>
-                        ))}
-                        {isChatLoading && (
-                            <div className="flex items-center space-x-2 text-slate-500 text-xs">
-                                <Loader2 size={12} className="animate-spin"/>
-                                <span>Thinking...</span>
+                        ) : (
+                            // Chat View
+                            <div className="p-4 space-y-4 min-h-full">
+                                {chatMessages.length === 0 && (
+                                    <div className="text-center text-slate-500 mt-10">
+                                        <Bot size={32} className="mx-auto mb-2 opacity-50"/>
+                                        <p className="text-xs">Ask me to explain code, find bugs, or optimize algorithms.</p>
+                                    </div>
+                                )}
+                                {chatMessages.map((msg, idx) => (
+                                    <div key={idx} className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
+                                        <div className={`max-w-[90%] p-3 rounded-xl text-sm ${msg.role === 'user' ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-300'}`}>
+                                            <MarkdownView content={msg.text} />
+                                        </div>
+                                    </div>
+                                ))}
+                                {isChatLoading && (
+                                    <div className="flex items-center space-x-2 text-slate-500 text-xs">
+                                        <Loader2 size={12} className="animate-spin"/>
+                                        <span>Thinking...</span>
+                                    </div>
+                                )}
+                                <div ref={chatEndRef} />
                             </div>
                         )}
-                        <div ref={chatEndRef} />
                     </div>
 
-                    <div className="p-3 border-t border-slate-800 bg-slate-900">
-                        <div className="flex items-center gap-2 bg-slate-800 border border-slate-700 rounded-lg p-1">
-                            <input 
-                                type="text" 
-                                value={chatInput}
-                                onChange={(e) => setChatInput(e.target.value)}
-                                onKeyDown={(e) => e.key === 'Enter' && handleChatSubmit()}
-                                placeholder="Type a message..."
-                                className="flex-1 bg-transparent text-sm text-white px-2 focus:outline-none"
-                            />
-                            <button onClick={handleChatSubmit} disabled={!chatInput.trim() || isChatLoading} className="p-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white rounded-md">
-                                <Send size={14} />
-                            </button>
+                    {/* Chat Input (Only for Chat Mode) */}
+                    {activeSideView === 'chat' && (
+                        <div className="p-3 border-t border-slate-800 bg-slate-900">
+                            <div className="flex items-center gap-2 bg-slate-800 border border-slate-700 rounded-lg p-1">
+                                <input 
+                                    type="text" 
+                                    value={chatInput}
+                                    onChange={(e) => setChatInput(e.target.value)}
+                                    onKeyDown={(e) => e.key === 'Enter' && handleChatSubmit()}
+                                    placeholder="Type a message..."
+                                    className="flex-1 bg-transparent text-sm text-white px-2 focus:outline-none"
+                                />
+                                <button onClick={handleChatSubmit} disabled={!chatInput.trim() || isChatLoading} className="p-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white rounded-md">
+                                    <Send size={14} />
+                                </button>
+                            </div>
                         </div>
-                        <div className="flex justify-between mt-2">
-                            <button onClick={handleReviewCode} disabled={isReviewing} className="text-[10px] text-slate-400 hover:text-indigo-400 flex items-center gap-1">
-                                <Search size={10}/> Review Code
-                            </button>
-                            <button onClick={handleEvaluateInterview} disabled={isReviewing} className="text-[10px] text-slate-400 hover:text-emerald-400 flex items-center gap-1">
-                                <UserCheck size={10}/> Evaluate Interview
-                            </button>
-                        </div>
-                    </div>
+                    )}
                 </div>
              </>
          )}
