@@ -170,6 +170,9 @@ export interface CodeFile {
   sha?: string; // GitHub blob SHA for updates
   path?: string; // Full path in repo
   loaded?: boolean; // For lazy loading large repos
+  isDirectory?: boolean; // Is this a folder?
+  treeSha?: string; // If folder, the SHA of the tree
+  childrenFetched?: boolean; // Have we fetched this folder's contents?
 }
 
 export interface ChatMessage {

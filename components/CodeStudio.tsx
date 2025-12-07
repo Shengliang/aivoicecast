@@ -6,7 +6,7 @@ import { CodeProject, CodeFile, ChatMessage, Channel, GithubMetadata } from '../
 import { MarkdownView } from './MarkdownView';
 import { saveCodeProject } from '../services/firestoreService';
 import { signInWithGitHub, reauthenticateWithGitHub } from '../services/authService';
-import { fetchUserRepos, fetchRepoContents, commitToRepo, fetchPublicRepoInfo, fetchFileContent } from '../services/githubService';
+import { fetchUserRepos, fetchRepoContents, commitToRepo, fetchPublicRepoInfo, fetchFileContent, fetchRepoSubTree } from '../services/githubService';
 import { LiveSession } from './LiveSession';
 
 interface CodeStudioProps {
@@ -304,28 +304,32 @@ interface FileNode {
   type: 'file' | 'folder';
   children: FileNode[];
   index?: number; // Index in the flat project.files array
+  isLoading?: boolean; // For folders being fetched
 }
 
-const buildFileTree = (files: CodeFile[]): FileNode[] => {
+// Rebuild tree to handle lazy loaded folder entries
+const buildFileTree = (files: CodeFile[], expandedFolders: Record<string, boolean>): FileNode[] => {
   const root: FileNode[] = [];
   const map: Record<string, FileNode> = {};
 
+  // First pass: Create nodes for all explicit file entries
   files.forEach((file, originalIndex) => {
     const parts = file.name.split('/');
     let currentPath = '';
     let parentNode: FileNode | null = null;
     
     parts.forEach((part, i) => {
-      const isFile = i === parts.length - 1;
+      const isLast = i === parts.length - 1;
       const currentFullPath = currentPath ? `${currentPath}/${part}` : part;
       
-      if (!map[currentFullPath]) {
-        const node: FileNode = {
+      let node = map[currentFullPath];
+      
+      if (!node) {
+        node = {
           name: part,
           path: currentFullPath,
-          type: isFile ? 'file' : 'folder',
+          type: 'folder', // Assume folder until proven file or explicit entry
           children: [],
-          index: isFile ? originalIndex : undefined
         };
         map[currentFullPath] = node;
         
@@ -336,7 +340,17 @@ const buildFileTree = (files: CodeFile[]): FileNode[] => {
         }
       }
       
-      parentNode = map[currentFullPath];
+      // If this is the entry for the file/folder itself
+      if (isLast) {
+          node.index = originalIndex;
+          if (file.isDirectory) {
+              node.type = 'folder';
+          } else {
+              node.type = 'file';
+          }
+      }
+      
+      parentNode = node;
       currentPath = currentFullPath;
     });
   });
@@ -362,8 +376,10 @@ const FileTreeNode: React.FC<{
   onSelect: (index: number) => void;
   expandedFolders: Record<string, boolean>;
   toggleFolder: (path: string) => void;
-}> = ({ node, depth, activeFileIndex, onSelect, expandedFolders, toggleFolder }) => {
+  loadingFolders: Record<string, boolean>;
+}> = ({ node, depth, activeFileIndex, onSelect, expandedFolders, toggleFolder, loadingFolders }) => {
   const isOpen = expandedFolders[node.path];
+  const isLoading = loadingFolders[node.path];
   
   if (node.type === 'folder') {
     return (
@@ -373,7 +389,14 @@ const FileTreeNode: React.FC<{
           className={`w-full flex items-center space-x-1 px-3 py-1.5 text-xs text-left hover:bg-slate-800 transition-colors text-slate-400 hover:text-white`}
           style={{ paddingLeft: `${depth * 12 + 12}px` }}
         >
-          {isOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+          {isLoading ? (
+             <Loader2 size={14} className="animate-spin text-indigo-400" />
+          ) : isOpen ? (
+             <ChevronDown size={14} />
+          ) : (
+             <ChevronRight size={14} />
+          )}
+          
           {isOpen ? <FolderOpen size={14} className="text-indigo-400" /> : <Folder size={14} className="text-indigo-400" />}
           <span className="truncate">{node.name}</span>
         </button>
@@ -386,6 +409,7 @@ const FileTreeNode: React.FC<{
             onSelect={onSelect}
             expandedFolders={expandedFolders}
             toggleFolder={toggleFolder}
+            loadingFolders={loadingFolders}
           />
         ))}
       </>
@@ -538,6 +562,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
   const [interviewFeedback, setInterviewFeedback] = useState('');
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [expandedFolders, setExpandedFolders] = useState<Record<string, boolean>>({});
+  const [loadingFolders, setLoadingFolders] = useState<Record<string, boolean>>({}); // Track folder fetches
   const [activeSideView, setActiveSideView] = useState<'none' | 'chat' | 'tutor' | 'review'>('chat');
   const [isSaving, setIsSaving] = useState(false);
   const [showLanguageDropdown, setShowLanguageDropdown] = useState(false);
@@ -588,13 +613,13 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
   const isMarkdown = activeFile ? activeFile.name.toLowerCase().endsWith('.md') : false;
 
   // Build Tree
-  const fileTree = React.useMemo(() => buildFileTree(project.files), [project.files]);
+  const fileTree = React.useMemo(() => buildFileTree(project.files, expandedFolders), [project.files, expandedFolders]);
 
-  // Lazy Loading Effect
+  // Lazy Loading File Content Effect
   useEffect(() => {
       const loadContent = async () => {
-          // If active file is not loaded (and not currently loading to prevent double triggers), fetch it
-          if (activeFile && activeFile.loaded === false && !isLoadingFile) {
+          // Check if active file is a FILE (not dir) and needs loading
+          if (activeFile && activeFile.isDirectory !== true && activeFile.loaded === false && !isLoadingFile) {
               setIsLoadingFile(true);
               try {
                   const content = await fetchFileContent(
@@ -632,26 +657,26 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
           }
       };
       
-      // Small debounce to prevent rapid switching causing issues
       const timeout = setTimeout(loadContent, 50);
       return () => clearTimeout(timeout);
-  }, [activeFileIndex, project.github, githubToken]);
+  }, [activeFileIndex, project.github, githubToken]); // Check activeFile index to avoid loops
 
   // Mobile check
   useEffect(() => {
       if (window.innerWidth < 768) setIsSidebarOpen(false);
       
-      // Auto expand root folders on first load
-      const initialExpanded: Record<string, boolean> = {};
-      // Expand top level directories by default
-      project.files.forEach(f => {
-          const parts = f.name.split('/');
-          if (parts.length > 1) {
-              initialExpanded[parts[0]] = true; 
-          }
-      });
-      setExpandedFolders(prev => ({ ...initialExpanded, ...prev }));
-  }, [project.files]);
+      // Auto expand root folders on first load if it's a simple project
+      if (!project.github) {
+          const initialExpanded: Record<string, boolean> = {};
+          project.files.forEach(f => {
+              const parts = f.name.split('/');
+              if (parts.length > 1) {
+                  initialExpanded[parts[0]] = true; 
+              }
+          });
+          setExpandedFolders(prev => ({ ...initialExpanded, ...prev }));
+      }
+  }, [project.id]); // Run on project switch
 
   // Load project review, comments, and history
   useEffect(() => {
@@ -659,7 +684,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
       setHumanComments(project.humanComments || '');
       setInterviewFeedback(project.interviewFeedback || '');
       if (project.chatHistory) setChatMessages(project.chatHistory);
-  }, [project]);
+  }, [project.id]);
 
   // Scroll chat to bottom
   useEffect(() => {
@@ -677,6 +702,53 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
       } else {
           setSelection('');
       }
+  };
+
+  const toggleFolder = async (path: string) => {
+      const isCurrentlyOpen = expandedFolders[path];
+      
+      // If we are opening a folder, check if we need to fetch its contents
+      if (!isCurrentlyOpen) {
+          const folderEntry = project.files.find(f => f.name === path && f.isDirectory);
+          
+          // Lazy Fetch Logic
+          if (folderEntry && !folderEntry.childrenFetched && folderEntry.treeSha) {
+              setLoadingFolders(prev => ({ ...prev, [path]: true }));
+              try {
+                  const newFiles = await fetchRepoSubTree(
+                      githubToken, 
+                      project.github?.owner || '', 
+                      project.github?.repo || '', 
+                      folderEntry.treeSha,
+                      path // prefix
+                  );
+                  
+                  // Update Project Files
+                  setProject(prev => {
+                      // Mark folder as fetched
+                      const updatedFiles = prev.files.map(f => 
+                          f.name === path ? { ...f, childrenFetched: true } : f
+                      );
+                      // Add new files (avoid duplicates)
+                      const existingNames = new Set(prev.files.map(f => f.name));
+                      const uniqueNewFiles = newFiles.filter(f => !existingNames.has(f.name));
+                      
+                      return { ...prev, files: [...updatedFiles, ...uniqueNewFiles] };
+                  });
+                  
+              } catch (e) {
+                  console.error("Failed to fetch folder contents", e);
+                  alert("Failed to load folder.");
+              } finally {
+                  setLoadingFolders(prev => ({ ...prev, [path]: false }));
+              }
+          }
+      }
+
+      setExpandedFolders(prev => ({
+          ...prev,
+          [path]: !isCurrentlyOpen
+      }));
   };
 
   // Resizing Logic
@@ -773,13 +845,6 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
       }
   };
 
-  const toggleFolder = (path: string) => {
-      setExpandedFolders(prev => ({
-          ...prev,
-          [path]: !prev[path]
-      }));
-  };
-
   // --- GITHUB INTEGRATION ---
 
   const handleGitHubConnect = async () => {
@@ -852,6 +917,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
           setActiveFileIndex(0);
           setShowImportModal(false);
           setPublicRepoPath('');
+          setExpandedFolders({}); // Reset folders
           setChatMessages(prev => [...prev, {role: 'ai', text: `Loaded public repository **${info.full_name}**.`}]);
 
       } catch (e: any) {
@@ -888,6 +954,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
           
           setActiveFileIndex(0);
           setShowGithubModal(false);
+          setExpandedFolders({}); // Reset
           setChatMessages(prev => [...prev, {role: 'ai', text: `Loaded repository **${repo.full_name}** successfully.`}]);
       } catch(e: any) {
           alert("Failed to load repo: " + e.message);
@@ -1336,6 +1403,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
                         onSelect={(idx) => { setActiveFileIndex(idx); setSelection(''); }}
                         expandedFolders={expandedFolders}
                         toggleFolder={toggleFolder}
+                        loadingFolders={loadingFolders}
                     />
                   ))}
                   {fileTree.length === 0 && <p className="text-xs text-slate-600 italic">No files.</p>}
@@ -1373,7 +1441,15 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
                   {isSidebarOpen ? <Minimize2 size={16}/> : <Maximize2 size={16}/>}
                </button>
                
-               {project.files.map((file, idx) => (
+               {project.files.map((file, idx) => {
+                  // Only show open files? For simplicity we show all files as tabs or just selected
+                  // To avoid overcrowding, let's only show active tab + maybe recently used. 
+                  // But for this demo, let's just show current + pinned.
+                  // Actually, showing all tabs for 3000 files is bad.
+                  // Just show the active file as a tab for now to keep it simple.
+                  if (idx !== activeFileIndex) return null;
+
+                  return (
                   <div 
                     key={idx}
                     onClick={() => setActiveFileIndex(idx)}
@@ -1387,7 +1463,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
                         </button>
                      )}
                   </div>
-               ))}
+               )})}
             </div>
 
             {/* Editor Content */}
@@ -1403,7 +1479,13 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
                     </button>
                 )}
 
-                {isMarkdown && isPreviewMode ? (
+                {/* Directory Placeholder */}
+                {activeFile && activeFile.isDirectory ? (
+                    <div className="flex-1 flex flex-col items-center justify-center bg-slate-950 text-slate-500">
+                        <FolderOpen size={48} className="opacity-20 mb-4" />
+                        <p>Select a file to edit.</p>
+                    </div>
+                ) : isMarkdown && isPreviewMode ? (
                     <div className="flex-1 overflow-y-auto p-8 bg-slate-950">
                         <div className="max-w-3xl mx-auto pb-20">
                             <MarkdownView content={activeFile.content} />

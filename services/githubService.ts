@@ -58,6 +58,25 @@ function getLanguageFromExt(path: string): any {
     return language;
 }
 
+// Helper: Transform GitHub tree item to CodeFile
+const transformTreeItem = (item: any, prefix: string = ''): CodeFile => {
+    // If it's a file but size is huge, mark as not loaded but present
+    const fullPath = prefix ? `${prefix}/${item.path}` : item.path;
+    const isDir = item.type === 'tree';
+    
+    return {
+        name: fullPath,
+        language: getLanguageFromExt(fullPath),
+        content: '', // Lazy load content
+        sha: item.sha,
+        path: fullPath,
+        loaded: false,
+        isDirectory: isDir,
+        treeSha: isDir ? item.sha : undefined,
+        childrenFetched: false
+    };
+};
+
 // Fetch single file content (Lazy Load)
 export async function fetchFileContent(token: string | null, owner: string, repo: string, path: string, branch: string = 'main'): Promise<string> {
     const headers: Record<string, string> = {};
@@ -90,7 +109,7 @@ export async function fetchFileContent(token: string | null, owner: string, repo
     return "// Unable to decode file content";
 }
 
-// Fetch the file tree of a specific repository (Token optional for public repos)
+// Fetch the ROOT file tree (Non-Recursive for Lazy Loading)
 export async function fetchRepoContents(token: string | null, owner: string, repo: string, branch: string): Promise<{ files: CodeFile[], latestSha: string }> {
   const headers: Record<string, string> = {};
   if (token) {
@@ -107,91 +126,38 @@ export async function fetchRepoContents(token: string | null, owner: string, rep
   const refData = await refRes.json();
   const latestSha = refData.object.sha;
 
-  // 2. Get the Tree (Recursive to get all files)
-  const treeRes = await fetch(`${GITHUB_API_BASE}/repos/${owner}/${repo}/git/trees/${latestSha}?recursive=1`, { headers });
+  // 2. Get the Tree (Recursive=0 for root only)
+  // This allows fetching HUGE repos like MySQL without hitting API limits
+  const treeRes = await fetch(`${GITHUB_API_BASE}/repos/${owner}/${repo}/git/trees/${latestSha}`, { headers });
   if (!treeRes.ok) {
       if (treeRes.status === 403) throw new Error('GitHub API rate limit exceeded. Please sign in.');
       throw new Error('Failed to fetch repository tree');
   }
   const treeData = await treeRes.json();
 
-  // 3. Filter for blobs (files), ignore extremely large files or images for the web editor
-  const validExtensions = [
-    // Web
-    '.js', '.jsx', '.ts', '.tsx', '.json', '.html', '.css', 
-    // Backend/Systems
-    '.py', '.go', '.rs', '.java', '.cs',
-    // C/C++
-    '.c', '.cpp', '.h', '.hpp', '.cc', '.hh', '.cxx', '.hxx',
-    // Config/Docs
-    '.md', '.txt', '.yml', '.yaml', '.xml', '.gitignore', '.env'
-  ];
-  
-  const blobEntries = treeData.tree.filter((item: any) => 
-    item.type === 'blob' && 
-    validExtensions.some(ext => item.path.toLowerCase().endsWith(ext))
-  );
-
-  // 4. Construct File List (Lazy Load Strategy)
-  // We allow up to 3000 files in the tree structure to support large repos like MySQL.
-  // But we only fetch content for the first 10 to start quickly.
-  const filesListLimit = 3000;
-  const filteredEntries = blobEntries.slice(0, filesListLimit); 
-  const initialFetchCount = 10;
-
-  const files: CodeFile[] = await Promise.all(filteredEntries.map(async (item: any, index: number) => {
-    // Determine language
-    const language = getLanguageFromExt(item.path);
-    
-    // Only fetch content for the first few files
-    if (index < initialFetchCount && item.size < 1000000) {
-        let content = '';
-        if (!token) {
-             // Try raw fetch for speed
-             const encodedPath = item.path.split('/').map(encodeURIComponent).join('/');
-             const rawUrl = `https://raw.githubusercontent.com/${owner}/${repo}/${branch}/${encodedPath}`;
-             try {
-                 const res = await fetch(rawUrl);
-                 if (res.ok) content = await res.text();
-                 else throw new Error("Raw fetch fail");
-             } catch(e) {
-                 // API fallback logic would be complex inside map, simplistically we might skip or fail here for anon
-                 content = "// Failed to load content via CDN.";
-             }
-        } else {
-             try {
-                const blobRes = await fetch(item.url, { headers });
-                if (blobRes.ok) {
-                    const blobData = await blobRes.json();
-                    content = atob(blobData.content.replace(/\n/g, ''));
-                } else {
-                    content = "// Error fetching content";
-                }
-             } catch(e) { content = "// Error fetching content"; }
-        }
-        
-        return {
-            name: item.path,
-            language,
-            content,
-            sha: item.sha,
-            path: item.path,
-            loaded: true
-        };
-    } else {
-        // Deferred / Lazy Load
-        return {
-            name: item.path,
-            language,
-            content: "", // Placeholder
-            sha: item.sha,
-            path: item.path,
-            loaded: false // Flag for lazy loading
-        };
-    }
-  }));
+  // 3. Transform Items
+  const files: CodeFile[] = treeData.tree.map((item: any) => transformTreeItem(item, ''));
 
   return { files, latestSha };
+}
+
+// Fetch a specific sub-tree (folder contents)
+export async function fetchRepoSubTree(token: string | null, owner: string, repo: string, treeSha: string, prefix: string): Promise<CodeFile[]> {
+    const headers: Record<string, string> = {};
+    if (token) {
+      headers.Authorization = `token ${token}`;
+    }
+
+    const treeRes = await fetch(`${GITHUB_API_BASE}/repos/${owner}/${repo}/git/trees/${treeSha}`, { headers });
+    if (!treeRes.ok) {
+        throw new Error('Failed to fetch folder contents');
+    }
+    const treeData = await treeRes.json();
+    
+    // Transform items with the current prefix (e.g. 'src/utils')
+    const files: CodeFile[] = treeData.tree.map((item: any) => transformTreeItem(item, prefix));
+    
+    return files;
 }
 
 // Commit and Push changes
@@ -205,7 +171,8 @@ export async function commitToRepo(
 
   // 1. Create Blobs for changed files
   // Filter out files that were not loaded (lazy loaded files that user didn't touch shouldn't be overwritten with empty string)
-  const filesToCommit = project.files.filter(f => f.loaded !== false);
+  // Also filter out directories, as git/trees expects blobs for files
+  const filesToCommit = project.files.filter(f => f.loaded !== false && !f.isDirectory);
 
   const treeItems = await Promise.all(filesToCommit.map(async (file) => {
     const blobRes = await fetch(`${GITHUB_API_BASE}/repos/${owner}/${repo}/git/blobs`, {
