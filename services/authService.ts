@@ -25,6 +25,23 @@ export async function signInWithGoogle(): Promise<firebase.User | null> {
   }
 }
 
+export async function reauthenticateWithGitHub(): Promise<{ user: firebase.User | null, token: string | null }> {
+    const provider = new firebase.auth.GithubAuthProvider();
+    provider.addScope('repo');
+    provider.addScope('user');
+    
+    if (!auth.currentUser) throw new Error("No user logged in to re-authenticate.");
+
+    try {
+        const result = await auth.currentUser.reauthenticateWithPopup(provider);
+        const credential = result.credential as firebase.auth.OAuthCredential;
+        return { user: result.user, token: credential?.accessToken || null };
+    } catch (error) {
+        console.error("Re-auth failed:", error);
+        throw error;
+    }
+}
+
 export async function signInWithGitHub(): Promise<{ user: firebase.User | null, token: string | null }> {
   try {
     const provider = new firebase.auth.GithubAuthProvider();
@@ -40,11 +57,11 @@ export async function signInWithGitHub(): Promise<{ user: firebase.User | null, 
          const credential = result.credential as firebase.auth.OAuthCredential;
          return { user: result.user, token: credential?.accessToken || null };
        } catch (linkError: any) {
-         // If the account is ALREADY linked, re-authenticate to get a fresh Access Token
+         // If the account is ALREADY linked, we must NOT try to re-authenticate immediately
+         // because the browser will block the second popup.
+         // Instead, we throw a specific error so the UI can ask the user to click again.
          if (linkError.code === 'auth/credential-already-in-use') {
-            const result = await auth.currentUser.reauthenticateWithPopup(provider);
-            const credential = result.credential as firebase.auth.OAuthCredential;
-            return { user: result.user, token: credential?.accessToken || null };
+            throw new Error("github-account-already-linked");
          }
          throw linkError;
        }

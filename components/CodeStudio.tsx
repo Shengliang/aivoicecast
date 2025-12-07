@@ -1,13 +1,12 @@
 
-
 import React, { useState, useEffect, useRef } from 'react';
 import { GoogleGenAI } from '@google/genai';
-import { ArrowLeft, Save, Folder, File, Code, Plus, Trash2, Loader2, ChevronRight, ChevronDown, X, MessageSquare, FileCode, FileJson, FileType, Search, Coffee, Hash, CloudUpload, Edit3, BookOpen, Bot, Send, Maximize2, Minimize2, GripVertical, UserCheck, AlertTriangle, Archive, Sparkles, Video, Mic, CheckCircle, Monitor, FileText, Eye, Github, GitBranch, GitCommit, FolderOpen } from 'lucide-react';
+import { ArrowLeft, Save, Folder, File, Code, Plus, Trash2, Loader2, ChevronRight, ChevronDown, X, MessageSquare, FileCode, FileJson, FileType, Search, Coffee, Hash, CloudUpload, Edit3, BookOpen, Bot, Send, Maximize2, Minimize2, GripVertical, UserCheck, AlertTriangle, Archive, Sparkles, Video, Mic, CheckCircle, Monitor, FileText, Eye, Github, GitBranch, GitCommit, FolderOpen, RefreshCw } from 'lucide-react';
 import { GEMINI_API_KEY } from '../services/private_keys';
 import { CodeProject, CodeFile, ChatMessage, Channel, GithubMetadata } from '../types';
 import { MarkdownView } from './MarkdownView';
 import { saveCodeProject } from '../services/firestoreService';
-import { signInWithGitHub } from '../services/authService';
+import { signInWithGitHub, reauthenticateWithGitHub } from '../services/authService';
 import { fetchUserRepos, fetchRepoContents, commitToRepo } from '../services/githubService';
 import { LiveSession } from './LiveSession';
 
@@ -438,6 +437,8 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
   const [isCommitting, setIsCommitting] = useState(false);
   const [commitMessage, setCommitMessage] = useState('');
   const [showCommitModal, setShowCommitModal] = useState(false);
+  const [needsGitHubReauth, setNeedsGitHubReauth] = useState(false);
+  const [githubError, setGithubError] = useState<string | null>(null);
   
   // Refs for scrolling sync
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -576,8 +577,19 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
   // --- GITHUB INTEGRATION ---
 
   const handleGitHubConnect = async () => {
+      setGithubError(null);
       try {
-          const { user, token } = await signInWithGitHub();
+          let token: string | null = null;
+          
+          if (needsGitHubReauth) {
+              const res = await reauthenticateWithGitHub();
+              token = res.token;
+              setNeedsGitHubReauth(false); // Reset flag on success
+          } else {
+              const res = await signInWithGitHub();
+              token = res.token;
+          }
+
           if (token) {
               setGithubToken(token);
               setShowGithubModal(true);
@@ -587,7 +599,14 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
               setIsLoadingRepos(false);
           }
       } catch(e: any) {
-          alert("GitHub Login Failed: " + e.message);
+          if (e.message === 'github-account-already-linked' || e.code === 'auth/credential-already-in-use') {
+              setNeedsGitHubReauth(true);
+              alert("GitHub is already linked to your account. Please click 'Reconnect GitHub' to refresh permissions.");
+          } else if (e.code === 'auth/popup-blocked') {
+              alert("Browser blocked the login popup. Please click the button again and allow popups for this site.");
+          } else {
+              alert("GitHub Login Failed: " + e.message);
+          }
       }
   };
 
@@ -981,8 +1000,12 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
                        <GitCommit size={16} />
                    </button>
                ) : (
-                   <button onClick={handleGitHubConnect} className="p-2 hover:bg-slate-700 rounded text-slate-400 hover:text-white transition-colors" title="Import from GitHub">
-                       <Github size={16} />
+                   <button 
+                       onClick={handleGitHubConnect} 
+                       className={`p-2 hover:bg-slate-700 rounded transition-colors ${needsGitHubReauth ? 'text-amber-400 hover:text-amber-200' : 'text-slate-400 hover:text-white'}`} 
+                       title={needsGitHubReauth ? "Reconnect GitHub" : "Import from GitHub"}
+                   >
+                       {needsGitHubReauth ? <RefreshCw size={16} /> : <Github size={16} />}
                    </button>
                )}
                <button onClick={() => setViewMode(viewMode === 'code' ? 'review' : 'code')} className={`p-2 rounded transition-colors ${viewMode === 'review' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-700'}`} title="Code Review">
