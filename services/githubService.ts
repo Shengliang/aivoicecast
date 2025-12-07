@@ -13,6 +13,16 @@ interface GithubRepo {
   };
 }
 
+// Check if a public repo exists and get details (No token required)
+export async function fetchPublicRepoInfo(owner: string, repo: string): Promise<{ default_branch: string, id: number, full_name: string }> {
+  const response = await fetch(`${GITHUB_API_BASE}/repos/${owner}/${repo}`);
+  if (!response.ok) {
+      if (response.status === 404) throw new Error('Repository not found');
+      throw new Error('Failed to fetch repository info');
+  }
+  return await response.json();
+}
+
 // Fetch list of repositories for the authenticated user
 export async function fetchUserRepos(token: string): Promise<GithubRepo[]> {
   const response = await fetch(`${GITHUB_API_BASE}/user/repos?sort=updated&per_page=100`, {
@@ -26,20 +36,21 @@ export async function fetchUserRepos(token: string): Promise<GithubRepo[]> {
   return await response.json();
 }
 
-// Fetch the file tree of a specific repository
-export async function fetchRepoContents(token: string, owner: string, repo: string, branch: string): Promise<{ files: CodeFile[], latestSha: string }> {
+// Fetch the file tree of a specific repository (Token optional for public repos)
+export async function fetchRepoContents(token: string | null, owner: string, repo: string, branch: string): Promise<{ files: CodeFile[], latestSha: string }> {
+  const headers: Record<string, string> = {};
+  if (token) {
+    headers.Authorization = `token ${token}`;
+  }
+
   // 1. Get the reference of the branch (latest commit SHA)
-  const refRes = await fetch(`${GITHUB_API_BASE}/repos/${owner}/${repo}/git/ref/heads/${branch}`, {
-    headers: { Authorization: `token ${token}` }
-  });
+  const refRes = await fetch(`${GITHUB_API_BASE}/repos/${owner}/${repo}/git/ref/heads/${branch}`, { headers });
   if (!refRes.ok) throw new Error('Failed to fetch branch reference');
   const refData = await refRes.json();
   const latestSha = refData.object.sha;
 
   // 2. Get the Tree (Recursive to get all files)
-  const treeRes = await fetch(`${GITHUB_API_BASE}/repos/${owner}/${repo}/git/trees/${latestSha}?recursive=1`, {
-    headers: { Authorization: `token ${token}` }
-  });
+  const treeRes = await fetch(`${GITHUB_API_BASE}/repos/${owner}/${repo}/git/trees/${latestSha}?recursive=1`, { headers });
   if (!treeRes.ok) throw new Error('Failed to fetch repository tree');
   const treeData = await treeRes.json();
 
@@ -58,7 +69,7 @@ export async function fetchRepoContents(token: string, owner: string, repo: stri
   const blobEntries = treeData.tree.filter((item: any) => 
     item.type === 'blob' && 
     validExtensions.some(ext => item.path.toLowerCase().endsWith(ext)) &&
-    item.size < 500000 // Limit file size to ~500KB for browser performance
+    item.size < 1000000 // Limit file size to ~1MB
   );
 
   // 4. Fetch content for each file (in parallel - limited batching would be better for huge repos)
@@ -66,9 +77,7 @@ export async function fetchRepoContents(token: string, owner: string, repo: stri
   const filesToFetch = blobEntries.slice(0, 100); 
 
   const files: CodeFile[] = await Promise.all(filesToFetch.map(async (item: any) => {
-    const blobRes = await fetch(item.url, {
-      headers: { Authorization: `token ${token}` }
-    });
+    const blobRes = await fetch(item.url, { headers });
     const blobData = await blobRes.json();
     
     // Content is base64 encoded

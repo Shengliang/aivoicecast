@@ -1,12 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { GoogleGenAI } from '@google/genai';
-import { ArrowLeft, Save, Folder, File, Code, Plus, Trash2, Loader2, ChevronRight, ChevronDown, X, MessageSquare, FileCode, FileJson, FileType, Search, Coffee, Hash, CloudUpload, Edit3, BookOpen, Bot, Send, Maximize2, Minimize2, GripVertical, UserCheck, AlertTriangle, Archive, Sparkles, Video, Mic, CheckCircle, Monitor, FileText, Eye, Github, GitBranch, GitCommit, FolderOpen, RefreshCw, GraduationCap } from 'lucide-react';
+import { ArrowLeft, Save, Folder, File, Code, Plus, Trash2, Loader2, ChevronRight, ChevronDown, X, MessageSquare, FileCode, FileJson, FileType, Search, Coffee, Hash, CloudUpload, Edit3, BookOpen, Bot, Send, Maximize2, Minimize2, GripVertical, UserCheck, AlertTriangle, Archive, Sparkles, Video, Mic, CheckCircle, Monitor, FileText, Eye, Github, GitBranch, GitCommit, FolderOpen, RefreshCw, GraduationCap, DownloadCloud } from 'lucide-react';
 import { GEMINI_API_KEY } from '../services/private_keys';
 import { CodeProject, CodeFile, ChatMessage, Channel, GithubMetadata } from '../types';
 import { MarkdownView } from './MarkdownView';
 import { saveCodeProject } from '../services/firestoreService';
 import { signInWithGitHub, reauthenticateWithGitHub } from '../services/authService';
-import { fetchUserRepos, fetchRepoContents, commitToRepo } from '../services/githubService';
+import { fetchUserRepos, fetchRepoContents, commitToRepo, fetchPublicRepoInfo } from '../services/githubService';
 import { LiveSession } from './LiveSession';
 
 interface CodeStudioProps {
@@ -430,13 +430,16 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
   // GitHub State
   const [githubToken, setGithubToken] = useState<string | null>(null);
   const [showGithubModal, setShowGithubModal] = useState(false);
+  const [showImportModal, setShowImportModal] = useState(false); // New Modal for Import
+  const [publicRepoPath, setPublicRepoPath] = useState('');
+  const [isLoadingPublic, setIsLoadingPublic] = useState(false);
+  
   const [repos, setRepos] = useState<any[]>([]);
   const [isLoadingRepos, setIsLoadingRepos] = useState(false);
   const [isCommitting, setIsCommitting] = useState(false);
   const [commitMessage, setCommitMessage] = useState('');
   const [showCommitModal, setShowCommitModal] = useState(false);
   const [needsGitHubReauth, setNeedsGitHubReauth] = useState(false);
-  const [githubError, setGithubError] = useState<string | null>(null);
   
   // Check if user is already linked to GitHub
   const isGithubLinked = currentUser?.providerData?.some((p: any) => p.providerId === 'github.com');
@@ -578,7 +581,6 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
   // --- GITHUB INTEGRATION ---
 
   const handleGitHubConnect = async () => {
-      setGithubError(null);
       try {
           let token: string | null = null;
           
@@ -588,8 +590,6 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
                   token = res.token;
                   setNeedsGitHubReauth(false); // Reset flag on success
               } catch (reauthError: any) {
-                  // If re-auth fails, we stop here rather than falling back to sign-in
-                  // because the user is already linked.
                   throw reauthError;
               }
           } else {
@@ -599,7 +599,8 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
 
           if (token) {
               setGithubToken(token);
-              setShowGithubModal(true);
+              setShowImportModal(false); // Close the new import modal
+              setShowGithubModal(true); // Open the list of repos
               setIsLoadingRepos(true);
               const repos = await fetchUserRepos(token);
               setRepos(repos);
@@ -614,6 +615,47 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
           } else {
               alert("GitHub Login Failed: " + e.message);
           }
+      }
+  };
+
+  const handleLoadPublicRepo = async () => {
+      if (!publicRepoPath.trim()) return;
+      setIsLoadingPublic(true);
+      try {
+          const parts = publicRepoPath.split('/');
+          if (parts.length < 2) throw new Error("Invalid format. Use 'owner/repo'");
+          const owner = parts[0].trim();
+          const repo = parts[1].trim(); 
+
+          const info = await fetchPublicRepoInfo(owner, repo);
+          
+          // Use existing token if available for higher rate limits, else null
+          const tokenToUse = githubToken || null;
+          
+          const { files, latestSha } = await fetchRepoContents(tokenToUse, owner, repo, info.default_branch);
+
+          setProject({
+                id: `gh-${info.id}`,
+                name: info.full_name,
+                files: files,
+                lastModified: Date.now(),
+                github: {
+                    owner: owner,
+                    repo: repo,
+                    branch: info.default_branch,
+                    sha: latestSha
+                }
+            });
+            
+          setActiveFileIndex(0);
+          setShowImportModal(false);
+          setPublicRepoPath('');
+          setChatMessages(prev => [...prev, {role: 'ai', text: `Loaded public repository **${info.full_name}**.`}]);
+
+      } catch (e: any) {
+          alert("Failed to load public repo: " + e.message);
+      } finally {
+          setIsLoadingPublic(false);
       }
   };
 
@@ -647,8 +689,18 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
   };
 
   const handleCommit = async () => {
+      // Check if we have write access (token)
+      if (!githubToken) {
+          if(confirm("You need to sign in with GitHub to commit changes. Connect now?")) {
+              try {
+                  await handleGitHubConnect();
+              } catch(e) {}
+          }
+          return;
+      }
+
       if (!commitMessage.trim()) return;
-      if (!githubToken || !project.github) return;
+      if (!project.github) return;
       
       setIsCommitting(true);
       try {
@@ -753,7 +805,6 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
 
   const handleReviewCode = async () => {
     setIsReviewing(true);
-    // setActiveSideView('chat'); // Commented out to keep user in review view
     setChatMessages(prev => [...prev, { role: 'ai', text: "🔄 *Analyzing code... Please wait.*" }]);
 
     try {
@@ -811,7 +862,6 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
                 files: [...currentProject.files, newFile] 
             };
             
-            // Move side effects out of the state updater to avoid React warnings and double invocation
             setTimeout(() => {
                 setExpandedFolders(f => ({...f, 'reviews': true}));
                 if (currentUser) saveCodeProject(updated).catch(e => console.error("Auto-save review failed", e));
@@ -825,51 +875,6 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
     } finally {
         setIsReviewing(false);
     }
-  };
-
-  const handleEvaluateInterview = async () => {
-      setActiveSideView('review');
-      setInterviewFeedback('');
-
-      try {
-          const apiKey = localStorage.getItem('gemini_api_key') || GEMINI_API_KEY || process.env.API_KEY || '';
-          if (!apiKey) throw new Error("API Key required.");
-          
-          const ai = new GoogleGenAI({ apiKey });
-          
-          const fileContext = project.files.map(f => `File: ${f.name}\n${f.content}`).join('\n\n');
-          const chatContext = chatMessages.map(m => `${m.role.toUpperCase()}: ${m.text}`).join('\n');
-          
-          const prompt = `
-            You are a Hiring Manager at a top-tier tech company.
-            Evaluate this candidate's interview performance.
-            
-            1. **Code**:
-            ${fileContext}
-            
-            2. **Notes**:
-            ${humanComments}
-            
-            3. **Chat History**:
-            ${chatContext}
-            
-            TASK:
-            Provide a comprehensive Interview Feedback Report (Markdown).
-            Include Recommendation (Strong Hire/No Hire), Problem Solving, Code Quality, and Communication.
-          `;
-
-          const response = await ai.models.generateContent({
-              model: 'gemini-3-pro-preview',
-              contents: prompt
-          });
-
-          const feedbackText = response.text || "Evaluation unavailable.";
-          setInterviewFeedback(feedbackText);
-          setProject(prev => ({ ...prev, interviewFeedback: feedbackText }));
-
-      } catch(e: any) {
-          setInterviewFeedback(`Evaluation Error: ${e.message}`);
-      }
   };
 
   const handleChatSubmit = async () => {
@@ -964,7 +969,6 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
       }
   };
 
-  // Mock Channel for Interview
   const interviewChannel: Channel = {
       id: 'mock-interview',
       title: 'Mock Interviewer',
@@ -980,7 +984,6 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
       createdAt: Date.now()
   };
 
-  // Tutor Channel for File Explanation
   const tutorChannel: Channel = {
       id: 'code-tutor',
       title: 'Code Tutor',
@@ -1026,11 +1029,11 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
                    </button>
                ) : (
                    <button 
-                       onClick={handleGitHubConnect} 
+                       onClick={() => setShowImportModal(true)} 
                        className={`p-2 hover:bg-slate-700 rounded transition-colors ${(needsGitHubReauth || isGithubLinked) ? 'text-amber-400 hover:text-amber-200' : 'text-slate-400 hover:text-white'}`} 
-                       title={(needsGitHubReauth || isGithubLinked) ? "Reconnect GitHub" : "Import from GitHub"}
+                       title="Import Project"
                    >
-                       {(needsGitHubReauth || isGithubLinked) ? <RefreshCw size={16} /> : <Github size={16} />}
+                       {(needsGitHubReauth || isGithubLinked) ? <RefreshCw size={16} /> : <DownloadCloud size={16} />}
                    </button>
                )}
                <button onClick={() => setActiveSideView(activeSideView === 'review' ? 'none' : 'review')} className={`p-2 rounded transition-colors ${activeSideView === 'review' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-700'}`} title="Code Review">
@@ -1098,7 +1101,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
 
       <div className="flex-1 flex overflow-hidden relative">
          
-         {/* Sidebar File Tree (Recursive) */}
+         {/* Sidebar File Tree */}
          <div className={`${isSidebarOpen ? 'w-64' : 'w-0'} bg-slate-900 border-r border-slate-800 flex-shrink-0 transition-all duration-300 overflow-y-auto`}>
             <div className="p-4">
                <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Explorer</h3>
@@ -1143,7 +1146,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
          {/* Main Editor Area */}
          <div className="flex-1 flex flex-col min-w-0 relative">
             
-            {/* Editor Tabs (Flat list of OPEN files would be better, but sticking to flat index for now) */}
+            {/* Editor Tabs */}
             <div className="flex items-center bg-slate-900 border-b border-slate-800 px-2 overflow-x-auto scrollbar-hide">
                <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="p-2 text-slate-500 hover:text-white mr-2">
                   {isSidebarOpen ? <Minimize2 size={16}/> : <Maximize2 size={16}/>}
@@ -1340,6 +1343,62 @@ Please explain this file to me. What does it do? How does it work?
              </>
          )}
       </div>
+
+      {/* Import Modal */}
+      {showImportModal && (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
+              <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-lg shadow-2xl p-6">
+                  <div className="flex justify-between items-center mb-6">
+                      <h3 className="text-xl font-bold text-white flex items-center gap-2">
+                          <CloudUpload size={24} className="text-indigo-400"/> Import Project
+                      </h3>
+                      <button onClick={() => setShowImportModal(false)} className="text-slate-400 hover:text-white"><X size={20}/></button>
+                  </div>
+
+                  <div className="space-y-6">
+                      {/* Public Repo Option */}
+                      <div className="space-y-2">
+                          <label className="text-xs font-bold text-slate-500 uppercase">Public Repository (Read-Only)</label>
+                          <div className="flex gap-2">
+                              <input 
+                                  type="text" 
+                                  placeholder="owner/repo (e.g. facebook/react)" 
+                                  value={publicRepoPath}
+                                  onChange={e => setPublicRepoPath(e.target.value)}
+                                  className="flex-1 bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500"
+                              />
+                              <button 
+                                  onClick={handleLoadPublicRepo} 
+                                  disabled={isLoadingPublic || !publicRepoPath.trim()}
+                                  className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white font-bold rounded-lg text-xs transition-colors border border-slate-700"
+                              >
+                                  {isLoadingPublic ? <Loader2 size={14} className="animate-spin"/> : 'Load'}
+                              </button>
+                          </div>
+                          <p className="text-[10px] text-slate-500">Fast load. No login required. Changes cannot be pushed back.</p>
+                      </div>
+
+                      <div className="relative flex py-2 items-center">
+                          <div className="flex-grow border-t border-slate-800"></div>
+                          <span className="flex-shrink-0 mx-4 text-slate-500 text-xs font-bold">OR</span>
+                          <div className="flex-grow border-t border-slate-800"></div>
+                      </div>
+
+                      {/* GitHub Connect Option */}
+                      <div className="text-center space-y-3">
+                          <button 
+                              onClick={handleGitHubConnect}
+                              className="w-full py-3 bg-slate-800 hover:bg-slate-700 text-white font-bold rounded-xl flex items-center justify-center gap-2 transition-all border border-slate-700 hover:border-slate-500"
+                          >
+                              <Github size={18} />
+                              <span>{(needsGitHubReauth || isGithubLinked) ? "Reconnect GitHub Account" : "Connect GitHub Account"}</span>
+                          </button>
+                          <p className="text-[10px] text-slate-500">Required for private repositories and committing changes.</p>
+                      </div>
+                  </div>
+              </div>
+          </div>
+      )}
 
       {/* Interview Setup Modal */}
       {showInterviewSetup && (
