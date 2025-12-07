@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { GoogleGenAI } from '@google/genai';
-import { ArrowLeft, Save, Folder, File, Code, Plus, Trash2, Loader2, ChevronRight, ChevronDown, X, MessageSquare, FileCode, FileJson, FileType, Search, Coffee, Hash, CloudUpload, Edit3, BookOpen, Bot, Send, Maximize2, Minimize2, GripVertical, UserCheck, AlertTriangle, Archive, Sparkles, Video, Mic, CheckCircle, Monitor, FileText, Eye, Github, GitBranch, GitCommit, FolderOpen, RefreshCw } from 'lucide-react';
+import { ArrowLeft, Save, Folder, File, Code, Plus, Trash2, Loader2, ChevronRight, ChevronDown, X, MessageSquare, FileCode, FileJson, FileType, Search, Coffee, Hash, CloudUpload, Edit3, BookOpen, Bot, Send, Maximize2, Minimize2, GripVertical, UserCheck, AlertTriangle, Archive, Sparkles, Video, Mic, CheckCircle, Monitor, FileText, Eye, Github, GitBranch, GitCommit, FolderOpen, RefreshCw, GraduationCap } from 'lucide-react';
 import { GEMINI_API_KEY } from '../services/private_keys';
 import { CodeProject, CodeFile, ChatMessage, Channel, GithubMetadata } from '../types';
 import { MarkdownView } from './MarkdownView';
@@ -429,6 +429,9 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
   const [showInterviewSetup, setShowInterviewSetup] = useState(false);
   const [recordInterview, setRecordInterview] = useState(false);
 
+  // Tutor Session State (New Feature)
+  const [isTutorSession, setIsTutorSession] = useState(false);
+
   // GitHub State
   const [githubToken, setGithubToken] = useState<string | null>(null);
   const [showGithubModal, setShowGithubModal] = useState(false);
@@ -734,6 +737,11 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
       setShowInterviewSetup(true);
   };
 
+  const handleStartTutorSession = () => {
+      if (!activeFile) return;
+      setIsTutorSession(true);
+  };
+
   const confirmStartInterview = () => {
       setShowInterviewSetup(false);
       setIsInterviewSession(true);
@@ -971,6 +979,22 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
       createdAt: Date.now()
   };
 
+  // Tutor Channel for File Explanation
+  const tutorChannel: Channel = {
+      id: 'code-tutor',
+      title: 'Code Tutor',
+      description: 'Interactive Code Explanation',
+      author: 'AI',
+      voiceName: 'Puck', // Friendly voice
+      systemInstruction: 'You are a patient and knowledgeable Senior Engineer acting as a Code Tutor. The user has opened a specific file in a software repository. Your goal is to explain the purpose of the file, walk through key logic, and answer questions. Be concise but insightful. Relate the code to best practices.',
+      likes: 0,
+      dislikes: 0,
+      comments: [],
+      tags: ['Tutor', 'Education'],
+      imageUrl: 'https://images.unsplash.com/photo-1516321318423-f06f85e504b3?w=600&q=80',
+      createdAt: Date.now()
+  };
+
   return (
     <div className="flex flex-col h-screen bg-slate-950 text-slate-100 overflow-hidden">
       
@@ -1013,6 +1037,15 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
                </button>
                <button onClick={() => setIsChatOpen(!isChatOpen)} className={`p-2 rounded transition-colors ${isChatOpen ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-700'}`} title="AI Assistant">
                   <Bot size={16} />
+               </button>
+               
+               {/* Teach Me Button */}
+               <button 
+                   onClick={handleStartTutorSession}
+                   className="flex items-center space-x-2 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold transition-colors shadow-lg shadow-emerald-500/20 ml-2"
+                   title="Start interactive lesson about this file"
+               >
+                   <GraduationCap size={14} /> <span className="hidden xl:inline">Teach Me</span>
                </button>
             </div>
          </div>
@@ -1175,7 +1208,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
                     </>
                 )}
                 
-                {/* Live Session Overlay */}
+                {/* Live Session Overlay (Mock Interview) */}
                 {isInterviewSession && (
                     <div className="absolute right-4 bottom-4 w-80 h-96 z-50 bg-slate-900 rounded-xl shadow-2xl border border-indigo-500/50 overflow-hidden flex flex-col animate-fade-in-up">
                         <div className="bg-indigo-900/20 p-2 flex justify-between items-center border-b border-indigo-500/20">
@@ -1187,6 +1220,36 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
                                 channel={interviewChannel}
                                 recordingEnabled={recordInterview}
                                 onEndSession={() => setIsInterviewSession(false)}
+                                language="en"
+                            />
+                        </div>
+                    </div>
+                )}
+
+                {/* Tutor Session Overlay */}
+                {isTutorSession && (
+                    <div className="absolute right-4 bottom-4 w-96 h-[500px] z-50 bg-slate-900 rounded-xl shadow-2xl border border-emerald-500/50 overflow-hidden flex flex-col animate-fade-in-up">
+                        <div className="bg-emerald-900/20 p-3 flex justify-between items-center border-b border-emerald-500/20">
+                            <span className="text-sm font-bold text-emerald-300 flex items-center gap-2"><GraduationCap size={16}/> Code Tutor</span>
+                            <button onClick={() => setIsTutorSession(false)} className="text-emerald-400 hover:text-white"><X size={16}/></button>
+                        </div>
+                        <div className="flex-1 relative">
+                            <LiveSession 
+                                channel={tutorChannel}
+                                initialContext={`
+Repo: ${project.name}
+File: ${activeFile.name}
+Language: ${activeFile.language}
+
+--- CONTENT ---
+${activeFile.content}
+----------------
+
+Please explain this file to me. What does it do? How does it work?
+`}
+                                lectureId={`tutor-${project.id}-${activeFile.name.replace(/[^a-zA-Z0-9]/g, '_')}`}
+                                recordingEnabled={false}
+                                onEndSession={() => setIsTutorSession(false)}
                                 language="en"
                             />
                         </div>
