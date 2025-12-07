@@ -205,6 +205,22 @@ export class GeminiLiveService {
     }
   }
 
+  // Send text as a user turn (context update) without speaking
+  public sendText(text: string) {
+    if (this.session) {
+      try {
+        this.session.send({
+          clientContent: {
+            turns: [{ role: 'user', parts: [{ text }] }],
+            turnComplete: true
+          }
+        });
+      } catch (e) {
+        console.error("Failed to send text context:", e);
+      }
+    }
+  }
+
   private startAudioInput(onVolume: (v: number) => void) {
     if (!this.inputAudioContext || !this.stream || !this.sessionPromise) return;
 

@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { GoogleGenAI } from '@google/genai';
 import { ArrowLeft, Save, Folder, File, Code, Plus, Trash2, Loader2, ChevronRight, ChevronDown, X, MessageSquare, FileCode, FileJson, FileType, Search, Coffee, Hash, CloudUpload, Edit3, BookOpen, Bot, Send, Maximize2, Minimize2, GripVertical, UserCheck, AlertTriangle, Archive, Sparkles, Video, Mic, CheckCircle, Monitor, FileText, Eye, Github, GitBranch, GitCommit, FolderOpen, RefreshCw, GraduationCap, DownloadCloud } from 'lucide-react';
@@ -1005,7 +1004,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
       description: 'Interactive Code Explanation',
       author: 'AI',
       voiceName: 'Puck', // Friendly voice
-      systemInstruction: 'You are a patient and knowledgeable Senior Engineer acting as a Code Tutor. The user has opened a specific file in a software repository. Your goal is to explain the purpose of the file, walk through key logic, and answer questions. Be concise but insightful. Relate the code to best practices.',
+      systemInstruction: 'You are a patient and knowledgeable Senior Engineer acting as a Code Tutor. Monitor the user activity. The user will be clicking files or selecting code. When they do, explain the context, walk through logic, or answer their questions. Be concise but insightful. Relate the code to best practices.',
       likes: 0,
       dislikes: 0,
       comments: [],
@@ -1280,8 +1279,8 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
                             <LiveSession 
                                 channel={tutorChannel}
                                 initialContext={`
-Repo: ${project.name}
-File: ${activeFile.name}
+[USER ACTIVITY UPDATE]
+Current File: ${activeFile.name}
 Language: ${activeFile.language}
 Current Directory: ${activeFile.name.includes('/') ? activeFile.name.split('/').slice(0, -1).join('/') : 'root'}
 ${selection ? `\nUSER SELECTED CODE:\n\`\`\`\n${selection}\n\`\`\`\n(The user is asking about this specific selection)` : ''}
@@ -1290,9 +1289,9 @@ ${selection ? `\nUSER SELECTED CODE:\n\`\`\`\n${selection}\n\`\`\`\n(The user is
 ${activeFile.content}
 --------------------
 
-Explain this file or the selection.
+If the user asks questions, answer based on this new context. If they just switched files, acknowledge it briefly.
 `}
-                                lectureId={`tutor-${project.id}-${activeFile.name.replace(/[^a-zA-Z0-9]/g, '_')}`}
+                                lectureId={`tutor-${project.id}`} // Stabilized ID to prevent unmounts
                                 recordingEnabled={false}
                                 onEndSession={() => setActiveSideView('none')}
                                 language="en"

@@ -1,4 +1,3 @@
-
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { Channel, TranscriptItem, GeneratedLecture, CommunityDiscussion, RecordingSession } from '../types';
 import { GeminiLiveService } from '../services/geminiLive';
@@ -461,19 +460,18 @@ export const LiveSession: React.FC<LiveSessionProps> = ({ channel, initialContex
     } catch (e) { stopWaitingMusic(); setIsRetrying(false); setError("Failed to initialize audio session"); }
   }, [channel.id, channel.voiceName, channel.systemInstruction, initialContext, recordingEnabled, videoEnabled, cameraEnabled, initialTranscript]);
 
-  // Reconnect on context change while session is active
+  // Context Update Handling (Seamless)
+  // Instead of reconnecting, we send a text message to the AI
   useEffect(() => {
     if (hasStarted && isConnected && initialContext) {
-       // Context changed while active. Reconnect to update AI system instruction.
-       const timer = setTimeout(() => {
-           console.log("LiveSession: Context updated. Reconnecting...");
-           // Disconnect current session, but don't stop recordings or reset transcript
-           serviceRef.current?.disconnect();
-           connect();
-       }, 500);
-       return () => clearTimeout(timer);
+        if (serviceRef.current) {
+            console.log("LiveSession: Context updated. Sending update to AI...");
+            // Extract the user visible part or just send the whole thing as a system note
+            // We use the new sendText method on the service
+            serviceRef.current.sendText(`[SYSTEM UPDATE: User context changed]\n${initialContext}`);
+        }
     }
-  }, [initialContext, hasStarted, isConnected, connect]);
+  }, [initialContext, hasStarted, isConnected]);
 
   useEffect(() => {
      return () => {
@@ -638,7 +636,7 @@ export const LiveSession: React.FC<LiveSessionProps> = ({ channel, initialContex
               const transcriptBlob = new Blob([mdText], { type: 'text/markdown' });
               const transcriptUrl = await uploadFileToStorage(`${bookingPath}/transcript.md`, transcriptBlob, { contentType: 'text/markdown' });
               
-              if (lectureId && !lectureId.startsWith('sub-') && !lectureId.startsWith('ch-')) {
+              if (lectureId && !lectureId.startsWith('sub-') && !lectureId.startsWith('ch-') && !lectureId.startsWith('tutor-')) {
                   await updateBookingRecording(lectureId, mediaUrl, transcriptUrl);
               } else {
                   const recordingSession: RecordingSession = {

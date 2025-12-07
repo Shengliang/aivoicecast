@@ -17,8 +17,9 @@ interface GithubRepo {
 export async function fetchPublicRepoInfo(owner: string, repo: string): Promise<{ default_branch: string, id: number, full_name: string }> {
   const response = await fetch(`${GITHUB_API_BASE}/repos/${owner}/${repo}`);
   if (!response.ok) {
-      if (response.status === 404) throw new Error('Repository not found');
-      throw new Error('Failed to fetch repository info');
+      if (response.status === 404) throw new Error(`Repository '${owner}/${repo}' not found. Check spelling.`);
+      if (response.status === 403) throw new Error('GitHub API rate limit exceeded. Please sign in to increase limits.');
+      throw new Error(`Failed to fetch repository info: ${response.status} ${response.statusText}`);
   }
   return await response.json();
 }
