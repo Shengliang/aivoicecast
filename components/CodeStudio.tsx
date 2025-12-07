@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { GoogleGenAI } from '@google/genai';
-import { ArrowLeft, Save, Folder, File, Code, Plus, Trash2, Loader2, ChevronRight, ChevronDown, X, MessageSquare, FileCode, FileJson, FileType, Search, Coffee, Hash, CloudUpload, Edit3, BookOpen, Bot, Send, Maximize2, Minimize2, GripVertical, UserCheck, AlertTriangle, Archive, Sparkles, Video, Mic, CheckCircle, Monitor, FileText, Eye, Github, GitBranch, GitCommit, FolderOpen, RefreshCw, GraduationCap, DownloadCloud } from 'lucide-react';
+import { ArrowLeft, Save, Folder, File, Code, Plus, Trash2, Loader2, ChevronRight, ChevronDown, X, MessageSquare, FileCode, FileJson, FileType, Search, Coffee, Hash, CloudUpload, Edit3, BookOpen, Bot, Send, Maximize2, Minimize2, GripVertical, UserCheck, AlertTriangle, Archive, Sparkles, Video, Mic, CheckCircle, Monitor, FileText, Eye, Github, GitBranch, GitCommit, FolderOpen, RefreshCw, GraduationCap, DownloadCloud, Terminal } from 'lucide-react';
 import { GEMINI_API_KEY } from '../services/private_keys';
 import { CodeProject, CodeFile, ChatMessage, Channel, GithubMetadata } from '../types';
 import { MarkdownView } from './MarkdownView';
@@ -433,10 +433,16 @@ const FileTreeNode: React.FC<{
 // --- SYNTAX HIGHLIGHTING EDITOR ---
 
 const generateHighlightedHTML = (code: string, language: string) => {
-  // Safe escape
-  const escapeHtml = (text: string) => text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  // Safe escape ensuring quotes are also escaped to avoid attribute injection
+  const escapeHtml = (text: string) => text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
   
   // Use a map to protect specific tokens (strings, comments) from being partially matched by keywords
+  // CRITICAL: We must use placeholders for ALL replacements to prevent "double-dipping" (e.g. matching '400' inside 'text-blue-400')
   const placeholders: string[] = [];
   const addPlaceholder = (htmlFragment: string) => {
     placeholders.push(htmlFragment);
@@ -446,15 +452,16 @@ const generateHighlightedHTML = (code: string, language: string) => {
   let processed = escapeHtml(code);
 
   if (language === 'c++' || language === 'c' || language === 'cpp') {
-    // 1. Strings
+    // 1. Strings (Double Quote) - matches escaped &quot;
     processed = processed.replace(/(&quot;.*?&quot;)/g, match => addPlaceholder(`<span class="text-amber-400">${match}</span>`));
-    processed = processed.replace(/('.*?')/g, match => addPlaceholder(`<span class="text-amber-300">${match}</span>`));
+    // 1b. Chars (Single Quote) - matches escaped &#039;
+    processed = processed.replace(/(&#039;.*?&#039;)/g, match => addPlaceholder(`<span class="text-amber-300">${match}</span>`));
     
     // 2. Preprocessor directives
     processed = processed.replace(/(#include|#define|#ifdef|#ifndef|#endif|#pragma)/g, match => addPlaceholder(`<span class="text-pink-400">${match}</span>`));
     processed = processed.replace(/(&lt;.*?&gt;)/g, match => addPlaceholder(`<span class="text-emerald-300">${match}</span>`)); // <vector>
 
-    // 3. Comments (Double Slash)
+    // 3. Comments (Double Slash) - matches unescaped // if present (unlikely after escape) or generally works on text
     processed = processed.replace(/(\/\/.*)/g, match => addPlaceholder(`<span class="text-slate-500 italic">${match}</span>`));
     
     // 4. Comments (Block) - Basic multiline support
@@ -471,38 +478,49 @@ const generateHighlightedHTML = (code: string, language: string) => {
     ];
     // Word boundary regex
     const kwRegex = new RegExp(`\\b(${keywords.join('|')})\\b`, 'g');
-    processed = processed.replace(kwRegex, '<span class="text-blue-400 font-bold">$1</span>');
+    processed = processed.replace(kwRegex, match => addPlaceholder(`<span class="text-blue-400 font-bold">${match}</span>`));
 
     // 6. Functions (Word followed by paren)
-    processed = processed.replace(/\b([a-zA-Z_]\w*)(?=\()/g, '<span class="text-yellow-200">$1</span>');
+    processed = processed.replace(/\b([a-zA-Z_]\w*)(?=\()/g, match => addPlaceholder(`<span class="text-yellow-200">${match}</span>`));
     
-    // 7. Numbers
-    processed = processed.replace(/\b(\d+)\b/g, '<span class="text-emerald-300">$1</span>');
+    // 7. Numbers (Only process things that aren't already placeholders)
+    // Because we've placeholder-ized everything else, this regex won't match inside a placeholder key (e.g. __PH0__)
+    processed = processed.replace(/\b(\d+)\b/g, match => addPlaceholder(`<span class="text-emerald-300">${match}</span>`));
   } 
   
   // Basic Python support
   else if (language === 'python') {
       // Strings
-      processed = processed.replace(/(&quot;.*?&quot;|'.*?')/g, match => addPlaceholder(`<span class="text-amber-400">${match}</span>`));
+      processed = processed.replace(/(&quot;.*?&quot;|&#039;.*?&#039;)/g, match => addPlaceholder(`<span class="text-amber-400">${match}</span>`));
       // Comments
       processed = processed.replace(/(#.*)/g, match => addPlaceholder(`<span class="text-slate-500 italic">${match}</span>`));
       // Keywords
       const keywords = ["def", "return", "if", "elif", "else", "while", "for", "in", "import", "from", "class", "try", "except", "print", "True", "False", "None", "self"];
       const kwRegex = new RegExp(`\\b(${keywords.join('|')})\\b`, 'g');
-      processed = processed.replace(kwRegex, '<span class="text-blue-400 font-bold">$1</span>');
+      processed = processed.replace(kwRegex, match => addPlaceholder(`<span class="text-blue-400 font-bold">${match}</span>`));
       // Functions
-      processed = processed.replace(/\b([a-zA-Z_]\w*)(?=\()/g, '<span class="text-yellow-200">$1</span>');
+      processed = processed.replace(/\b([a-zA-Z_]\w*)(?=\()/g, match => addPlaceholder(`<span class="text-yellow-200">${match}</span>`));
   }
 
-  // Restore placeholders
+  // Restore placeholders iteratively
+  // Using split/join avoids the issue where replacement string contains '$' which string.replace handles specially
   placeholders.forEach((ph, i) => {
-    processed = processed.replace(`__PH${i}__`, ph);
+    processed = processed.split(`__PH${i}__`).join(ph);
   });
 
   return processed;
 };
 
-const EnhancedEditor = ({ code, language, onChange, onScroll, onSelect, textAreaRef, lineNumbersRef, isLoadingContent }: any) => {
+const EnhancedEditor = ({ code, language, onChange, onScroll, onSelect, textAreaRef, lineNumbersRef, isLoadingContent, scrollToLine }: any) => {
+  // Handle Scroll To Line Request
+  useEffect(() => {
+      if (scrollToLine !== null && textAreaRef.current) {
+          const lineHeight = 24; // matches leading-6 class (1.5rem = 24px)
+          const scrollPos = (scrollToLine - 1) * lineHeight;
+          textAreaRef.current.scrollTo({ top: scrollPos, behavior: 'smooth' });
+      }
+  }, [scrollToLine]);
+
   return (
     <div className="flex-1 relative bg-slate-950 flex overflow-hidden font-mono text-sm">
         {/* Line Numbers */}
@@ -511,7 +529,7 @@ const EnhancedEditor = ({ code, language, onChange, onScroll, onSelect, textArea
             className="w-12 bg-slate-900 border-r border-slate-800 text-right text-slate-600 py-4 pr-3 select-none overflow-hidden flex-shrink-0 leading-6"
         >
             {code.split('\n').map((_: any, i: number) => (
-                <div key={i}>{i + 1}</div>
+                <div key={i} className={scrollToLine === (i + 1) ? "text-yellow-400 font-bold bg-yellow-900/20" : ""}>{i + 1}</div>
             ))}
         </div>
         
@@ -564,6 +582,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
   const [expandedFolders, setExpandedFolders] = useState<Record<string, boolean>>({});
   const [loadingFolders, setLoadingFolders] = useState<Record<string, boolean>>({}); // Track folder fetches
   const [activeSideView, setActiveSideView] = useState<'none' | 'chat' | 'tutor' | 'review'>('chat');
+  const [sidebarTab, setSidebarTab] = useState<'explorer' | 'search'>('explorer');
   const [isSaving, setIsSaving] = useState(false);
   const [showLanguageDropdown, setShowLanguageDropdown] = useState(false);
   const [showExamplesDropdown, setShowExamplesDropdown] = useState(false);
@@ -571,6 +590,11 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
   const [isReviewing, setIsReviewing] = useState(false);
   const [isLoadingFile, setIsLoadingFile] = useState(false);
   
+  // Search State
+  const [searchTerm, setSearchTerm] = useState('');
+  const [searchResults, setSearchResults] = useState<{fileIndex: number, fileName: string, line: number, content: string}[]>([]);
+  const [scrollToLine, setScrollToLine] = useState<number | null>(null);
+
   // Selection State for Context Awareness
   const [selection, setSelection] = useState('');
 
@@ -702,6 +726,44 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
       } else {
           setSelection('');
       }
+  };
+
+  const handleSearch = (term: string) => {
+      setSearchTerm(term);
+      if (!term.trim()) {
+          setSearchResults([]);
+          return;
+      }
+      
+      const results: any[] = [];
+      const lowerTerm = term.toLowerCase();
+      
+      project.files.forEach((file, fIdx) => {
+          // Skip directories or non-loaded files (unless they were lazy loaded and we can't search them yet)
+          // For now search only loaded files
+          if (file.isDirectory) return;
+          if (file.loaded === false) return; // Cannot search unloaded files
+          
+          const lines = file.content.split('\n');
+          lines.forEach((line, lIdx) => {
+              if (line.toLowerCase().includes(lowerTerm)) {
+                  results.push({
+                      fileIndex: fIdx,
+                      fileName: file.name,
+                      line: lIdx + 1,
+                      content: line.trim()
+                  });
+              }
+          });
+      });
+      setSearchResults(results);
+  };
+
+  const handleSearchResultClick = (result: {fileIndex: number, line: number}) => {
+      setActiveFileIndex(result.fileIndex);
+      setScrollToLine(result.line);
+      // Reset scroll target after a short delay so user can scroll away
+      setTimeout(() => setScrollToLine(null), 1000);
   };
 
   const toggleFolder = async (path: string) => {
@@ -1389,29 +1451,75 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
 
       <div className="flex-1 flex overflow-hidden relative">
          
-         {/* Sidebar File Tree */}
-         <div className={`${isSidebarOpen ? 'w-64' : 'w-0'} bg-slate-900 border-r border-slate-800 flex-shrink-0 transition-all duration-300 overflow-y-auto`}>
-            <div className="p-4">
-               <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Explorer</h3>
-               <div className="space-y-0.5">
-                  {fileTree.map(node => (
-                    <FileTreeNode 
-                        key={node.path}
-                        node={node}
-                        depth={0}
-                        activeFileIndex={activeFileIndex}
-                        onSelect={(idx) => { setActiveFileIndex(idx); setSelection(''); }}
-                        expandedFolders={expandedFolders}
-                        toggleFolder={toggleFolder}
-                        loadingFolders={loadingFolders}
-                    />
-                  ))}
-                  {fileTree.length === 0 && <p className="text-xs text-slate-600 italic">No files.</p>}
-               </div>
+         {/* Sidebar (Explorer / Search) */}
+         <div className={`${isSidebarOpen ? 'w-64' : 'w-0'} bg-slate-900 border-r border-slate-800 flex-shrink-0 transition-all duration-300 overflow-hidden flex flex-col`}>
+            
+            {/* Tabs */}
+            <div className="flex border-b border-slate-800 shrink-0">
+               <button onClick={() => setSidebarTab('explorer')} className={`flex-1 py-2 text-xs font-bold flex justify-center items-center gap-1 ${sidebarTab === 'explorer' ? 'bg-slate-800 text-white border-b-2 border-indigo-500' : 'text-slate-500 hover:text-white'}`}>
+                  <FolderOpen size={14}/> Explorer
+               </button>
+               <button onClick={() => setSidebarTab('search')} className={`flex-1 py-2 text-xs font-bold flex justify-center items-center gap-1 ${sidebarTab === 'search' ? 'bg-slate-800 text-white border-b-2 border-indigo-500' : 'text-slate-500 hover:text-white'}`}>
+                  <Search size={14}/> Search
+               </button>
+            </div>
+
+            {/* Tab Content */}
+            <div className="flex-1 overflow-y-auto">
+               {sidebarTab === 'explorer' ? (
+                  <div className="p-2 space-y-0.5">
+                     {fileTree.map(node => (
+                       <FileTreeNode 
+                           key={node.path}
+                           node={node}
+                           depth={0}
+                           activeFileIndex={activeFileIndex}
+                           onSelect={(idx) => { setActiveFileIndex(idx); setSelection(''); }}
+                           expandedFolders={expandedFolders}
+                           toggleFolder={toggleFolder}
+                           loadingFolders={loadingFolders}
+                       />
+                     ))}
+                     {fileTree.length === 0 && <p className="text-xs text-slate-600 italic p-4 text-center">No files.</p>}
+                  </div>
+               ) : (
+                  <div className="p-4 flex flex-col h-full">
+                     <div className="relative mb-4">
+                        <input 
+                           type="text" 
+                           placeholder="Find in files..." 
+                           value={searchTerm}
+                           onChange={(e) => handleSearch(e.target.value)}
+                           className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500"
+                        />
+                        <Search size={12} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500"/>
+                     </div>
+                     
+                     <div className="flex-1 overflow-y-auto space-y-2">
+                        {searchResults.length === 0 ? (
+                           <p className="text-xs text-slate-500 text-center">{searchTerm ? "No matches found." : "Enter term to search."}</p>
+                        ) : (
+                           searchResults.map((res, i) => (
+                              <div key={i} onClick={() => handleSearchResultClick(res)} className="bg-slate-800/50 hover:bg-slate-800 border border-slate-800 hover:border-slate-700 p-2 rounded cursor-pointer group">
+                                 <div className="flex justify-between items-center mb-1">
+                                    <span className="text-xs font-bold text-indigo-300 truncate" title={res.fileName}>{res.fileName.split('/').pop()}</span>
+                                    <span className="text-[10px] text-slate-500 font-mono">L{res.line}</span>
+                                 </div>
+                                 <div className="text-[10px] text-slate-400 font-mono bg-slate-950/50 p-1 rounded truncate">
+                                    {res.content}
+                                 </div>
+                              </div>
+                           ))
+                        )}
+                     </div>
+                  </div>
+               )}
             </div>
             
-            <div className="p-4 border-t border-slate-800">
-               <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Tools</h3>
+            {/* Sidebar Footer (Tools) */}
+            {sidebarTab === 'explorer' && (
+            <div className="p-4 border-t border-slate-800 shrink-0">
+               <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">Tools</h3>
                <div className="space-y-2">
                    <button 
                       onClick={handleGenerateQuestions} 
@@ -1430,6 +1538,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
                    </button>
                </div>
             </div>
+            )}
          </div>
 
          {/* Main Editor Area */}
@@ -1501,6 +1610,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
                         textAreaRef={textareaRef}
                         lineNumbersRef={lineNumbersRef}
                         isLoadingContent={isLoadingFile}
+                        scrollToLine={scrollToLine}
                     />
                 )}
                 
