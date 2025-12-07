@@ -438,6 +438,9 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
   const [needsGitHubReauth, setNeedsGitHubReauth] = useState(false);
   const [githubError, setGithubError] = useState<string | null>(null);
   
+  // Check if user is already linked to GitHub
+  const isGithubLinked = currentUser?.providerData?.some((p: any) => p.providerId === 'github.com');
+  
   // Refs for scrolling sync
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const lineNumbersRef = useRef<HTMLDivElement>(null);
@@ -579,10 +582,16 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
       try {
           let token: string | null = null;
           
-          if (needsGitHubReauth) {
-              const res = await reauthenticateWithGitHub();
-              token = res.token;
-              setNeedsGitHubReauth(false); // Reset flag on success
+          if (needsGitHubReauth || isGithubLinked) {
+              try {
+                  const res = await reauthenticateWithGitHub();
+                  token = res.token;
+                  setNeedsGitHubReauth(false); // Reset flag on success
+              } catch (reauthError: any) {
+                  // If re-auth fails, we stop here rather than falling back to sign-in
+                  // because the user is already linked.
+                  throw reauthError;
+              }
           } else {
               const res = await signInWithGitHub();
               token = res.token;
@@ -1018,10 +1027,10 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
                ) : (
                    <button 
                        onClick={handleGitHubConnect} 
-                       className={`p-2 hover:bg-slate-700 rounded transition-colors ${needsGitHubReauth ? 'text-amber-400 hover:text-amber-200' : 'text-slate-400 hover:text-white'}`} 
-                       title={needsGitHubReauth ? "Reconnect GitHub" : "Import from GitHub"}
+                       className={`p-2 hover:bg-slate-700 rounded transition-colors ${(needsGitHubReauth || isGithubLinked) ? 'text-amber-400 hover:text-amber-200' : 'text-slate-400 hover:text-white'}`} 
+                       title={(needsGitHubReauth || isGithubLinked) ? "Reconnect GitHub" : "Import from GitHub"}
                    >
-                       {needsGitHubReauth ? <RefreshCw size={16} /> : <Github size={16} />}
+                       {(needsGitHubReauth || isGithubLinked) ? <RefreshCw size={16} /> : <Github size={16} />}
                    </button>
                )}
                <button onClick={() => setActiveSideView(activeSideView === 'review' ? 'none' : 'review')} className={`p-2 rounded transition-colors ${activeSideView === 'review' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-700'}`} title="Code Review">
