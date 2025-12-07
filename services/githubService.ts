@@ -44,17 +44,26 @@ export async function fetchRepoContents(token: string, owner: string, repo: stri
   const treeData = await treeRes.json();
 
   // 3. Filter for blobs (files), ignore extremely large files or images for the web editor
-  const validExtensions = ['.js', '.jsx', '.ts', '.tsx', '.py', '.cpp', '.c', '.h', '.hpp', '.java', '.cs', '.go', '.rs', '.json', '.md', '.css', '.html', '.txt'];
+  const validExtensions = [
+    // Web
+    '.js', '.jsx', '.ts', '.tsx', '.json', '.html', '.css', 
+    // Backend/Systems
+    '.py', '.go', '.rs', '.java', '.cs',
+    // C/C++
+    '.c', '.cpp', '.h', '.hpp', '.cc', '.hh', '.cxx', '.hxx',
+    // Config/Docs
+    '.md', '.txt', '.yml', '.yaml', '.xml', '.gitignore', '.env'
+  ];
   
   const blobEntries = treeData.tree.filter((item: any) => 
     item.type === 'blob' && 
     validExtensions.some(ext => item.path.toLowerCase().endsWith(ext)) &&
-    item.size < 100000 // Limit file size to ~100KB for browser performance
+    item.size < 500000 // Limit file size to ~500KB for browser performance
   );
 
   // 4. Fetch content for each file (in parallel - limited batching would be better for huge repos)
-  // For safety, let's limit to top 20 files to avoid rate limits in this demo
-  const filesToFetch = blobEntries.slice(0, 20); 
+  // Increased limit to 100 files to capture deeper trees
+  const filesToFetch = blobEntries.slice(0, 100); 
 
   const files: CodeFile[] = await Promise.all(filesToFetch.map(async (item: any) => {
     const blobRes = await fetch(item.url, {
@@ -76,7 +85,7 @@ export async function fetchRepoContents(token: string, owner: string, repo: stri
     if (['js', 'jsx'].includes(ext)) language = 'javascript';
     else if (['ts', 'tsx'].includes(ext)) language = 'typescript';
     else if (ext === 'py') language = 'python';
-    else if (ext === 'cpp' || ext === 'c' || ext === 'h') language = 'c++';
+    else if (['cpp', 'c', 'h', 'hpp', 'cc', 'hh', 'cxx'].includes(ext)) language = 'c++';
     else if (ext === 'java') language = 'java';
     else if (ext === 'go') language = 'go';
     else if (ext === 'rs') language = 'rust';

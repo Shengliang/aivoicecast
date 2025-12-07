@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { GoogleGenAI } from '@google/genai';
-import { ArrowLeft, Save, Folder, File, Code, Plus, Trash2, Loader2, ChevronRight, ChevronDown, X, MessageSquare, FileCode, FileJson, FileType, Search, Coffee, Hash, CloudUpload, Edit3, BookOpen, Bot, Send, Maximize2, Minimize2, GripVertical, UserCheck, AlertTriangle, Archive, Sparkles, Video, Mic, CheckCircle, Monitor, FileText, Eye, Github, GitBranch, GitCommit } from 'lucide-react';
+import { ArrowLeft, Save, Folder, File, Code, Plus, Trash2, Loader2, ChevronRight, ChevronDown, X, MessageSquare, FileCode, FileJson, FileType, Search, Coffee, Hash, CloudUpload, Edit3, BookOpen, Bot, Send, Maximize2, Minimize2, GripVertical, UserCheck, AlertTriangle, Archive, Sparkles, Video, Mic, CheckCircle, Monitor, FileText, Eye, Github, GitBranch, GitCommit, FolderOpen } from 'lucide-react';
 import { GEMINI_API_KEY } from '../services/private_keys';
 import { CodeProject, CodeFile, ChatMessage, Channel, GithubMetadata } from '../types';
 import { MarkdownView } from './MarkdownView';
@@ -239,7 +239,7 @@ const getLanguageFromFilename = (filename: string): string => {
         case 'rs': return 'rust';
         case 'go': return 'go';
         case 'java': return 'java';
-        case 'cpp': return 'c++';
+        case 'cpp': case 'cc': case 'cxx': case 'h': case 'hpp': case 'hh': return 'c++';
         case 'c': return 'c';
         case 'md': return 'markdown';
         case 'cs': return 'c#';
@@ -276,7 +276,7 @@ const FileIcon = ({ filename }: { filename: string }) => {
     } else if (ext === 'go') {
         color = 'text-cyan-400';
         Icon = FileCode;
-    } else if (ext === 'cpp' || ext === 'c') {
+    } else if (['cpp', 'c', 'h', 'hpp', 'cc', 'hh', 'cxx'].includes(ext || '')) {
         color = 'text-blue-500';
         Icon = Code;
     } else if (ext === 'cs') {
@@ -288,6 +288,116 @@ const FileIcon = ({ filename }: { filename: string }) => {
     }
 
     return <Icon size={14} className={color} />;
+};
+
+// --- FILE TREE UTILS ---
+
+interface FileNode {
+  name: string;
+  path: string;
+  type: 'file' | 'folder';
+  children: FileNode[];
+  index?: number; // Index in the flat project.files array
+}
+
+const buildFileTree = (files: CodeFile[]): FileNode[] => {
+  const root: FileNode[] = [];
+  const map: Record<string, FileNode> = {};
+
+  files.forEach((file, originalIndex) => {
+    const parts = file.name.split('/');
+    let currentPath = '';
+    let parentNode: FileNode | null = null;
+    
+    parts.forEach((part, i) => {
+      const isFile = i === parts.length - 1;
+      const currentFullPath = currentPath ? `${currentPath}/${part}` : part;
+      
+      if (!map[currentFullPath]) {
+        const node: FileNode = {
+          name: part,
+          path: currentFullPath,
+          type: isFile ? 'file' : 'folder',
+          children: [],
+          index: isFile ? originalIndex : undefined
+        };
+        map[currentFullPath] = node;
+        
+        if (parentNode) {
+          parentNode.children.push(node);
+        } else {
+          root.push(node);
+        }
+      }
+      
+      parentNode = map[currentFullPath];
+      currentPath = currentFullPath;
+    });
+  });
+  
+  // Sort: Folders first, then files (alphabetical)
+  const sortNodes = (nodes: FileNode[]) => {
+    nodes.sort((a, b) => {
+      if (a.type === b.type) return a.name.localeCompare(b.name);
+      return a.type === 'folder' ? -1 : 1;
+    });
+    nodes.forEach(n => sortNodes(n.children));
+  };
+  
+  sortNodes(root);
+  return root;
+};
+
+// Recursive Component for Tree
+const FileTreeNode: React.FC<{
+  node: FileNode;
+  depth: number;
+  activeFileIndex: number;
+  onSelect: (index: number) => void;
+  expandedFolders: Record<string, boolean>;
+  toggleFolder: (path: string) => void;
+}> = ({ node, depth, activeFileIndex, onSelect, expandedFolders, toggleFolder }) => {
+  const isOpen = expandedFolders[node.path];
+  
+  if (node.type === 'folder') {
+    return (
+      <>
+        <button 
+          onClick={() => toggleFolder(node.path)}
+          className={`w-full flex items-center space-x-1 px-3 py-1.5 text-xs text-left hover:bg-slate-800 transition-colors text-slate-400 hover:text-white`}
+          style={{ paddingLeft: `${depth * 12 + 12}px` }}
+        >
+          {isOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+          {isOpen ? <FolderOpen size={14} className="text-indigo-400" /> : <Folder size={14} className="text-indigo-400" />}
+          <span className="truncate">{node.name}</span>
+        </button>
+        {isOpen && node.children.map(child => (
+          <FileTreeNode 
+            key={child.path} 
+            node={child} 
+            depth={depth + 1}
+            activeFileIndex={activeFileIndex}
+            onSelect={onSelect}
+            expandedFolders={expandedFolders}
+            toggleFolder={toggleFolder}
+          />
+        ))}
+      </>
+    );
+  }
+
+  // File
+  const isActive = node.index === activeFileIndex;
+  return (
+    <button 
+      onClick={() => node.index !== undefined && onSelect(node.index)}
+      className={`w-full flex items-center space-x-2 px-3 py-1.5 text-xs text-left transition-colors border-l-2 ${isActive ? 'bg-slate-800 text-white border-indigo-500' : 'border-transparent text-slate-400 hover:text-white hover:bg-slate-800/50'}`}
+      style={{ paddingLeft: `${depth * 12 + 12}px` }}
+    >
+      <FileIcon filename={node.name} />
+      <span className="truncate">{node.name}</span>
+    </button>
+  );
 };
 
 export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) => {
@@ -303,7 +413,6 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
   const [isSaving, setIsSaving] = useState(false);
   const [showLanguageDropdown, setShowLanguageDropdown] = useState(false);
   const [showExamplesDropdown, setShowExamplesDropdown] = useState(false);
-  const [isFullScreen, setIsFullScreen] = useState(false);
   const [isPreviewMode, setIsPreviewMode] = useState(false);
   
   // Chat State
@@ -337,16 +446,23 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
   const activeFile = project.files[activeFileIndex] || project.files[0];
   const isMarkdown = activeFile ? activeFile.name.toLowerCase().endsWith('.md') : false;
 
+  // Build Tree
+  const fileTree = React.useMemo(() => buildFileTree(project.files), [project.files]);
+
   // Mobile check
   useEffect(() => {
       if (window.innerWidth < 768) setIsSidebarOpen(false);
-      // Auto expand folders
-      const allFolders: Record<string, boolean> = {};
-      const uniqueFolders = new Set(project.files.map(f => f.name.includes('/') ? f.name.split('/')[0] : 'root'));
-      uniqueFolders.forEach(f => {
-          if (typeof f === 'string') allFolders[f] = true;
+      
+      // Auto expand root folders on first load
+      const initialExpanded: Record<string, boolean> = {};
+      // Expand top level directories by default
+      project.files.forEach(f => {
+          const parts = f.name.split('/');
+          if (parts.length > 1) {
+              initialExpanded[parts[0]] = true; 
+          }
       });
-      setExpandedFolders(allFolders);
+      setExpandedFolders(prev => ({ ...initialExpanded, ...prev }));
   }, [project.files]);
 
   // Load project review, comments, and history
@@ -448,6 +564,13 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
       if (textareaRef.current && lineNumbersRef.current) {
           lineNumbersRef.current.scrollTop = textareaRef.current.scrollTop;
       }
+  };
+
+  const toggleFolder = (path: string) => {
+      setExpandedFolders(prev => ({
+          ...prev,
+          [path]: !prev[path]
+      }));
   };
 
   // --- GITHUB INTEGRATION ---
@@ -918,21 +1041,23 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
 
       <div className="flex-1 flex overflow-hidden relative">
          
-         {/* Sidebar File Tree */}
+         {/* Sidebar File Tree (Recursive) */}
          <div className={`${isSidebarOpen ? 'w-64' : 'w-0'} bg-slate-900 border-r border-slate-800 flex-shrink-0 transition-all duration-300 overflow-y-auto`}>
             <div className="p-4">
-               <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-4">Files</h3>
-               <div className="space-y-1">
-                  {project.files.map((file, idx) => (
-                     <button 
-                        key={idx} 
-                        onClick={() => { setActiveFileIndex(idx); setViewMode('code'); }}
-                        className={`w-full flex items-center space-x-2 px-3 py-2 rounded-lg text-sm transition-colors ${activeFileIndex === idx ? 'bg-slate-800 text-white border border-slate-700' : 'text-slate-400 hover:text-white hover:bg-slate-800/50'}`}
-                     >
-                        <FileIcon filename={file.name} />
-                        <span className="truncate" title={file.name}>{file.name.split('/').pop()}</span>
-                     </button>
+               <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Explorer</h3>
+               <div className="space-y-0.5">
+                  {fileTree.map(node => (
+                    <FileTreeNode 
+                        key={node.path}
+                        node={node}
+                        depth={0}
+                        activeFileIndex={activeFileIndex}
+                        onSelect={(idx) => { setActiveFileIndex(idx); setViewMode('code'); }}
+                        expandedFolders={expandedFolders}
+                        toggleFolder={toggleFolder}
+                    />
                   ))}
+                  {fileTree.length === 0 && <p className="text-xs text-slate-600 italic">No files.</p>}
                </div>
             </div>
             
@@ -961,7 +1086,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
          {/* Main Editor Area */}
          <div className="flex-1 flex flex-col min-w-0 relative">
             
-            {/* Editor Tabs */}
+            {/* Editor Tabs (Flat list of OPEN files would be better, but sticking to flat index for now) */}
             <div className="flex items-center bg-slate-900 border-b border-slate-800 px-2 overflow-x-auto scrollbar-hide">
                <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="p-2 text-slate-500 hover:text-white mr-2">
                   {isSidebarOpen ? <Minimize2 size={16}/> : <Maximize2 size={16}/>}
@@ -974,7 +1099,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
                     className={`flex items-center space-x-2 px-4 py-2.5 border-r border-slate-800 cursor-pointer min-w-[120px] max-w-[200px] ${activeFileIndex === idx ? 'bg-slate-950 text-white border-t-2 border-t-indigo-500' : 'bg-slate-900 text-slate-500 hover:bg-slate-800 hover:text-slate-300'}`}
                   >
                      <FileIcon filename={file.name} />
-                     <span className="text-xs font-medium truncate">{file.name.split('/').pop()}</span>
+                     <span className="text-xs font-medium truncate" title={file.name}>{file.name.split('/').pop()}</span>
                      {activeFileIndex === idx && (
                         <button className="ml-auto text-slate-500 hover:text-red-400" onClick={(e) => { e.stopPropagation(); /* close file logic */ }}>
                            <X size={12} />
