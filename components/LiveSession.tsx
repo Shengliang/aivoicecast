@@ -461,6 +461,20 @@ export const LiveSession: React.FC<LiveSessionProps> = ({ channel, initialContex
     } catch (e) { stopWaitingMusic(); setIsRetrying(false); setError("Failed to initialize audio session"); }
   }, [channel.id, channel.voiceName, channel.systemInstruction, initialContext, recordingEnabled, videoEnabled, cameraEnabled, initialTranscript]);
 
+  // Reconnect on context change while session is active
+  useEffect(() => {
+    if (hasStarted && isConnected && initialContext) {
+       // Context changed while active. Reconnect to update AI system instruction.
+       const timer = setTimeout(() => {
+           console.log("LiveSession: Context updated. Reconnecting...");
+           // Disconnect current session, but don't stop recordings or reset transcript
+           serviceRef.current?.disconnect();
+           connect();
+       }, 500);
+       return () => clearTimeout(timer);
+    }
+  }, [initialContext, hasStarted, isConnected, connect]);
+
   useEffect(() => {
      return () => {
         stopWaitingMusic();

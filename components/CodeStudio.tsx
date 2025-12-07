@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { GoogleGenAI } from '@google/genai';
 import { ArrowLeft, Save, Folder, File, Code, Plus, Trash2, Loader2, ChevronRight, ChevronDown, X, MessageSquare, FileCode, FileJson, FileType, Search, Coffee, Hash, CloudUpload, Edit3, BookOpen, Bot, Send, Maximize2, Minimize2, GripVertical, UserCheck, AlertTriangle, Archive, Sparkles, Video, Mic, CheckCircle, Monitor, FileText, Eye, Github, GitBranch, GitCommit, FolderOpen, RefreshCw, GraduationCap, DownloadCloud } from 'lucide-react';
@@ -413,6 +414,9 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
   const [isPreviewMode, setIsPreviewMode] = useState(false);
   const [isReviewing, setIsReviewing] = useState(false);
   
+  // Selection State for Context Awareness
+  const [selection, setSelection] = useState('');
+
   // Chat State
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [chatInput, setChatInput] = useState('');
@@ -484,6 +488,17 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
           chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
       }
   }, [chatMessages, activeSideView]);
+
+  const handleTextSelect = (e: React.SyntheticEvent<HTMLTextAreaElement>) => {
+      const target = e.currentTarget;
+      const start = target.selectionStart;
+      const end = target.selectionEnd;
+      if (start !== end) {
+          setSelection(target.value.substring(start, end));
+      } else {
+          setSelection('');
+      }
+  };
 
   // Resizing Logic
   const startResizing = (mouseDownEvent: React.MouseEvent) => {
@@ -1112,7 +1127,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
                         node={node}
                         depth={0}
                         activeFileIndex={activeFileIndex}
-                        onSelect={(idx) => { setActiveFileIndex(idx); setActiveSideView('none'); }}
+                        onSelect={(idx) => { setActiveFileIndex(idx); setSelection(''); }}
                         expandedFolders={expandedFolders}
                         toggleFolder={toggleFolder}
                     />
@@ -1206,6 +1221,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
                             value={activeFile.content}
                             onChange={(e) => handleCodeChange(e.target.value)}
                             onScroll={handleScroll}
+                            onSelect={handleTextSelect}
                             className="flex-1 bg-transparent text-slate-300 font-mono text-sm p-4 outline-none resize-none leading-6 whitespace-pre"
                             spellCheck={false}
                         />
@@ -1267,12 +1283,14 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
 Repo: ${project.name}
 File: ${activeFile.name}
 Language: ${activeFile.language}
+Current Directory: ${activeFile.name.includes('/') ? activeFile.name.split('/').slice(0, -1).join('/') : 'root'}
+${selection ? `\nUSER SELECTED CODE:\n\`\`\`\n${selection}\n\`\`\`\n(The user is asking about this specific selection)` : ''}
 
---- CONTENT ---
+--- FILE CONTENT ---
 ${activeFile.content}
-----------------
+--------------------
 
-Please explain this file to me. What does it do? How does it work?
+Explain this file or the selection.
 `}
                                 lectureId={`tutor-${project.id}-${activeFile.name.replace(/[^a-zA-Z0-9]/g, '_')}`}
                                 recordingEnabled={false}
