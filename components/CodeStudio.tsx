@@ -639,6 +639,35 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
   // Build Tree
   const fileTree = React.useMemo(() => buildFileTree(project.files, expandedFolders), [project.files, expandedFolders]);
 
+  // Debounce logic for file content to avoid spamming AI context
+  const [debouncedFileContext, setDebouncedFileContext] = useState('');
+
+  useEffect(() => {
+      const handler = setTimeout(() => {
+          if (!activeFile) return;
+          // Truncate large files to prevent socket overflow and context limits
+          const content = activeFile.content.length > 20000 
+              ? activeFile.content.substring(0, 20000) + "\n...[Content Truncated due to size]..."
+              : activeFile.content;
+              
+          setDebouncedFileContext(`
+[USER ACTIVITY UPDATE]
+Current File: ${activeFile.name}
+Language: ${activeFile.language}
+Current Directory: ${activeFile.name.includes('/') ? activeFile.name.split('/').slice(0, -1).join('/') : 'root'}
+${selection ? `\nUSER SELECTED CODE:\n\`\`\`\n${selection}\n\`\`\`\n(The user is asking about this specific selection)` : ''}
+
+--- FILE CONTENT ---
+${content}
+--------------------
+
+If the user asks questions, answer based on this new context. If they just switched files, acknowledge it briefly.
+`);
+      }, 1500); // 1.5s debounce to allow typing to finish
+
+      return () => clearTimeout(handler);
+  }, [activeFile, selection]); 
+
   // Lazy Loading File Content Effect
   useEffect(() => {
       const loadContent = async () => {
@@ -1665,19 +1694,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
                         {activeSideView === 'tutor' ? (
                             <LiveSession 
                                 channel={tutorChannel}
-                                initialContext={`
-[USER ACTIVITY UPDATE]
-Current File: ${activeFile.name}
-Language: ${activeFile.language}
-Current Directory: ${activeFile.name.includes('/') ? activeFile.name.split('/').slice(0, -1).join('/') : 'root'}
-${selection ? `\nUSER SELECTED CODE:\n\`\`\`\n${selection}\n\`\`\`\n(The user is asking about this specific selection)` : ''}
-
---- FILE CONTENT ---
-${activeFile.content}
---------------------
-
-If the user asks questions, answer based on this new context. If they just switched files, acknowledge it briefly.
-`}
+                                initialContext={debouncedFileContext} // Use debounced context
                                 lectureId={`tutor-${project.id}`} // Stabilized ID to prevent unmounts
                                 recordingEnabled={false}
                                 onEndSession={() => setActiveSideView('none')}
