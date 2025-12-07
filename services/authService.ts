@@ -1,5 +1,4 @@
 
-
 import { auth } from './firebaseConfig';
 import firebase from 'firebase/compat/app';
 
@@ -33,15 +32,39 @@ export async function signInWithGitHub(): Promise<{ user: firebase.User | null, 
     provider.addScope('repo');
     provider.addScope('user');
 
-    const result = await auth.signInWithPopup(provider);
-    
-    // This gives you a GitHub Access Token. You can use it to access the GitHub API.
-    const credential = result.credential as firebase.auth.OAuthCredential;
-    const token = credential?.accessToken || null;
+    // SCENARIO 1: User is already logged in (e.g. with Google)
+    // We want to LINK GitHub to the existing account so they can access Repos.
+    if (auth.currentUser) {
+       try {
+         const result = await auth.currentUser.linkWithPopup(provider);
+         const credential = result.credential as firebase.auth.OAuthCredential;
+         return { user: result.user, token: credential?.accessToken || null };
+       } catch (linkError: any) {
+         // If the account is ALREADY linked, re-authenticate to get a fresh Access Token
+         if (linkError.code === 'auth/credential-already-in-use') {
+            const result = await auth.currentUser.reauthenticateWithPopup(provider);
+            const credential = result.credential as firebase.auth.OAuthCredential;
+            return { user: result.user, token: credential?.accessToken || null };
+         }
+         throw linkError;
+       }
+    } 
+    // SCENARIO 2: User is NOT logged in
+    // Attempt to sign in with GitHub directly.
+    else {
+       const result = await auth.signInWithPopup(provider);
+       const credential = result.credential as firebase.auth.OAuthCredential;
+       return { user: result.user, token: credential?.accessToken || null };
+    }
 
-    return { user: result.user, token };
-  } catch (error) {
+  } catch (error: any) {
     console.error("GitHub Login failed:", error);
+    
+    // Handle the specific conflict error experienced by the user
+    if (error.code === 'auth/account-exists-with-different-credential') {
+       throw new Error("An account with this email already exists (likely via Google). Please Log In with Google first, then connect GitHub inside the Code Studio.");
+    }
+    
     throw error;
   }
 }
