@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { GoogleGenAI } from '@google/genai';
 import { ArrowLeft, Save, Folder, File, Code, Plus, Trash2, Loader2, ChevronRight, ChevronDown, X, MessageSquare, FileCode, FileJson, FileType, Search, Coffee, Hash, CloudUpload, Edit3, BookOpen, Bot, Send, Maximize2, Minimize2, GripVertical, UserCheck, AlertTriangle, Archive, Sparkles, Video, Mic, CheckCircle, Monitor, FileText, Eye, Github, GitBranch, GitCommit, FolderOpen, RefreshCw, GraduationCap, DownloadCloud } from 'lucide-react';
@@ -406,6 +407,122 @@ const FileTreeNode: React.FC<{
   );
 };
 
+// --- SYNTAX HIGHLIGHTING EDITOR ---
+
+const generateHighlightedHTML = (code: string, language: string) => {
+  // Safe escape
+  const escapeHtml = (text: string) => text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  
+  // Use a map to protect specific tokens (strings, comments) from being partially matched by keywords
+  const placeholders: string[] = [];
+  const addPlaceholder = (htmlFragment: string) => {
+    placeholders.push(htmlFragment);
+    return `__PH${placeholders.length - 1}__`;
+  };
+
+  let processed = escapeHtml(code);
+
+  if (language === 'c++' || language === 'c' || language === 'cpp') {
+    // 1. Strings
+    processed = processed.replace(/(&quot;.*?&quot;)/g, match => addPlaceholder(`<span class="text-amber-400">${match}</span>`));
+    processed = processed.replace(/('.*?')/g, match => addPlaceholder(`<span class="text-amber-300">${match}</span>`));
+    
+    // 2. Preprocessor directives
+    processed = processed.replace(/(#include|#define|#ifdef|#ifndef|#endif|#pragma)/g, match => addPlaceholder(`<span class="text-pink-400">${match}</span>`));
+    processed = processed.replace(/(&lt;.*?&gt;)/g, match => addPlaceholder(`<span class="text-emerald-300">${match}</span>`)); // <vector>
+
+    // 3. Comments (Double Slash)
+    processed = processed.replace(/(\/\/.*)/g, match => addPlaceholder(`<span class="text-slate-500 italic">${match}</span>`));
+    
+    // 4. Comments (Block) - Basic multiline support
+    processed = processed.replace(/(\/\*[\s\S]*?\*\/)/g, match => addPlaceholder(`<span class="text-slate-500 italic">${match}</span>`));
+
+    // 5. Keywords
+    const keywords = [
+      "int", "float", "double", "char", "void", "bool", "long", "short", "unsigned", "signed", 
+      "struct", "class", "public", "private", "protected", "virtual", "override", "final", "static", "const", "constexpr",
+      "if", "else", "for", "while", "do", "switch", "case", "break", "continue", "default", "return", 
+      "new", "delete", "this", "true", "false", "nullptr", "namespace", "using", "template", "typename",
+      "try", "catch", "throw", "auto", "explicit", "friend", "inline", "mutable", "operator", 
+      "std", "vector", "string", "cout", "cin", "endl", "map", "set", "stack", "queue", "pair"
+    ];
+    // Word boundary regex
+    const kwRegex = new RegExp(`\\b(${keywords.join('|')})\\b`, 'g');
+    processed = processed.replace(kwRegex, '<span class="text-blue-400 font-bold">$1</span>');
+
+    // 6. Functions (Word followed by paren)
+    processed = processed.replace(/\b([a-zA-Z_]\w*)(?=\()/g, '<span class="text-yellow-200">$1</span>');
+    
+    // 7. Numbers
+    processed = processed.replace(/\b(\d+)\b/g, '<span class="text-emerald-300">$1</span>');
+  } 
+  
+  // Basic Python support
+  else if (language === 'python') {
+      // Strings
+      processed = processed.replace(/(&quot;.*?&quot;|'.*?')/g, match => addPlaceholder(`<span class="text-amber-400">${match}</span>`));
+      // Comments
+      processed = processed.replace(/(#.*)/g, match => addPlaceholder(`<span class="text-slate-500 italic">${match}</span>`));
+      // Keywords
+      const keywords = ["def", "return", "if", "elif", "else", "while", "for", "in", "import", "from", "class", "try", "except", "print", "True", "False", "None", "self"];
+      const kwRegex = new RegExp(`\\b(${keywords.join('|')})\\b`, 'g');
+      processed = processed.replace(kwRegex, '<span class="text-blue-400 font-bold">$1</span>');
+      // Functions
+      processed = processed.replace(/\b([a-zA-Z_]\w*)(?=\()/g, '<span class="text-yellow-200">$1</span>');
+  }
+
+  // Restore placeholders
+  placeholders.forEach((ph, i) => {
+    processed = processed.replace(`__PH${i}__`, ph);
+  });
+
+  return processed;
+};
+
+const EnhancedEditor = ({ code, language, onChange, onScroll, onSelect, textAreaRef, lineNumbersRef }: any) => {
+  return (
+    <div className="flex-1 relative bg-slate-950 flex overflow-hidden font-mono text-sm">
+        {/* Line Numbers */}
+        <div 
+            ref={lineNumbersRef}
+            className="w-12 bg-slate-900 border-r border-slate-800 text-right text-slate-600 py-4 pr-3 select-none overflow-hidden flex-shrink-0 leading-6"
+        >
+            {code.split('\n').map((_: any, i: number) => (
+                <div key={i}>{i + 1}</div>
+            ))}
+        </div>
+        
+        <div className="relative flex-1 h-full overflow-hidden">
+            {/* Syntax Highlight Layer (Background) */}
+            <pre
+                className="absolute top-0 left-0 w-full h-full p-4 pointer-events-none margin-0 whitespace-pre overflow-hidden leading-6"
+                aria-hidden="true"
+                style={{ fontFamily: 'monospace' }}
+            >
+                <code 
+                    dangerouslySetInnerHTML={{ __html: generateHighlightedHTML(code, language) + '<br/>' }} 
+                />
+            </pre>
+
+            {/* Editing Layer (Foreground) */}
+            <textarea
+                ref={textAreaRef}
+                value={code}
+                onChange={(e) => onChange(e.target.value)}
+                onScroll={onScroll}
+                onSelect={onSelect}
+                className="absolute top-0 left-0 w-full h-full p-4 bg-transparent text-transparent caret-white outline-none resize-none leading-6 whitespace-pre overflow-auto"
+                spellCheck={false}
+                autoCapitalize="off"
+                autoComplete="off"
+                autoCorrect="off"
+                style={{ fontFamily: 'monospace' }}
+            />
+        </div>
+    </div>
+  );
+};
+
 export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) => {
   const [project, setProject] = useState<CodeProject>(EXAMPLE_PROJECTS['is_bst']);
   const [activeFileIndex, setActiveFileIndex] = useState(0);
@@ -587,9 +704,21 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
     setProject({ ...project, files: updatedFiles });
   };
 
-  const handleScroll = () => {
-      if (textareaRef.current && lineNumbersRef.current) {
-          lineNumbersRef.current.scrollTop = textareaRef.current.scrollTop;
+  const handleScroll = (e: React.UIEvent<HTMLTextAreaElement>) => {
+      if (lineNumbersRef.current) {
+          lineNumbersRef.current.scrollTop = e.currentTarget.scrollTop;
+      }
+      
+      // Also sync the pre tag if using EnhancedEditor manually, 
+      // but EnhancedEditor structure handles this by having pre and textarea same size.
+      // However, if textarea scrolls, we need to ensure PRE scrolls (or they are both in a scrolling container).
+      // The EnhancedEditor puts textarea absolute on top. 
+      // Wait, standard trick is to scroll the container, but textarea needs to capture input.
+      // Better trick: Sync `scrollTop` of pre to textarea.
+      const pre = e.currentTarget.previousElementSibling as HTMLPreElement;
+      if (pre) {
+          pre.scrollTop = e.currentTarget.scrollTop;
+          pre.scrollLeft = e.currentTarget.scrollLeft;
       }
   };
 
@@ -1040,8 +1169,17 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
                <div className="bg-indigo-600 p-1.5 rounded-lg">
                   <Code size={18} className="text-white" />
                </div>
-               <div className="flex flex-col">
-                   <h1 className="font-bold text-white hidden sm:block truncate max-w-[200px] text-sm">{project.name}</h1>
+               
+               {/* Clickable Project Name for Quick Switching */}
+               <div 
+                  className="flex flex-col cursor-pointer hover:bg-slate-800 rounded px-2 py-1 transition-colors group"
+                  onClick={() => setShowImportModal(true)}
+                  title="Switch Repository"
+               >
+                   <div className="flex items-center gap-1">
+                       <h1 className="font-bold text-white hidden sm:block truncate max-w-[200px] text-sm">{project.name}</h1>
+                       <ChevronDown size={12} className="text-slate-500 group-hover:text-white" />
+                   </div>
                    {project.github && <span className="text-[10px] text-slate-500 font-mono flex items-center gap-1"><GitBranch size={10}/> {project.github.branch}</span>}
                </div>
             </div>
@@ -1217,28 +1355,15 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
                         </div>
                     </div>
                 ) : (
-                    <>
-                        {/* Line Numbers */}
-                        <div 
-                            ref={lineNumbersRef}
-                            className="w-12 bg-slate-900 border-r border-slate-800 text-right text-slate-600 font-mono text-sm py-4 pr-3 select-none overflow-hidden flex-shrink-0"
-                        >
-                            {activeFile.content.split('\n').map((_, i) => (
-                                <div key={i} className="leading-6">{i + 1}</div>
-                            ))}
-                        </div>
-                        
-                        {/* Code Textarea */}
-                        <textarea
-                            ref={textareaRef}
-                            value={activeFile.content}
-                            onChange={(e) => handleCodeChange(e.target.value)}
-                            onScroll={handleScroll}
-                            onSelect={handleTextSelect}
-                            className="flex-1 bg-transparent text-slate-300 font-mono text-sm p-4 outline-none resize-none leading-6 whitespace-pre"
-                            spellCheck={false}
-                        />
-                    </>
+                    <EnhancedEditor 
+                        code={activeFile.content}
+                        language={getLanguageFromFilename(activeFile.name)}
+                        onChange={(val: string) => handleCodeChange(val)}
+                        onScroll={handleScroll}
+                        onSelect={handleTextSelect}
+                        textAreaRef={textareaRef}
+                        lineNumbersRef={lineNumbersRef}
+                    />
                 )}
                 
                 {/* Live Session Overlay (Mock Interview) */}
