@@ -81,6 +81,23 @@ const drawTools: FunctionDeclaration[] = [
     }
   },
   {
+    name: 'draw_path',
+    description: 'Draw a freehand sketch, curve, or complex shape (like a person, animal, or symbol) using a series of points.',
+    parameters: {
+      type: GenAIType.OBJECT,
+      properties: {
+        points: {
+          type: GenAIType.ARRAY,
+          description: 'A flat array of coordinates [x1, y1, x2, y2, x3, y3...]. Use at least 6 points for a visible curve.',
+          items: { type: GenAIType.NUMBER }
+        },
+        color: { type: GenAIType.STRING },
+        strokeWidth: { type: GenAIType.NUMBER }
+      },
+      required: ['points']
+    }
+  },
+  {
     name: 'add_text',
     description: 'Write text on the whiteboard.',
     parameters: {
@@ -133,7 +150,10 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack }) => {
   const [chatInput, setChatInput] = useState('');
   const [isAiProcessing, setIsAiProcessing] = useState(false);
   const [isVoiceListening, setIsVoiceListening] = useState(false);
+  
+  // Refs for continuous conversation
   const recognitionRef = useRef<any>(null);
+  const shouldListenRef = useRef(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
   // Setup Speech Recognition
@@ -141,32 +161,53 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack }) => {
     if ('webkitSpeechRecognition' in window) {
       const SpeechRecognition = (window as any).webkitSpeechRecognition;
       recognitionRef.current = new SpeechRecognition();
-      recognitionRef.current.continuous = false;
+      recognitionRef.current.continuous = false; // We handle restart manually for better control
       recognitionRef.current.interimResults = false;
       recognitionRef.current.lang = 'en-US';
 
       recognitionRef.current.onresult = (event: any) => {
         const transcript = event.results[0][0].transcript;
-        setChatInput(prev => prev ? prev + ' ' + transcript : transcript);
-        setIsVoiceListening(false);
+        if (transcript.trim()) {
+            // Immediately send upon silence/result
+            handleChatSubmit(transcript);
+        }
       };
 
       recognitionRef.current.onerror = (event: any) => {
         console.error("Speech error", event.error);
-        setIsVoiceListening(false);
+        if (event.error === 'no-speech') {
+            // Just restart if we are supposed to be listening
+            if (shouldListenRef.current && !isAiProcessing) {
+                try { recognitionRef.current.start(); } catch(e) {}
+            }
+        } else {
+            setIsVoiceListening(false);
+            shouldListenRef.current = false;
+        }
       };
       
       recognitionRef.current.onend = () => {
-         setIsVoiceListening(false);
+         // Auto-restart if conversational mode is active and AI isn't thinking
+         if (shouldListenRef.current && !isAiProcessing) {
+             try {
+                 recognitionRef.current.start();
+             } catch(e) {
+                 setIsVoiceListening(false);
+             }
+         } else {
+             setIsVoiceListening(false);
+         }
       };
     }
-  }, []);
+  }, [isAiProcessing]); // Re-bind if AI processing state changes to avoid race conditions
 
   const toggleVoiceListen = () => {
       if (isVoiceListening) {
+          shouldListenRef.current = false;
           recognitionRef.current?.stop();
           setIsVoiceListening(false);
       } else {
+          shouldListenRef.current = true;
           recognitionRef.current?.start();
           setIsVoiceListening(true);
       }
@@ -649,15 +690,18 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack }) => {
 
   // --- AI ASSISTANT IMPLEMENTATION ---
 
-  const handleChatSubmit = async () => {
-      if (!chatInput.trim()) return;
+  const handleChatSubmit = async (messageText?: string) => {
+      const msg = messageText || chatInput;
+      if (!msg.trim()) return;
       
-      const userMsg = chatInput;
       setChatInput('');
       
-      const newHistory = [...chatHistory, { role: 'user', text: userMsg }];
+      const newHistory = [...chatHistory, { role: 'user', text: msg }];
       setChatHistory(newHistory as any);
       setIsAiProcessing(true);
+      
+      // Stop listening while thinking to avoid picking up self (if TTS were added)
+      if (recognitionRef.current) recognitionRef.current.stop();
 
       try {
           const apiKey = localStorage.getItem('gemini_api_key') || GEMINI_API_KEY || process.env.API_KEY || '';
@@ -674,15 +718,18 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack }) => {
           }
 
           const systemInstruction = `You are a helpful Whiteboard Assistant. 
-          You can Draw shapes, lines, and text using the provided tools.
+          You can Draw shapes, lines, text, and FREEHAND PATHS using the provided tools.
           The canvas is roughly 1000x800. Coordinate (0,0) is top-left.
-          If the user asks to analyze the board, describe what you see.
-          If the user asks to draw something, use the tools.
-          If the user asks to clear, use the clear tool.`;
+          
+          IMPORTANT:
+          - If the user asks to draw a person, animal, or complex object, create a stick figure or outline using 'draw_path' or a combination of shapes (circle for head, lines/paths for body).
+          - 'draw_path' takes a flat array of numbers [x1, y1, x2, y2...].
+          - If the user asks to clear, use the clear tool.
+          - If the user asks to analyze, describe the image context.`;
 
           const contents = [
               ...newHistory.map(m => ({ role: m.role === 'ai' ? 'model' : 'user', parts: [{ text: m.text }] })),
-              { role: 'user', parts: imagePart ? [imagePart, { text: userMsg }] : [{ text: userMsg }] }
+              { role: 'user', parts: imagePart ? [imagePart, { text: msg }] : [{ text: msg }] }
           ];
 
           const response = await ai.models.generateContent({
@@ -728,6 +775,24 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack }) => {
                           height: (args.y2 as number) - (args.y1 as number),
                           color: (args.color as string) || color, strokeWidth
                       });
+                  } else if (fc.name === 'draw_path') {
+                      // Convert flat array [x1,y1,x2,y2] to point objects
+                      const rawPoints = args.points as number[];
+                      const points: Point[] = [];
+                      for(let i=0; i<rawPoints.length; i+=2) {
+                          if (i+1 < rawPoints.length) {
+                              points.push({ x: rawPoints[i], y: rawPoints[i+1] });
+                          }
+                      }
+                      if (points.length > 0) {
+                          newElements.push({
+                              id, type: 'pencil',
+                              x: points[0].x, y: points[0].y, // Reference point
+                              points: points,
+                              color: (args.color as string) || color, 
+                              strokeWidth: (args.strokeWidth as number) || strokeWidth
+                          });
+                      }
                   } else if (fc.name === 'add_text') {
                       newElements.push({
                           id, type: 'text',
@@ -758,6 +823,13 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack }) => {
           setChatHistory(prev => [...prev, { role: 'ai', text: `Error: ${e.message}` }]);
       } finally {
           setIsAiProcessing(false);
+          // Auto-resume listening if we were in conversational mode
+          if (shouldListenRef.current) {
+              // Small delay to ensure state settles
+              setTimeout(() => {
+                  try { recognitionRef.current?.start(); setIsVoiceListening(true); } catch(e) {}
+              }, 100);
+          }
       }
   };
 
@@ -936,7 +1008,7 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack }) => {
                       <div className="text-center text-slate-500 py-8">
                           <Bot size={32} className="mx-auto mb-2 opacity-50"/>
                           <p className="text-xs">Ask me to analyze the board or draw shapes for you.</p>
-                          <p className="text-xs italic mt-2">"Draw a red flow chart"</p>
+                          <p className="text-xs italic mt-2">"Draw a red stick figure"</p>
                       </div>
                   )}
                   {chatHistory.map((msg, i) => (
@@ -958,6 +1030,7 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack }) => {
                   <button 
                       onClick={toggleVoiceListen}
                       className={`p-2 rounded-full transition-colors ${isVoiceListening ? 'bg-red-500 text-white animate-pulse' : 'bg-slate-800 text-slate-400 hover:text-white'}`}
+                      title={isVoiceListening ? "Stop Continuous Mode" : "Start Continuous Mode"}
                   >
                       {isVoiceListening ? <MicOff size={16}/> : <Mic size={16}/>}
                   </button>
@@ -966,11 +1039,11 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack }) => {
                       value={chatInput}
                       onChange={(e) => setChatInput(e.target.value)}
                       onKeyDown={(e) => e.key === 'Enter' && handleChatSubmit()}
-                      placeholder="Type or speak a command..."
+                      placeholder="Type or speak..."
                       className="flex-1 bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500"
                   />
                   <button 
-                      onClick={handleChatSubmit}
+                      onClick={() => handleChatSubmit()}
                       disabled={!chatInput.trim() || isAiProcessing}
                       className="p-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white rounded-lg transition-colors"
                   >
