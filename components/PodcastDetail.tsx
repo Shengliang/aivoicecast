@@ -922,6 +922,29 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
     }
   };
 
+  const handleSegmentDoubleClick = (index: number) => {
+      // 1. Stop everything immediately
+      stopAudio(); 
+
+      // 2. Set the target cursor
+      setCurrentSectionIndex(index);
+      schedulingCursorRef.current = index;
+
+      // 3. Restart playback
+      // Use setTimeout to allow state/refs to settle from stopAudio if needed, 
+      // and to ensure clean start of the effect hook.
+      setTimeout(() => {
+          unlockAudioContext();
+          const ctx = getAudioContext();
+          // Schedule slightly in future to avoid glitch
+          nextScheduleTimeRef.current = Math.max(ctx.currentTime + 0.1, nextScheduleTimeRef.current);
+          
+          // Ensure we are in "playing" mode
+          isPlayingRef.current = true;
+          setIsPlaying(true);
+      }, 50); 
+  };
+
   const generateLectureMarkdown = (lecture: GeneratedLecture) => {
     let md = `# ${lecture.topic}\n\n`;
     md += `**Date:** ${new Date().toLocaleDateString()}\n`;
@@ -1600,7 +1623,9 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
                         <div 
                             key={idx} 
                             ref={(el) => { sectionRefs.current[idx] = el; }}
-                            className={`p-4 rounded-xl transition-all duration-500 ${currentSectionIndex === idx ? 'bg-indigo-900/40 border border-indigo-500/50 shadow-lg scale-[1.01]' : 'hover:bg-slate-800/30 border border-transparent'}`}
+                            onDoubleClick={() => handleSegmentDoubleClick(idx)}
+                            title={t.jump}
+                            className={`p-4 rounded-xl transition-all duration-500 cursor-pointer ${currentSectionIndex === idx ? 'bg-indigo-900/40 border border-indigo-500/50 shadow-lg scale-[1.01]' : 'hover:bg-slate-800/30 border border-transparent'}`}
                         >
                             <div className="flex items-start space-x-4">
                                 <div className={`flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center text-xs font-bold border ${section.speaker === 'Teacher' ? 'bg-slate-800 border-indigo-500 text-indigo-400' : 'bg-slate-800 border-purple-500 text-purple-400'}`}>
@@ -1615,7 +1640,10 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
                                     {/* Inline Actions */}
                                     <div className={`mt-3 flex items-center gap-2 transition-opacity duration-300 ${currentSectionIndex === idx ? 'opacity-100' : 'opacity-0 group-hover:opacity-50'}`}>
                                         <button 
-                                            onClick={() => handleDiscussSegment(idx, section.text, section.discussionId)}
+                                            onClick={(e) => {
+                                                e.stopPropagation(); // prevent triggering playback
+                                                handleDiscussSegment(idx, section.text, section.discussionId);
+                                            }}
                                             className={`text-xs flex items-center gap-1 px-2 py-1 rounded transition-colors ${section.discussionId ? 'bg-emerald-900/30 text-emerald-400 border border-emerald-900/50' : 'bg-slate-800 text-indigo-400 hover:text-white'}`}
                                         >
                                             <MessageCircle size={12} />
