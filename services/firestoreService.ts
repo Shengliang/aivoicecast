@@ -235,12 +235,18 @@ export async function incrementApiUsage(uid: string): Promise<void> {
 
 export async function upgradeUserSubscription(uid: string, tier: SubscriptionTier): Promise<void> {
     const userRef = db.collection('users').doc(uid);
-    // In a real app, this would be a Stripe Webhook callback
-    await userRef.update({
+    // Use set with merge to ensure document exists and avoid "not found" errors
+    await userRef.set({
         subscriptionTier: tier,
         subscriptionStatus: 'active'
-    });
-    logUserActivity('upgrade_subscription', { tier });
+    }, { merge: true });
+    
+    // Log activity safely
+    try {
+        logUserActivity('upgrade_subscription', { tier });
+    } catch(e) {
+        console.warn("Failed to log upgrade activity", e);
+    }
 }
 
 // --- ACTIVITY LOGS (METRICS) ---

@@ -28,8 +28,9 @@ export const PricingModal: React.FC<PricingModalProps> = ({ isOpen, onClose, use
       onSuccess();
       onClose();
       alert(`Successfully upgraded to ${tier.toUpperCase()} plan!`);
-    } catch (e) {
-      alert("Payment failed. Please try again.");
+    } catch (e: any) {
+      console.error("Subscription Upgrade Failed:", e);
+      alert(`Payment failed: ${e.message || "Unknown error. Check permissions or network."}`);
     } finally {
       setProcessingTier(null);
     }
