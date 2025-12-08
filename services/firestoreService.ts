@@ -523,7 +523,6 @@ export function subscribeToPublicChannels(
         onUpdate(channels);
       },
       (error) => {
-        console.warn("Public channels subscription error:", error);
         onError(error);
       }
     );

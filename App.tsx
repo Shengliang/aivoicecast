@@ -1,5 +1,3 @@
-
-
 import React, { useState, useEffect, useMemo } from 'react';
 import { Channel, ViewState, UserProfile, TranscriptItem } from './types';
 import { 
@@ -46,7 +44,7 @@ import { HANDCRAFTED_CHANNELS, CATEGORY_STYLES, TOPIC_CATEGORIES } from './utils
 import { OFFLINE_CHANNEL_ID } from './utils/offlineContent';
 import { GEMINI_API_KEY } from './services/private_keys';
 
-const APP_VERSION = "v3.42.0";
+const APP_VERSION = "v3.42.2";
 
 const UI_TEXT = {
   en: {
@@ -180,21 +178,29 @@ const App: React.FC = () => {
     return () => unsubscribeAuth();
   }, []);
 
-  // Load Data
+  // Load User Channels (Local)
   useEffect(() => {
-    // 1. User Channels (IndexedDB)
     getUserChannels().then(setUserChannels);
+  }, []);
 
-    // 2. Public Channels (Firestore - Realtime)
-    // Only subscribe if we have a valid config to avoid console spam of 404s
+  // Load Public Channels (Firestore)
+  // Dependency on currentUser ensures we re-subscribe after login if initial attempt failed due to permissions
+  useEffect(() => {
     if (isFirebaseConfigured) {
         const unsubPublic = subscribeToPublicChannels(
           (data) => setPublicChannels(data),
-          (err) => console.error("Public channels error", err)
+          (err: any) => {
+              // Gracefully handle permission errors (Guest Mode on restricted DB)
+              if (err.code === 'permission-denied' || err.message?.includes('permission')) {
+                  console.warn("Public channels access denied. Waiting for authentication.");
+              } else {
+                  console.error("Public channels error", err);
+              }
+          }
         );
         return () => { unsubPublic(); };
     }
-  }, []);
+  }, [currentUser]);
 
   // Load Group Channels when profile updates
   useEffect(() => {
