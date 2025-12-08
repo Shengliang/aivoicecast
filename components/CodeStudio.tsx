@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { GoogleGenAI, FunctionDeclaration, Type } from '@google/genai';
 import { ArrowLeft, Save, Folder, File, Code, Plus, Trash2, Loader2, ChevronRight, ChevronDown, X, MessageSquare, FileCode, FileJson, FileType, Search, Coffee, Hash, CloudUpload, Edit3, BookOpen, Bot, Send, Maximize2, Minimize2, GripVertical, UserCheck, AlertTriangle, Archive, Sparkles, Video, Mic, CheckCircle, Monitor, FileText, Eye, Github, GitBranch, GitCommit, FolderOpen, RefreshCw, GraduationCap, DownloadCloud, Terminal, Undo2, Check } from 'lucide-react';
@@ -15,7 +14,6 @@ interface CodeStudioProps {
   currentUser: any;
 }
 
-// ... existing LANGUAGES constant ...
 const LANGUAGES = [
     { 
         id: 'cpp', label: 'C++', ext: 'cpp', 
@@ -250,7 +248,6 @@ int main() {
   }
 };
 
-// ... Helper functions (getLanguageFromFilename, FileIcon, buildFileTree, FileTreeNode, generateHighlightedHTML, EnhancedEditor) remain unchanged ...
 // Helper to detect language from filename
 const getLanguageFromFilename = (filename: string): string => {
     const ext = filename.split('.').pop()?.toLowerCase();
@@ -1320,10 +1317,18 @@ If the user asks questions, answer based on this new context. If they ask to cha
           const fileList = project.files.map(f => f.name).join('\n');
           const historyText = newHistory.slice(-20).map(m => `${m.role.toUpperCase()}: ${m.text}`).join('\n');
           
-          // Use declared tool constant
+          // SYSTEM INSTRUCTION (Static rules)
+          const systemInstruction = `You are an expert Coding Assistant built into an IDE.
+          You have access to a tool 'update_file' which takes 'code' as an argument.
+          
+          RULES:
+          1. If the user asks to modify, refactor, fix, or change the code in the current file, YOU MUST use the 'update_file' tool.
+          2. When using 'update_file', you must provide the COMPLETE file content, not just a diff.
+          3. If the user asks a question, answer normally.
+          `;
+
+          // USER PROMPT (Dynamic context)
           const prompt = `
-            You are an expert Coding Assistant built into an IDE.
-            
             PROJECT FILES:
             ${fileList}
 
@@ -1335,15 +1340,15 @@ If the user asks questions, answer based on this new context. If they ask to cha
             
             USER QUESTION:
             ${userMsg}
-            
-            Provide a helpful, concise response. If the user asks to modify the code, use the 'update_file' tool to rewrite the file in-place.
           `;
 
           const response = await ai.models.generateContent({
               model: 'gemini-2.5-flash',
               contents: prompt,
               config: {
-                  tools: [{ functionDeclarations: [updateFileTool] }]
+                  systemInstruction: systemInstruction,
+                  tools: [{ functionDeclarations: [updateFileTool] }],
+                  toolConfig: { functionCallingConfig: { mode: 'AUTO' } } // Force tool check
               }
           });
 
