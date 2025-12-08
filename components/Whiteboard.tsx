@@ -149,95 +149,62 @@ const drawTools: FunctionDeclaration[] = [
 const executeDiagramLayout = (args: any, startId: string): DrawingElement[] => {
     const nodes = args.nodes || [];
     const edges = args.edges || [];
-    let layout = args.layout || 'tiered'; // Default to tiered for structure
     
     const elements: DrawingElement[] = [];
     const nodeMap = new Map<string, {x: number, y: number, w: number, h: number}>();
     
     // Layout Constants
-    const START_X = 100;
-    const START_Y = 200;
-    const BOX_W = 160;
+    const START_X = 50;
+    const START_Y = 100;
+    const BOX_W = 180;
     const BOX_H = 80;
+    const LAYER_SPACING = 250;
+    const NODE_SPACING = 120;
     
-    if (layout === 'grid') {
-        const GRID_COLS = 3;
-        nodes.forEach((node: any, idx: number) => {
-            const col = idx % GRID_COLS;
-            const row = Math.floor(idx / GRID_COLS);
-            const x = START_X + col * (BOX_W + 100);
-            const y = START_Y + row * (BOX_H + 100);
-            nodeMap.set(node.id, { x, y, w: BOX_W, h: BOX_H });
-        });
-    } else {
-        // TIERED / LINEAR LAYOUT (DAG-like)
-        // 1. Calculate In-Degree to find roots (Rank 0)
-        const inDegree = new Map<string, number>();
-        const adj = new Map<string, string[]>();
-        
-        nodes.forEach((n: any) => { 
-            inDegree.set(n.id, 0);
-            adj.set(n.id, []);
-        });
-        
+    // 1. Assign Ranks (Longest Path Layering / DAG Sort)
+    // Initialize ranks for all nodes
+    const ranks = new Map<string, number>();
+    nodes.forEach((n: any) => ranks.set(n.id, 0));
+    
+    // Relax edges to find depths (simulate longest path)
+    // Run N times to propagate depths (handles simple DAGs)
+    const iterations = nodes.length;
+    for (let i = 0; i < iterations; i++) {
+        let changed = false;
         edges.forEach((e: any) => {
-            inDegree.set(e.to, (inDegree.get(e.to) || 0) + 1);
-            const neighbors = adj.get(e.from) || [];
-            neighbors.push(e.to);
-            adj.set(e.from, neighbors);
+            const rSrc = ranks.get(e.from) || 0;
+            const rDst = ranks.get(e.to) || 0;
+            if (rDst < rSrc + 1) {
+                ranks.set(e.to, rSrc + 1);
+                changed = true;
+            }
         });
-
-        // 2. Assign Ranks (BFS)
-        const layers: string[][] = [];
-        let queue = nodes.filter((n: any) => inDegree.get(n.id) === 0).map((n: any) => n.id);
-        
-        // Handle cycles or disconnected graphs by forcing start if no roots found
-        if (queue.length === 0 && nodes.length > 0) queue.push(nodes[0].id);
-        
-        const visited = new Set<string>();
-        
-        while (queue.length > 0) {
-            layers.push([...queue]);
-            const nextQueue: string[] = [];
-            const currentLayerSet = new Set(queue);
-            
-            // Mark visited
-            queue.forEach(id => visited.add(id));
-
-            // Find next layer candidates
-            // Simply looking at children of current layer
-            queue.forEach(id => {
-                const children = adj.get(id) || [];
-                children.forEach(childId => {
-                    if (!visited.has(childId) && !currentLayerSet.has(childId) && !nextQueue.includes(childId)) {
-                        // Check if all parents processed (for true topological sort), 
-                        // but for visual simplicity, just pushing children next is often enough
-                        nextQueue.push(childId);
-                    }
-                });
-            });
-            queue = nextQueue;
-        }
-        
-        // Add leftovers (islands)
-        const leftovers = nodes.filter((n: any) => !visited.has(n.id)).map((n: any) => n.id);
-        if (leftovers.length > 0) layers.push(leftovers);
-
-        // 3. Assign Coordinates
-        layers.forEach((layer, layerIdx) => {
-            // Horizontal spacing between layers
-            const x = START_X + layerIdx * (BOX_W + 150);
-            
-            // Vertical centering
-            const layerHeight = layer.length * (BOX_H + 50);
-            const startY = Math.max(100, 400 - layerHeight / 2); // Center on screen Y=400
-            
-            layer.forEach((nodeId, nodeIdx) => {
-                const y = startY + nodeIdx * (BOX_H + 50);
-                nodeMap.set(nodeId, { x, y, w: BOX_W, h: BOX_H });
-            });
-        });
+        if (!changed) break;
     }
+    
+    // Group nodes by rank into layers
+    const layers: string[][] = [];
+    nodes.forEach((n: any) => {
+        const r = ranks.get(n.id) || 0;
+        if (!layers[r]) layers[r] = [];
+        layers[r].push(n.id);
+    });
+    
+    // 2. Assign Coordinates based on Layers
+    // Filter empty layers (arrays with undefined holes)
+    const compactLayers = layers.filter(l => l && l.length > 0);
+    
+    compactLayers.forEach((layer, layerIdx) => {
+        // Calculate Y start to center this layer vertically relative to the viewport center (approx 400px)
+        const layerHeight = layer.length * NODE_SPACING;
+        const startY = Math.max(100, 400 - layerHeight / 2);
+        
+        layer.forEach((nodeId, nodeIdx) => {
+            const x = START_X + layerIdx * LAYER_SPACING;
+            const y = startY + nodeIdx * NODE_SPACING;
+            nodeMap.set(nodeId, { x, y, w: BOX_W, h: BOX_H });
+        });
+    });
 
     // Generate Elements from Map
     nodeMap.forEach((pos, id) => {
@@ -261,7 +228,7 @@ const executeDiagramLayout = (args: any, startId: string): DrawingElement[] => {
             elements.push({
                 id: `${elId}-label`,
                 type: 'text',
-                x: pos.x + 15, y: pos.y + 15,
+                x: pos.x + 10, y: pos.y + 10,
                 text: node.label,
                 color, strokeWidth: 1.5
             });
@@ -273,13 +240,13 @@ const executeDiagramLayout = (args: any, startId: string): DrawingElement[] => {
         const src = nodeMap.get(edge.from);
         const dst = nodeMap.get(edge.to);
         if (src && dst) {
-            // Calculate connecting points (Right side of Src -> Left side of Dst)
+            // Calculate connecting points 
             const x1 = src.x + src.w;
             const y1 = src.y + src.h / 2;
             const x2 = dst.x;
             const y2 = dst.y + dst.h / 2;
 
-            // Simple line for now (could be Bezier)
+            // Simple line for now
             elements.push({
                 id: `${startId}-edge-${idx}`,
                 type: 'line',
@@ -294,7 +261,7 @@ const executeDiagramLayout = (args: any, startId: string): DrawingElement[] => {
                 elements.push({
                     id: `${startId}-edge-lbl-${idx}`,
                     type: 'text',
-                    x: (x1 + x2) / 2,
+                    x: (x1 + x2) / 2 - 10,
                     y: (y1 + y2) / 2 - 20,
                     text: edge.label,
                     color: '#cbd5e1',
@@ -891,18 +858,14 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack }) => {
       ROLE & BEHAVIOR:
       1. When asked to draw an architecture or diagram (e.g., "DynamoDB Architecture", "React Component Flow"), 
          you MUST use the 'generate_diagram' tool.
-      2. DO NOT try to use 'draw_rectangle' to manually position nodes for complex systems.
-         - You are bad at coordinates.
-         - The system has a layout engine.
-      3. Thinking Process for Diagrams:
-         - Identify the components (Nodes).
-         - Identify the relationships (Edges).
-         - Call 'generate_diagram' with this logical list.
-         - The system will auto-arrange them (e.g. User at top, DB at bottom).
-      
-      Thinking in PlantUML:
-      - Mentally construct a PlantUML diagram (e.g. "[User] -> [API] -> [DB]").
-      - Convert this mental model into the JSON for 'generate_diagram'.
+      2. Thinking Process (PlantUML Strategy):
+         - Mentally draft the diagram using PlantUML syntax (e.g. "[User] -> [API Gateway]").
+         - Identify the Nodes (components) and Edges (connections) from your mental draft.
+         - Convert this list into the 'generate_diagram' JSON arguments.
+         - Nodes should have descriptive labels.
+      3. DO NOT use manual 'draw_rectangle' coordinates for system architectures. 
+         - The system has an auto-layout engine that handles spacing.
+         - Simply provide the logical list of nodes and edges.
       `;
 
       try {
@@ -1040,11 +1003,11 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack }) => {
           const systemInstruction = `You are a helpful Whiteboard Assistant.
           
           Protocol for Diagrams:
-          1. Use 'generate_diagram'.
-          2. Structure nodes and edges logically.
-          3. DO NOT use manual 'draw_rectangle' coordinates for system architectures. The user wants a clean, auto-layout diagram.
-          
-          Think: "I will define the nodes and edges, and the system will draw them spaced out."
+          1. Use 'generate_diagram' for any request involving architectures, flows, or connected systems.
+          2. Mental Step: "I will think in PlantUML to structure the graph."
+             - Example Thought: "User connects to Load Balancer, which connects to App Server."
+             - Action: Call generate_diagram with nodes=[User, LB, App] and edges=[User->LB, LB->App].
+          3. DO NOT use manual coordinates ('draw_rectangle') for these tasks. Rely on the auto-layout.
           `;
 
           const contents = [
