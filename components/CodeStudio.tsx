@@ -65,7 +65,7 @@ const QUICK_REPOS = [
 const EXAMPLE_PROJECTS: Record<string, CodeProject> = {
   is_bst: {
     id: 'proj-is-bst',
-    name: 'Example: Validate BST (Modern C++)',
+    name: 'Example: Validate BST (C++23 Template)',
     lastModified: Date.now(),
     files: [
       {
@@ -84,24 +84,27 @@ concept Ordered = requires(T a, T b) {
     { a > b } -> std::convertible_to<bool>;
 };
 
+// C++23 Style Template Node with Smart Pointers
+template<Ordered T>
 struct TreeNode {
-    int val;
+    T val;
     // Using std::unique_ptr for automatic memory management (RAII)
     // No manual delete needed. Prevents memory leaks.
-    std::unique_ptr<TreeNode> left;
-    std::unique_ptr<TreeNode> right;
+    std::unique_ptr<TreeNode<T>> left;
+    std::unique_ptr<TreeNode<T>> right;
 
-    TreeNode(int x) : val(x), left(nullptr), right(nullptr) {}
+    TreeNode(T x) : val(x), left(nullptr), right(nullptr) {}
 };
 
 class Solution {
 public:
     // Validate if the tree is a Binary Search Tree
     // Uses raw pointer for traversal to avoid ownership transfer issues
-    bool isValidBST(const std::unique_ptr<TreeNode>& root) {
-        std::stack<TreeNode*> stack;
-        TreeNode* curr = root.get();
-        TreeNode* prev = nullptr;
+    template<Ordered T>
+    bool isValidBST(const std::unique_ptr<TreeNode<T>>& root) {
+        std::stack<TreeNode<T>*> stack;
+        TreeNode<T>* curr = root.get();
+        TreeNode<T>* prev = nullptr;
         
         while (curr != nullptr || !stack.empty()) {
             while (curr != nullptr) {
@@ -126,14 +129,13 @@ public:
 
 int main() {
     // Modern C++: Use std::make_unique to prevent memory leaks automatically
-    auto root = std::make_unique<TreeNode>(2);
-    root->left = std::make_unique<TreeNode>(1);
-    root->right = std::make_unique<TreeNode>(3);
+    auto root = std::make_unique<TreeNode<int>>(2);
+    root->left = std::make_unique<TreeNode<int>>(1);
+    root->right = std::make_unique<TreeNode<int>>(3);
 
     Solution s;
     bool result = s.isValidBST(root);
     
-    // C++23 std::print would be nice here, falling back to iostream
     std::cout << "Is Valid BST: " << (result ? "Yes" : "No") << std::endl;
     
     // root is automatically destroyed here. No leak.
@@ -144,7 +146,7 @@ int main() {
   },
   build_bst: {
     id: 'proj-build-bst',
-    name: 'Example: Build BST',
+    name: 'Example: Build BST (C++23 Template)',
     lastModified: Date.now(),
     files: [
       {
@@ -152,35 +154,42 @@ int main() {
         language: 'c++',
         content: `#include <iostream>
 #include <vector>
+#include <memory>
 
+template<typename T>
 struct TreeNode {
-    int val;
-    TreeNode *left;
-    TreeNode *right;
-    TreeNode(int x) : val(x), left(nullptr), right(nullptr) {}
+    T val;
+    std::unique_ptr<TreeNode<T>> left;
+    std::unique_ptr<TreeNode<T>> right;
+    TreeNode(T x) : val(x), left(nullptr), right(nullptr) {}
 };
 
 class Solution {
 public:
     // Convert Sorted Array to Height Balanced BST
-    TreeNode* sortedArrayToBST(std::vector<int>& nums) {
+    template<typename T>
+    std::unique_ptr<TreeNode<T>> sortedArrayToBST(const std::vector<T>& nums) {
         return build(nums, 0, nums.size() - 1);
     }
     
-    TreeNode* build(std::vector<int>& nums, int left, int right) {
+private:
+    template<typename T>
+    std::unique_ptr<TreeNode<T>> build(const std::vector<T>& nums, int left, int right) {
         if (left > right) return nullptr;
         
         int mid = left + (right - left) / 2;
-        TreeNode* node = new TreeNode(nums[mid]);
+        auto node = std::make_unique<TreeNode<T>>(nums[mid]);
         
         node->left = build(nums, left, mid - 1);
         node->right = build(nums, mid + 1, right);
         
         return node;
     }
-    
+
+public:
     // Helper to print tree (Pre-order)
-    void printTree(TreeNode* node) {
+    template<typename T>
+    void printTree(const std::unique_ptr<TreeNode<T>>& node) {
         if (!node) return;
         std::cout << node->val << " ";
         printTree(node->left);
@@ -191,7 +200,7 @@ public:
 int main() {
     std::vector<int> nums = {-10, -3, 0, 5, 9};
     Solution s;
-    TreeNode* root = s.sortedArrayToBST(nums);
+    auto root = s.sortedArrayToBST(nums);
     
     std::cout << "BST Created (Pre-order): ";
     s.printTree(root);
@@ -204,7 +213,7 @@ int main() {
   },
   empty_cpp: {
     id: 'proj-empty-cpp',
-    name: 'Interview: Empty C++',
+    name: 'Interview: Empty C++23',
     lastModified: Date.now(),
     files: [
       {
@@ -218,30 +227,42 @@ int main() {
 #include <set>
 #include <stack>
 #include <queue>
+#include <memory>
+#include <ranges> // C++20/23 ranges
 
 using namespace std;
 
-// Definition for a binary tree node.
+// Template definition for a binary tree node.
+template<typename T>
 struct TreeNode {
-    int val;
-    TreeNode *left;
-    TreeNode *right;
-    TreeNode() : val(0), left(nullptr), right(nullptr) {}
-    TreeNode(int x) : val(x), left(nullptr), right(nullptr) {}
-    TreeNode(int x, TreeNode *left, TreeNode *right) : val(x), left(left), right(right) {}
+    T val;
+    std::unique_ptr<TreeNode<T>> left;
+    std::unique_ptr<TreeNode<T>> right;
+    
+    TreeNode() : val(T()), left(nullptr), right(nullptr) {}
+    TreeNode(T x) : val(x), left(nullptr), right(nullptr) {}
+    TreeNode(T x, std::unique_ptr<TreeNode<T>> left, std::unique_ptr<TreeNode<T>> right) 
+        : val(x), left(std::move(left)), right(std::move(right)) {}
 };
 
 class Solution {
 public:
     void solve() {
         // Your code here
+        std::vector<int> v = {1, 2, 3, 4, 5};
+        
+        // Example C++20/23 range usage
+        auto even = v | std::views::filter([](int n){ return n % 2 == 0; });
+        
+        std::cout << "Even numbers: ";
+        for(int n : even) std::cout << n << " ";
+        std::cout << std::endl;
     }
 };
 
 int main() {
     Solution s;
     s.solve();
-    cout << "Execution Complete" << endl;
     return 0;
 }`
       }
