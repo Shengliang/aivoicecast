@@ -606,12 +606,15 @@ export async function updateDiscussion(discussionId: string, transcript: Transcr
   logUserActivity('update_discussion', { discussionId });
 }
 
-export async function saveDiscussionDesignDoc(discussionId: string, designDoc: string): Promise<void> {
+export async function saveDiscussionDesignDoc(discussionId: string, designDoc: string, title?: string): Promise<void> {
   const ref = db.collection('discussions').doc(discussionId);
-  await ref.update({
+  const updateData: any = {
     designDoc,
     updatedAt: Date.now()
-  });
+  };
+  if (title) updateData.title = title;
+  
+  await ref.update(updateData);
   logUserActivity('save_design_doc', { discussionId });
 }
 

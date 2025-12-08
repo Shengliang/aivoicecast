@@ -26,6 +26,7 @@ export const DiscussionModal: React.FC<DiscussionModalProps> = ({
   // Doc Editing State
   const [isEditingDoc, setIsEditingDoc] = useState(false);
   const [editedDocContent, setEditedDocContent] = useState('');
+  const [docTitle, setDocTitle] = useState('');
   const [isSavingDoc, setIsSavingDoc] = useState(false);
   const [isGeneratingDoc, setIsGeneratingDoc] = useState(false);
 
@@ -42,7 +43,7 @@ export const DiscussionModal: React.FC<DiscussionModalProps> = ({
       } else {
         setActiveDiscussion(initialDiscussion);
       }
-      // Reset view state
+      
       // If manually created new doc (no transcript), default to doc view
       if (initialDiscussion && initialDiscussion.id === 'new' && initialDiscussion.isManual) {
           setViewMode('doc');
@@ -56,8 +57,9 @@ export const DiscussionModal: React.FC<DiscussionModalProps> = ({
 
   // Sync edit state when discussion changes
   useEffect(() => {
-    if (activeDiscussion?.designDoc) {
-      setEditedDocContent(activeDiscussion.designDoc);
+    if (activeDiscussion) {
+      if (activeDiscussion.designDoc) setEditedDocContent(activeDiscussion.designDoc);
+      setDocTitle(activeDiscussion.title || 'Untitled Document');
     }
   }, [activeDiscussion]);
 
@@ -99,6 +101,7 @@ export const DiscussionModal: React.FC<DiscussionModalProps> = ({
           // Create new document
           const docToSave = {
               ...activeDiscussion,
+              title: docTitle,
               designDoc: editedDocContent
           };
           // Remove temporary ID 'new' so it doesn't pollute data
@@ -106,11 +109,11 @@ export const DiscussionModal: React.FC<DiscussionModalProps> = ({
           delete docToSave.id;
           
           const newId = await saveDiscussion(docToSave as CommunityDiscussion);
-          setActiveDiscussion({ ...activeDiscussion, designDoc: editedDocContent, id: newId });
+          setActiveDiscussion({ ...activeDiscussion, title: docTitle, designDoc: editedDocContent, id: newId });
       } else {
           // Update existing document
-          await saveDiscussionDesignDoc(activeDiscussion.id, editedDocContent);
-          setActiveDiscussion({ ...activeDiscussion, designDoc: editedDocContent });
+          await saveDiscussionDesignDoc(activeDiscussion.id, editedDocContent, docTitle);
+          setActiveDiscussion({ ...activeDiscussion, title: docTitle, designDoc: editedDocContent });
       }
       setIsEditingDoc(false);
     } catch (e) {
@@ -125,31 +128,39 @@ export const DiscussionModal: React.FC<DiscussionModalProps> = ({
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/90 backdrop-blur-md">
       <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-2xl shadow-2xl flex flex-col max-h-[85vh] animate-fade-in-up">
           <div className="p-4 border-b border-slate-800 bg-slate-900 rounded-t-2xl">
-              <div className="flex justify-between items-center mb-4">
-                  <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                      <MessageCircle size={18} className="text-emerald-400" />
-                      <span>{activeDiscussion?.id === 'new' ? 'New Document' : 'Discussion Details'}</span>
-                  </h3>
+              <div className="flex justify-between items-center mb-4 gap-4">
+                  <div className="flex items-center gap-2 flex-1">
+                      <FileText size={20} className="text-emerald-400 shrink-0" />
+                      <input 
+                          type="text" 
+                          value={docTitle} 
+                          onChange={(e) => setDocTitle(e.target.value)}
+                          className="bg-transparent border-b border-transparent hover:border-slate-600 focus:border-indigo-500 text-lg font-bold text-white focus:outline-none w-full transition-colors truncate"
+                          placeholder="Document Title"
+                      />
+                  </div>
                   <button onClick={onClose} className="text-slate-400 hover:text-white"><X size={20}/></button>
               </div>
               
-              {/* Tabs */}
-              <div className="flex space-x-2">
-                  <button 
-                      onClick={() => setViewMode('transcript')}
-                      className={`flex-1 py-2 text-sm font-bold rounded-lg transition-colors flex items-center justify-center space-x-2 ${viewMode === 'transcript' ? 'bg-slate-800 text-white' : 'text-slate-500 hover:text-slate-300'}`}
-                  >
-                      <MessageCircle size={16} />
-                      <span>Transcript</span>
-                  </button>
-                  <button 
-                      onClick={() => setViewMode('doc')}
-                      className={`flex-1 py-2 text-sm font-bold rounded-lg transition-colors flex items-center justify-center space-x-2 ${viewMode === 'doc' ? 'bg-slate-800 text-indigo-400' : 'text-slate-500 hover:text-slate-300'}`}
-                  >
-                      <FileText size={16} />
-                      <span>Design Document</span>
-                  </button>
-              </div>
+              {/* Tabs - Hidden for Manual or New Documents (Clean UX) */}
+              {(!activeDiscussion?.isManual && activeDiscussion?.id !== 'new') && (
+                  <div className="flex space-x-2">
+                      <button 
+                          onClick={() => setViewMode('transcript')}
+                          className={`flex-1 py-2 text-sm font-bold rounded-lg transition-colors flex items-center justify-center space-x-2 ${viewMode === 'transcript' ? 'bg-slate-800 text-white' : 'text-slate-500 hover:text-slate-300'}`}
+                      >
+                          <MessageCircle size={16} />
+                          <span>Transcript</span>
+                      </button>
+                      <button 
+                          onClick={() => setViewMode('doc')}
+                          className={`flex-1 py-2 text-sm font-bold rounded-lg transition-colors flex items-center justify-center space-x-2 ${viewMode === 'doc' ? 'bg-slate-800 text-indigo-400' : 'text-slate-500 hover:text-slate-300'}`}
+                      >
+                          <FileText size={16} />
+                          <span>Design Document</span>
+                      </button>
+                  </div>
+              )}
           </div>
           
           <div className="p-6 overflow-y-auto flex-1 scrollbar-thin scrollbar-thumb-slate-700">
@@ -160,7 +171,7 @@ export const DiscussionModal: React.FC<DiscussionModalProps> = ({
                   </div>
               ) : activeDiscussion ? (
                   <>
-                      {viewMode === 'transcript' ? (
+                      {viewMode === 'transcript' && !activeDiscussion.isManual ? (
                           <div className="space-y-4">
                               <div className="bg-slate-800/50 p-3 rounded-lg text-xs text-slate-400 mb-4 border border-slate-700 flex justify-between items-center">
                                   <span>Started by <span className="font-bold text-indigo-300">{activeDiscussion.userName}</span> on {new Date(activeDiscussion.createdAt).toLocaleDateString()}</span>
@@ -188,7 +199,7 @@ export const DiscussionModal: React.FC<DiscussionModalProps> = ({
                                       </div>
                                   </div>
                               )) : (
-                                  <div className="text-center py-8 text-slate-500 italic">No transcript available for manual document.</div>
+                                  <div className="text-center py-8 text-slate-500 italic">No transcript available.</div>
                               )}
                           </div>
                       ) : (
