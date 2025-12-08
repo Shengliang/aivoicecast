@@ -1,8 +1,9 @@
 
-// [FORCE-SYNC-v3.39.0] Timestamp: ${new Date().toISOString()}
+
+// [FORCE-SYNC-v3.42.0] Timestamp: ${new Date().toISOString()}
 import { db, auth, storage } from './firebaseConfig';
 import firebase from 'firebase/compat/app';
-import { Channel, Group, UserProfile, Invitation, GeneratedLecture, CommunityDiscussion, Comment, Booking, RecordingSession, TranscriptItem, CodeProject, Attachment } from '../types';
+import { Channel, Group, UserProfile, Invitation, GeneratedLecture, CommunityDiscussion, Comment, Booking, RecordingSession, TranscriptItem, CodeProject, Attachment, Blog, BlogPost } from '../types';
 import { HANDCRAFTED_CHANNELS } from '../utils/initialData';
 import { SPOTLIGHT_DATA } from '../utils/spotlightContent';
 import { OFFLINE_LECTURES, OFFLINE_CHANNEL_ID } from '../utils/offlineContent';
@@ -859,4 +860,99 @@ export async function getUserCodeProjects(uid: string): Promise<CodeProject[]> {
     console.warn("Failed to get code projects", e);
     return [];
   }
+}
+
+// --- BLOGGING ---
+
+export async function ensureUserBlog(user: any): Promise<Blog> {
+  if (!user) throw new Error("User required");
+  
+  const snap = await db.collection('blogs').where("ownerId", "==", user.uid).limit(1).get();
+  
+  if (!snap.empty) {
+    return { ...snap.docs[0].data(), id: snap.docs[0].id } as Blog;
+  }
+  
+  // Create default blog
+  const newBlog: Blog = {
+    id: user.uid, // One blog per user, ID = UID for simplicity
+    ownerId: user.uid,
+    authorName: user.displayName || 'Anonymous',
+    title: `${user.displayName || 'User'}'s Blog`,
+    description: 'Welcome to my corner of the internet.',
+    createdAt: Date.now()
+  };
+  
+  await db.collection('blogs').doc(user.uid).set(sanitizeData(newBlog));
+  return newBlog;
+}
+
+export async function updateBlogSettings(blogId: string, updates: Partial<Blog>): Promise<void> {
+  await db.collection('blogs').doc(blogId).update(sanitizeData(updates));
+}
+
+export async function createBlogPost(post: BlogPost): Promise<string> {
+  // We use a root-level 'posts' collection for easier querying of "all community posts"
+  // But link it to the blogId
+  const docRef = await db.collection('posts').add(sanitizeData(post));
+  
+  // Also create empty comments subcollection placeholder if needed, though Firestore doesn't require it
+  return docRef.id;
+}
+
+export async function updateBlogPost(postId: string, updates: Partial<BlogPost>): Promise<void> {
+  await db.collection('posts').doc(postId).update(sanitizeData(updates));
+}
+
+export async function getCommunityPosts(limitVal = 20): Promise<BlogPost[]> {
+  try {
+    const snap = await db.collection('posts')
+      .where("status", "==", "published")
+      .orderBy("createdAt", "desc")
+      .limit(limitVal)
+      .get();
+      
+    return snap.docs.map(d => ({ ...d.data(), id: d.id } as BlogPost));
+  } catch(e) {
+    console.error("Failed to fetch community posts", e);
+    return [];
+  }
+}
+
+export async function getUserPosts(blogId: string): Promise<BlogPost[]> {
+  try {
+    const snap = await db.collection('posts')
+      .where("blogId", "==", blogId)
+      .orderBy("createdAt", "desc")
+      .get();
+      
+    return snap.docs.map(d => ({ ...d.data(), id: d.id } as BlogPost));
+  } catch(e) {
+    console.error("Failed to fetch user posts", e);
+    return [];
+  }
+}
+
+export async function getBlogPost(postId: string): Promise<BlogPost | null> {
+  try {
+    const doc = await db.collection('posts').doc(postId).get();
+    return doc.exists ? ({ ...doc.data(), id: doc.id } as BlogPost) : null;
+  } catch(e) {
+    return null;
+  }
+}
+
+export async function addPostComment(postId: string, comment: Comment): Promise<void> {
+  const ref = db.collection('posts').doc(postId);
+  // Using an array in the document for simplicity like channels, 
+  // though for a massive blog a subcollection is better. 
+  // Given existing patterns, array is fine for MVP.
+  await ref.update({
+    comments: firebase.firestore.FieldValue.arrayUnion(sanitizeData(comment)),
+    commentCount: firebase.firestore.FieldValue.increment(1)
+  });
+}
+
+export async function deleteBlogPost(postId: string): Promise<void> {
+  await db.collection('posts').doc(postId).delete();
 }

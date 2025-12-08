@@ -1,10 +1,11 @@
 
+
 import React, { useState, useEffect, useMemo } from 'react';
 import { Channel, ViewState, UserProfile, TranscriptItem } from './types';
 import { 
   Podcast, Mic, Layout, Search, Sparkles, LogOut, 
   Settings, Menu, X, Plus, Github, Database, Cloud, Globe, 
-  Calendar, Briefcase, Users, Disc, FileText, AlertTriangle, List, BookOpen, ChevronDown, Table as TableIcon, LayoutGrid, Rocket, Code, Wand2, PenTool
+  Calendar, Briefcase, Users, Disc, FileText, AlertTriangle, List, BookOpen, ChevronDown, Table as TableIcon, LayoutGrid, Rocket, Code, Wand2, PenTool, Rss
 } from 'lucide-react';
 import { LiveSession } from './components/LiveSession';
 import { PodcastDetail } from './components/PodcastDetail';
@@ -32,6 +33,7 @@ import { PodcastListTable, SortKey } from './components/PodcastListTable';
 import { MissionManifesto } from './components/MissionManifesto';
 import { CodeStudio } from './components/CodeStudio';
 import { Whiteboard } from './components/Whiteboard';
+import { BlogView } from './components/BlogView';
 
 import { auth, isFirebaseConfigured } from './services/firebaseConfig';
 import { 
@@ -44,7 +46,7 @@ import { HANDCRAFTED_CHANNELS, CATEGORY_STYLES, TOPIC_CATEGORIES } from './utils
 import { OFFLINE_CHANNEL_ID } from './utils/offlineContent';
 import { GEMINI_API_KEY } from './services/private_keys';
 
-const APP_VERSION = "v3.41.0";
+const APP_VERSION = "v3.42.0";
 
 const UI_TEXT = {
   en: {
@@ -68,7 +70,8 @@ const UI_TEXT = {
     podcasts: "Podcasts",
     mission: "Mission",
     code: "Code Studio",
-    whiteboard: "Whiteboard"
+    whiteboard: "Whiteboard",
+    blog: "Community Blog"
   },
   zh: {
     appTitle: "AI 播客",
@@ -91,7 +94,8 @@ const UI_TEXT = {
     podcasts: "播客",
     mission: "使命",
     code: "代码工作室",
-    whiteboard: "白板"
+    whiteboard: "白板",
+    blog: "社区博客"
   }
 };
 
@@ -522,6 +526,7 @@ const App: React.FC = () => {
         {viewState === 'mission' && <MissionManifesto onBack={() => setViewState('directory')} />}
         {viewState === 'code_studio' && <CodeStudio onBack={() => setViewState('directory')} currentUser={currentUser} />}
         {viewState === 'whiteboard' && <Whiteboard onBack={() => setViewState('directory')} />}
+        {viewState === 'blog' && <BlogView onBack={() => setViewState('directory')} currentUser={currentUser} />}
         
         {viewState === 'directory' && (
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 animate-fade-in">
@@ -532,6 +537,7 @@ const App: React.FC = () => {
                  { id: 'categories', label: t.podcasts, icon: Layout },
                  { id: 'calendar', label: t.calendar, icon: Calendar },
                  { id: 'code', label: t.code, icon: Code },
+                 { id: 'blog', label: t.blog, icon: Rss },
                  { id: 'whiteboard', label: t.whiteboard, icon: PenTool },
                  { id: 'mentorship', label: t.mentorship, icon: Briefcase },
                  { id: 'groups', label: t.groups, icon: Users },
@@ -543,6 +549,7 @@ const App: React.FC = () => {
                    onClick={() => {
                        if (tab.id === 'code') setViewState('code_studio');
                        else if (tab.id === 'whiteboard') setViewState('whiteboard');
+                       else if (tab.id === 'blog') setViewState('blog');
                        else setActiveTab(tab.id);
                    }}
                    className={`flex items-center space-x-2 px-4 py-2 rounded-full text-sm font-bold whitespace-nowrap transition-all ${activeTab === tab.id ? 'bg-white text-slate-900 shadow-md' : 'bg-slate-800/50 text-slate-400 hover:bg-slate-800 hover:text-white'}`}

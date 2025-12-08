@@ -1,4 +1,5 @@
 
+
 export type AttachmentType = 'image' | 'audio' | 'video' | 'file';
 
 export interface Attachment {
@@ -89,7 +90,7 @@ export interface CommunityDiscussion {
   isManual?: boolean; // Created manually via editor
 }
 
-export type ViewState = 'directory' | 'podcast_detail' | 'live_session' | 'create_channel' | 'debug' | 'cloud_debug' | 'public_debug' | 'mission' | 'code_studio' | 'whiteboard';
+export type ViewState = 'directory' | 'podcast_detail' | 'live_session' | 'create_channel' | 'debug' | 'cloud_debug' | 'public_debug' | 'mission' | 'code_studio' | 'whiteboard' | 'blog';
 
 export interface AudioState {
   isConnected: boolean;
@@ -199,4 +200,31 @@ export interface CodeProject {
   humanComments?: string;
   interviewFeedback?: string;
   chatHistory?: ChatMessage[];
+}
+
+export interface Blog {
+  id: string;
+  ownerId: string;
+  authorName: string;
+  title: string;
+  description: string;
+  createdAt: number;
+}
+
+export interface BlogPost {
+  id: string;
+  blogId: string;
+  authorId: string;
+  authorName: string;
+  authorImage?: string;
+  title: string;
+  content: string;
+  excerpt: string;
+  tags: string[];
+  status: 'draft' | 'published';
+  publishedAt?: number;
+  createdAt: number;
+  likes: number;
+  imageUrl?: string;
+  comments?: Comment[];
 }
