@@ -941,14 +941,20 @@ If the user asks questions, answer based on this new context. If they just switc
       setIsPreviewMode(false);
   };
 
+  const updateFileAtIndex = (index: number, newContent: string) => {
+      setProject(prev => {
+          const updatedFiles = [...prev.files];
+          updatedFiles[index] = {
+              ...updatedFiles[index],
+              content: newContent,
+              loaded: true
+          };
+          return { ...prev, files: updatedFiles };
+      });
+  };
+
   const handleCodeChange = (newContent: string) => {
-    const updatedFiles = [...project.files];
-    updatedFiles[activeFileIndex] = { 
-        ...activeFile, 
-        content: newContent,
-        loaded: true
-    };
-    setProject({ ...project, files: updatedFiles });
+      updateFileAtIndex(activeFileIndex, newContent);
   };
 
   // --- CHANGE MANAGEMENT ---
@@ -959,8 +965,8 @@ If the user asks questions, answer based on this new context. If they just switc
 
   const handleRejectChange = () => {
       if (pendingChange) {
-          // Revert content
-          handleCodeChange(pendingChange.original);
+          // Revert content using the original file index
+          updateFileAtIndex(pendingChange.fileIndex, pendingChange.original);
           setPendingChange(null);
           setChatMessages(prev => [...prev, {role: 'system', text: "❌ *Changes Reverted*"}]);
       }
@@ -1293,6 +1299,12 @@ If the user asks questions, answer based on this new context. If they just switc
   const handleChatSubmit = async () => {
       if (!chatInput.trim()) return;
       
+      // Safety check: Don't start new edit if one is pending
+      if (pendingChange) {
+          alert("Please accept or revert the pending changes before continuing.");
+          return;
+      }
+      
       const userMsg = chatInput;
       const newHistory: ChatMessage[] = [...chatMessages, { role: 'user', text: userMsg }];
       setChatMessages(newHistory);
@@ -1306,6 +1318,8 @@ If the user asks questions, answer based on this new context. If they just switc
           const ai = new GoogleGenAI({ apiKey });
           
           const fileContext = activeFile && activeFile.loaded ? `--- CURRENT FILE: ${activeFile.name} ---\n${activeFile.content}` : "No file active or not loaded.";
+          // Pass project structure so AI knows what files exist
+          const fileList = project.files.map(f => f.name).join('\n');
           const historyText = newHistory.slice(-20).map(m => `${m.role.toUpperCase()}: ${m.text}`).join('\n');
           
           const updateFileTool: FunctionDeclaration = {
@@ -1323,7 +1337,10 @@ If the user asks questions, answer based on this new context. If they just switc
           const prompt = `
             You are an expert Coding Assistant built into an IDE.
             
-            CONTEXT:
+            PROJECT FILES:
+            ${fileList}
+
+            CONTEXT (Current Open File):
             ${fileContext}
             
             CHAT HISTORY:
@@ -1332,7 +1349,7 @@ If the user asks questions, answer based on this new context. If they just switc
             USER QUESTION:
             ${userMsg}
             
-            Provide a helpful, concise response. If the user asks to modify the code, use the 'update_file' tool.
+            Provide a helpful, concise response. If the user asks to modify the code, use the 'update_file' tool to rewrite the file in-place.
           `;
 
           const response = await ai.models.generateContent({
@@ -1349,7 +1366,7 @@ If the user asks questions, answer based on this new context. If they just switc
               if (fc.name === 'update_file') {
                   const newCode = fc.args['code'] as string;
                   setPendingChange({ original: activeFile.content, fileIndex: activeFileIndex });
-                  handleCodeChange(newCode); // Apply immediately
+                  updateFileAtIndex(activeFileIndex, newCode); // Apply immediately
                   const aiMsg = "I've updated the code in the editor. You can Accept or Revert these changes.";
                   setChatMessages(prev => [...prev, { role: 'ai', text: aiMsg }]);
                   setProject(prev => ({ ...prev, chatHistory: [...newHistory, { role: 'ai', text: aiMsg }] }));
@@ -1655,12 +1672,13 @@ If the user asks questions, answer based on this new context. If they just switc
                
                {project.files.map((file, idx) => {
                   if (idx !== activeFileIndex) return null;
+                  const isPending = pendingChange?.fileIndex === idx;
 
                   return (
                   <div 
                     key={idx}
                     onClick={() => setActiveFileIndex(idx)}
-                    className={`flex items-center space-x-2 px-4 py-2.5 border-r border-slate-800 cursor-pointer min-w-[120px] max-w-[200px] ${activeFileIndex === idx ? 'bg-slate-950 text-white border-t-2 border-t-indigo-500' : 'bg-slate-900 text-slate-500 hover:bg-slate-800 hover:text-slate-300'}`}
+                    className={`flex items-center space-x-2 px-4 py-2.5 border-r border-slate-800 cursor-pointer min-w-[120px] max-w-[200px] ${activeFileIndex === idx ? 'bg-slate-950 text-white border-t-2 border-t-indigo-500' : 'bg-slate-900 text-slate-500 hover:bg-slate-800 hover:text-slate-300'} ${isPending ? 'border-t-2 border-t-emerald-500 bg-emerald-900/10' : ''}`}
                   >
                      <FileIcon filename={file.name} />
                      <span className="text-xs font-medium truncate" title={file.name}>{file.name.split('/').pop()}</span>
@@ -1714,8 +1732,8 @@ If the user asks questions, answer based on this new context. If they just switc
                 
                 {/* Pending Change Overlay (Accept/Reject AI Edit) */}
                 {pendingChange && (
-                    <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 p-3 bg-slate-900 border border-indigo-500/50 rounded-xl shadow-2xl animate-fade-in-up">
-                        <span className="text-sm font-bold text-indigo-300 mr-2">AI Suggested Changes</span>
+                    <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 p-3 bg-slate-900 border border-emerald-500/50 rounded-xl shadow-2xl animate-fade-in-up">
+                        <span className="text-sm font-bold text-emerald-300 mr-2">AI Suggested Changes</span>
                         <button 
                             onClick={handleRejectChange}
                             className="px-4 py-2 bg-slate-800 hover:bg-red-900/30 text-slate-300 hover:text-red-300 rounded-lg text-xs font-bold flex items-center gap-2 border border-slate-700 transition-colors"

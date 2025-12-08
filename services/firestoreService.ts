@@ -1,5 +1,5 @@
 
-// [FORCE-SYNC-v3.38.0] Timestamp: ${new Date().toISOString()}
+// [FORCE-SYNC-v3.39.0] Timestamp: ${new Date().toISOString()}
 import { db, auth, storage } from './firebaseConfig';
 import firebase from 'firebase/compat/app';
 import { Channel, Group, UserProfile, Invitation, GeneratedLecture, CommunityDiscussion, Comment, Booking, RecordingSession, TranscriptItem, CodeProject, Attachment } from '../types';
