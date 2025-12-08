@@ -3,7 +3,8 @@ import React, { useRef, useState, useEffect, useCallback } from 'react';
 import { 
   ArrowLeft, Square, Circle, Minus, Type, Eraser, 
   Undo, Redo, Download, MousePointer, Pencil, Bot, 
-  Loader2, X, Palette, Trash2, Maximize, Sparkles, Send, Mic, MicOff, Image as ImageIcon, Zap
+  Loader2, X, Palette, Trash2, Maximize, Sparkles, Send, Mic, MicOff, Image as ImageIcon, Zap,
+  ZoomIn, ZoomOut, Move
 } from 'lucide-react';
 import { GoogleGenAI, FunctionDeclaration, Type as GenAIType, SchemaType } from '@google/genai';
 import { GEMINI_API_KEY } from '../services/private_keys';
@@ -15,7 +16,7 @@ interface WhiteboardProps {
   onBack: () => void;
 }
 
-type ToolType = 'selection' | 'pencil' | 'rectangle' | 'circle' | 'line' | 'text' | 'eraser';
+type ToolType = 'selection' | 'pencil' | 'rectangle' | 'circle' | 'line' | 'text' | 'eraser' | 'pan';
 
 interface Point {
   x: number;
@@ -36,7 +37,6 @@ interface DrawingElement {
 }
 
 // --- TOOL DEFINITIONS FOR GEMINI ---
-// We use SchemaType which is the correct Enum for @google/genai SDK in tool definitions
 const drawTools: FunctionDeclaration[] = [
   {
     name: 'draw_rectangle',
@@ -138,6 +138,10 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack }) => {
   const [color, setColor] = useState('#ffffff');
   const [strokeWidth, setStrokeWidth] = useState(2);
   
+  // Viewport State (Zoom & Pan)
+  const [zoom, setZoom] = useState(1);
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  
   // Interaction State
   const [isDrawing, setIsDrawing] = useState(false);
   const [currentElement, setCurrentElement] = useState<DrawingElement | null>(null);
@@ -147,6 +151,8 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack }) => {
   const [selectedElementIds, setSelectedElementIds] = useState<Set<string>>(new Set());
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState<Point | null>(null);
+  const [isPanning, setIsPanning] = useState(false); // For middle click or pan tool
+  const [panStart, setPanStart] = useState<Point | null>(null);
   const [selectionBox, setSelectionBox] = useState<{start: Point, current: Point} | null>(null);
 
   // AI Assistant State
@@ -160,15 +166,6 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack }) => {
   const [liveStatus, setLiveStatus] = useState<'disconnected' | 'connecting' | 'connected' | 'speaking'>('disconnected');
   const liveServiceRef = useRef<GeminiLiveService | null>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
-
-  // Helper to add elements (exposed to AI)
-  const addAiElement = (el: DrawingElement) => {
-      setElements(prev => {
-          const next = [...prev, el];
-          // We don't save history for every single AI stroke to avoid perf issues during streaming
-          return next;
-      });
-  };
 
   // Helper: Get Element Bounds
   const getElementBounds = (el: DrawingElement) => {
@@ -203,16 +200,14 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack }) => {
 
   // Helper: Hit Test
   const isPointInElement = (x: number, y: number, el: DrawingElement): boolean => {
-      const padding = 10;
+      const padding = 10 / zoom; // Adjust padding based on zoom
       const b = getElementBounds(el);
       
-      // Rough bounds check first
       if (x < b.minX - padding || x > b.maxX + padding || y < b.minY - padding || y > b.maxY + padding) {
           return false;
       }
 
       if (el.type === 'line') {
-          // Precise line hit test
           const x1 = el.x;
           const y1 = el.y;
           const x2 = el.x + (el.width || 0);
@@ -233,7 +228,6 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack }) => {
           const dy = y - yy;
           return (dx * dx + dy * dy) < padding * padding;
       } else if (el.type === 'pencil' || el.type === 'eraser') {
-          // Check proximity to any point
           return el.points ? el.points.some(p => Math.abs(p.x - x) < padding && Math.abs(p.y - y) < padding) : false;
       }
       
@@ -249,10 +243,16 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack }) => {
 
       const dpr = window.devicePixelRatio || 1;
 
+      // Reset transform to clear full canvas
       ctx.setTransform(1, 0, 0, 1, 0, 0); 
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
+      // Apply Zoom & Pan Transform
+      // Order: Scale (DPR) -> Translate (Pan) -> Scale (Zoom)
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.translate(pan.x, pan.y);
+      ctx.scale(zoom, zoom);
+
       ctx.lineCap = 'round';
       ctx.lineJoin = 'round';
       
@@ -326,9 +326,9 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack }) => {
               const bounds = getElementBounds(el);
               ctx.save();
               ctx.strokeStyle = '#6366f1'; // Indigo-500
-              ctx.lineWidth = 1;
-              ctx.setLineDash([5, 5]);
-              const padding = 5;
+              ctx.lineWidth = 1 / zoom; // Keep outline sharp
+              ctx.setLineDash([5 / zoom, 5 / zoom]);
+              const padding = 5 / zoom;
               ctx.strokeRect(
                   bounds.minX - padding, 
                   bounds.minY - padding, 
@@ -344,7 +344,7 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack }) => {
           ctx.save();
           ctx.strokeStyle = '#3b82f6'; // Blue-500
           ctx.fillStyle = 'rgba(59, 130, 246, 0.1)'; 
-          ctx.lineWidth = 1;
+          ctx.lineWidth = 1 / zoom;
           const x = Math.min(selectionBox.start.x, selectionBox.current.x);
           const y = Math.min(selectionBox.start.y, selectionBox.current.y);
           const w = Math.abs(selectionBox.current.x - selectionBox.start.x);
@@ -354,7 +354,7 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack }) => {
           ctx.restore();
       }
 
-  }, [elements, currentElement, selectedElementIds, selectionBox]);
+  }, [elements, currentElement, selectedElementIds, selectionBox, zoom, pan]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -425,9 +425,13 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack }) => {
           clientY = (e as React.MouseEvent).clientY;
       }
 
+      // Convert Screen Coordinates to World Coordinates (accounting for Zoom & Pan)
+      const screenX = clientX - rect.left;
+      const screenY = clientY - rect.top;
+      
       return {
-          x: clientX - rect.left,
-          y: clientY - rect.top
+          x: (screenX - pan.x) / zoom,
+          y: (screenY - pan.y) / zoom
       };
   };
 
@@ -450,12 +454,26 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack }) => {
   };
 
   const handleMouseDown = (e: React.MouseEvent | React.TouchEvent) => {
+      const { x, y } = getPointerPos(e);
+
+      // Handle Pan Tool or Middle Mouse Click
+      if (tool === 'pan' || ('button' in e && e.button === 1)) {
+          setIsPanning(true);
+          // Store screen coordinates for panning delta
+          const canvas = canvasRef.current;
+          if (canvas) {
+              const rect = canvas.getBoundingClientRect();
+              const clientX = 'touches' in e ? e.touches[0].clientX : (e as React.MouseEvent).clientX;
+              const clientY = 'touches' in e ? e.touches[0].clientY : (e as React.MouseEvent).clientY;
+              setPanStart({ x: clientX, y: clientY });
+          }
+          return;
+      }
+
       if (textInput) {
           commitText();
           return;
       }
-
-      const { x, y } = getPointerPos(e);
 
       // SELECTION TOOL LOGIC
       if (tool === 'selection') {
@@ -509,6 +527,19 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack }) => {
   };
 
   const handleMouseMove = (e: React.MouseEvent | React.TouchEvent) => {
+      // PANNING
+      if (isPanning && panStart) {
+          const clientX = 'touches' in e ? e.touches[0].clientX : (e as React.MouseEvent).clientX;
+          const clientY = 'touches' in e ? e.touches[0].clientY : (e as React.MouseEvent).clientY;
+          
+          const dx = clientX - panStart.x;
+          const dy = clientY - panStart.y;
+          
+          setPan(prev => ({ x: prev.x + dx, y: prev.y + dy }));
+          setPanStart({ x: clientX, y: clientY });
+          return;
+      }
+
       const { x, y } = getPointerPos(e);
 
       // DRAGGING SELECTION
@@ -560,6 +591,12 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack }) => {
   };
 
   const handleMouseUp = () => {
+      if (isPanning) {
+          setIsPanning(false);
+          setPanStart(null);
+          return;
+      }
+
       // FINISH DRAG
       if (isDragging) {
           setIsDragging(false);
@@ -580,6 +617,7 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack }) => {
           
           elements.forEach(el => {
               const b = getElementBounds(el);
+              // Check if bounds roughly intersect selection box
               if (!(x2 < b.minX || x1 > b.maxX || y2 < b.minY || y1 > b.maxY)) {
                   newSelection.add(el.id);
               }
@@ -605,6 +643,19 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack }) => {
       setCurrentElement(null);
   };
 
+  // Zoom Controls
+  const handleZoom = (direction: 'in' | 'out') => {
+      setZoom(prev => {
+          const newZoom = direction === 'in' ? prev * 1.2 : prev / 1.2;
+          return Math.min(Math.max(newZoom, 0.1), 5); // Limit zoom range
+      });
+  };
+
+  const resetView = () => {
+      setZoom(1);
+      setPan({ x: 0, y: 0 });
+  };
+
   const handleDownload = () => {
       const canvas = canvasRef.current;
       if (!canvas) return;
@@ -615,7 +666,7 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack }) => {
       const tCtx = tempCanvas.getContext('2d');
       if (!tCtx) return;
       
-      tCtx.fillStyle = '#0f172a'; // slate-950
+      tCtx.fillStyle = '#0f172a'; // slate-950 background
       tCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
       tCtx.drawImage(canvas, 0, 0);
       
@@ -676,17 +727,21 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack }) => {
       const toolsToUse = [{ functionDeclarations: drawTools }];
       
       const systemInstruction = `You are a Technical Illustrator and Whiteboard Assistant.
-      You can Draw shapes, lines, text, and freehand paths.
       
-      YOUR ROLE:
-      1. Interpret high-level architectural requests (e.g. "Draw DynamoDB Architecture").
-      2. Decompose them into simple geometric shapes (rectangles for nodes, circles for databases/users, lines for connections).
-      3. Draw logically laid out diagrams. Center of board is roughly (500, 400).
-      4. Use labels (add_text) freely to explain components.
+      ROLE & BEHAVIOR:
+      1. Listen to user requests to draw architectural or technical diagrams.
+      2. When asked to draw a diagram (e.g., "DynamoDB Architecture"), you MUST Plan and Draw ALL components in the diagram.
+         - Do not stop after one box.
+         - Typical DynamoDB flow: Client -> API Gateway -> Lambda -> DynamoDB. Draw all 4.
+         - Use 'draw_rectangle' for nodes, 'draw_circle' for databases/users, 'draw_line' for connections.
+         - Use 'add_text' to label everything clearly.
+      3. Layout:
+         - Start drawing from the left side (x=100) to right side (x=900).
+         - Keep components spaced out.
+         - Use the center (500, 400) as the anchor.
+      4. Always confirm what you drew verbally after finishing the tool calls.
       
-      If the user provides PlantUML or Mermaid syntax, interpret the structure and draw it manually using box-and-line primitives.
-      
-      Always confirm what you are drawing.
+      If you receive PlantUML or Mermaid code in the prompt, interpret it visually and draw it using primitives.
       `;
 
       try {
@@ -712,17 +767,21 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack }) => {
                       // Optional visualization
                   },
                   onTranscript: (text, isUser) => {
-                      // Stream transcripts to chat for feedback
+                      // Fix: Update the last message if it's the same role to prevent newline spam
                       setChatHistory(prev => {
-                          // Simple deduping or just append
                           const last = prev[prev.length - 1];
-                          if (last && last.role === (isUser ? 'user' : 'ai') && last.text === text) return prev;
+                          if (last && last.role === (isUser ? 'user' : 'ai')) {
+                              const newHistory = [...prev];
+                              newHistory[newHistory.length - 1] = { ...last, text: last.text + text };
+                              return newHistory;
+                          }
                           return [...prev, { role: isUser ? 'user' : 'ai', text }];
                       });
                   },
                   onToolCall: async (toolCall: any) => {
                       // Execute drawing tools
                       for (const fc of toolCall.functionCalls) {
+                          console.log("Tool Call:", fc.name, fc.args);
                           const args = fc.args;
                           const id = crypto.randomUUID();
                           const newEls: DrawingElement[] = [];
@@ -767,6 +826,24 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack }) => {
                                   text: args.text,
                                   color: args.color || color, strokeWidth: args.fontSize || strokeWidth
                               });
+                          } else if (fc.name === 'draw_path') {
+                              // Convert flat array [x1,y1,x2,y2] to point objects
+                              const rawPoints = args.points as number[];
+                              const points: Point[] = [];
+                              for(let i=0; i<rawPoints.length; i+=2) {
+                                  if (i+1 < rawPoints.length) {
+                                      points.push({ x: rawPoints[i], y: rawPoints[i+1] });
+                                  }
+                              }
+                              if (points.length > 0) {
+                                  newEls.push({
+                                      id, type: 'pencil',
+                                      x: points[0].x, y: points[0].y, // Reference point
+                                      points: points,
+                                      color: (args.color as string) || color, 
+                                      strokeWidth: (args.strokeWidth as number) || strokeWidth
+                                  });
+                              }
                           } else if (fc.name === 'clear_board') {
                               setElements([]);
                           }
@@ -793,7 +870,7 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack }) => {
       }
   };
 
-  // --- TEXT CHAT FALLBACK (Old logic kept for non-voice usage) ---
+  // --- TEXT CHAT FALLBACK ---
 
   const handleChatSubmit = async (messageText?: string) => {
       const msg = messageText || chatInput;
@@ -938,7 +1015,11 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack }) => {
       });
       
       if (minX === Infinity) return null;
-      return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
+      // Convert to screen coordinates for the floating UI
+      const screenX = minX * zoom + pan.x;
+      const screenY = minY * zoom + pan.y;
+      
+      return { x: screenX, y: screenY };
   };
 
   const selBounds = getSelectionBounds();
@@ -956,7 +1037,8 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack }) => {
 
           {/* Tools */}
           {[
-              { id: 'selection', icon: MousePointer, label: 'Select & Move' },
+              { id: 'selection', icon: MousePointer, label: 'Select' },
+              { id: 'pan', icon: Move, label: 'Pan' },
               { id: 'pencil', icon: Pencil, label: 'Draw' },
               { id: 'rectangle', icon: Square, label: 'Box' },
               { id: 'circle', icon: Circle, label: 'Circle' },
@@ -1015,6 +1097,15 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack }) => {
           </button>
       </div>
 
+      {/* Floating Zoom Controls */}
+      <div className="absolute bottom-6 left-6 z-20 flex gap-2">
+          <div className="bg-slate-900/90 backdrop-blur-md border border-slate-700 rounded-xl p-1 flex gap-1 shadow-lg">
+              <button onClick={() => handleZoom('out')} className="p-2 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white"><ZoomOut size={18}/></button>
+              <button onClick={resetView} className="px-2 text-xs font-mono text-slate-300 flex items-center">{Math.round(zoom * 100)}%</button>
+              <button onClick={() => handleZoom('in')} className="p-2 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white"><ZoomIn size={18}/></button>
+          </div>
+      </div>
+
       {/* Canvas Area */}
       <div 
         ref={containerRef}
@@ -1039,10 +1130,10 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack }) => {
                   autoFocus
                   style={{ 
                       position: 'absolute', 
-                      left: textInput.x, 
-                      top: textInput.y,
+                      left: textInput.x * zoom + pan.x, // Transform coordinates
+                      top: textInput.y * zoom + pan.y,
                       color: color,
-                      fontSize: `${strokeWidth * 10 + 12}px`,
+                      fontSize: `${(strokeWidth * 10 + 12) * zoom}px`, // Scale font
                       background: 'rgba(30, 41, 59, 0.9)', 
                       border: '1px dashed #6366f1',
                       outline: 'none',
