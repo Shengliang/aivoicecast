@@ -1,7 +1,7 @@
 
 # AIVoiceCast Platform
 
-**Version:** 3.39.0
+**Version:** 3.40.0
 
 A decentralized, interactive podcast platform powered by AI. Users can generate curriculum-based podcasts, listen to AI-synthesized lectures, and engage in real-time voice conversations with AI personas.
 
