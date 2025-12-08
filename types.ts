@@ -89,7 +89,7 @@ export interface CommunityDiscussion {
   isManual?: boolean; // Created manually via editor
 }
 
-export type ViewState = 'directory' | 'podcast_detail' | 'live_session' | 'create_channel' | 'debug' | 'cloud_debug' | 'public_debug' | 'mission' | 'code_studio';
+export type ViewState = 'directory' | 'podcast_detail' | 'live_session' | 'create_channel' | 'debug' | 'cloud_debug' | 'public_debug' | 'mission' | 'code_studio' | 'whiteboard';
 
 export interface AudioState {
   isConnected: boolean;

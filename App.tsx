@@ -4,7 +4,7 @@ import { Channel, ViewState, UserProfile, TranscriptItem } from './types';
 import { 
   Podcast, Mic, Layout, Search, Sparkles, LogOut, 
   Settings, Menu, X, Plus, Github, Database, Cloud, Globe, 
-  Calendar, Briefcase, Users, Disc, FileText, AlertTriangle, List, BookOpen, ChevronDown, Table as TableIcon, LayoutGrid, Rocket, Code, Wand2
+  Calendar, Briefcase, Users, Disc, FileText, AlertTriangle, List, BookOpen, ChevronDown, Table as TableIcon, LayoutGrid, Rocket, Code, Wand2, PenTool
 } from 'lucide-react';
 import { LiveSession } from './components/LiveSession';
 import { PodcastDetail } from './components/PodcastDetail';
@@ -31,6 +31,7 @@ import { CalendarView } from './components/CalendarView';
 import { PodcastListTable, SortKey } from './components/PodcastListTable';
 import { MissionManifesto } from './components/MissionManifesto';
 import { CodeStudio } from './components/CodeStudio';
+import { Whiteboard } from './components/Whiteboard';
 
 import { auth, isFirebaseConfigured } from './services/firebaseConfig';
 import { 
@@ -43,7 +44,7 @@ import { HANDCRAFTED_CHANNELS, CATEGORY_STYLES, TOPIC_CATEGORIES } from './utils
 import { OFFLINE_CHANNEL_ID } from './utils/offlineContent';
 import { GEMINI_API_KEY } from './services/private_keys';
 
-const APP_VERSION = "v3.39.0";
+const APP_VERSION = "v3.40.0";
 
 const UI_TEXT = {
   en: {
@@ -66,7 +67,8 @@ const UI_TEXT = {
     lectures: "Lectures",
     podcasts: "Podcasts",
     mission: "Mission",
-    code: "Code Studio"
+    code: "Code Studio",
+    whiteboard: "Whiteboard"
   },
   zh: {
     appTitle: "AI 播客",
@@ -88,7 +90,8 @@ const UI_TEXT = {
     lectures: "课程",
     podcasts: "播客",
     mission: "使命",
-    code: "代码工作室"
+    code: "代码工作室",
+    whiteboard: "白板"
   }
 };
 
@@ -457,6 +460,14 @@ const App: React.FC = () => {
                 <span>{t.code}</span>
               </button>
 
+              <button 
+                onClick={() => setViewState('whiteboard')} 
+                className="hidden lg:flex items-center space-x-2 px-3 py-1.5 bg-slate-800/50 hover:bg-pink-900/30 text-pink-400 text-xs font-bold rounded-lg transition-colors border border-pink-500/20"
+              >
+                <PenTool size={14}/>
+                <span>{t.whiteboard}</span>
+              </button>
+
               {/* Language Switcher */}
               <div className="flex items-center bg-slate-800 rounded-lg p-1 border border-slate-700">
                  <button onClick={() => setLanguage('en')} className={`px-2 py-1 rounded-md text-[10px] font-bold transition-all ${language === 'en' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-400 hover:text-white'}`}>EN</button>
@@ -510,6 +521,7 @@ const App: React.FC = () => {
       <div className="flex-1 overflow-y-auto">
         {viewState === 'mission' && <MissionManifesto onBack={() => setViewState('directory')} />}
         {viewState === 'code_studio' && <CodeStudio onBack={() => setViewState('directory')} currentUser={currentUser} />}
+        {viewState === 'whiteboard' && <Whiteboard onBack={() => setViewState('directory')} />}
         
         {viewState === 'directory' && (
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 animate-fade-in">
@@ -520,6 +532,7 @@ const App: React.FC = () => {
                  { id: 'categories', label: t.podcasts, icon: Layout },
                  { id: 'calendar', label: t.calendar, icon: Calendar },
                  { id: 'code', label: t.code, icon: Code },
+                 { id: 'whiteboard', label: t.whiteboard, icon: PenTool },
                  { id: 'mentorship', label: t.mentorship, icon: Briefcase },
                  { id: 'groups', label: t.groups, icon: Users },
                  { id: 'recordings', label: t.recordings, icon: Disc },
@@ -529,6 +542,7 @@ const App: React.FC = () => {
                    key={tab.id}
                    onClick={() => {
                        if (tab.id === 'code') setViewState('code_studio');
+                       else if (tab.id === 'whiteboard') setViewState('whiteboard');
                        else setActiveTab(tab.id);
                    }}
                    className={`flex items-center space-x-2 px-4 py-2 rounded-full text-sm font-bold whitespace-nowrap transition-all ${activeTab === tab.id ? 'bg-white text-slate-900 shadow-md' : 'bg-slate-800/50 text-slate-400 hover:bg-slate-800 hover:text-white'}`}
