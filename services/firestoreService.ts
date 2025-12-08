@@ -179,12 +179,19 @@ export async function syncUserProfile(user: any): Promise<void> {
   } else {
     // Update login time or details if needed
     const data = snap.data();
+    
+    // Safety check: ensure retrieved tier matches valid types
+    let tier: SubscriptionTier = 'free';
+    if (data?.subscriptionTier === 'pro') tier = 'pro';
+    // 'creator' maps to 'free' or 'pro' depending on choice, but for safety let's map legacy 'creator' to 'pro' if needed, or just let it fall to free if we are strict. 
+    // To be nice, let's map legacy 'creator' to 'pro'.
+    if (data?.subscriptionTier === 'creator') tier = 'pro';
+
     await userRef.update({
       lastLogin: firebase.firestore.FieldValue.serverTimestamp(),
-      displayName: user.displayName || 'Anonymous', // Keep updated
+      displayName: user.displayName || 'Anonymous',
       photoURL: user.photoURL || '',
-      // Backward compatibility: ensure tier exists
-      subscriptionTier: data?.subscriptionTier || 'free',
+      subscriptionTier: tier,
       subscriptionStatus: data?.subscriptionStatus || 'active'
     });
   }
@@ -193,7 +200,14 @@ export async function syncUserProfile(user: any): Promise<void> {
 export async function getUserProfile(uid: string): Promise<UserProfile | null> {
   const ref = db.collection('users').doc(uid);
   const snap = await ref.get();
-  return snap.exists ? (snap.data() as UserProfile) : null;
+  if (!snap.exists) return null;
+  
+  const data = snap.data();
+  // Safe cast
+  let tier: SubscriptionTier = 'free';
+  if (data?.subscriptionTier === 'pro' || data?.subscriptionTier === 'creator') tier = 'pro';
+  
+  return { ...data, subscriptionTier: tier } as UserProfile;
 }
 
 export async function getUserProfileByEmail(email: string): Promise<UserProfile | null> {
@@ -209,8 +223,6 @@ export async function getUserProfileByEmail(email: string): Promise<UserProfile 
 
 export async function getAllUsers(): Promise<UserProfile[]> {
   try {
-    // Fetch all users to display in the member directory
-    // Limit to 100 to allow for filtering of invalid emails
     const snap = await db.collection('users').orderBy('createdAt', 'desc').limit(100).get();
     return snap.docs.map(doc => doc.data() as UserProfile);
   } catch (e) {
@@ -236,22 +248,16 @@ export async function incrementApiUsage(uid: string): Promise<void> {
 export async function upgradeUserSubscription(uid: string, tier: SubscriptionTier): Promise<boolean> {
     const userRef = db.collection('users').doc(uid);
     try {
-        // Use set with merge to ensure document exists and avoid "not found" errors
         await userRef.set({
             subscriptionTier: tier,
             subscriptionStatus: 'active'
         }, { merge: true });
         
-        // Log activity safely
         try {
             logUserActivity('upgrade_subscription', { tier });
-        } catch(e) {
-            console.warn("Failed to log upgrade activity", e);
-        }
+        } catch(e) {}
         return true;
     } catch (e: any) {
-        // MOCK FALLBACK: If permission denied (common in dev/demo with strict rules),
-        // we swallow the error and return TRUE so the UI updates optimistically.
         if (e.code === 'permission-denied') {
             console.warn("Firestore write denied (Security Rules). Simulating success for Mock Payment demo.");
             return true; 
@@ -306,7 +312,7 @@ export async function createGroup(name: string): Promise<string> {
   if (!user) throw new Error("Must be logged in");
 
   const newGroup: Group = {
-    id: '', // set after creation
+    id: '', 
     name,
     ownerId: user.uid,
     memberIds: [user.uid],
@@ -314,11 +320,8 @@ export async function createGroup(name: string): Promise<string> {
   };
 
   const docRef = await db.collection('groups').add(sanitizeData(newGroup));
-  
-  // Update group with its ID
   await docRef.update({ id: docRef.id });
 
-  // Add group ID to user's profile
   const userRef = db.collection('users').doc(user.uid);
   await userRef.update({
     groups: firebase.firestore.FieldValue.arrayUnion(docRef.id)
@@ -340,12 +343,10 @@ export async function joinGroup(groupId: string): Promise<void> {
     throw new Error("Group not found");
   }
 
-  // Add user to group members
   await groupRef.update({
     memberIds: firebase.firestore.FieldValue.arrayUnion(user.uid)
   });
 
-  // Add group to user profile
   const userRef = db.collection('users').doc(user.uid);
   await userRef.update({
     groups: firebase.firestore.FieldValue.arrayUnion(groupId)
@@ -355,11 +356,9 @@ export async function joinGroup(groupId: string): Promise<void> {
 }
 
 export async function getUserGroups(uid: string): Promise<Group[]> {
-  // 1. Get User Profile to find Group IDs
   const profile = await getUserProfile(uid);
   if (!profile || !profile.groups || profile.groups.length === 0) return [];
 
-  // 2. Fetch Groups
   const groups: Group[] = [];
   for (const gid of profile.groups) {
     try {
@@ -376,8 +375,6 @@ export async function getUserGroups(uid: string): Promise<Group[]> {
 
 export async function getGroupMembers(memberIds: string[]): Promise<UserProfile[]> {
   if (!memberIds || memberIds.length === 0) return [];
-  
-  // Fetch profiles in parallel
   const promises = memberIds.map(uid => getUserProfile(uid));
   const results = await Promise.all(promises);
   return results.filter(p => p !== null) as UserProfile[];
@@ -388,12 +385,10 @@ export async function removeMemberFromGroup(groupId: string, memberId: string): 
     const groupRef = db.collection('groups').doc(groupId);
     const userRef = db.collection('users').doc(memberId);
 
-    // Remove from Group's member list
     batch.update(groupRef, {
         memberIds: firebase.firestore.FieldValue.arrayRemove(memberId)
     });
 
-    // Remove Group from User's group list
     batch.update(userRef, {
         groups: firebase.firestore.FieldValue.arrayRemove(groupId)
     });
@@ -414,13 +409,12 @@ export async function sendInvitation(groupId: string, toEmail: string): Promise<
   
   const groupData = groupSnap.data() as Group;
   
-  // Check if sender is owner
   if (groupData.ownerId !== user.uid) {
      throw new Error("Only the group owner can invite members.");
   }
 
   const invitation: Invitation = {
-    id: '', // set after creation
+    id: '', 
     fromUserId: user.uid,
     fromName: user.displayName || user.email,
     toEmail: toEmail.trim(),
@@ -452,11 +446,9 @@ export async function respondToInvitation(invitation: Invitation, accept: boolea
 
   const batch = db.batch();
 
-  // 1. Update Invitation Status
   const inviteRef = db.collection('invitations').doc(invitation.id);
   batch.update(inviteRef, { status: accept ? 'accepted' : 'rejected' });
 
-  // 2. If accepted, Add User to Group and Group to User
   if (accept) {
      const groupRef = db.collection('groups').doc(invitation.groupId);
      batch.update(groupRef, { memberIds: firebase.firestore.FieldValue.arrayUnion(user.uid) });
@@ -472,20 +464,13 @@ export async function respondToInvitation(invitation: Invitation, accept: boolea
 // --- CHANNELS ---
 
 export async function publishChannelToFirestore(channel: Channel): Promise<void> {
-  // Ensure we save a clean object with timestamps
   const data = {
     ...channel,
-    // Provide defaults for critical fields
     createdAt: channel.createdAt || Date.now(),
     updatedAt: firebase.firestore.FieldValue.serverTimestamp()
   };
-  
-  // Sanitize data to remove undefined fields (like groupId if not group visibility)
   const cleanData = sanitizeData(data);
-  
-  // Use set with merge to be safe
   await db.collection('channels').doc(channel.id).set(cleanData, { merge: true });
-  console.log(`Published channel ${channel.id} to Firestore (visibility: ${channel.visibility})`);
   logUserActivity('publish_channel', { channelId: channel.id, visibility: channel.visibility });
 }
 
@@ -504,7 +489,6 @@ export async function deleteChannelFromFirestore(channelId: string): Promise<voi
 
 export async function voteChannel(channelId: string, type: 'like' | 'dislike'): Promise<void> {
   const ref = db.collection('channels').doc(channelId);
-  // We use increment to handle concurrent votes atomically
   const updateData = type === 'like' 
     ? { likes: firebase.firestore.FieldValue.increment(1) }
     : { dislikes: firebase.firestore.FieldValue.increment(1) };
@@ -548,32 +532,25 @@ export async function deleteCommentFromChannel(channelId: string, commentId: str
 }
 
 export async function getPublicChannels(): Promise<Channel[]> {
-  console.log("Fetching public channels...");
   const snapshot = await db.collection('channels')
     .where("visibility", "==", "public")
     .get();
     
   const channels = snapshot.docs.map(d => d.data() as Channel);
-  // Sort Descending by Creation Time (Newest First)
   const sorted = channels.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
-  console.log(`Fetched ${sorted.length} public channels`);
   return sorted;
 }
 
-// Real-time subscription for public channels
 export function subscribeToPublicChannels(
   onUpdate: (channels: Channel[]) => void, 
   onError: (error: Error) => void
 ): () => void {
-  console.log("Subscribing to public channels...");
   return db.collection('channels')
     .where("visibility", "==", "public")
     .onSnapshot(
       (snapshot) => {
         const channels = snapshot.docs.map(d => d.data() as Channel);
-        // Client-side sort to guarantee order without complex indexes
         channels.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
-        console.log(`Realtime update: ${channels.length} public channels`);
         onUpdate(channels);
       },
       (error) => {
@@ -584,7 +561,6 @@ export function subscribeToPublicChannels(
 
 export async function getGroupChannels(groupIds: string[]): Promise<Channel[]> {
   if (groupIds.length === 0) return [];
-  // 'in' query limits to 10
   const chunks = [];
   for (let i = 0; i < groupIds.length; i += 10) {
     chunks.push(groupIds.slice(i, i + 10));
@@ -595,11 +571,10 @@ export async function getGroupChannels(groupIds: string[]): Promise<Channel[]> {
     const snap = await db.collection('channels').where("groupId", "in", chunk).get();
     snap.forEach(d => results.push(d.data() as Channel));
   }
-  // Sort Group channels too
   return results.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
 }
 
-// --- LECTURE CACHING (Shared Knowledge Base) ---
+// --- LECTURE CACHING ---
 
 export async function saveLectureToFirestore(channelId: string, subTopicId: string, lecture: GeneratedLecture): Promise<void> {
   const sanitizedId = subTopicId.replace(/[^a-zA-Z0-9]/g, '_');
@@ -639,7 +614,7 @@ export async function getCurriculumFromFirestore(channelId: string): Promise<any
   }
 }
 
-// --- DISCUSSIONS (NEW) ---
+// --- DISCUSSIONS ---
 
 export async function saveDiscussion(discussion: CommunityDiscussion): Promise<string> {
   const docRef = await db.collection('discussions').add(sanitizeData({
@@ -673,7 +648,6 @@ export async function saveDiscussionDesignDoc(discussionId: string, designDoc: s
 
 export async function getDiscussionsForLecture(lectureId: string): Promise<CommunityDiscussion[]> {
   try {
-    // NOTE: Removed server-side sort to avoid requiring composite index
     const snap = await db.collection('discussions')
       .where("lectureId", "==", lectureId)
       .get();
@@ -689,7 +663,6 @@ export async function getDiscussionsForLecture(lectureId: string): Promise<Commu
 
 export async function getUserDesignDocs(uid: string): Promise<CommunityDiscussion[]> {
   try {
-    // NOTE: Removed server-side sort to avoid requiring composite index (userId + createdAt)
     const snap = await db.collection('discussions')
       .where("userId", "==", uid)
       .get();
@@ -724,25 +697,20 @@ export async function linkDiscussionToLectureSegment(channelId: string, lectureI
       
       const data = doc.data() as GeneratedLecture;
       
-      // Update the specific section with discussion ID
       if (data.sections && data.sections[sectionIndex]) {
         data.sections[sectionIndex].discussionId = discussionId;
-        t.set(lectureRef, sanitizeData(data)); // using set to update the whole object safely
+        t.set(lectureRef, sanitizeData(data)); 
       }
     });
-    console.log(`Linked discussion ${discussionId} to segment ${sectionIndex}`);
   } catch(e) {
     console.error("Failed to link discussion to segment", e);
     throw e;
   }
 }
 
-// --- RECORDINGS (SESSION HISTORY) ---
+// --- RECORDINGS ---
 
 export async function saveRecordingReference(recording: RecordingSession): Promise<void> {
-  // Use a subcollection under the user OR a top-level collection with userId field.
-  // Top-level is better for admin/reporting, but subcollection is cleaner for privacy rules.
-  // We'll use top-level 'recordings' with a query.
   await db.collection('recordings').add(sanitizeData(recording));
   logUserActivity('save_recording', { channelId: recording.channelId });
 }
@@ -751,11 +719,10 @@ export async function getUserRecordings(uid: string): Promise<RecordingSession[]
   try {
     const snap = await db.collection('recordings')
       .where("userId", "==", uid)
-      .orderBy("timestamp", "desc") // requires composite index or simple if just userId
+      .orderBy("timestamp", "desc") 
       .get();
     return snap.docs.map(d => ({ ...d.data(), id: d.id } as RecordingSession));
   } catch (e: any) {
-    // If index is missing, try without sort client-side
     if (e.code === 'failed-precondition') {
         const snap = await db.collection('recordings').where("userId", "==", uid).get();
         const data = snap.docs.map(d => ({ ...d.data(), id: d.id } as RecordingSession));
@@ -768,8 +735,6 @@ export async function getUserRecordings(uid: string): Promise<RecordingSession[]
 
 export async function deleteRecordingReference(recordingId: string, mediaUrl: string, transcriptUrl: string): Promise<void> {
   await db.collection('recordings').doc(recordingId).delete();
-  
-  // Cleanup Storage
   try {
     if (mediaUrl) await storage.refFromURL(mediaUrl).delete();
     if (transcriptUrl) await storage.refFromURL(transcriptUrl).delete();
@@ -778,27 +743,23 @@ export async function deleteRecordingReference(recordingId: string, mediaUrl: st
   }
 }
 
-// --- BOOKINGS (MENTORSHIP & P2P) ---
+// --- BOOKINGS ---
 
 export async function createBooking(booking: Booking): Promise<void> {
   const user = auth.currentUser;
   if (!user) throw new Error("Must be logged in to book a session.");
-  
   await db.collection('bookings').add(sanitizeData(booking));
   logUserActivity('create_booking', { mentor: booking.mentorName, date: booking.date });
 }
 
 export async function getUserBookings(uid: string, email?: string): Promise<Booking[]> {
   try {
-    // 1. Fetch Owned Bookings (Created by user)
     const ownedSnap = await db.collection('bookings')
       .where("userId", "==", uid)
       .get();
     const owned = ownedSnap.docs.map(d => ({ ...d.data(), id: d.id } as Booking));
 
     let invited: Booking[] = [];
-    
-    // 2. Fetch Invited Bookings (Guest)
     if (email) {
        const invitedSnap = await db.collection('bookings')
          .where("invitedEmail", "==", email)
@@ -806,11 +767,9 @@ export async function getUserBookings(uid: string, email?: string): Promise<Book
        invited = invitedSnap.docs.map(d => ({ ...d.data(), id: d.id } as Booking));
     }
 
-    // Merge arrays and remove duplicates based on ID
     const merged = [...owned, ...invited];
     const unique = Array.from(new Map(merged.map(item => [item.id, item])).values());
 
-    // Sort by date/time (descending for scheduling)
     return unique.sort((a, b) => {
         const timeA = new Date(`${a.date}T${a.time}`).getTime();
         const timeB = new Date(`${b.date}T${b.time}`).getTime();
@@ -825,7 +784,6 @@ export async function getUserBookings(uid: string, email?: string): Promise<Book
 
 export async function getPendingBookings(email: string): Promise<Booking[]> {
   if (!email) return [];
-  // Check for P2P meetings where this user is the invitee AND status is pending
   const snapshot = await db.collection('bookings')
     .where("invitedEmail", "==", email)
     .where("status", "==", "pending")
@@ -865,7 +823,6 @@ export async function deleteBookingRecording(bookingId: string, recordingUrl?: s
   const batch = db.batch();
   const ref = db.collection('bookings').doc(bookingId);
 
-  // Remove recording links from the booking document
   batch.update(ref, {
     recordingUrl: firebase.firestore.FieldValue.delete(),
     transcriptUrl: firebase.firestore.FieldValue.delete()
@@ -873,12 +830,11 @@ export async function deleteBookingRecording(bookingId: string, recordingUrl?: s
 
   await batch.commit();
 
-  // Attempt to delete files from storage
   if (recordingUrl) {
-    try { await storage.refFromURL(recordingUrl).delete(); } catch(e) { console.warn("Audio delete failed", e); }
+    try { await storage.refFromURL(recordingUrl).delete(); } catch(e) {}
   }
   if (transcriptUrl) {
-    try { await storage.refFromURL(transcriptUrl).delete(); } catch(e) { console.warn("Transcript delete failed", e); }
+    try { await storage.refFromURL(transcriptUrl).delete(); } catch(e) {}
   }
   
   logUserActivity('delete_recording', { bookingId });
@@ -896,7 +852,6 @@ export async function saveCodeProject(project: CodeProject): Promise<void> {
     lastModified: Date.now()
   };
   
-  // Use project ID as document ID for consistency
   await db.collection('code_projects').doc(project.id).set(sanitizeData(projectData), { merge: true });
   logUserActivity('save_code_project', { projectId: project.id, name: project.name });
 }
@@ -924,9 +879,8 @@ export async function ensureUserBlog(user: any): Promise<Blog> {
     return { ...snap.docs[0].data(), id: snap.docs[0].id } as Blog;
   }
   
-  // Create default blog
   const newBlog: Blog = {
-    id: user.uid, // One blog per user, ID = UID for simplicity
+    id: user.uid, 
     ownerId: user.uid,
     authorName: user.displayName || 'Anonymous',
     title: `${user.displayName || 'User'}'s Blog`,
@@ -943,11 +897,7 @@ export async function updateBlogSettings(blogId: string, updates: Partial<Blog>)
 }
 
 export async function createBlogPost(post: BlogPost): Promise<string> {
-  // We use a root-level 'posts' collection for easier querying of "all community posts"
-  // But link it to the blogId
   const docRef = await db.collection('posts').add(sanitizeData(post));
-  
-  // Also create empty comments subcollection placeholder if needed, though Firestore doesn't require it
   return docRef.id;
 }
 
@@ -957,21 +907,15 @@ export async function updateBlogPost(postId: string, updates: Partial<BlogPost>)
 
 export async function getCommunityPosts(limitVal = 20): Promise<BlogPost[]> {
   try {
-    // AVOID COMPOSITE INDEX REQUIREMENT (status + createdAt)
-    // Fetch latest posts generally, then filter client-side.
-    // Fetching more (50) to ensure we have enough published ones after filtering.
     const snap = await db.collection('posts')
       .orderBy("createdAt", "desc")
       .limit(50) 
       .get();
       
     const all = snap.docs.map(d => ({ ...d.data(), id: d.id } as BlogPost));
-    // Client-side filter
     return all.filter(p => p.status === 'published').slice(0, limitVal);
   } catch(e) {
     console.error("Failed to fetch community posts", e);
-    // Fallback: If orderBy createdAt fails (e.g. missing index on that single field?), 
-    // try just getting published ones and sorting client side (though 'status' query might result in large result set)
     try {
         const snap = await db.collection('posts').where("status", "==", "published").limit(limitVal).get();
         const docs = snap.docs.map(d => ({ ...d.data(), id: d.id } as BlogPost));
@@ -984,8 +928,6 @@ export async function getCommunityPosts(limitVal = 20): Promise<BlogPost[]> {
 
 export async function getUserPosts(blogId: string): Promise<BlogPost[]> {
   try {
-    // AVOID COMPOSITE INDEX REQUIREMENT (blogId + createdAt)
-    // Fetch by blogId, sort client-side
     const snap = await db.collection('posts')
       .where("blogId", "==", blogId)
       .get();
@@ -1009,9 +951,6 @@ export async function getBlogPost(postId: string): Promise<BlogPost | null> {
 
 export async function addPostComment(postId: string, comment: Comment): Promise<void> {
   const ref = db.collection('posts').doc(postId);
-  // Using an array in the document for simplicity like channels, 
-  // though for a massive blog a subcollection is better. 
-  // Given existing patterns, array is fine for MVP.
   await ref.update({
     comments: firebase.firestore.FieldValue.arrayUnion(sanitizeData(comment)),
     commentCount: firebase.firestore.FieldValue.increment(1)

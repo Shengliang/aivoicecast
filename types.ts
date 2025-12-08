@@ -106,7 +106,7 @@ export interface Group {
   createdAt: number;
 }
 
-export type SubscriptionTier = 'free' | 'creator' | 'pro';
+export type SubscriptionTier = 'free' | 'pro';
 
 export interface UserProfile {
   uid: string;

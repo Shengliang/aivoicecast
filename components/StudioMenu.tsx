@@ -48,9 +48,8 @@ export const StudioMenu: React.FC<StudioMenuProps> = ({
 
   const getTierLabel = () => {
       const tier = userProfile?.subscriptionTier || 'free';
-      if (tier === 'creator') return { label: 'CREATOR', color: 'text-indigo-400 bg-indigo-900/50' };
-      if (tier === 'pro') return { label: 'PRO', color: 'text-amber-400 bg-amber-900/50' };
-      return { label: 'FREE', color: 'text-slate-400 bg-slate-800' };
+      if (tier === 'pro') return { label: 'PRO MEMBER', color: 'text-amber-400 bg-amber-900/50 border border-amber-500/20' };
+      return { label: 'FREE TIER', color: 'text-slate-400 bg-slate-800' };
   };
 
   const tierInfo = getTierLabel();
@@ -141,7 +140,7 @@ export const StudioMenu: React.FC<StudioMenuProps> = ({
                <span>Data Sync & Backup</span>
             </button>
             
-            {/* New Settings Button */}
+            {/* Settings Button */}
             <button 
                onClick={() => { setIsSettingsModalOpen(true); setIsUserMenuOpen(false); }}
                className="w-full flex items-center space-x-3 px-3 py-2 text-sm text-slate-300 hover:text-white hover:bg-slate-800 rounded-lg transition-colors"

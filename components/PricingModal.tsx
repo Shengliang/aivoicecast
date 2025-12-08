@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, Check, Zap, Loader2, Sparkles } from 'lucide-react';
+import { X, Check, Zap, Loader2, Sparkles, Crown } from 'lucide-react';
 import { UserProfile, SubscriptionTier } from '../types';
 import { upgradeUserSubscription } from '../services/firestoreService';
 
@@ -40,7 +40,7 @@ export const PricingModal: React.FC<PricingModalProps> = ({ isOpen, onClose, use
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-950/90 backdrop-blur-md">
-      <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-5xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh] animate-fade-in-up my-auto relative">
+      <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-4xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh] animate-fade-in-up my-auto relative">
         
         <div className="p-6 border-b border-slate-800 flex justify-between items-center bg-slate-950/50 shrink-0">
           <div>
@@ -52,79 +52,55 @@ export const PricingModal: React.FC<PricingModalProps> = ({ isOpen, onClose, use
           </button>
         </div>
 
-        <div className="p-8 overflow-y-auto flex-1">
-           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="p-8 overflow-y-auto flex-1 flex flex-col items-center justify-center">
+           <div className="grid grid-cols-1 md:grid-cols-2 gap-8 w-full max-w-3xl">
               
               {/* FREE TIER */}
-              <div className="bg-slate-800/30 border border-slate-700 rounded-2xl p-6 flex flex-col relative">
-                 <h3 className="text-lg font-bold text-white mb-2">Free Starter</h3>
-                 <div className="text-3xl font-bold text-white mb-6">$0 <span className="text-sm font-normal text-slate-500">/mo</span></div>
+              <div className="bg-slate-800/30 border border-slate-700 rounded-2xl p-8 flex flex-col relative h-full">
+                 <h3 className="text-xl font-bold text-white mb-2">Free Starter</h3>
+                 <div className="text-4xl font-bold text-white mb-6">$0 <span className="text-sm font-normal text-slate-500">/mo</span></div>
                  
-                 <ul className="space-y-3 mb-8 flex-1">
-                    <li className="flex items-center gap-2 text-sm text-slate-300"><Check size={16} className="text-emerald-500"/> Unlimited Listening</li>
-                    <li className="flex items-center gap-2 text-sm text-slate-300"><Check size={16} className="text-emerald-500"/> 5 AI Generation Credits</li>
-                    <li className="flex items-center gap-2 text-sm text-slate-300"><Check size={16} className="text-emerald-500"/> Public Groups Only</li>
-                    <li className="flex items-center gap-2 text-sm text-slate-500"><X size={16} /> No Private Channels</li>
-                    <li className="flex items-center gap-2 text-sm text-slate-500"><X size={16} /> Standard Voice Quality</li>
+                 <ul className="space-y-4 mb-8 flex-1">
+                    <li className="flex items-center gap-3 text-sm text-slate-300"><Check size={18} className="text-emerald-500"/> Unlimited Listening</li>
+                    <li className="flex items-center gap-3 text-sm text-slate-300"><Check size={18} className="text-emerald-500"/> 5 AI Generation Credits</li>
+                    <li className="flex items-center gap-3 text-sm text-slate-300"><Check size={18} className="text-emerald-500"/> Public Groups Only</li>
+                    <li className="flex items-center gap-3 text-sm text-slate-500"><X size={18} /> No Private Channels</li>
+                    <li className="flex items-center gap-3 text-sm text-slate-500"><X size={18} /> Standard Voice Quality</li>
                  </ul>
 
                  <button 
                     disabled={true}
-                    className="w-full py-3 rounded-xl border border-slate-600 text-slate-400 font-bold text-sm cursor-default"
+                    className="w-full py-4 rounded-xl border border-slate-600 text-slate-400 font-bold text-sm cursor-default"
                  >
                     Current Plan
                  </button>
               </div>
 
-              {/* CREATOR TIER (Best Value) */}
-              <div className="bg-indigo-900/10 border border-indigo-500 rounded-2xl p-6 flex flex-col relative transform scale-105 shadow-xl shadow-indigo-500/10">
-                 <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-indigo-600 text-white text-[10px] uppercase font-bold px-3 py-1 rounded-full shadow-lg">Most Popular</div>
-                 <h3 className="text-lg font-bold text-indigo-300 mb-2 flex items-center gap-2"><Sparkles size={18}/> Creator</h3>
-                 <div className="text-3xl font-bold text-white mb-6">$15 <span className="text-sm font-normal text-slate-500">/mo</span></div>
-                 
-                 <ul className="space-y-3 mb-8 flex-1">
-                    <li className="flex items-center gap-2 text-sm text-white"><Check size={16} className="text-indigo-400"/> <strong>Unlimited</strong> AI Generation</li>
-                    <li className="flex items-center gap-2 text-sm text-white"><Check size={16} className="text-indigo-400"/> Create Private Channels</li>
-                    <li className="flex items-center gap-2 text-sm text-white"><Check size={16} className="text-indigo-400"/> Access <strong>Neural Voices</strong></li>
-                    <li className="flex items-center gap-2 text-sm text-white"><Check size={16} className="text-indigo-400"/> Create 3 Private Groups</li>
-                    <li className="flex items-center gap-2 text-sm text-white"><Check size={16} className="text-indigo-400"/> Priority Support</li>
-                 </ul>
-
-                 {currentTier === 'creator' ? (
-                     <button disabled className="w-full py-3 bg-indigo-600/50 text-white font-bold rounded-xl text-sm border border-indigo-500">Current Plan</button>
-                 ) : (
-                     <button 
-                        onClick={() => handleUpgrade('creator')}
-                        disabled={!!processingTier}
-                        className="w-full py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl text-sm shadow-lg transition-all flex justify-center items-center gap-2"
-                     >
-                        {processingTier === 'creator' ? <Loader2 className="animate-spin" size={16}/> : 'Upgrade to Creator'}
-                     </button>
-                 )}
-              </div>
-
               {/* PRO TIER */}
-              <div className="bg-slate-800/30 border border-slate-700 rounded-2xl p-6 flex flex-col relative">
-                 <h3 className="text-lg font-bold text-white mb-2 flex items-center gap-2"><Zap size={18} className="text-amber-400"/> Pro Power</h3>
-                 <div className="text-3xl font-bold text-white mb-6">$30 <span className="text-sm font-normal text-slate-500">/mo</span></div>
+              <div className="bg-gradient-to-b from-indigo-900/20 to-slate-900 border border-indigo-500 rounded-2xl p-8 flex flex-col relative transform hover:scale-[1.02] transition-transform shadow-2xl shadow-indigo-500/10">
+                 <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-indigo-600 text-white text-xs uppercase font-bold px-4 py-1.5 rounded-full shadow-lg flex items-center gap-1">
+                    <Crown size={12} fill="currentColor"/> Best Value
+                 </div>
+                 <h3 className="text-xl font-bold text-indigo-300 mb-2 flex items-center gap-2">Pro Membership</h3>
+                 <div className="text-4xl font-bold text-white mb-6">$29 <span className="text-sm font-normal text-slate-500">/mo</span></div>
                  
-                 <ul className="space-y-3 mb-8 flex-1">
-                    <li className="flex items-center gap-2 text-sm text-slate-300"><Check size={16} className="text-amber-400"/> All Creator Features</li>
-                    <li className="flex items-center gap-2 text-sm text-slate-300"><Check size={16} className="text-amber-400"/> <strong>Unlimited</strong> Private Groups</li>
-                    <li className="flex items-center gap-2 text-sm text-slate-300"><Check size={16} className="text-amber-400"/> Code Studio <strong>Pro</strong> (Git Sync)</li>
-                    <li className="flex items-center gap-2 text-sm text-slate-300"><Check size={16} className="text-amber-400"/> Early Access to Gemini Models</li>
-                    <li className="flex items-center gap-2 text-sm text-slate-300"><Check size={16} className="text-amber-400"/> 1-on-1 Mentorship Matching</li>
+                 <ul className="space-y-4 mb-8 flex-1">
+                    <li className="flex items-center gap-3 text-sm text-white"><Check size={18} className="text-indigo-400"/> <strong>Unlimited</strong> AI Generation</li>
+                    <li className="flex items-center gap-3 text-sm text-white"><Check size={18} className="text-indigo-400"/> <strong>Private</strong> Channels & Groups</li>
+                    <li className="flex items-center gap-3 text-sm text-white"><Check size={18} className="text-indigo-400"/> Neural Voices (Gemini)</li>
+                    <li className="flex items-center gap-3 text-sm text-white"><Check size={18} className="text-indigo-400"/> Code Studio Pro (Git Sync)</li>
+                    <li className="flex items-center gap-3 text-sm text-white"><Check size={18} className="text-indigo-400"/> Priority 1-on-1 Mentorship</li>
                  </ul>
 
                  {currentTier === 'pro' ? (
-                     <button disabled className="w-full py-3 bg-slate-700 text-white font-bold rounded-xl text-sm">Current Plan</button>
+                     <button disabled className="w-full py-4 bg-slate-700 text-white font-bold rounded-xl text-sm border border-slate-600">Plan Active</button>
                  ) : (
                      <button 
                         onClick={() => handleUpgrade('pro')}
                         disabled={!!processingTier}
-                        className="w-full py-3 bg-slate-800 hover:bg-slate-700 hover:text-white text-slate-300 border border-slate-600 font-bold rounded-xl text-sm transition-all flex justify-center items-center gap-2"
+                        className="w-full py-4 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl text-sm shadow-xl shadow-indigo-500/20 transition-all flex justify-center items-center gap-2"
                      >
-                        {processingTier === 'pro' ? <Loader2 className="animate-spin" size={16}/> : 'Upgrade to Pro'}
+                        {processingTier === 'pro' ? <Loader2 className="animate-spin" size={18}/> : 'Upgrade to Pro'}
                      </button>
                  )}
               </div>
@@ -133,7 +109,7 @@ export const PricingModal: React.FC<PricingModalProps> = ({ isOpen, onClose, use
            
            <div className="mt-8 text-center text-xs text-slate-500">
               <p>Secure payment processing via Stripe. You can cancel at any time.</p>
-              <p className="mt-1">Need a Team plan? Contact sales@aivoicecast.com</p>
+              <p className="mt-1">All prices in USD. Enterprise plans available.</p>
            </div>
         </div>
       </div>
