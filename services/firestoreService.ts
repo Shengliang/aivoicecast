@@ -1,6 +1,4 @@
-
-
-// [FORCE-SYNC-v3.42.0] Timestamp: ${new Date().toISOString()}
+// [FORCE-SYNC-v3.42.1] Timestamp: ${new Date().toISOString()}
 import { db, auth, storage } from './firebaseConfig';
 import firebase from 'firebase/compat/app';
 import { Channel, Group, UserProfile, Invitation, GeneratedLecture, CommunityDiscussion, Comment, Booking, RecordingSession, TranscriptItem, CodeProject, Attachment, Blog, BlogPost } from '../types';
@@ -906,27 +904,41 @@ export async function updateBlogPost(postId: string, updates: Partial<BlogPost>)
 
 export async function getCommunityPosts(limitVal = 20): Promise<BlogPost[]> {
   try {
+    // AVOID COMPOSITE INDEX REQUIREMENT (status + createdAt)
+    // Fetch latest posts generally, then filter client-side.
+    // Fetching more (50) to ensure we have enough published ones after filtering.
     const snap = await db.collection('posts')
-      .where("status", "==", "published")
       .orderBy("createdAt", "desc")
-      .limit(limitVal)
+      .limit(50) 
       .get();
       
-    return snap.docs.map(d => ({ ...d.data(), id: d.id } as BlogPost));
+    const all = snap.docs.map(d => ({ ...d.data(), id: d.id } as BlogPost));
+    // Client-side filter
+    return all.filter(p => p.status === 'published').slice(0, limitVal);
   } catch(e) {
     console.error("Failed to fetch community posts", e);
-    return [];
+    // Fallback: If orderBy createdAt fails (e.g. missing index on that single field?), 
+    // try just getting published ones and sorting client side (though 'status' query might result in large result set)
+    try {
+        const snap = await db.collection('posts').where("status", "==", "published").limit(limitVal).get();
+        const docs = snap.docs.map(d => ({ ...d.data(), id: d.id } as BlogPost));
+        return docs.sort((a, b) => b.createdAt - a.createdAt);
+    } catch (e2) {
+        return [];
+    }
   }
 }
 
 export async function getUserPosts(blogId: string): Promise<BlogPost[]> {
   try {
+    // AVOID COMPOSITE INDEX REQUIREMENT (blogId + createdAt)
+    // Fetch by blogId, sort client-side
     const snap = await db.collection('posts')
       .where("blogId", "==", blogId)
-      .orderBy("createdAt", "desc")
       .get();
       
-    return snap.docs.map(d => ({ ...d.data(), id: d.id } as BlogPost));
+    const docs = snap.docs.map(d => ({ ...d.data(), id: d.id } as BlogPost));
+    return docs.sort((a, b) => b.createdAt - a.createdAt);
   } catch(e) {
     console.error("Failed to fetch user posts", e);
     return [];
