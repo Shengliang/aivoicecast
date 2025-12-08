@@ -1,5 +1,4 @@
 
-
 export type AttachmentType = 'image' | 'audio' | 'video' | 'file';
 
 export interface Attachment {
@@ -186,7 +185,7 @@ export interface GithubMetadata {
   owner: string;
   repo: string;
   branch: string;
-  sha: string; // Commit SHA
+  sha: string;
 }
 
 export interface CodeProject {
@@ -194,10 +193,10 @@ export interface CodeProject {
   name: string;
   files: CodeFile[];
   lastModified: number;
-  review?: string; // Code Review
-  humanComments?: string; // Interviewer/Human notes
   ownerId?: string;
-  chatHistory?: ChatMessage[]; // Chat with AI assistant
-  interviewFeedback?: string; // Holistic interview feedback
-  github?: GithubMetadata; // Linked Repository Info
+  github?: GithubMetadata;
+  review?: string;
+  humanComments?: string;
+  interviewFeedback?: string;
+  chatHistory?: ChatMessage[];
 }
