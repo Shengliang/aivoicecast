@@ -1,6 +1,7 @@
+
 import React, { useState, useEffect, useRef } from 'react';
-import { GoogleGenAI } from '@google/genai';
-import { ArrowLeft, Save, Folder, File, Code, Plus, Trash2, Loader2, ChevronRight, ChevronDown, X, MessageSquare, FileCode, FileJson, FileType, Search, Coffee, Hash, CloudUpload, Edit3, BookOpen, Bot, Send, Maximize2, Minimize2, GripVertical, UserCheck, AlertTriangle, Archive, Sparkles, Video, Mic, CheckCircle, Monitor, FileText, Eye, Github, GitBranch, GitCommit, FolderOpen, RefreshCw, GraduationCap, DownloadCloud, Terminal } from 'lucide-react';
+import { GoogleGenAI, FunctionDeclaration, Type } from '@google/genai';
+import { ArrowLeft, Save, Folder, File, Code, Plus, Trash2, Loader2, ChevronRight, ChevronDown, X, MessageSquare, FileCode, FileJson, FileType, Search, Coffee, Hash, CloudUpload, Edit3, BookOpen, Bot, Send, Maximize2, Minimize2, GripVertical, UserCheck, AlertTriangle, Archive, Sparkles, Video, Mic, CheckCircle, Monitor, FileText, Eye, Github, GitBranch, GitCommit, FolderOpen, RefreshCw, GraduationCap, DownloadCloud, Terminal, Undo2, Check } from 'lucide-react';
 import { GEMINI_API_KEY } from '../services/private_keys';
 import { CodeProject, CodeFile, ChatMessage, Channel, GithubMetadata } from '../types';
 import { MarkdownView } from './MarkdownView';
@@ -64,60 +65,78 @@ const QUICK_REPOS = [
 const EXAMPLE_PROJECTS: Record<string, CodeProject> = {
   is_bst: {
     id: 'proj-is-bst',
-    name: 'Example: Validate BST',
+    name: 'Example: Validate BST (Modern C++)',
     lastModified: Date.now(),
     files: [
       {
         name: 'validate_bst.cpp',
         language: 'c++',
-        content: `#include <climits>
+        content: `#include <iostream>
+#include <memory>
 #include <stack>
-#include <iostream>
+#include <limits>
+#include <concepts>
+
+// C++20 Concept to ensure value type is ordered
+template<typename T>
+concept Ordered = requires(T a, T b) {
+    { a < b } -> std::convertible_to<bool>;
+    { a > b } -> std::convertible_to<bool>;
+};
 
 struct TreeNode {
     int val;
-    TreeNode *left;
-    TreeNode *right;
+    // Using std::unique_ptr for automatic memory management (RAII)
+    // No manual delete needed. Prevents memory leaks.
+    std::unique_ptr<TreeNode> left;
+    std::unique_ptr<TreeNode> right;
+
     TreeNode(int x) : val(x), left(nullptr), right(nullptr) {}
 };
 
 class Solution {
 public:
-    // Approach: Iterative In-Order Traversal
-    // Time Complexity: O(N)
-    // Space Complexity: O(N) in worst case (stack)
-    bool isValidBST(TreeNode* root) {
+    // Validate if the tree is a Binary Search Tree
+    // Uses raw pointer for traversal to avoid ownership transfer issues
+    bool isValidBST(const std::unique_ptr<TreeNode>& root) {
         std::stack<TreeNode*> stack;
+        TreeNode* curr = root.get();
         TreeNode* prev = nullptr;
         
-        while (root || !stack.empty()) {
-            while (root) {
-                stack.push(root);
-                root = root->left;
+        while (curr != nullptr || !stack.empty()) {
+            while (curr != nullptr) {
+                stack.push(curr);
+                curr = curr->left.get();
             }
-            root = stack.top();
+            
+            curr = stack.top();
             stack.pop();
             
-            if (prev && root->val <= prev->val) return false;
+            // Validation logic: In-order traversal must be strictly increasing
+            if (prev != nullptr && curr->val <= prev->val) {
+                return false;
+            }
             
-            prev = root;
-            root = root->right;
+            prev = curr;
+            curr = curr->right.get();
         }
         return true;
     }
 };
 
 int main() {
-    // Constructing a sample BST: 
-    //   2
-    //  / \\
-    // 1   3
-    TreeNode* root = new TreeNode(2);
-    root->left = new TreeNode(1);
-    root->right = new TreeNode(3);
+    // Modern C++: Use std::make_unique to prevent memory leaks automatically
+    auto root = std::make_unique<TreeNode>(2);
+    root->left = std::make_unique<TreeNode>(1);
+    root->right = std::make_unique<TreeNode>(3);
 
     Solution s;
-    std::cout << "Is Valid BST: " << (s.isValidBST(root) ? "Yes" : "No") << std::endl;
+    bool result = s.isValidBST(root);
+    
+    // C++23 std::print would be nice here, falling back to iostream
+    std::cout << "Is Valid BST: " << (result ? "Yes" : "No") << std::endl;
+    
+    // root is automatically destroyed here. No leak.
     return 0;
 }`
       }
@@ -470,11 +489,11 @@ const generateHighlightedHTML = (code: string, language: string) => {
     // 5. Keywords
     const keywords = [
       "int", "float", "double", "char", "void", "bool", "long", "short", "unsigned", "signed", 
-      "struct", "class", "public", "private", "protected", "virtual", "override", "final", "static", "const", "constexpr",
+      "struct", "class", "public", "private", "protected", "virtual", "override", "final", "static", "const", "constexpr", "concept", "requires",
       "if", "else", "for", "while", "do", "switch", "case", "break", "continue", "default", "return", 
       "new", "delete", "this", "true", "false", "nullptr", "namespace", "using", "template", "typename",
       "try", "catch", "throw", "auto", "explicit", "friend", "inline", "mutable", "operator", 
-      "std", "vector", "string", "cout", "cin", "endl", "map", "set", "stack", "queue", "pair"
+      "std", "vector", "string", "cout", "cin", "endl", "map", "set", "stack", "queue", "pair", "unique_ptr", "shared_ptr", "make_unique", "make_shared"
     ];
     // Word boundary regex
     const kwRegex = new RegExp(`\\b(${keywords.join('|')})\\b`, 'g');
@@ -590,6 +609,9 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
   const [isReviewing, setIsReviewing] = useState(false);
   const [isLoadingFile, setIsLoadingFile] = useState(false);
   const [tutorSessionId, setTutorSessionId] = useState<string>(''); // For fresh "Teach Me" sessions
+  
+  // AI Change Management
+  const [pendingChange, setPendingChange] = useState<{ original: string, fileIndex: number } | null>(null);
   
   // Search State
   const [searchTerm, setSearchTerm] = useState('');
@@ -923,6 +945,21 @@ If the user asks questions, answer based on this new context. If they just switc
         loaded: true
     };
     setProject({ ...project, files: updatedFiles });
+  };
+
+  // --- CHANGE MANAGEMENT ---
+  const handleAcceptChange = () => {
+      setPendingChange(null);
+      setChatMessages(prev => [...prev, {role: 'system', text: "✅ *Changes Accepted*"}]);
+  };
+
+  const handleRejectChange = () => {
+      if (pendingChange) {
+          // Revert content
+          handleCodeChange(pendingChange.original);
+          setPendingChange(null);
+          setChatMessages(prev => [...prev, {role: 'system', text: "❌ *Changes Reverted*"}]);
+      }
   };
 
   const handleScroll = (e: React.UIEvent<HTMLTextAreaElement>) => {
@@ -1267,6 +1304,18 @@ If the user asks questions, answer based on this new context. If they just switc
           const fileContext = activeFile && activeFile.loaded ? `--- CURRENT FILE: ${activeFile.name} ---\n${activeFile.content}` : "No file active or not loaded.";
           const historyText = newHistory.slice(-20).map(m => `${m.role.toUpperCase()}: ${m.text}`).join('\n');
           
+          const updateFileTool: FunctionDeclaration = {
+              name: 'update_file',
+              description: 'Overwrite the current file content with new code if user asks for changes.',
+              parameters: {
+                  type: Type.OBJECT,
+                  properties: {
+                      code: { type: Type.STRING, description: 'The full new code content for the file.' }
+                  },
+                  required: ['code']
+              }
+          };
+
           const prompt = `
             You are an expert Coding Assistant built into an IDE.
             
@@ -1279,18 +1328,35 @@ If the user asks questions, answer based on this new context. If they just switc
             USER QUESTION:
             ${userMsg}
             
-            Provide a helpful, concise response. If you provide code, wrap it in markdown code blocks.
+            Provide a helpful, concise response. If the user asks to modify the code, use the 'update_file' tool.
           `;
 
           const response = await ai.models.generateContent({
               model: 'gemini-2.5-flash',
-              contents: prompt
+              contents: prompt,
+              config: {
+                  tools: [{ functionDeclarations: [updateFileTool] }]
+              }
           });
+
+          // Handle Tool Calls
+          if (response.functionCalls && response.functionCalls.length > 0) {
+              const fc = response.functionCalls[0];
+              if (fc.name === 'update_file') {
+                  const newCode = fc.args['code'] as string;
+                  setPendingChange({ original: activeFile.content, fileIndex: activeFileIndex });
+                  handleCodeChange(newCode); // Apply immediately
+                  const aiMsg = "I've updated the code in the editor. You can Accept or Revert these changes.";
+                  setChatMessages(prev => [...prev, { role: 'ai', text: aiMsg }]);
+                  setProject(prev => ({ ...prev, chatHistory: [...newHistory, { role: 'ai', text: aiMsg }] }));
+                  return;
+              }
+          }
 
           const aiMsg = response.text || "I couldn't generate a response.";
           setChatMessages(prev => [...prev, { role: 'ai', text: aiMsg }]);
           
-          setProject(prev => ({ ...prev, chatHistory: [...newHistory, { role: 'ai' as const, text: aiMsg }] }));
+          setProject(prev => ({ ...prev, chatHistory: [...newHistory, { role: 'ai', text: aiMsg }] }));
 
       } catch(e: any) {
           setChatMessages(prev => [...prev, { role: 'ai', text: `Error: ${e.message}` }]);
@@ -1584,11 +1650,6 @@ If the user asks questions, answer based on this new context. If they just switc
                </button>
                
                {project.files.map((file, idx) => {
-                  // Only show open files? For simplicity we show all files as tabs or just selected
-                  // To avoid overcrowding, let's only show active tab + maybe recently used. 
-                  // But for this demo, let's just show current + pinned.
-                  // Actually, showing all tabs for 3000 files is bad.
-                  // Just show the active file as a tab for now to keep it simple.
                   if (idx !== activeFileIndex) return null;
 
                   return (
@@ -1647,6 +1708,25 @@ If the user asks questions, answer based on this new context. If they just switc
                     />
                 )}
                 
+                {/* Pending Change Overlay (Accept/Reject AI Edit) */}
+                {pendingChange && (
+                    <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 p-3 bg-slate-900 border border-indigo-500/50 rounded-xl shadow-2xl animate-fade-in-up">
+                        <span className="text-sm font-bold text-indigo-300 mr-2">AI Suggested Changes</span>
+                        <button 
+                            onClick={handleRejectChange}
+                            className="px-4 py-2 bg-slate-800 hover:bg-red-900/30 text-slate-300 hover:text-red-300 rounded-lg text-xs font-bold flex items-center gap-2 border border-slate-700 transition-colors"
+                        >
+                            <Undo2 size={14}/> Revert
+                        </button>
+                        <button 
+                            onClick={handleAcceptChange}
+                            className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold flex items-center gap-2 shadow-lg transition-colors"
+                        >
+                            <Check size={14}/> Accept
+                        </button>
+                    </div>
+                )}
+
                 {/* Live Session Overlay (Mock Interview) */}
                 {isInterviewSession && (
                     <div className="absolute right-4 bottom-4 w-80 h-96 z-50 bg-slate-900 rounded-xl shadow-2xl border border-indigo-500/50 overflow-hidden flex flex-col animate-fade-in-up">
