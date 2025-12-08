@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { UserProfile, SubscriptionTier } from '../types';
 import { getUserProfile } from '../services/firestoreService';
-import { Sparkles, BarChart2, Plus, Wand2, Key, Database, Crown } from 'lucide-react';
+import { Sparkles, BarChart2, Plus, Wand2, Key, Database, Crown, Settings } from 'lucide-react';
 import { VOICES } from '../utils/initialData';
 import { PricingModal } from './PricingModal';
 
@@ -18,13 +18,14 @@ interface StudioMenuProps {
   setIsVoiceCreateOpen: (open: boolean) => void;
   setIsApiKeyModalOpen: (open: boolean) => void;
   setIsSyncModalOpen: (open: boolean) => void;
+  setIsSettingsModalOpen: (open: boolean) => void; // Added prop
   t: any;
 }
 
 export const StudioMenu: React.FC<StudioMenuProps> = ({
   isUserMenuOpen, setIsUserMenuOpen, userProfile, setUserProfile, currentUser,
   globalVoice, setGlobalVoice, hasApiKey, 
-  setIsCreateModalOpen, setIsVoiceCreateOpen, setIsApiKeyModalOpen, setIsSyncModalOpen, t
+  setIsCreateModalOpen, setIsVoiceCreateOpen, setIsApiKeyModalOpen, setIsSyncModalOpen, setIsSettingsModalOpen, t
 }) => {
   const [isPricingOpen, setIsPricingOpen] = useState(false);
   
@@ -138,6 +139,15 @@ export const StudioMenu: React.FC<StudioMenuProps> = ({
             >
                <Database size={16} />
                <span>Data Sync & Backup</span>
+            </button>
+            
+            {/* New Settings Button */}
+            <button 
+               onClick={() => { setIsSettingsModalOpen(true); setIsUserMenuOpen(false); }}
+               className="w-full flex items-center space-x-3 px-3 py-2 text-sm text-slate-300 hover:text-white hover:bg-slate-800 rounded-lg transition-colors"
+            >
+               <Settings size={16} />
+               <span>Account Settings</span>
             </button>
          </div>
       </div>

@@ -35,6 +35,8 @@ import { CodeStudio } from './components/CodeStudio';
 import { Whiteboard } from './components/Whiteboard';
 import { BlogView } from './components/BlogView';
 import { LoginPage } from './components/LoginPage'; // Import Login Page
+import { SettingsModal } from './components/SettingsModal'; // Import Settings Modal
+import { PricingModal } from './components/PricingModal'; // Import Pricing Modal for cross-linking
 
 import { auth, isFirebaseConfigured } from './services/firebaseConfig';
 import { 
@@ -135,6 +137,8 @@ const App: React.FC = () => {
   const [isApiKeyModalOpen, setIsApiKeyModalOpen] = useState(false);
   const [isSyncModalOpen, setIsSyncModalOpen] = useState(false);
   const [isFirebaseModalOpen, setIsFirebaseModalOpen] = useState(false);
+  const [isAccountSettingsOpen, setIsAccountSettingsOpen] = useState(false); // New Modal State
+  const [isPricingOpen, setIsPricingOpen] = useState(false); // For cross-linking from settings
   
   const [hasApiKey, setHasApiKey] = useState(false);
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
@@ -547,6 +551,7 @@ const App: React.FC = () => {
                    setIsVoiceCreateOpen={setIsVoiceCreateOpen}
                    setIsApiKeyModalOpen={setIsApiKeyModalOpen}
                    setIsSyncModalOpen={setIsSyncModalOpen}
+                   setIsSettingsModalOpen={setIsAccountSettingsOpen}
                    t={t}
                 />
               </div>
@@ -905,6 +910,25 @@ const App: React.FC = () => {
         onClose={() => setIsFirebaseModalOpen(false)}
         onConfigUpdate={(valid) => { if(valid) window.location.reload(); }}
       />
+
+      {isAccountSettingsOpen && userProfile && (
+          <SettingsModal 
+             isOpen={true} 
+             onClose={() => setIsAccountSettingsOpen(false)} 
+             user={userProfile} 
+             onUpdateProfile={(updated) => setUserProfile(updated)}
+             onUpgradeClick={() => setIsPricingOpen(true)}
+          />
+      )}
+
+      {isPricingOpen && userProfile && (
+          <PricingModal 
+             isOpen={true} 
+             onClose={() => setIsPricingOpen(false)} 
+             user={userProfile} 
+             onSuccess={(newTier) => setUserProfile({...userProfile, subscriptionTier: newTier})}
+          />
+      )}
 
       {channelToEdit && (
         <ChannelSettingsModal 
