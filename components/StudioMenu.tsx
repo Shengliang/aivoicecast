@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { UserProfile } from '../types';
+import { UserProfile, SubscriptionTier } from '../types';
 import { getUserProfile } from '../services/firestoreService';
 import { Sparkles, BarChart2, Plus, Wand2, Key, Database, Crown } from 'lucide-react';
 import { VOICES } from '../utils/initialData';
@@ -30,11 +30,18 @@ export const StudioMenu: React.FC<StudioMenuProps> = ({
   
   if (!isUserMenuOpen || !currentUser) return null;
 
-  const handleUpgradeSuccess = async () => {
-      // Reload profile to get new tier
-      if (currentUser) {
+  const handleUpgradeSuccess = async (newTier: SubscriptionTier) => {
+      // 1. Optimistic Update locally so UI reflects change instantly
+      if (userProfile) {
+          setUserProfile({ ...userProfile, subscriptionTier: newTier });
+      }
+      
+      // 2. Fetch fresh from DB (in case of real latency)
+      try {
           const fresh = await getUserProfile(currentUser.uid);
-          setUserProfile(fresh);
+          if (fresh) setUserProfile(fresh);
+      } catch(e) {
+          // Ignore fetch error, rely on optimistic update
       }
   };
 

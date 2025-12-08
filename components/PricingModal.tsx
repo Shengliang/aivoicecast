@@ -7,7 +7,7 @@ interface PricingModalProps {
   isOpen: boolean;
   onClose: () => void;
   user: UserProfile;
-  onSuccess: () => void;
+  onSuccess: (tier: SubscriptionTier) => void;
 }
 
 export const PricingModal: React.FC<PricingModalProps> = ({ isOpen, onClose, user, onSuccess }) => {
@@ -21,16 +21,16 @@ export const PricingModal: React.FC<PricingModalProps> = ({ isOpen, onClose, use
       // Simulate API latency
       await new Promise(resolve => setTimeout(resolve, 2000));
       
-      // Update Database
+      // Update Database (Will return true even if permissions denied in demo mode)
       await upgradeUserSubscription(user.uid, tier);
       
-      // Refresh local state (handled by parent or re-fetch)
-      onSuccess();
+      // Refresh local state immediately via parent callback
+      onSuccess(tier);
       onClose();
       alert(`Successfully upgraded to ${tier.toUpperCase()} plan!`);
     } catch (e: any) {
       console.error("Subscription Upgrade Failed:", e);
-      alert(`Payment failed: ${e.message || "Unknown error. Check permissions or network."}`);
+      alert(`Payment failed: ${e.message || "Unknown error."}`);
     } finally {
       setProcessingTier(null);
     }
