@@ -3,12 +3,13 @@ import React, { useRef, useState, useEffect, useCallback } from 'react';
 import { 
   ArrowLeft, Square, Circle, Minus, Type, Eraser, 
   Undo, Redo, Download, MousePointer, Pencil, Bot, 
-  Loader2, X, Palette, Trash2, Maximize, Sparkles, Send, Mic, MicOff, Image as ImageIcon
+  Loader2, X, Palette, Trash2, Maximize, Sparkles, Send, Mic, MicOff, Image as ImageIcon, Zap
 } from 'lucide-react';
-import { GoogleGenAI, FunctionDeclaration, Type as GenAIType } from '@google/genai';
+import { GoogleGenAI, FunctionDeclaration, Type as GenAIType, SchemaType } from '@google/genai';
 import { GEMINI_API_KEY } from '../services/private_keys';
 import { MarkdownView } from './MarkdownView';
 import { ChatMessage } from '../types';
+import { GeminiLiveService } from '../services/geminiLive';
 
 interface WhiteboardProps {
   onBack: () => void;
@@ -35,39 +36,42 @@ interface DrawingElement {
 }
 
 // --- TOOL DEFINITIONS FOR GEMINI ---
+// We use SchemaType which is the correct Enum for @google/genai SDK in tool definitions
 const drawTools: FunctionDeclaration[] = [
   {
     name: 'draw_rectangle',
-    description: 'Draw a rectangle on the whiteboard.',
+    description: 'Draw a rectangle/box on the whiteboard. Useful for architectural nodes, servers, or containers.',
     parameters: {
       type: GenAIType.OBJECT,
       properties: {
-        x: { type: GenAIType.NUMBER, description: 'X coordinate (0-1000)' },
-        y: { type: GenAIType.NUMBER, description: 'Y coordinate (0-800)' },
+        x: { type: GenAIType.NUMBER, description: 'X coordinate (0-1000). Center is 500.' },
+        y: { type: GenAIType.NUMBER, description: 'Y coordinate (0-800). Center is 400.' },
         width: { type: GenAIType.NUMBER, description: 'Width of rectangle' },
         height: { type: GenAIType.NUMBER, description: 'Height of rectangle' },
-        color: { type: GenAIType.STRING, description: 'Hex color code (e.g. #ff0000)' }
+        color: { type: GenAIType.STRING, description: 'Hex color code (e.g. #ff0000)' },
+        label: { type: GenAIType.STRING, description: 'Optional text label to place inside center' }
       },
       required: ['x', 'y', 'width', 'height']
     }
   },
   {
     name: 'draw_circle',
-    description: 'Draw a circle on the whiteboard.',
+    description: 'Draw a circle. Useful for users, databases, or start/end nodes.',
     parameters: {
       type: GenAIType.OBJECT,
       properties: {
         x: { type: GenAIType.NUMBER, description: 'X coordinate of bounding box top-left' },
         y: { type: GenAIType.NUMBER, description: 'Y coordinate of bounding box top-left' },
         diameter: { type: GenAIType.NUMBER, description: 'Diameter of the circle' },
-        color: { type: GenAIType.STRING }
+        color: { type: GenAIType.STRING },
+        label: { type: GenAIType.STRING, description: 'Optional text label to place inside center' }
       },
       required: ['x', 'y', 'diameter']
     }
   },
   {
     name: 'draw_line',
-    description: 'Draw a straight line.',
+    description: 'Draw a straight line or connector arrow between points.',
     parameters: {
       type: GenAIType.OBJECT,
       properties: {
@@ -82,7 +86,7 @@ const drawTools: FunctionDeclaration[] = [
   },
   {
     name: 'draw_path',
-    description: 'Draw a freehand sketch, curve, or complex shape (like a person, animal, or symbol) using a series of points.',
+    description: 'Draw a freehand sketch, curve, or complex shape (like a person, cloud, or symbol) using a series of points.',
     parameters: {
       type: GenAIType.OBJECT,
       properties: {
@@ -99,14 +103,15 @@ const drawTools: FunctionDeclaration[] = [
   },
   {
     name: 'add_text',
-    description: 'Write text on the whiteboard.',
+    description: 'Write free-floating text on the whiteboard.',
     parameters: {
       type: GenAIType.OBJECT,
       properties: {
         x: { type: GenAIType.NUMBER },
         y: { type: GenAIType.NUMBER },
         text: { type: GenAIType.STRING },
-        color: { type: GenAIType.STRING }
+        color: { type: GenAIType.STRING },
+        fontSize: { type: GenAIType.NUMBER, description: 'Font size scale (1-5), default 2' }
       },
       required: ['x', 'y', 'text']
     }
@@ -149,68 +154,20 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack }) => {
   const [chatHistory, setChatHistory] = useState<ChatMessage[]>([]);
   const [chatInput, setChatInput] = useState('');
   const [isAiProcessing, setIsAiProcessing] = useState(false);
-  const [isVoiceListening, setIsVoiceListening] = useState(false);
   
-  // Refs for continuous conversation
-  const recognitionRef = useRef<any>(null);
-  const shouldListenRef = useRef(false);
+  // LIVE MODE STATE
+  const [isLiveMode, setIsLiveMode] = useState(false);
+  const [liveStatus, setLiveStatus] = useState<'disconnected' | 'connecting' | 'connected' | 'speaking'>('disconnected');
+  const liveServiceRef = useRef<GeminiLiveService | null>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
-  // Setup Speech Recognition
-  useEffect(() => {
-    if ('webkitSpeechRecognition' in window) {
-      const SpeechRecognition = (window as any).webkitSpeechRecognition;
-      recognitionRef.current = new SpeechRecognition();
-      recognitionRef.current.continuous = false; // We handle restart manually for better control
-      recognitionRef.current.interimResults = false;
-      recognitionRef.current.lang = 'en-US';
-
-      recognitionRef.current.onresult = (event: any) => {
-        const transcript = event.results[0][0].transcript;
-        if (transcript.trim()) {
-            // Immediately send upon silence/result
-            handleChatSubmit(transcript);
-        }
-      };
-
-      recognitionRef.current.onerror = (event: any) => {
-        console.error("Speech error", event.error);
-        if (event.error === 'no-speech') {
-            // Just restart if we are supposed to be listening
-            if (shouldListenRef.current && !isAiProcessing) {
-                try { recognitionRef.current.start(); } catch(e) {}
-            }
-        } else {
-            setIsVoiceListening(false);
-            shouldListenRef.current = false;
-        }
-      };
-      
-      recognitionRef.current.onend = () => {
-         // Auto-restart if conversational mode is active and AI isn't thinking
-         if (shouldListenRef.current && !isAiProcessing) {
-             try {
-                 recognitionRef.current.start();
-             } catch(e) {
-                 setIsVoiceListening(false);
-             }
-         } else {
-             setIsVoiceListening(false);
-         }
-      };
-    }
-  }, [isAiProcessing]); // Re-bind if AI processing state changes to avoid race conditions
-
-  const toggleVoiceListen = () => {
-      if (isVoiceListening) {
-          shouldListenRef.current = false;
-          recognitionRef.current?.stop();
-          setIsVoiceListening(false);
-      } else {
-          shouldListenRef.current = true;
-          recognitionRef.current?.start();
-          setIsVoiceListening(true);
-      }
+  // Helper to add elements (exposed to AI)
+  const addAiElement = (el: DrawingElement) => {
+      setElements(prev => {
+          const next = [...prev, el];
+          // We don't save history for every single AI stroke to avoid perf issues during streaming
+          return next;
+      });
   };
 
   // Helper: Get Element Bounds
@@ -280,7 +237,6 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack }) => {
           return el.points ? el.points.some(p => Math.abs(p.x - x) < padding && Math.abs(p.y - y) < padding) : false;
       }
       
-      // For rect, circle, text, the bounds check is sufficient for simple selection
       return true;
   };
 
@@ -688,7 +644,156 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack }) => {
       }
   };
 
-  // --- AI ASSISTANT IMPLEMENTATION ---
+  // --- LIVE AI CONNECTION LOGIC ---
+
+  useEffect(() => {
+      return () => {
+          // Cleanup live connection
+          liveServiceRef.current?.disconnect();
+      };
+  }, []);
+
+  const toggleLiveMode = () => {
+      if (isLiveMode) {
+          liveServiceRef.current?.disconnect();
+          setIsLiveMode(false);
+          setLiveStatus('disconnected');
+          setChatHistory(prev => [...prev, { role: 'ai', text: "Live session ended." }]);
+      } else {
+          startLiveSession();
+      }
+  };
+
+  const startLiveSession = async () => {
+      setLiveStatus('connecting');
+      setIsLiveMode(true);
+      
+      if (!liveServiceRef.current) {
+          liveServiceRef.current = new GeminiLiveService();
+          liveServiceRef.current.initializeAudio();
+      }
+
+      const toolsToUse = [{ functionDeclarations: drawTools }];
+      
+      const systemInstruction = `You are a Technical Illustrator and Whiteboard Assistant.
+      You can Draw shapes, lines, text, and freehand paths.
+      
+      YOUR ROLE:
+      1. Interpret high-level architectural requests (e.g. "Draw DynamoDB Architecture").
+      2. Decompose them into simple geometric shapes (rectangles for nodes, circles for databases/users, lines for connections).
+      3. Draw logically laid out diagrams. Center of board is roughly (500, 400).
+      4. Use labels (add_text) freely to explain components.
+      
+      If the user provides PlantUML or Mermaid syntax, interpret the structure and draw it manually using box-and-line primitives.
+      
+      Always confirm what you are drawing.
+      `;
+
+      try {
+          await liveServiceRef.current.connect(
+              'Puck',
+              systemInstruction,
+              {
+                  onOpen: () => {
+                      setLiveStatus('connected');
+                      setChatHistory(prev => [...prev, { role: 'ai', text: "Live session connected. I'm listening..." }]);
+                  },
+                  onClose: () => {
+                      setLiveStatus('disconnected');
+                      setIsLiveMode(false);
+                  },
+                  onError: (err) => {
+                      console.error("Live Error", err);
+                      setLiveStatus('disconnected');
+                      setIsLiveMode(false);
+                      setChatHistory(prev => [...prev, { role: 'ai', text: "Connection error." }]);
+                  },
+                  onVolumeUpdate: (vol) => {
+                      // Optional visualization
+                  },
+                  onTranscript: (text, isUser) => {
+                      // Stream transcripts to chat for feedback
+                      setChatHistory(prev => {
+                          // Simple deduping or just append
+                          const last = prev[prev.length - 1];
+                          if (last && last.role === (isUser ? 'user' : 'ai') && last.text === text) return prev;
+                          return [...prev, { role: isUser ? 'user' : 'ai', text }];
+                      });
+                  },
+                  onToolCall: async (toolCall: any) => {
+                      // Execute drawing tools
+                      for (const fc of toolCall.functionCalls) {
+                          const args = fc.args;
+                          const id = crypto.randomUUID();
+                          const newEls: DrawingElement[] = [];
+                          
+                          if (fc.name === 'draw_rectangle') {
+                              newEls.push({
+                                  id, type: 'rectangle',
+                                  x: args.x, y: args.y, width: args.width, height: args.height,
+                                  color: args.color || color, strokeWidth
+                              });
+                              if (args.label) {
+                                  newEls.push({
+                                      id: crypto.randomUUID(), type: 'text',
+                                      x: args.x + 10, y: args.y + 10,
+                                      text: args.label, color: args.color || color, strokeWidth
+                                  });
+                              }
+                          } else if (fc.name === 'draw_circle') {
+                              newEls.push({
+                                  id, type: 'circle',
+                                  x: args.x, y: args.y, width: args.diameter, height: args.diameter,
+                                  color: args.color || color, strokeWidth
+                              });
+                              if (args.label) {
+                                  newEls.push({
+                                      id: crypto.randomUUID(), type: 'text',
+                                      x: args.x + args.diameter/4, y: args.y + args.diameter/3,
+                                      text: args.label, color: args.color || color, strokeWidth
+                                  });
+                              }
+                          } else if (fc.name === 'draw_line') {
+                              newEls.push({
+                                  id, type: 'line',
+                                  x: args.x1, y: args.y1,
+                                  width: args.x2 - args.x1, height: args.y2 - args.y1,
+                                  color: args.color || color, strokeWidth
+                              });
+                          } else if (fc.name === 'add_text') {
+                              newEls.push({
+                                  id, type: 'text',
+                                  x: args.x, y: args.y,
+                                  text: args.text,
+                                  color: args.color || color, strokeWidth: args.fontSize || strokeWidth
+                              });
+                          } else if (fc.name === 'clear_board') {
+                              setElements([]);
+                          }
+
+                          if (newEls.length > 0) {
+                              setElements(prev => [...prev, ...newEls]);
+                          }
+                          
+                          // Send response
+                          liveServiceRef.current?.sendToolResponse({
+                              functionResponses: [{
+                                  id: fc.id, name: fc.name, response: { result: "ok" }
+                              }]
+                          });
+                      }
+                  }
+              },
+              toolsToUse
+          );
+      } catch (e) {
+          console.error("Connection failed", e);
+          setLiveStatus('disconnected');
+          setIsLiveMode(false);
+      }
+  };
+
+  // --- TEXT CHAT FALLBACK (Old logic kept for non-voice usage) ---
 
   const handleChatSubmit = async (messageText?: string) => {
       const msg = messageText || chatInput;
@@ -700,9 +805,6 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack }) => {
       setChatHistory(newHistory as any);
       setIsAiProcessing(true);
       
-      // Stop listening while thinking to avoid picking up self (if TTS were added)
-      if (recognitionRef.current) recognitionRef.current.stop();
-
       try {
           const apiKey = localStorage.getItem('gemini_api_key') || GEMINI_API_KEY || process.env.API_KEY || '';
           if (!apiKey) throw new Error("API Key required. Please set it in Settings.");
@@ -719,13 +821,7 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack }) => {
 
           const systemInstruction = `You are a helpful Whiteboard Assistant. 
           You can Draw shapes, lines, text, and FREEHAND PATHS using the provided tools.
-          The canvas is roughly 1000x800. Coordinate (0,0) is top-left.
-          
-          IMPORTANT:
-          - If the user asks to draw a person, animal, or complex object, create a stick figure or outline using 'draw_path' or a combination of shapes (circle for head, lines/paths for body).
-          - 'draw_path' takes a flat array of numbers [x1, y1, x2, y2...].
-          - If the user asks to clear, use the clear tool.
-          - If the user asks to analyze, describe the image context.`;
+          The canvas is roughly 1000x800. Coordinate (0,0) is top-left.`;
 
           const contents = [
               ...newHistory.map(m => ({ role: m.role === 'ai' ? 'model' : 'user', parts: [{ text: m.text }] })),
@@ -823,13 +919,6 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack }) => {
           setChatHistory(prev => [...prev, { role: 'ai', text: `Error: ${e.message}` }]);
       } finally {
           setIsAiProcessing(false);
-          // Auto-resume listening if we were in conversational mode
-          if (shouldListenRef.current) {
-              // Small delay to ensure state settles
-              setTimeout(() => {
-                  try { recognitionRef.current?.start(); setIsVoiceListening(true); } catch(e) {}
-              }, 100);
-          }
       }
   };
 
@@ -1004,6 +1093,14 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack }) => {
               </div>
               
               <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-slate-900 scrollbar-thin scrollbar-thumb-slate-800">
+                  {/* Live Status Indicator */}
+                  {isLiveMode && (
+                      <div className="flex items-center gap-2 p-2 bg-indigo-900/20 border border-indigo-500/30 rounded-lg mb-2">
+                          <div className={`w-2 h-2 rounded-full ${liveStatus === 'connected' ? 'bg-emerald-500 animate-pulse' : 'bg-red-500'}`}></div>
+                          <span className="text-xs font-mono text-indigo-300">Live Voice: {liveStatus}</span>
+                      </div>
+                  )}
+
                   {chatHistory.length === 0 && (
                       <div className="text-center text-slate-500 py-8">
                           <Bot size={32} className="mx-auto mb-2 opacity-50"/>
@@ -1026,29 +1123,33 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack }) => {
                   <div ref={chatEndRef} />
               </div>
 
-              <div className="p-3 border-t border-slate-800 bg-slate-950/50 flex items-center gap-2">
+              <div className="p-3 border-t border-slate-800 bg-slate-950/50 flex flex-col gap-2">
                   <button 
-                      onClick={toggleVoiceListen}
-                      className={`p-2 rounded-full transition-colors ${isVoiceListening ? 'bg-red-500 text-white animate-pulse' : 'bg-slate-800 text-slate-400 hover:text-white'}`}
-                      title={isVoiceListening ? "Stop Continuous Mode" : "Start Continuous Mode"}
+                      onClick={toggleLiveMode}
+                      className={`w-full py-2 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all ${isLiveMode ? 'bg-red-900/30 text-red-400 border border-red-900/50' : 'bg-emerald-900/30 text-emerald-400 border border-emerald-900/50 hover:bg-emerald-900/50'}`}
                   >
-                      {isVoiceListening ? <MicOff size={16}/> : <Mic size={16}/>}
+                      {isLiveMode ? <MicOff size={14}/> : <Zap size={14}/>}
+                      <span>{isLiveMode ? "Stop Live Session" : "Start Live Voice Control"}</span>
                   </button>
-                  <input 
-                      type="text" 
-                      value={chatInput}
-                      onChange={(e) => setChatInput(e.target.value)}
-                      onKeyDown={(e) => e.key === 'Enter' && handleChatSubmit()}
-                      placeholder="Type or speak..."
-                      className="flex-1 bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500"
-                  />
-                  <button 
-                      onClick={() => handleChatSubmit()}
-                      disabled={!chatInput.trim() || isAiProcessing}
-                      className="p-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white rounded-lg transition-colors"
-                  >
-                      <Send size={16}/>
-                  </button>
+
+                  <div className="flex items-center gap-2">
+                      <input 
+                          type="text" 
+                          value={chatInput}
+                          onChange={(e) => setChatInput(e.target.value)}
+                          onKeyDown={(e) => e.key === 'Enter' && handleChatSubmit()}
+                          placeholder={isLiveMode ? "Voice Active..." : "Type or speak..."}
+                          disabled={isLiveMode}
+                          className="flex-1 bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500 disabled:opacity-50"
+                      />
+                      <button 
+                          onClick={() => handleChatSubmit()}
+                          disabled={!chatInput.trim() || isAiProcessing || isLiveMode}
+                          className="p-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white rounded-lg transition-colors"
+                      >
+                          <Send size={16}/>
+                      </button>
+                  </div>
               </div>
           </div>
       )}
