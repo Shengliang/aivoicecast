@@ -54,6 +54,7 @@ const LANGUAGES = [
 ];
 
 const QUICK_REPOS = [
+  { name: "Shengliang/codestudio", value: "Shengliang/codestudio" },
   { name: "Shengliang/aivoicecast", value: "Shengliang/aivoicecast" },
   { name: "torvalds/linux", value: "torvalds/linux" },
   { name: "postgres/postgres", value: "postgres/postgres" },
@@ -1025,11 +1026,15 @@ If the user asks questions, answer based on this new context. If they ask to cha
       }
   };
 
-  const handleLoadPublicRepo = async () => {
-      if (!publicRepoPath.trim()) return;
+  const handleLoadPublicRepo = async (overridePath?: string) => {
+      const path = overridePath || publicRepoPath;
+      if (!path.trim()) return;
+      
       setIsLoadingPublic(true);
+      if (overridePath) setIsLoadingFile(true); // Global loader effect if triggered directly
+
       try {
-          const parts = publicRepoPath.split('/');
+          const parts = path.split('/');
           if (parts.length < 2) throw new Error("Invalid format. Use 'owner/repo'");
           const owner = parts[0].trim();
           const repo = parts[1].trim(); 
@@ -1062,12 +1067,14 @@ If the user asks questions, answer based on this new context. If they ask to cha
       } catch (e: any) {
           if (e.message.includes('rate limit')) {
               if(confirm("GitHub API Rate Limit Exceeded.\n\nAnonymous requests are limited to 60/hour.\n\nWould you like to sign in with GitHub to increase your limit to 5000/hour?")) {
+                  // Optional: trigger login flow here
               }
           } else {
               alert("Failed to load public repo: " + e.message);
           }
       } finally {
           setIsLoadingPublic(false);
+          setIsLoadingFile(false);
       }
   };
 
@@ -1563,12 +1570,18 @@ ${fileContent}
                 {showExamplesDropdown && (
                     <>
                     <div className="fixed inset-0 z-30" onClick={() => setShowExamplesDropdown(false)}></div>
-                    <div className="absolute top-full right-0 mt-2 w-48 bg-slate-900 border border-slate-700 rounded-xl shadow-xl z-40 overflow-hidden py-1">
+                    <div className="absolute top-full right-0 mt-2 w-64 bg-slate-900 border border-slate-700 rounded-xl shadow-xl z-40 overflow-hidden py-1">
+                        <div className="px-4 py-2 text-[10px] font-bold text-slate-500 uppercase">Offline Templates</div>
                         {Object.keys(EXAMPLE_PROJECTS).map(key => (
                             <button key={key} onClick={() => handleExampleSwitch(key)} className="w-full text-left px-4 py-2 hover:bg-slate-800 text-xs text-slate-300 hover:text-white">
                                 {EXAMPLE_PROJECTS[key].name}
                             </button>
                         ))}
+                        <div className="border-t border-slate-800 my-1"></div>
+                        <div className="px-4 py-2 text-[10px] font-bold text-slate-500 uppercase">Online Repos</div>
+                        <button onClick={() => { setShowExamplesDropdown(false); handleLoadPublicRepo("Shengliang/codestudio"); }} className="w-full text-left px-4 py-2 hover:bg-slate-800 text-xs text-indigo-300 hover:text-white flex items-center gap-2">
+                            <Github size={12} /> Load Shengliang/codestudio
+                        </button>
                     </div>
                     </>
                 )}
@@ -1903,7 +1916,7 @@ ${fileContent}
                                   className="flex-1 bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500"
                               />
                               <button 
-                                  onClick={handleLoadPublicRepo} 
+                                  onClick={() => handleLoadPublicRepo()} 
                                   disabled={isLoadingPublic || !publicRepoPath.trim()}
                                   className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white font-bold rounded-lg text-xs transition-colors border border-slate-700"
                               >
