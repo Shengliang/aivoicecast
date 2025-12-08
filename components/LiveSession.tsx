@@ -769,7 +769,7 @@ export const LiveSession: React.FC<LiveSessionProps> = ({ channel, initialContex
                     if (isOwner) {
                        await saveLectureToFirestore(channel.id, lectureId, currentLecture);
                     }
-                    alert("Discussion appended to lecture!");
+                    alert("Success! The summary has been added to the END of the current lecture script. Please scroll down in the Lecture view to see it.");
                     appended = true;
                 }
             }
@@ -804,7 +804,7 @@ export const LiveSession: React.FC<LiveSessionProps> = ({ channel, initialContex
                      }
                      
                      await saveDiscussionDesignDoc(targetDiscussionId, doc);
-                     alert("Design Document generated and saved to Documents tab!");
+                     alert("Success! A new Design Document has been created. You can find it in the 'Documents' tab on the main dashboard.");
                  }
             }
         }
