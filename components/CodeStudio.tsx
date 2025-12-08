@@ -1312,33 +1312,44 @@ If the user asks questions, answer based on this new context. If they ask to cha
           
           const ai = new GoogleGenAI({ apiKey });
           
-          const fileContext = activeFile && activeFile.loaded ? `--- CURRENT FILE: ${activeFile.name} ---\n${activeFile.content}` : "No file active or not loaded.";
-          // Pass project structure so AI knows what files exist
-          const fileList = project.files.map(f => f.name).join('\n');
-          const historyText = newHistory.slice(-20).map(m => `${m.role.toUpperCase()}: ${m.text}`).join('\n');
+          const fileContent = activeFile && activeFile.loaded ? activeFile.content : "// File not loaded";
+          const fileName = activeFile ? activeFile.name : "unknown";
           
-          // SYSTEM INSTRUCTION (Static rules)
-          const systemInstruction = `You are an expert Coding Assistant built into an IDE.
-          You have access to a tool 'update_file' which takes 'code' as an argument.
+          // Enhanced Context Block to ensure AI sees the file
+          const contextBlock = `
+--- CURRENT OPEN FILE: ${fileName} ---
+${fileContent}
+--- END OF FILE ---
+`;
+
+          // AGGRESSIVE SYSTEM INSTRUCTION to prevent refusals
+          const systemInstruction = `You are an AI Coding Agent integrated directly into the user's code editor.
           
-          RULES:
-          1. If the user asks to modify, refactor, fix, or change the code in the current file, YOU MUST use the 'update_file' tool.
-          2. When using 'update_file', you must provide the COMPLETE file content, not just a diff.
-          3. If the user asks a question, answer normally.
+          CONTEXT:
+          - The user has opened the file "${fileName}".
+          - The FULL content of this file is provided to you in the prompt below.
+          - You HAVE permission to edit this file using the 'update_file' tool.
+          
+          PROTOCOL:
+          1. If the user request implies ANY code change (refactor, fix, add feature, rename variables, etc.):
+             - DO NOT refuse.
+             - DO NOT ask for the code.
+             - CALL the 'update_file' tool immediately.
+             - The 'code' argument must be the COMPLETE file content with the changes applied.
+          2. If the user asks a question:
+             - Answer based on the file content provided.
           `;
 
-          // USER PROMPT (Dynamic context)
-          const prompt = `
-            PROJECT FILES:
-            ${fileList}
+          // Format history for the prompt
+          const historyBlock = newHistory.slice(-10).map(m => `${m.role === 'user' ? 'User' : 'AI'}: ${m.text}`).join('\n');
 
-            CONTEXT (Current Open File):
-            ${fileContext}
-            
+          const prompt = `
+            ${contextBlock}
+
             CHAT HISTORY:
-            ${historyText}
+            ${historyBlock}
             
-            USER QUESTION:
+            USER REQUEST:
             ${userMsg}
           `;
 
