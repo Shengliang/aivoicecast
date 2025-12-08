@@ -1,7 +1,7 @@
 // [FORCE-SYNC-v3.42.1] Timestamp: ${new Date().toISOString()}
 import { db, auth, storage } from './firebaseConfig';
 import firebase from 'firebase/compat/app';
-import { Channel, Group, UserProfile, Invitation, GeneratedLecture, CommunityDiscussion, Comment, Booking, RecordingSession, TranscriptItem, CodeProject, Attachment, Blog, BlogPost } from '../types';
+import { Channel, Group, UserProfile, Invitation, GeneratedLecture, CommunityDiscussion, Comment, Booking, RecordingSession, TranscriptItem, CodeProject, Attachment, Blog, BlogPost, SubscriptionTier } from '../types';
 import { HANDCRAFTED_CHANNELS } from '../utils/initialData';
 import { SPOTLIGHT_DATA } from '../utils/spotlightContent';
 import { OFFLINE_LECTURES, OFFLINE_CHANNEL_ID } from '../utils/offlineContent';
@@ -171,15 +171,21 @@ export async function syncUserProfile(user: any): Promise<void> {
       photoURL: user.photoURL || '',
       groups: [],
       apiUsageCount: 0,
-      createdAt: Date.now()
+      createdAt: Date.now(),
+      subscriptionTier: 'free',
+      subscriptionStatus: 'active'
     };
     await userRef.set(sanitizeData(newProfile));
   } else {
     // Update login time or details if needed
+    const data = snap.data();
     await userRef.update({
       lastLogin: firebase.firestore.FieldValue.serverTimestamp(),
       displayName: user.displayName || 'Anonymous', // Keep updated
-      photoURL: user.photoURL || ''
+      photoURL: user.photoURL || '',
+      // Backward compatibility: ensure tier exists
+      subscriptionTier: data?.subscriptionTier || 'free',
+      subscriptionStatus: data?.subscriptionStatus || 'active'
     });
   }
 }
@@ -223,6 +229,18 @@ export async function incrementApiUsage(uid: string): Promise<void> {
   } catch (e) {
     console.warn("Failed to increment usage stats", e);
   }
+}
+
+// --- SUBSCRIPTIONS (MOCK PAYMENT) ---
+
+export async function upgradeUserSubscription(uid: string, tier: SubscriptionTier): Promise<void> {
+    const userRef = db.collection('users').doc(uid);
+    // In a real app, this would be a Stripe Webhook callback
+    await userRef.update({
+        subscriptionTier: tier,
+        subscriptionStatus: 'active'
+    });
+    logUserActivity('upgrade_subscription', { tier });
 }
 
 // --- ACTIVITY LOGS (METRICS) ---

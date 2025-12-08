@@ -106,6 +106,8 @@ export interface Group {
   createdAt: number;
 }
 
+export type SubscriptionTier = 'free' | 'creator' | 'pro';
+
 export interface UserProfile {
   uid: string;
   email: string;
@@ -115,6 +117,8 @@ export interface UserProfile {
   apiUsageCount?: number;
   createdAt?: number; // Added for sorting
   lastLogin?: any;
+  subscriptionTier?: SubscriptionTier;
+  subscriptionStatus?: 'active' | 'past_due' | 'canceled';
 }
 
 export interface Invitation {

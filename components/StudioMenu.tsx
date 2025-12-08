@@ -1,9 +1,9 @@
-
-import React from 'react';
+import React, { useState } from 'react';
 import { UserProfile } from '../types';
 import { getUserProfile } from '../services/firestoreService';
-import { Sparkles, BarChart2, Plus, Wand2, Key, Database } from 'lucide-react';
+import { Sparkles, BarChart2, Plus, Wand2, Key, Database, Crown } from 'lucide-react';
 import { VOICES } from '../utils/initialData';
+import { PricingModal } from './PricingModal';
 
 interface StudioMenuProps {
   isUserMenuOpen: boolean;
@@ -26,18 +26,39 @@ export const StudioMenu: React.FC<StudioMenuProps> = ({
   globalVoice, setGlobalVoice, hasApiKey, 
   setIsCreateModalOpen, setIsVoiceCreateOpen, setIsApiKeyModalOpen, setIsSyncModalOpen, t
 }) => {
+  const [isPricingOpen, setIsPricingOpen] = useState(false);
   
   if (!isUserMenuOpen || !currentUser) return null;
+
+  const handleUpgradeSuccess = async () => {
+      // Reload profile to get new tier
+      if (currentUser) {
+          const fresh = await getUserProfile(currentUser.uid);
+          setUserProfile(fresh);
+      }
+  };
+
+  const getTierLabel = () => {
+      const tier = userProfile?.subscriptionTier || 'free';
+      if (tier === 'creator') return { label: 'CREATOR', color: 'text-indigo-400 bg-indigo-900/50' };
+      if (tier === 'pro') return { label: 'PRO', color: 'text-amber-400 bg-amber-900/50' };
+      return { label: 'FREE', color: 'text-slate-400 bg-slate-800' };
+  };
+
+  const tierInfo = getTierLabel();
 
   return (
     <>
       <div className="fixed inset-0 z-40" onClick={() => setIsUserMenuOpen(false)}></div>
       <div className="absolute right-0 mt-2 w-72 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl z-50 overflow-hidden animate-fade-in-up">
-         <div className="p-3 border-b border-slate-800 bg-slate-950/50">
+         <div className="p-3 border-b border-slate-800 bg-slate-950/50 flex justify-between items-center">
             <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center space-x-2">
                <Sparkles size={12} className="text-indigo-400" />
                <span>Creator Studio</span>
             </h3>
+            <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${tierInfo.color}`}>
+                {tierInfo.label}
+            </span>
          </div>
          
          {/* Stats Banner */}
@@ -52,6 +73,14 @@ export const StudioMenu: React.FC<StudioMenuProps> = ({
          </div>
 
          <div className="p-2 space-y-1">
+            <button 
+               onClick={() => { setIsPricingOpen(true); }}
+               className="w-full flex items-center space-x-3 px-3 py-2 text-sm text-white hover:bg-slate-800 rounded-lg transition-colors bg-gradient-to-r from-indigo-900/20 to-purple-900/20 border border-indigo-500/30 mb-2"
+            >
+               <div className="p-1.5 bg-amber-500 text-white rounded-md shadow-lg"><Crown size={14} fill="currentColor"/></div>
+               <span className="font-bold text-amber-200">Upgrade Membership</span>
+            </button>
+
             <button 
                onClick={() => { setIsCreateModalOpen(true); setIsUserMenuOpen(false); }}
                className="w-full flex items-center space-x-3 px-3 py-2 text-sm text-white hover:bg-slate-800 rounded-lg transition-colors"
@@ -105,7 +134,15 @@ export const StudioMenu: React.FC<StudioMenuProps> = ({
             </button>
          </div>
       </div>
+
+      {isPricingOpen && userProfile && (
+          <PricingModal 
+             isOpen={true} 
+             onClose={() => setIsPricingOpen(false)} 
+             user={userProfile} 
+             onSuccess={handleUpgradeSuccess}
+          />
+      )}
     </>
   );
 };
-    
