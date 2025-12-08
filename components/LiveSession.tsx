@@ -1,12 +1,13 @@
 
 import React, { useEffect, useState, useRef, useCallback } from 'react';
-import { Channel, TranscriptItem, GeneratedLecture, CommunityDiscussion, RecordingSession } from '../types';
+import { Channel, TranscriptItem, GeneratedLecture, CommunityDiscussion, RecordingSession, Attachment } from '../types';
 import { GeminiLiveService } from '../services/geminiLive';
 import { Mic, MicOff, PhoneOff, Radio, AlertCircle, ScrollText, RefreshCw, Music, Download, Share2, Trash2, Quote, Copy, Check, MessageCircle, BookPlus, Loader2, Globe, FilePlus, Play, Save, CloudUpload, Link, X, Video, Monitor } from 'lucide-react';
 import { auth } from '../services/firebaseConfig';
 import { saveUserChannel, cacheLectureScript, getCachedLectureScript } from '../utils/db';
-import { publishChannelToFirestore, saveLectureToFirestore, saveDiscussion, updateDiscussion, uploadFileToStorage, updateBookingRecording, saveRecordingReference, linkDiscussionToLectureSegment, saveDiscussionDesignDoc } from '../services/firestoreService';
+import { publishChannelToFirestore, saveLectureToFirestore, saveDiscussion, updateDiscussion, uploadFileToStorage, updateBookingRecording, saveRecordingReference, linkDiscussionToLectureSegment, saveDiscussionDesignDoc, addChannelAttachment } from '../services/firestoreService';
 import { summarizeDiscussionAsSection, generateDesignDocFromTranscript } from '../services/lectureGenerator';
+import { FunctionDeclaration, Type } from '@google/genai';
 
 interface LiveSessionProps {
   channel: Channel;
@@ -98,6 +99,21 @@ const UI_TEXT = {
     saveAndLink: "保存并链接到段落",
     start: "开始会话",
     saveSession: "保存会话"
+  }
+};
+
+// Define Tool for Saving Content
+const saveContentTool: FunctionDeclaration = {
+  name: "save_content",
+  description: "Save a generated code file, document, or text snippet to the project storage. Use this when the user asks to generate a file or save code.",
+  parameters: {
+    type: Type.OBJECT,
+    properties: {
+      filename: { type: Type.STRING, description: "Name of the file (e.g., script.py, notes.md)" },
+      content: { type: Type.STRING, description: "The text content of the file" },
+      mimeType: { type: Type.STRING, description: "MIME type (e.g., text/x-python, text/markdown)" }
+    },
+    required: ["filename", "content"]
   }
 };
 
@@ -417,6 +433,9 @@ export const LiveSession: React.FC<LiveSessionProps> = ({ channel, initialContex
         effectiveInstruction += `\n\n[USER CONTEXT]: The user is starting this session with the following specific context or question: "${initialContext}"`;
       }
       
+      // Setup Tools
+      const tools = [{functionDeclarations: [saveContentTool]}];
+
       await service.connect(channel.voiceName, effectiveInstruction, {
           onOpen: () => { 
               stopWaitingMusic(); 
@@ -455,8 +474,61 @@ export const LiveSession: React.FC<LiveSessionProps> = ({ channel, initialContex
                   }
                   return { role, text: (prev ? prev.text : '') + text, timestamp: prev ? prev.timestamp : timestamp };
               });
+          },
+          onToolCall: async (toolCall: any) => {
+              console.log("Tool Call Received:", toolCall);
+              for (const fc of toolCall.functionCalls) {
+                  if (fc.name === 'save_content') {
+                      try {
+                          const { filename, content, mimeType } = fc.args;
+                          const blob = new Blob([content], { type: mimeType || 'text/plain' });
+                          const timestamp = Date.now();
+                          const path = `appendix/${channel.id}/${timestamp}_${filename}`;
+                          
+                          // 1. Upload to Firebase
+                          const url = await uploadFileToStorage(path, blob, { contentType: mimeType || 'text/plain' });
+                          
+                          // 2. Add to Channel Appendix
+                          const attachment: Attachment = {
+                              id: `att-${timestamp}`,
+                              type: 'file',
+                              url: url,
+                              name: filename,
+                              uploadedAt: timestamp
+                          };
+                          await addChannelAttachment(channel.id, attachment);
+                          
+                          // 3. Send Response back to AI
+                          serviceRef.current?.sendToolResponse({
+                              functionResponses: [{
+                                  id: fc.id,
+                                  name: fc.name,
+                                  response: { result: `File saved successfully at ${url}. It is now available in the Appendix section.` }
+                              }]
+                          });
+                          
+                          // 4. Update Transcript to show activity
+                          setTranscript(history => [...history, {
+                              role: 'ai',
+                              text: `*[System]: File '${filename}' saved to Appendix.*`,
+                              timestamp: Date.now()
+                          }]);
+
+                      } catch (err: any) {
+                          console.error("Tool execution failed", err);
+                          serviceRef.current?.sendToolResponse({
+                              functionResponses: [{
+                                  id: fc.id,
+                                  name: fc.name,
+                                  response: { error: `Failed to save file: ${err.message}` }
+                              }]
+                          });
+                      }
+                  }
+              }
           }
-        }
+        },
+        tools // Pass tools config
       );
     } catch (e) { stopWaitingMusic(); setIsRetrying(false); setError("Failed to initialize audio session"); }
   }, [channel.id, channel.voiceName, channel.systemInstruction, initialContext, recordingEnabled, videoEnabled, cameraEnabled, initialTranscript]);

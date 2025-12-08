@@ -8,6 +8,7 @@ export interface LiveConnectionCallbacks {
   onError: (error: Error) => void;
   onVolumeUpdate: (volume: number) => void;
   onTranscript: (text: string, isUser: boolean) => void;
+  onToolCall?: (toolCall: any) => void;
 }
 
 export class GeminiLiveService {
@@ -56,7 +57,8 @@ export class GeminiLiveService {
   async connect(
     voiceName: string, 
     systemInstruction: string, 
-    callbacks: LiveConnectionCallbacks
+    callbacks: LiveConnectionCallbacks,
+    tools?: any[]
   ) {
     try {
       // Initialize AI Client here to ensure we pick up the latest API Key
@@ -89,6 +91,7 @@ export class GeminiLiveService {
           // Explicitly enable transcription with empty objects
           inputAudioTranscription: {}, 
           outputAudioTranscription: {},
+          tools: tools,
         },
         callbacks: {
           onopen: () => {
@@ -99,6 +102,13 @@ export class GeminiLiveService {
             callbacks.onOpen();
           },
           onmessage: async (message: LiveServerMessage) => {
+            // Handle Tool Call
+            if (message.toolCall) {
+                if (callbacks.onToolCall) {
+                    callbacks.onToolCall(message.toolCall);
+                }
+            }
+
             // Handle audio output from model
             const base64Audio = message.serverContent?.modelTurn?.parts?.[0]?.inlineData?.data;
             if (base64Audio && this.outputAudioContext) {
@@ -219,6 +229,18 @@ export class GeminiLiveService {
         console.error("Failed to send text context:", e);
       }
     }
+  }
+
+  public sendToolResponse(functionResponses: any) {
+      if (this.session) {
+          try {
+              this.session.sendToolResponse({
+                  functionResponses
+              });
+          } catch(e) {
+              console.error("Failed to send tool response", e);
+          }
+      }
   }
 
   private startAudioInput(onVolume: (v: number) => void) {

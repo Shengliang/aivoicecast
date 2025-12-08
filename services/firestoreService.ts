@@ -1,7 +1,7 @@
 // [FORCE-SYNC-v3.16.0] Timestamp: ${new Date().toISOString()}
 import { db, auth, storage } from './firebaseConfig';
 import firebase from 'firebase/compat/app';
-import { Channel, Group, UserProfile, Invitation, GeneratedLecture, CommunityDiscussion, Comment, Booking, RecordingSession, TranscriptItem, CodeProject } from '../types';
+import { Channel, Group, UserProfile, Invitation, GeneratedLecture, CommunityDiscussion, Comment, Booking, RecordingSession, TranscriptItem, CodeProject, Attachment } from '../types';
 import { HANDCRAFTED_CHANNELS } from '../utils/initialData';
 import { SPOTLIGHT_DATA } from '../utils/spotlightContent';
 import { OFFLINE_LECTURES, OFFLINE_CHANNEL_ID } from '../utils/offlineContent';
@@ -433,6 +433,14 @@ export async function publishChannelToFirestore(channel: Channel): Promise<void>
   await db.collection('channels').doc(channel.id).set(cleanData, { merge: true });
   console.log(`Published channel ${channel.id} to Firestore (visibility: ${channel.visibility})`);
   logUserActivity('publish_channel', { channelId: channel.id, visibility: channel.visibility });
+}
+
+export async function addChannelAttachment(channelId: string, attachment: Attachment): Promise<void> {
+  const ref = db.collection('channels').doc(channelId);
+  await ref.update({
+    appendix: firebase.firestore.FieldValue.arrayUnion(sanitizeData(attachment))
+  });
+  logUserActivity('add_attachment', { channelId, attachmentName: attachment.name });
 }
 
 export async function deleteChannelFromFirestore(channelId: string): Promise<void> {

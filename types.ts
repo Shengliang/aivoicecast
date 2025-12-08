@@ -7,6 +7,7 @@ export interface Attachment {
   type: AttachmentType;
   url: string;
   name?: string;
+  uploadedAt?: number;
 }
 
 export interface Comment {
@@ -56,6 +57,7 @@ export interface Channel {
   welcomeMessage?: string;
   starterPrompts?: string[];
   chapters?: Chapter[];
+  appendix?: Attachment[]; // New field for generated/uploaded docs
   createdAt?: number; // Timestamp for sorting
 }
 

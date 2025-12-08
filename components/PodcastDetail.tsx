@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { Channel, GeneratedLecture, Chapter, SubTopic, TranscriptItem } from '../types';
-import { ArrowLeft, Play, Pause, BookOpen, MessageCircle, Sparkles, User, GraduationCap, Loader2, ChevronDown, ChevronRight, SkipForward, SkipBack, Settings, X, Mic, Download, RefreshCw, Square, MoreVertical, Edit, Lock, Zap, ToggleLeft, ToggleRight, Users, Check, AlertTriangle, Activity, MessageSquare, FileText, Code, Video, Monitor, PlusCircle, Bot, ExternalLink, ChevronLeft, Menu, List, PanelLeftClose, PanelLeftOpen, CornerDownRight, Trash2, FileDown, Printer, FileJson, HelpCircle, ListMusic, Copy } from 'lucide-react';
+import { Channel, GeneratedLecture, Chapter, SubTopic, TranscriptItem, Attachment } from '../types';
+import { ArrowLeft, Play, Pause, BookOpen, MessageCircle, Sparkles, User, GraduationCap, Loader2, ChevronDown, ChevronRight, SkipForward, SkipBack, Settings, X, Mic, Download, RefreshCw, Square, MoreVertical, Edit, Lock, Zap, ToggleLeft, ToggleRight, Users, Check, AlertTriangle, Activity, MessageSquare, FileText, Code, Video, Monitor, PlusCircle, Bot, ExternalLink, ChevronLeft, Menu, List, PanelLeftClose, PanelLeftOpen, CornerDownRight, Trash2, FileDown, Printer, FileJson, HelpCircle, ListMusic, Copy, Paperclip, UploadCloud } from 'lucide-react';
 import { generateLectureScript } from '../services/lectureGenerator';
 import { generateCurriculum } from '../services/curriculumGenerator';
 import { synthesizeSpeech, cleanTextForTTS, checkAudioCache, clearAudioCache } from '../services/tts';
@@ -9,7 +9,7 @@ import { OFFLINE_CHANNEL_ID, OFFLINE_CURRICULUM, OFFLINE_LECTURES } from '../uti
 import { SPOTLIGHT_DATA } from '../utils/spotlightContent';
 import { STATIC_READING_MATERIALS } from '../utils/staticResources';
 import { cacheLectureScript, getCachedLectureScript, deleteCachedLectureScript } from '../utils/db';
-import { saveLectureToFirestore, getLectureFromFirestore, saveCurriculumToFirestore, getCurriculumFromFirestore, deleteLectureFromFirestore } from '../services/firestoreService';
+import { saveLectureToFirestore, getLectureFromFirestore, saveCurriculumToFirestore, getCurriculumFromFirestore, deleteLectureFromFirestore, uploadFileToStorage, addChannelAttachment } from '../services/firestoreService';
 import { LiveSession } from './LiveSession';
 import { DiscussionModal } from './DiscussionModal';
 
@@ -39,6 +39,7 @@ const UI_TEXT = {
     startLive: "Start Live Chat",
     curriculum: "Curriculum",
     reading: "Reading",
+    appendix: "Appendix",
     lessons: "Lessons",
     chapters: "Chapters",
     selectTopic: "Select a lesson to begin",
@@ -100,6 +101,7 @@ const UI_TEXT = {
     startLive: "开始实时对话",
     curriculum: "课程大纲",
     reading: "阅读材料",
+    appendix: "附录",
     lessons: "节课程",
     chapters: "章",
     selectTopic: "请选择一个主题开始",
@@ -164,7 +166,7 @@ interface GenProgress {
 
 export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, onStartLiveSession, language, onEditChannel, onViewComments, currentUser }) => {
   const t = UI_TEXT[language];
-  const [activeTab, setActiveTab] = useState<'curriculum' | 'reading'>('curriculum');
+  const [activeTab, setActiveTab] = useState<'curriculum' | 'reading' | 'appendix'>('curriculum');
   const [activeLecture, setActiveLecture] = useState<GeneratedLecture | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [isLoadingLecture, setIsLoadingLecture] = useState(false);
@@ -221,6 +223,10 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
 
   const [viewDiscussionId, setViewDiscussionId] = useState<string | null>(null);
   const [showDownloadMenu, setShowDownloadMenu] = useState(false);
+  
+  // Appendix Upload State
+  const [isUploadingFile, setIsUploadingFile] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const sectionRefs = useRef<(HTMLDivElement | null)[]>([]);
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -1105,6 +1111,40 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
       }
   };
 
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (!file || !currentUser) return;
+      
+      setIsUploadingFile(true);
+      try {
+          const timestamp = Date.now();
+          const path = `appendix/${channel.id}/${timestamp}_${file.name}`;
+          const url = await uploadFileToStorage(path, file);
+          
+          const attachment: Attachment = {
+              id: `att-${timestamp}`,
+              type: 'file',
+              url: url,
+              name: file.name,
+              uploadedAt: timestamp
+          };
+          
+          await addChannelAttachment(channel.id, attachment);
+          
+          // Force update (in real app, this should be reactive via Firestore subscription or Redux)
+          // For now, simpler to reload or just alert
+          alert("File uploaded to Appendix!");
+          // Ideally update channel state here
+          
+      } catch(e) {
+          console.error("Upload failed", e);
+          alert("Upload failed.");
+      } finally {
+          setIsUploadingFile(false);
+          if (fileInputRef.current) fileInputRef.current.value = '';
+      }
+  };
+
   const liveSessionChannel = useMemo(() => {
     if (!channel) return null;
     if (language === 'zh') {
@@ -1186,16 +1226,19 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
                  <button onClick={() => setIsSidebarOpen(false)}><X size={20} className="text-slate-400"/></button>
              </div>
 
-             {staticReading && (
-                 <div className="flex border-b border-slate-800 shrink-0">
-                     <button onClick={() => setActiveTab('curriculum')} className={`flex-1 py-3 text-sm font-bold flex items-center justify-center space-x-2 ${activeTab === 'curriculum' ? 'bg-slate-800 text-white' : 'text-slate-500 hover:text-slate-300'}`}>
-                        <BookOpen size={16}/><span>{t.curriculum}</span>
-                     </button>
-                     <button onClick={() => setActiveTab('reading')} className={`flex-1 py-3 text-sm font-bold flex items-center justify-center space-x-2 ${activeTab === 'reading' ? 'bg-slate-800 text-emerald-400' : 'text-slate-500 hover:text-slate-300'}`}>
+             <div className="flex border-b border-slate-800 shrink-0 overflow-x-auto scrollbar-hide">
+                 <button onClick={() => setActiveTab('curriculum')} className={`flex-1 py-3 text-sm font-bold flex items-center justify-center space-x-2 whitespace-nowrap px-4 ${activeTab === 'curriculum' ? 'bg-slate-800 text-white' : 'text-slate-500 hover:text-slate-300'}`}>
+                    <BookOpen size={16}/><span>{t.curriculum}</span>
+                 </button>
+                 {staticReading && (
+                     <button onClick={() => setActiveTab('reading')} className={`flex-1 py-3 text-sm font-bold flex items-center justify-center space-x-2 whitespace-nowrap px-4 ${activeTab === 'reading' ? 'bg-slate-800 text-emerald-400' : 'text-slate-500 hover:text-slate-300'}`}>
                         <FileText size={16}/><span>{t.reading}</span>
                      </button>
-                 </div>
-             )}
+                 )}
+                 <button onClick={() => setActiveTab('appendix')} className={`flex-1 py-3 text-sm font-bold flex items-center justify-center space-x-2 whitespace-nowrap px-4 ${activeTab === 'appendix' ? 'bg-slate-800 text-amber-400' : 'text-slate-500 hover:text-slate-300'}`}>
+                    <Paperclip size={16}/><span>{t.appendix}</span>
+                 </button>
+             </div>
 
              <div className="flex-1 overflow-y-auto scrollbar-thin scrollbar-thumb-slate-800">
              {activeTab === 'curriculum' && (
@@ -1286,6 +1329,70 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
                              </div>
                          </div>
                      ))}
+                 </div>
+             )}
+
+             {activeTab === 'appendix' && (
+                 <div className="p-4 space-y-4">
+                     <div className="bg-amber-900/10 border border-amber-500/20 p-4 rounded-lg">
+                         <div className="flex items-center space-x-2 text-amber-400 mb-2">
+                             <Paperclip size={16} />
+                             <h4 className="text-xs font-bold uppercase tracking-wider">Project Files</h4>
+                         </div>
+                         <p className="text-[10px] text-amber-200/70">
+                             Documents, code, and resources generated during live sessions or uploaded manually.
+                         </p>
+                     </div>
+
+                     {/* File List */}
+                     <div className="space-y-2">
+                         {channel.appendix && channel.appendix.length > 0 ? (
+                             channel.appendix.map((file, idx) => (
+                                 <div key={file.id || idx} className="bg-slate-800/50 border border-slate-700 rounded-lg p-3 flex items-center justify-between group hover:border-indigo-500/50 transition-colors">
+                                     <div className="flex items-center space-x-3 overflow-hidden">
+                                         <div className="p-2 bg-slate-800 rounded text-indigo-400">
+                                             <FileText size={16} />
+                                         </div>
+                                         <div className="min-w-0">
+                                             <p className="text-sm text-slate-200 font-medium truncate">{file.name}</p>
+                                             <p className="text-[10px] text-slate-500">{file.uploadedAt ? new Date(file.uploadedAt).toLocaleDateString() : 'Unknown Date'}</p>
+                                         </div>
+                                     </div>
+                                     <a 
+                                         href={file.url} 
+                                         target="_blank" 
+                                         rel="noopener noreferrer" 
+                                         className="p-2 text-slate-400 hover:text-white hover:bg-slate-700 rounded transition-colors"
+                                         download
+                                     >
+                                         <Download size={16} />
+                                     </a>
+                                 </div>
+                             ))
+                         ) : (
+                             <p className="text-center text-xs text-slate-500 py-4 italic">No files in appendix.</p>
+                         )}
+                     </div>
+
+                     {/* Upload Button */}
+                     {currentUser && (
+                         <div className="pt-4 border-t border-slate-800">
+                             <input 
+                                 type="file" 
+                                 ref={fileInputRef} 
+                                 className="hidden" 
+                                 onChange={handleFileUpload}
+                             />
+                             <button 
+                                 onClick={() => fileInputRef.current?.click()}
+                                 disabled={isUploadingFile}
+                                 className="w-full py-2 bg-slate-800 hover:bg-slate-700 text-indigo-300 hover:text-white border border-slate-700 rounded-lg text-xs font-bold flex items-center justify-center space-x-2 transition-colors"
+                             >
+                                 {isUploadingFile ? <Loader2 size={14} className="animate-spin" /> : <UploadCloud size={14} />}
+                                 <span>Upload Reference</span>
+                             </button>
+                         </div>
+                     )}
                  </div>
              )}
              </div>
