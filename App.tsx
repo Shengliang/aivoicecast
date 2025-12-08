@@ -1,9 +1,10 @@
+
 import React, { useState, useEffect, useMemo } from 'react';
 import { Channel, ViewState, UserProfile, TranscriptItem } from './types';
 import { 
   Podcast, Mic, Layout, Search, Sparkles, LogOut, 
   Settings, Menu, X, Plus, Github, Database, Cloud, Globe, 
-  Calendar, Briefcase, Users, Disc, FileText, AlertTriangle, List, BookOpen, ChevronDown, Table as TableIcon, LayoutGrid, Rocket, Code, Wand2, PenTool, Rss
+  Calendar, Briefcase, Users, Disc, FileText, AlertTriangle, List, BookOpen, ChevronDown, Table as TableIcon, LayoutGrid, Rocket, Code, Wand2, PenTool, Rss, Loader2
 } from 'lucide-react';
 import { LiveSession } from './components/LiveSession';
 import { PodcastDetail } from './components/PodcastDetail';
@@ -32,6 +33,7 @@ import { MissionManifesto } from './components/MissionManifesto';
 import { CodeStudio } from './components/CodeStudio';
 import { Whiteboard } from './components/Whiteboard';
 import { BlogView } from './components/BlogView';
+import { LoginPage } from './components/LoginPage'; // Import Login Page
 
 import { auth, isFirebaseConfigured } from './services/firebaseConfig';
 import { 
@@ -44,7 +46,7 @@ import { HANDCRAFTED_CHANNELS, CATEGORY_STYLES, TOPIC_CATEGORIES } from './utils
 import { OFFLINE_CHANNEL_ID } from './utils/offlineContent';
 import { GEMINI_API_KEY } from './services/private_keys';
 
-const APP_VERSION = "v3.42.2";
+const APP_VERSION = "v3.43.0";
 
 const UI_TEXT = {
   en: {
@@ -106,8 +108,12 @@ const App: React.FC = () => {
   const [viewState, setViewState] = useState<ExtendedViewState>('directory');
   const [activeChannelId, setActiveChannelId] = useState<string | null>(null);
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
+  
+  // Auth State
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
+  const [authLoading, setAuthLoading] = useState(true); // Loading state for initial auth check
+
   const [activeTab, setActiveTab] = useState('categories');
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [searchQuery, setSearchQuery] = useState('');
@@ -163,16 +169,22 @@ const App: React.FC = () => {
         unsubscribeAuth = auth.onAuthStateChanged(async (user) => {
           setCurrentUser(user);
           if (user) {
-            const profile = await getUserProfile(user.uid);
-            setUserProfile(profile);
+            try {
+              const profile = await getUserProfile(user.uid);
+              setUserProfile(profile);
+            } catch (e) {
+              console.error("Profile fetch error", e);
+            }
           } else {
             setUserProfile(null);
             setGroupChannels([]);
           }
+          setAuthLoading(false); // Auth check complete
         });
     } else {
         // Auto-open modal if configuration is missing
         setIsFirebaseModalOpen(true);
+        setAuthLoading(false);
     }
 
     return () => unsubscribeAuth();
@@ -186,7 +198,7 @@ const App: React.FC = () => {
   // Load Public Channels (Firestore)
   // Dependency on currentUser ensures we re-subscribe after login if initial attempt failed due to permissions
   useEffect(() => {
-    if (isFirebaseConfigured) {
+    if (isFirebaseConfigured && currentUser) {
         const unsubPublic = subscribeToPublicChannels(
           (data) => setPublicChannels(data),
           (err: any) => {
@@ -417,6 +429,21 @@ const App: React.FC = () => {
 
       return data;
   }, [channels, searchQuery, selectedCategory, sortConfig]);
+
+  // --- AUTH GATING LOGIC ---
+  if (authLoading) {
+      return (
+          <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center text-indigo-400">
+              <Loader2 size={48} className="animate-spin mb-4" />
+              <p className="text-sm font-bold tracking-widest uppercase">Initializing AIVoiceCast...</p>
+          </div>
+      );
+  }
+
+  // Force Login if not authenticated
+  if (!currentUser) {
+      return <LoginPage />;
+  }
 
   return (
     <div className="min-h-screen supports-[min-height:100dvh]:min-h-[100dvh] bg-slate-950 text-slate-100 font-sans overflow-x-hidden">
