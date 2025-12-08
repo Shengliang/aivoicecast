@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, Check, Star, Zap, Users, Loader2, Sparkles } from 'lucide-react';
+import { X, Check, Zap, Loader2, Sparkles } from 'lucide-react';
 import { UserProfile, SubscriptionTier } from '../types';
 import { upgradeUserSubscription } from '../services/firestoreService';
 
@@ -39,9 +39,9 @@ export const PricingModal: React.FC<PricingModalProps> = ({ isOpen, onClose, use
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-950/90 backdrop-blur-md">
-      <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-5xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh] animate-fade-in-up">
+      <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-5xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh] animate-fade-in-up my-auto relative">
         
-        <div className="p-6 border-b border-slate-800 flex justify-between items-center bg-slate-950/50">
+        <div className="p-6 border-b border-slate-800 flex justify-between items-center bg-slate-950/50 shrink-0">
           <div>
              <h2 className="text-2xl font-bold text-white">Upgrade Plan</h2>
              <p className="text-slate-400 text-sm">Unlock the full power of AIVoiceCast.</p>
