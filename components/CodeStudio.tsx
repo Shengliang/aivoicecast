@@ -15,6 +15,7 @@ interface CodeStudioProps {
   currentUser: any;
 }
 
+// ... existing LANGUAGES constant ...
 const LANGUAGES = [
     { 
         id: 'cpp', label: 'C++', ext: 'cpp', 
@@ -249,6 +250,7 @@ int main() {
   }
 };
 
+// ... Helper functions (getLanguageFromFilename, FileIcon, buildFileTree, FileTreeNode, generateHighlightedHTML, EnhancedEditor) remain unchanged ...
 // Helper to detect language from filename
 const getLanguageFromFilename = (filename: string): string => {
     const ext = filename.split('.').pop()?.toLowerCase();
@@ -314,8 +316,6 @@ const FileIcon = ({ filename }: { filename: string }) => {
 
     return <Icon size={14} className={color} />;
 };
-
-// --- FILE TREE UTILS ---
 
 interface FileNode {
   name: string;
@@ -595,6 +595,19 @@ const EnhancedEditor = ({ code, language, onChange, onScroll, onSelect, textArea
   );
 };
 
+// Define tool for updating file
+const updateFileTool: FunctionDeclaration = {
+    name: 'update_file',
+    description: 'Overwrite the current file content with new code if user asks for changes.',
+    parameters: {
+        type: Type.OBJECT,
+        properties: {
+            code: { type: Type.STRING, description: 'The full new code content for the file.' }
+        },
+        required: ['code']
+    }
+};
+
 export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) => {
   const [project, setProject] = useState<CodeProject>(EXAMPLE_PROJECTS['is_bst']);
   const [activeFileIndex, setActiveFileIndex] = useState(0);
@@ -676,7 +689,10 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
           const content = activeFile.content.length > 20000 
               ? activeFile.content.substring(0, 20000) + "\n...[Content Truncated due to size]..."
               : activeFile.content;
-              
+          
+          // Provide full file list structure for context
+          const fileStructure = project.files.map(f => f.name).join('\n');
+
           setDebouncedFileContext(`
 [USER ACTIVITY UPDATE]
 Current File: ${activeFile.name}
@@ -684,17 +700,21 @@ Language: ${activeFile.language}
 Current Directory: ${activeFile.name.includes('/') ? activeFile.name.split('/').slice(0, -1).join('/') : 'root'}
 ${selection ? `\nUSER SELECTED CODE:\n\`\`\`\n${selection}\n\`\`\`\n(The user is asking about this specific selection)` : ''}
 
---- FILE CONTENT ---
+--- PROJECT FILE LIST ---
+${fileStructure}
+
+--- ACTIVE FILE CONTENT ---
 ${content}
 --------------------
 
-If the user asks questions, answer based on this new context. If they just switched files, acknowledge it briefly.
+If the user asks questions, answer based on this new context. If they ask to change code, use the 'update_file' tool.
 `);
       }, 1500); // 1.5s debounce to allow typing to finish
 
       return () => clearTimeout(handler);
-  }, [activeFile, selection]); 
+  }, [activeFile, selection, project.files]); 
 
+  // ... lazy loading effects ...
   // Lazy Loading File Content Effect
   useEffect(() => {
       const loadContent = async () => {
@@ -739,7 +759,7 @@ If the user asks questions, answer based on this new context. If they just switc
       
       const timeout = setTimeout(loadContent, 50);
       return () => clearTimeout(timeout);
-  }, [activeFileIndex, project.github, githubToken]); // Check activeFile index to avoid loops
+  }, [activeFileIndex, project.github, githubToken]);
 
   // Mobile check
   useEffect(() => {
@@ -756,7 +776,7 @@ If the user asks questions, answer based on this new context. If they just switc
           });
           setExpandedFolders(prev => ({ ...initialExpanded, ...prev }));
       }
-  }, [project.id]); // Run on project switch
+  }, [project.id]);
 
   // Load project review, comments, and history
   useEffect(() => {
@@ -795,10 +815,8 @@ If the user asks questions, answer based on this new context. If they just switc
       const lowerTerm = term.toLowerCase();
       
       project.files.forEach((file, fIdx) => {
-          // Skip directories or non-loaded files (unless they were lazy loaded and we can't search them yet)
-          // For now search only loaded files
           if (file.isDirectory) return;
-          if (file.loaded === false) return; // Cannot search unloaded files
+          if (file.loaded === false) return; 
           
           const lines = file.content.split('\n');
           lines.forEach((line, lIdx) => {
@@ -818,18 +836,13 @@ If the user asks questions, answer based on this new context. If they just switc
   const handleSearchResultClick = (result: {fileIndex: number, line: number}) => {
       setActiveFileIndex(result.fileIndex);
       setScrollToLine(result.line);
-      // Reset scroll target after a short delay so user can scroll away
       setTimeout(() => setScrollToLine(null), 1000);
   };
 
   const toggleFolder = async (path: string) => {
       const isCurrentlyOpen = expandedFolders[path];
-      
-      // If we are opening a folder, check if we need to fetch its contents
       if (!isCurrentlyOpen) {
           const folderEntry = project.files.find(f => f.name === path && f.isDirectory);
-          
-          // Lazy Fetch Logic
           if (folderEntry && !folderEntry.childrenFetched && folderEntry.treeSha) {
               setLoadingFolders(prev => ({ ...prev, [path]: true }));
               try {
@@ -838,16 +851,12 @@ If the user asks questions, answer based on this new context. If they just switc
                       project.github?.owner || '', 
                       project.github?.repo || '', 
                       folderEntry.treeSha,
-                      path // prefix
+                      path 
                   );
-                  
-                  // Update Project Files
                   setProject(prev => {
-                      // Mark folder as fetched
                       const updatedFiles = prev.files.map(f => 
                           f.name === path ? { ...f, childrenFetched: true } : f
                       );
-                      // Add new files (avoid duplicates)
                       const existingNames = new Set(prev.files.map(f => f.name));
                       const uniqueNewFiles = newFiles.filter(f => !existingNames.has(f.name));
                       
@@ -862,21 +871,18 @@ If the user asks questions, answer based on this new context. If they just switc
               }
           }
       }
-
       setExpandedFolders(prev => ({
           ...prev,
           [path]: !isCurrentlyOpen
       }));
   };
 
-  // Resizing Logic
   const startResizing = (mouseDownEvent: React.MouseEvent) => {
       mouseDownEvent.preventDefault();
       const startX = mouseDownEvent.clientX;
       const startWidth = chatWidth;
 
       const doDrag = (dragEvent: MouseEvent) => {
-          // Chat is on right, dragging left increases width
           const newWidth = startWidth + (startX - dragEvent.clientX);
           setChatWidth(Math.max(250, Math.min(newWidth, 800)));
       };
@@ -900,7 +906,6 @@ If the user asks questions, answer based on this new context. If they just switc
       let fileName = `${baseName}.${langConfig.ext}`;
       let counter = 1;
       
-      // Find unique filename
       while (project.files.some(f => f.name === fileName)) {
           fileName = `${baseName}_${counter}.${langConfig.ext}`;
           counter++;
@@ -918,7 +923,7 @@ If the user asks questions, answer based on this new context. If they just switc
           files: [...prev.files, newFile]
       }));
       
-      setActiveFileIndex(project.files.length); // Append to end (current length is index of new last item)
+      setActiveFileIndex(project.files.length);
       setShowLanguageDropdown(false);
       setIsPreviewMode(false);
   };
@@ -929,7 +934,7 @@ If the user asks questions, answer based on this new context. If they just switc
       
       setProject({
           ...example,
-          id: `proj-${exampleKey}-${Date.now()}` // Unique ID for current session
+          id: `proj-${exampleKey}-${Date.now()}`
       });
       setActiveFileIndex(0);
       setActiveSideView('none');
@@ -965,7 +970,7 @@ If the user asks questions, answer based on this new context. If they just switc
 
   const handleRejectChange = () => {
       if (pendingChange) {
-          // Revert content using the original file index
+          // Revert content using the original file index from the pending state
           updateFileAtIndex(pendingChange.fileIndex, pendingChange.original);
           setPendingChange(null);
           setChatMessages(prev => [...prev, {role: 'system', text: "❌ *Changes Reverted*"}]);
@@ -984,8 +989,7 @@ If the user asks questions, answer based on this new context. If they just switc
       }
   };
 
-  // --- GITHUB INTEGRATION ---
-
+  // --- GITHUB INTEGRATION ... (existing functions) ---
   const handleGitHubConnect = async () => {
       try {
           let token: string | null = null;
@@ -994,7 +998,7 @@ If the user asks questions, answer based on this new context. If they just switc
               try {
                   const res = await reauthenticateWithGitHub();
                   token = res.token;
-                  setNeedsGitHubReauth(false); // Reset flag on success
+                  setNeedsGitHubReauth(false);
               } catch (reauthError: any) {
                   throw reauthError;
               }
@@ -1005,8 +1009,8 @@ If the user asks questions, answer based on this new context. If they just switc
 
           if (token) {
               setGithubToken(token);
-              setShowImportModal(false); // Close the new import modal
-              setShowGithubModal(true); // Open the list of repos
+              setShowImportModal(false);
+              setShowGithubModal(true);
               setIsLoadingRepos(true);
               const repos = await fetchUserRepos(token);
               setRepos(repos);
@@ -1035,7 +1039,6 @@ If the user asks questions, answer based on this new context. If they just switc
 
           const info = await fetchPublicRepoInfo(owner, repo);
           
-          // Use existing token if available for higher rate limits, else null
           const tokenToUse = githubToken || null;
           
           const { files, latestSha } = await fetchRepoContents(tokenToUse, owner, repo, info.default_branch);
@@ -1056,13 +1059,12 @@ If the user asks questions, answer based on this new context. If they just switc
           setActiveFileIndex(0);
           setShowImportModal(false);
           setPublicRepoPath('');
-          setExpandedFolders({}); // Reset folders
+          setExpandedFolders({});
           setChatMessages(prev => [...prev, {role: 'ai', text: `Loaded public repository **${info.full_name}**.`}]);
 
       } catch (e: any) {
           if (e.message.includes('rate limit')) {
               if(confirm("GitHub API Rate Limit Exceeded.\n\nAnonymous requests are limited to 60/hour.\n\nWould you like to sign in with GitHub to increase your limit to 5000/hour?")) {
-                  // Keep modal open, let user click the button
               }
           } else {
               alert("Failed to load public repo: " + e.message);
@@ -1093,7 +1095,7 @@ If the user asks questions, answer based on this new context. If they just switc
           
           setActiveFileIndex(0);
           setShowGithubModal(false);
-          setExpandedFolders({}); // Reset
+          setExpandedFolders({}); 
           setChatMessages(prev => [...prev, {role: 'ai', text: `Loaded repository **${repo.full_name}** successfully.`}]);
       } catch(e: any) {
           alert("Failed to load repo: " + e.message);
@@ -1103,7 +1105,6 @@ If the user asks questions, answer based on this new context. If they just switc
   };
 
   const handleCommit = async () => {
-      // Check if we have write access (token)
       if (!githubToken) {
           if(confirm("You need to sign in with GitHub to commit changes. Connect now?")) {
               try {
@@ -1162,7 +1163,6 @@ If the user asks questions, answer based on this new context. If they just switc
           const timestamp = Date.now();
           const qFileName = `interview_q_${timestamp}.md`;
           
-          // 1. Create Question File
           const qFile: CodeFile = {
               name: qFileName,
               language: 'markdown',
@@ -1170,7 +1170,6 @@ If the user asks questions, answer based on this new context. If they just switc
               loaded: true
           };
           
-          // 2. Create Solution File (Auto-detected Language)
           const currentExt = project.files[activeFileIndex]?.name.split('.').pop() || 'cpp';
           const langConfig = LANGUAGES.find(l => l.ext === currentExt) || LANGUAGES[0];
           const sFileName = `solution_${timestamp}.${langConfig.ext}`;
@@ -1182,21 +1181,18 @@ If the user asks questions, answer based on this new context. If they just switc
               loaded: true
           };
           
-          // 3. Update Project State
           setProject(prev => ({
               ...prev,
               files: [...prev.files, qFile, sFile]
           }));
           
-          // 4. Post to Chat
           const aiMsg = `### Interview Questions Generated\n\nI've created a file **${qFileName}** with the questions.\n\nI also created **${sFileName}** for you to start coding your solution.\n\nHere are the questions for reference:\n\n${content}`;
           setChatMessages(prev => [...prev, { role: 'ai', text: aiMsg }]);
           
-          // 5. UX Updates
-          setActiveFileIndex(project.files.length + 1); // Switch to the NEW Solution file (Index: old_len + 1)
+          setActiveFileIndex(project.files.length + 1);
           setIsPreviewMode(false);
           setIsSidebarOpen(true);
-          setActiveSideView('chat'); // Open chat so they see questions while coding
+          setActiveSideView('chat');
 
       } catch(e: any) {
           alert(`Error: ${e.message}`);
@@ -1210,8 +1206,12 @@ If the user asks questions, answer based on this new context. If they just switc
   };
 
   const handleStartTutorSession = () => {
+      // Don't start if changes pending
+      if (pendingChange) {
+          alert("Please resolve pending changes before starting tutor.");
+          return;
+      }
       if (!activeFile) return;
-      // Generate a new Session ID to ensure fresh context/history
       setTutorSessionId(Date.now().toString());
       setActiveSideView('tutor');
   };
@@ -1230,7 +1230,7 @@ If the user asks questions, answer based on this new context. If they just switc
         if (!apiKey) throw new Error("API Key required for AI review.");
         
         const ai = new GoogleGenAI({ apiKey });
-        const codeFiles = project.files.filter(f => !f.name.endsWith('.md') && f.loaded !== false); // Only loaded code files
+        const codeFiles = project.files.filter(f => !f.name.endsWith('.md') && f.loaded !== false); 
         
         const fileContext = codeFiles.map(f => {
             const lang = getLanguageFromFilename(f.name);
@@ -1298,8 +1298,6 @@ If the user asks questions, answer based on this new context. If they just switc
 
   const handleChatSubmit = async () => {
       if (!chatInput.trim()) return;
-      
-      // Safety check: Don't start new edit if one is pending
       if (pendingChange) {
           alert("Please accept or revert the pending changes before continuing.");
           return;
@@ -1322,18 +1320,7 @@ If the user asks questions, answer based on this new context. If they just switc
           const fileList = project.files.map(f => f.name).join('\n');
           const historyText = newHistory.slice(-20).map(m => `${m.role.toUpperCase()}: ${m.text}`).join('\n');
           
-          const updateFileTool: FunctionDeclaration = {
-              name: 'update_file',
-              description: 'Overwrite the current file content with new code if user asks for changes.',
-              parameters: {
-                  type: Type.OBJECT,
-                  properties: {
-                      code: { type: Type.STRING, description: 'The full new code content for the file.' }
-                  },
-                  required: ['code']
-              }
-          };
-
+          // Use declared tool constant
           const prompt = `
             You are an expert Coding Assistant built into an IDE.
             
@@ -1386,11 +1373,24 @@ If the user asks questions, answer based on this new context. If they just switc
       }
   };
 
+  // HANDLER FOR LIVE SESSION TOOL CALLS
+  const handleLiveCodeUpdate = async (name: string, args: any) => {
+      if (name === 'update_file') {
+          const newCode = args.code;
+          if (newCode) {
+              setPendingChange({ original: activeFile.content, fileIndex: activeFileIndex });
+              updateFileAtIndex(activeFileIndex, newCode);
+              return "File updated. User must Accept or Revert.";
+          }
+          return "Error: No code provided.";
+      }
+      return "Unknown tool";
+  };
+
   const handleSaveChatSession = async () => {
       if (chatMessages.length === 0) return;
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
       const fileName = `chats/Chat_${timestamp}.md`;
-      
       const content = chatMessages.map(m => `**${m.role.toUpperCase()}**: ${m.text}`).join('\n\n');
       
       const newFile: CodeFile = {
@@ -1400,14 +1400,7 @@ If the user asks questions, answer based on this new context. If they just switc
           loaded: true
       };
       
-      setProject(prev => {
-          const updated = {
-              ...prev,
-              files: [...prev.files, newFile]
-          };
-          return updated;
-      });
-      
+      setProject(prev => ({ ...prev, files: [...prev.files, newFile] }));
       setChatMessages([]);
       alert("Chat session saved to project file.");
   };
@@ -1435,7 +1428,7 @@ If the user asks questions, answer based on this new context. If they just switc
       description: 'Technical Interview Practice',
       author: 'AI',
       voiceName: 'Fenrir',
-      systemInstruction: 'You are a Senior Technical Interviewer at a FAANG company. Conduct a rigorous coding interview. Ask follow-up questions about complexity and edge cases.',
+      systemInstruction: 'You are a Senior Technical Interviewer. Conduct a rigorous coding interview.',
       likes: 0,
       dislikes: 0,
       comments: [],
@@ -1444,14 +1437,13 @@ If the user asks questions, answer based on this new context. If they just switc
       createdAt: Date.now()
   };
 
-  // Dynamic Tutor Channel based on Session ID
   const tutorChannel: Channel = {
-      id: `code-tutor-${tutorSessionId}`, // Use Dynamic ID to ensure fresh history
+      id: `code-tutor-${tutorSessionId}`,
       title: 'Code Tutor',
       description: 'Interactive Code Explanation',
       author: 'AI',
-      voiceName: 'Puck', // Friendly voice
-      systemInstruction: 'You are a patient and knowledgeable Senior Engineer acting as a Code Tutor. Monitor the user activity. The user will be clicking files or selecting code. When they do, explain the context, walk through logic, or answer their questions. Be concise but insightful. Relate the code to best practices.',
+      voiceName: 'Puck',
+      systemInstruction: 'You are a patient Senior Engineer acting as a Code Tutor. Monitor user activity. If the user asks you to change code, use the `update_file` tool to rewrite it in-place.',
       likes: 0,
       dislikes: 0,
       comments: [],
@@ -1474,7 +1466,6 @@ If the user asks questions, answer based on this new context. If they just switc
                   <Code size={18} className="text-white" />
                </div>
                
-               {/* Clickable Project Name for Quick Switching */}
                <div 
                   className="flex flex-col cursor-pointer hover:bg-slate-800 rounded px-2 py-1 transition-colors group"
                   onClick={() => setShowImportModal(true)}
@@ -1671,9 +1662,7 @@ If the user asks questions, answer based on this new context. If they just switc
                </button>
                
                {project.files.map((file, idx) => {
-                  if (idx !== activeFileIndex) return null;
                   const isPending = pendingChange?.fileIndex === idx;
-
                   return (
                   <div 
                     key={idx}
@@ -1805,6 +1794,9 @@ If the user asks questions, answer based on this new context. If they just switc
                                 recordingEnabled={false}
                                 onEndSession={() => setActiveSideView('none')}
                                 language="en"
+                                // Inject tool for editing code
+                                customTools={[updateFileTool]}
+                                onCustomToolCall={handleLiveCodeUpdate}
                             />
                         ) : activeSideView === 'review' ? (
                             <div className="p-4 space-y-4">
@@ -1871,7 +1863,7 @@ If the user asks questions, answer based on this new context. If they just switc
          )}
       </div>
 
-      {/* Import Modal */}
+      {/* Import Modal... (keep existing) */}
       {showImportModal && (
           <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
               <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-lg shadow-2xl p-6">
@@ -1945,7 +1937,7 @@ If the user asks questions, answer based on this new context. If they just switc
           </div>
       )}
 
-      {/* Interview Setup Modal */}
+      {/* Interview Setup Modal... (keep existing) */}
       {showInterviewSetup && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
               <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-sm shadow-2xl p-6 animate-fade-in-up">
@@ -1979,7 +1971,7 @@ If the user asks questions, answer based on this new context. If they just switc
           </div>
       )}
 
-      {/* GitHub Repo Selection Modal */}
+      {/* GitHub Repo Selection Modal... (keep existing) */}
       {showGithubModal && (
           <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
               <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-lg shadow-2xl p-6 flex flex-col max-h-[80vh]">
@@ -2014,7 +2006,7 @@ If the user asks questions, answer based on this new context. If they just switc
           </div>
       )}
 
-      {/* Commit Modal */}
+      {/* Commit Modal... (keep existing) */}
       {showCommitModal && (
           <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
               <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-md shadow-2xl p-6">

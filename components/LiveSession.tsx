@@ -21,6 +21,9 @@ interface LiveSessionProps {
   activeSegment?: { index: number, lectureId: string }; // New prop for segment linking
   initialTranscript?: TranscriptItem[]; // Pre-load history for continuing
   existingDiscussionId?: string; // ID to update if continuing
+  // New props for custom tools (e.g. Code Editing)
+  customTools?: FunctionDeclaration[];
+  onCustomToolCall?: (name: string, args: any) => Promise<any>;
 }
 
 const GENERIC_FOLLOW_UPS_EN = [
@@ -152,7 +155,12 @@ const SuggestionsBar = React.memo(({ suggestions, welcomeMessage, showWelcome, u
   </div>
 ));
 
-export const LiveSession: React.FC<LiveSessionProps> = ({ channel, initialContext, lectureId, onEndSession, language, recordingEnabled, videoEnabled, cameraEnabled, activeSegment, initialTranscript, existingDiscussionId }) => {
+export const LiveSession: React.FC<LiveSessionProps> = ({ 
+  channel, initialContext, lectureId, onEndSession, language, 
+  recordingEnabled, videoEnabled, cameraEnabled, activeSegment, 
+  initialTranscript, existingDiscussionId,
+  customTools, onCustomToolCall 
+}) => {
   const t = UI_TEXT[language];
   const [hasStarted, setHasStarted] = useState(false); 
   const [isConnected, setIsConnected] = useState(false);
@@ -433,8 +441,13 @@ export const LiveSession: React.FC<LiveSessionProps> = ({ channel, initialContex
         effectiveInstruction += `\n\n[USER CONTEXT]: The user is starting this session with the following specific context or question: "${initialContext}"`;
       }
       
-      // Setup Tools
-      const tools = [{functionDeclarations: [saveContentTool]}];
+      // Setup Tools: Merge built-in tools with custom tools
+      const toolsToUse = [{
+          functionDeclarations: [
+              saveContentTool, 
+              ...(customTools || [])
+          ]
+      }];
 
       await service.connect(channel.voiceName, effectiveInstruction, {
           onOpen: () => { 
@@ -524,14 +537,42 @@ export const LiveSession: React.FC<LiveSessionProps> = ({ channel, initialContex
                               }]
                           });
                       }
+                  } else if (onCustomToolCall) {
+                      // Handle Custom Tool Calls (delegated to parent)
+                      try {
+                          const result = await onCustomToolCall(fc.name, fc.args);
+                          serviceRef.current?.sendToolResponse({
+                              functionResponses: [{
+                                  id: fc.id,
+                                  name: fc.name,
+                                  response: { result: result || "Success" }
+                              }]
+                          });
+                          
+                          // Show action in transcript
+                          setTranscript(history => [...history, {
+                              role: 'ai',
+                              text: `*[System]: Executed tool '${fc.name}'.*`,
+                              timestamp: Date.now()
+                          }]);
+                          
+                      } catch(err: any) {
+                          serviceRef.current?.sendToolResponse({
+                              functionResponses: [{
+                                  id: fc.id,
+                                  name: fc.name,
+                                  response: { error: `Tool execution failed: ${err.message}` }
+                              }]
+                          });
+                      }
                   }
               }
           }
         },
-        tools // Pass tools config
+        toolsToUse // Pass tools config
       );
     } catch (e) { stopWaitingMusic(); setIsRetrying(false); setError("Failed to initialize audio session"); }
-  }, [channel.id, channel.voiceName, channel.systemInstruction, initialContext, recordingEnabled, videoEnabled, cameraEnabled, initialTranscript]);
+  }, [channel.id, channel.voiceName, channel.systemInstruction, initialContext, recordingEnabled, videoEnabled, cameraEnabled, initialTranscript, customTools, onCustomToolCall]);
 
   // Context Update Handling (Seamless)
   // Instead of reconnecting, we send a text message to the AI
