@@ -1,11 +1,12 @@
+
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { Channel, TranscriptItem, GeneratedLecture, CommunityDiscussion, RecordingSession } from '../types';
 import { GeminiLiveService } from '../services/geminiLive';
 import { Mic, MicOff, PhoneOff, Radio, AlertCircle, ScrollText, RefreshCw, Music, Download, Share2, Trash2, Quote, Copy, Check, MessageCircle, BookPlus, Loader2, Globe, FilePlus, Play, Save, CloudUpload, Link, X, Video, Monitor } from 'lucide-react';
 import { auth } from '../services/firebaseConfig';
 import { saveUserChannel, cacheLectureScript, getCachedLectureScript } from '../utils/db';
-import { publishChannelToFirestore, saveLectureToFirestore, saveDiscussion, updateDiscussion, uploadFileToStorage, updateBookingRecording, saveRecordingReference, linkDiscussionToLectureSegment } from '../services/firestoreService';
-import { summarizeDiscussionAsSection } from '../services/lectureGenerator';
+import { publishChannelToFirestore, saveLectureToFirestore, saveDiscussion, updateDiscussion, uploadFileToStorage, updateBookingRecording, saveRecordingReference, linkDiscussionToLectureSegment, saveDiscussionDesignDoc } from '../services/firestoreService';
+import { summarizeDiscussionAsSection, generateDesignDocFromTranscript } from '../services/lectureGenerator';
 
 interface LiveSessionProps {
   channel: Channel;
@@ -741,28 +742,75 @@ export const LiveSession: React.FC<LiveSessionProps> = ({ channel, initialContex
   };
 
   const handleAppendToLecture = async () => {
-    if (!isOwner || !lectureId) return;
+    // Permission check: Owner or Lecture ID present?
+    // User request implies this button is for appending to lecture.
+    if (!currentUser) return; 
+    
     const fullTranscript = currentLine ? [...transcript, currentLine] : transcript;
-    if (fullTranscript.length === 0) return;
+    if (fullTranscript.length === 0) {
+        alert("No transcript to process.");
+        return;
+    }
 
     setIsAppending(true);
     try {
-        const cacheKey = `lecture_${channel.id}_${lectureId}_${language}`;
-        const currentLecture = await getCachedLectureScript(cacheKey);
+        let appended = false;
         
-        if (currentLecture) {
-            const newSections = await summarizeDiscussionAsSection(fullTranscript, currentLecture, language);
-            if (newSections) {
-                currentLecture.sections.push(...newSections);
-                await cacheLectureScript(cacheKey, currentLecture);
-                await saveLectureToFirestore(channel.id, lectureId, currentLecture);
-                alert("Discussion appended to lecture!");
+        // 1. Try to append to existing cached lecture
+        if (lectureId) {
+            const cacheKey = `lecture_${channel.id}_${lectureId}_${language}`;
+            const currentLecture = await getCachedLectureScript(cacheKey);
+            
+            if (currentLecture) {
+                const newSections = await summarizeDiscussionAsSection(fullTranscript, currentLecture, language);
+                if (newSections) {
+                    currentLecture.sections.push(...newSections);
+                    await cacheLectureScript(cacheKey, currentLecture);
+                    if (isOwner) {
+                       await saveLectureToFirestore(channel.id, lectureId, currentLecture);
+                    }
+                    alert("Discussion appended to lecture!");
+                    appended = true;
+                }
             }
-        } else {
-            alert("Could not find original lecture to append to.");
+        }
+
+        // 2. Fallback: Generate Design Doc
+        if (!appended) {
+            if (confirm("Original lecture not found in cache. Would you like to generate a standalone Design Document instead?")) {
+                 const meta = {
+                    date: new Date().toLocaleDateString(),
+                    topic: channel.title,
+                    segmentIndex: activeSegment?.index
+                 };
+                 const doc = await generateDesignDocFromTranscript(fullTranscript, meta, language);
+                 
+                 if (doc) {
+                     // We need a discussion ID to save the doc against
+                     let targetDiscussionId = existingDiscussionId;
+                     if (!targetDiscussionId) {
+                         const discussion: CommunityDiscussion = {
+                            id: '',
+                            lectureId: lectureId || channel.id,
+                            channelId: channel.id,
+                            userId: currentUser.uid,
+                            userName: currentUser.displayName || 'Anonymous',
+                            transcript: fullTranscript,
+                            createdAt: Date.now(),
+                            segmentIndex: activeSegment?.index,
+                            summary: "Auto-saved for Design Doc"
+                         };
+                         targetDiscussionId = await saveDiscussion(discussion);
+                     }
+                     
+                     await saveDiscussionDesignDoc(targetDiscussionId, doc);
+                     alert("Design Document generated and saved to Documents tab!");
+                 }
+            }
         }
     } catch(e) {
-        alert("Failed to append discussion.");
+        console.error(e);
+        alert("Failed to process request.");
     } finally {
         setIsAppending(false);
     }
@@ -1030,7 +1078,8 @@ export const LiveSession: React.FC<LiveSessionProps> = ({ channel, initialContex
                             </>
                         )
                     )}
-                    {isOwner && lectureId && (
+                    {/* Append Button Logic: Enabled if Owner OR if LectureID is present (Ad-Hoc sessions usually have fake ID) */}
+                    {(isOwner || lectureId) && (
                         <button onClick={handleAppendToLecture} disabled={isAppending} className="p-2 bg-indigo-900/30 hover:bg-indigo-900/50 text-indigo-400 border border-indigo-900/50 rounded-lg transition-colors" title={t.appendToLecture}>
                             {isAppending ? <Loader2 size={16} className="animate-spin" /> : <FilePlus size={16} />}
                         </button>
