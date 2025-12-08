@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { X, MessageCircle, FileText, Loader2, CornerDownRight, Edit2, Save, Sparkles } from 'lucide-react';
 import { CommunityDiscussion } from '../types';
-import { getDiscussionById, saveDiscussionDesignDoc } from '../services/firestoreService';
+import { getDiscussionById, saveDiscussionDesignDoc, saveDiscussion } from '../services/firestoreService';
 import { generateDesignDocFromTranscript } from '../services/lectureGenerator';
 import { MarkdownView } from './MarkdownView';
 
@@ -43,8 +43,14 @@ export const DiscussionModal: React.FC<DiscussionModalProps> = ({
         setActiveDiscussion(initialDiscussion);
       }
       // Reset view state
-      setViewMode('transcript');
-      setIsEditingDoc(false);
+      // If manually created new doc (no transcript), default to doc view
+      if (initialDiscussion && initialDiscussion.id === 'new' && initialDiscussion.isManual) {
+          setViewMode('doc');
+          setIsEditingDoc(true); // Auto-open editor
+      } else {
+          setViewMode('transcript');
+          setIsEditingDoc(false);
+      }
     }
   }, [isOpen, discussionId, initialDiscussion]);
 
@@ -89,8 +95,23 @@ export const DiscussionModal: React.FC<DiscussionModalProps> = ({
     if (!activeDiscussion) return;
     setIsSavingDoc(true);
     try {
-      await saveDiscussionDesignDoc(activeDiscussion.id, editedDocContent);
-      setActiveDiscussion({ ...activeDiscussion, designDoc: editedDocContent });
+      if (activeDiscussion.id === 'new') {
+          // Create new document
+          const docToSave = {
+              ...activeDiscussion,
+              designDoc: editedDocContent
+          };
+          // Remove temporary ID 'new' so it doesn't pollute data
+          // @ts-ignore
+          delete docToSave.id;
+          
+          const newId = await saveDiscussion(docToSave as CommunityDiscussion);
+          setActiveDiscussion({ ...activeDiscussion, designDoc: editedDocContent, id: newId });
+      } else {
+          // Update existing document
+          await saveDiscussionDesignDoc(activeDiscussion.id, editedDocContent);
+          setActiveDiscussion({ ...activeDiscussion, designDoc: editedDocContent });
+      }
       setIsEditingDoc(false);
     } catch (e) {
       console.error(e);
@@ -107,7 +128,7 @@ export const DiscussionModal: React.FC<DiscussionModalProps> = ({
               <div className="flex justify-between items-center mb-4">
                   <h3 className="text-lg font-bold text-white flex items-center gap-2">
                       <MessageCircle size={18} className="text-emerald-400" />
-                      <span>Discussion Details</span>
+                      <span>{activeDiscussion?.id === 'new' ? 'New Document' : 'Discussion Details'}</span>
                   </h3>
                   <button onClick={onClose} className="text-slate-400 hover:text-white"><X size={20}/></button>
               </div>
@@ -157,7 +178,7 @@ export const DiscussionModal: React.FC<DiscussionModalProps> = ({
                                       </button>
                                   )}
                               </div>
-                              {activeDiscussion.transcript && activeDiscussion.transcript.map((item, idx) => (
+                              {activeDiscussion.transcript && activeDiscussion.transcript.length > 0 ? activeDiscussion.transcript.map((item, idx) => (
                                   <div key={idx} className={`flex flex-col ${item.role === 'user' ? 'items-end' : 'items-start'}`}>
                                       <div className="flex items-center space-x-2 mb-1 px-1">
                                           <span className="text-[10px] text-slate-500 uppercase font-bold">{item.role === 'user' ? activeDiscussion.userName : 'AI Host'}</span>
@@ -166,11 +187,13 @@ export const DiscussionModal: React.FC<DiscussionModalProps> = ({
                                           <p className="whitespace-pre-wrap">{item.text}</p>
                                       </div>
                                   </div>
-                              ))}
+                              )) : (
+                                  <div className="text-center py-8 text-slate-500 italic">No transcript available for manual document.</div>
+                              )}
                           </div>
                       ) : (
                           <div className="h-full flex flex-col">
-                              {activeDiscussion.designDoc ? (
+                              {activeDiscussion.designDoc || isEditingDoc ? (
                                   <>
                                     <div className="flex justify-end mb-4 space-x-2 sticky top-0 z-10 bg-slate-900 pb-2">
                                         {isEditingDoc ? (
@@ -192,10 +215,11 @@ export const DiscussionModal: React.FC<DiscussionModalProps> = ({
                                             value={editedDocContent}
                                             onChange={e => setEditedDocContent(e.target.value)}
                                             className="w-full h-full min-h-[400px] bg-slate-950 p-4 rounded-lg border border-slate-700 font-mono text-sm text-slate-300 focus:outline-none focus:border-indigo-500 resize-none"
+                                            placeholder="Write your document content here (Markdown supported)..."
                                         />
                                     ) : (
                                         <div className="prose prose-invert prose-sm max-w-none">
-                                            <MarkdownView content={activeDiscussion.designDoc} />
+                                            <MarkdownView content={activeDiscussion.designDoc || ''} />
                                         </div>
                                     )}
                                   </>
