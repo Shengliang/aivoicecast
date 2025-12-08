@@ -316,6 +316,14 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack }) => {
   const liveServiceRef = useRef<GeminiLiveService | null>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
+  // Fix: Force focus on input when it appears
+  useEffect(() => {
+      if (textInput && inputRef.current) {
+          // Slight delay to ensure DOM is ready
+          setTimeout(() => inputRef.current?.focus(), 10);
+      }
+  }, [textInput]);
+
   // Helper: Get Element Bounds
   const getElementBounds = (el: DrawingElement) => {
       let minX = el.x, maxX = el.x, minY = el.y, maxY = el.y;
@@ -801,7 +809,7 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack }) => {
       
       const link = document.createElement('a');
       link.download = `whiteboard-${Date.now()}.png`;
-      link.href = tempCanvas.toDataURL();
+      link.href = tempCanvas.toDataURL('image/png');
       link.click();
   };
 
@@ -1225,7 +1233,6 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack }) => {
           {textInput && (
               <input
                   ref={inputRef}
-                  autoFocus
                   style={{ 
                       position: 'absolute', 
                       left: textInput.x * zoom + pan.x, // Transform coordinates
@@ -1243,13 +1250,17 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack }) => {
                       pointerEvents: 'auto'
                   }}
                   value={textInput.text}
-                  onChange={(e) => setTextInput({ ...textInput, text: e.target.value })}
+                  onChange={(e) => {
+                      const val = e.target.value;
+                      setTextInput(prev => prev ? { ...prev, text: val } : null);
+                  }}
                   onKeyDown={(e) => {
+                      e.stopPropagation();
                       if (e.key === 'Enter') commitText(); 
                   }}
                   onBlur={commitText} 
                   placeholder="Type..."
-                  onMouseDown={(e) => e.stopPropagation()} // FIX: Stop clicks from hitting canvas logic
+                  onMouseDown={(e) => e.stopPropagation()} // Stop clicks from hitting canvas logic
                   onClick={(e) => e.stopPropagation()}
                   onTouchStart={(e) => e.stopPropagation()}
               />
