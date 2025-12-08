@@ -51,40 +51,63 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack }) => {
   const [textInput, setTextInput] = useState<{x: number, y: number, text: string} | null>(null);
   
   // Selection / Dragging State
-  const [selectedElementId, setSelectedElementId] = useState<string | null>(null);
+  const [selectedElementIds, setSelectedElementIds] = useState<Set<string>>(new Set());
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState<Point | null>(null);
+  const [selectionBox, setSelectionBox] = useState<{start: Point, current: Point} | null>(null);
 
   // AI Chat State
   const [isAiOpen, setIsAiOpen] = useState(false);
   const [aiAnalysis, setAiAnalysis] = useState<string>('');
   const [isAnalyzing, setIsAnalyzing] = useState(false);
 
+  // Helper: Get Element Bounds
+  const getElementBounds = (el: DrawingElement) => {
+      let minX = el.x, maxX = el.x, minY = el.y, maxY = el.y;
+      
+      if (el.type === 'rectangle' || el.type === 'circle') {
+          minX = Math.min(el.x, el.x + (el.width || 0));
+          maxX = Math.max(el.x, el.x + (el.width || 0));
+          minY = Math.min(el.y, el.y + (el.height || 0));
+          maxY = Math.max(el.y, el.y + (el.height || 0));
+      } else if (el.type === 'line') {
+          minX = Math.min(el.x, el.x + (el.width || 0));
+          maxX = Math.max(el.x, el.x + (el.width || 0));
+          minY = Math.min(el.y, el.y + (el.height || 0));
+          maxY = Math.max(el.y, el.y + (el.height || 0));
+      } else if (el.type === 'text') {
+          const fontSize = el.strokeWidth * 10 + 12;
+          const w = (el.text?.length || 0) * (fontSize * 0.6);
+          const h = fontSize * 1.5;
+          maxX = el.x + w;
+          maxY = el.y + h;
+      } else if (el.points && el.points.length > 0) {
+          const xs = el.points.map(p => p.x);
+          const ys = el.points.map(p => p.y);
+          minX = Math.min(...xs);
+          maxX = Math.max(...xs);
+          minY = Math.min(...ys);
+          maxY = Math.max(...ys);
+      }
+      return { minX, maxX, minY, maxY };
+  };
+
   // Helper: Hit Test
   const isPointInElement = (x: number, y: number, el: DrawingElement): boolean => {
       const padding = 10;
+      const b = getElementBounds(el);
       
-      if (el.type === 'rectangle') {
-          const minX = Math.min(el.x, el.x + (el.width || 0));
-          const maxX = Math.max(el.x, el.x + (el.width || 0));
-          const minY = Math.min(el.y, el.y + (el.height || 0));
-          const maxY = Math.max(el.y, el.y + (el.height || 0));
-          return x >= minX - padding && x <= maxX + padding && y >= minY - padding && y <= maxY + padding;
+      // Rough bounds check first
+      if (x < b.minX - padding || x > b.maxX + padding || y < b.minY - padding || y > b.maxY + padding) {
+          return false;
       }
-      if (el.type === 'circle') {
-          // Simple bounding box for circle
-          const minX = Math.min(el.x, el.x + (el.width || 0));
-          const maxX = Math.max(el.x, el.x + (el.width || 0));
-          const minY = Math.min(el.y, el.y + (el.height || 0));
-          const maxY = Math.max(el.y, el.y + (el.height || 0));
-          return x >= minX - padding && x <= maxX + padding && y >= minY - padding && y <= maxY + padding;
-      }
+
       if (el.type === 'line') {
+          // Precise line hit test
           const x1 = el.x;
           const y1 = el.y;
           const x2 = el.x + (el.width || 0);
           const y2 = el.y + (el.height || 0);
-          // Distance from point to line segment
           const A = x - x1;
           const B = y - y1;
           const C = x2 - x1;
@@ -100,28 +123,13 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack }) => {
           const dx = x - xx;
           const dy = y - yy;
           return (dx * dx + dy * dy) < padding * padding;
+      } else if (el.type === 'pencil' || el.type === 'eraser') {
+          // Check proximity to any point
+          return el.points ? el.points.some(p => Math.abs(p.x - x) < padding && Math.abs(p.y - y) < padding) : false;
       }
-      if (el.type === 'pencil' || el.type === 'eraser') {
-          if (!el.points) return false;
-          // Check simple bounding box first
-          const xs = el.points.map(p => p.x);
-          const ys = el.points.map(p => p.y);
-          const minX = Math.min(...xs) - padding;
-          const maxX = Math.max(...xs) + padding;
-          const minY = Math.min(...ys) - padding;
-          const maxY = Math.max(...ys) + padding;
-          if (x < minX || x > maxX || y < minY || y > maxY) return false;
-          
-          // Check proximity to any point (simplified)
-          return el.points.some(p => Math.abs(p.x - x) < padding && Math.abs(p.y - y) < padding);
-      }
-      if (el.type === 'text') {
-          const fontSize = el.strokeWidth * 10 + 12;
-          const width = (el.text?.length || 0) * (fontSize * 0.6); // Estimate
-          const height = fontSize * 1.5;
-          return x >= el.x && x <= el.x + width && y >= el.y && y <= el.y + height;
-      }
-      return false;
+      
+      // For rect, circle, text, the bounds check is sufficient for simple selection
+      return true;
   };
 
   // Rendering Loop
@@ -205,46 +213,40 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack }) => {
           
           ctx.restore();
 
-          // Selection Box
-          if (selectedElementId === el.id) {
+          // Highlight Selected Elements
+          if (selectedElementIds.has(el.id)) {
+              const bounds = getElementBounds(el);
               ctx.save();
               ctx.strokeStyle = '#6366f1'; // Indigo-500
               ctx.lineWidth = 1;
               ctx.setLineDash([5, 5]);
-              
-              let minX = el.x, maxX = el.x, minY = el.y, maxY = el.y;
-              
-              if (el.type === 'rectangle' || el.type === 'image' || el.type === 'circle') {
-                  minX = Math.min(el.x, el.x + (el.width || 0));
-                  maxX = Math.max(el.x, el.x + (el.width || 0));
-                  minY = Math.min(el.y, el.y + (el.height || 0));
-                  maxY = Math.max(el.y, el.y + (el.height || 0));
-              } else if (el.type === 'line') {
-                  minX = Math.min(el.x, el.x + (el.width || 0));
-                  maxX = Math.max(el.x, el.x + (el.width || 0));
-                  minY = Math.min(el.y, el.y + (el.height || 0));
-                  maxY = Math.max(el.y, el.y + (el.height || 0));
-              } else if (el.type === 'text') {
-                  const fontSize = el.strokeWidth * 10 + 12;
-                  const w = (el.text?.length || 0) * (fontSize * 0.6);
-                  const h = fontSize * 1.5;
-                  maxX = el.x + w;
-                  maxY = el.y + h;
-              } else if (el.points) {
-                  const xs = el.points.map(p => p.x);
-                  const ys = el.points.map(p => p.y);
-                  minX = Math.min(...xs);
-                  maxX = Math.max(...xs);
-                  minY = Math.min(...ys);
-                  maxY = Math.max(...ys);
-              }
-
               const padding = 5;
-              ctx.strokeRect(minX - padding, minY - padding, (maxX - minX) + padding * 2, (maxY - minY) + padding * 2);
+              ctx.strokeRect(
+                  bounds.minX - padding, 
+                  bounds.minY - padding, 
+                  (bounds.maxX - bounds.minX) + padding * 2, 
+                  (bounds.maxY - bounds.minY) + padding * 2
+              );
               ctx.restore();
           }
       });
-  }, [elements, currentElement, selectedElementId]);
+
+      // Draw Selection Box (Rubber Band)
+      if (selectionBox) {
+          ctx.save();
+          ctx.strokeStyle = '#3b82f6'; // Blue-500
+          ctx.fillStyle = 'rgba(59, 130, 246, 0.1)'; 
+          ctx.lineWidth = 1;
+          const x = Math.min(selectionBox.start.x, selectionBox.current.x);
+          const y = Math.min(selectionBox.start.y, selectionBox.current.y);
+          const w = Math.abs(selectionBox.current.x - selectionBox.start.x);
+          const h = Math.abs(selectionBox.current.y - selectionBox.start.y);
+          ctx.fillRect(x, y, w, h);
+          ctx.strokeRect(x, y, w, h);
+          ctx.restore();
+      }
+
+  }, [elements, currentElement, selectedElementIds, selectionBox]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -333,7 +335,6 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack }) => {
   };
 
   const handleMouseDown = (e: React.MouseEvent | React.TouchEvent) => {
-      // Logic for Text Input Committing
       if (textInput) {
           commitText();
           return;
@@ -343,7 +344,7 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack }) => {
 
       // SELECTION TOOL LOGIC
       if (tool === 'selection') {
-          // Find clicked element (iterate backwards for z-order)
+          // Find hit element (reverse iterate for z-order)
           let clickedId: string | null = null;
           for (let i = elements.length - 1; i >= 0; i--) {
               if (isPointInElement(x, y, elements[i])) {
@@ -352,11 +353,19 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack }) => {
               }
           }
           
-          setSelectedElementId(clickedId);
-          
           if (clickedId) {
+              // If we clicked an item NOT in current selection, replace selection
+              // (Standard behavior: clicking an item selects it. Clicking an already selected group keeps group.)
+              if (!selectedElementIds.has(clickedId)) {
+                  setSelectedElementIds(new Set([clickedId]));
+              }
+              
               setIsDragging(true);
               setDragStart({ x, y });
+          } else {
+              // Clicked empty space: Clear selection and start rubber band
+              setSelectedElementIds(new Set());
+              setSelectionBox({ start: { x, y }, current: { x, y } });
           }
           return;
       }
@@ -369,8 +378,7 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack }) => {
 
       // DRAWING TOOL LOGIC
       setIsDrawing(true);
-      // Clear selection when drawing new shapes
-      setSelectedElementId(null);
+      setSelectedElementIds(new Set()); // Clear selection when drawing
 
       const id = crypto.randomUUID();
       const newEl: DrawingElement = {
@@ -391,14 +399,14 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack }) => {
   const handleMouseMove = (e: React.MouseEvent | React.TouchEvent) => {
       const { x, y } = getPointerPos(e);
 
-      // DRAGGING LOGIC
-      if (isDragging && selectedElementId && dragStart) {
+      // DRAGGING SELECTION
+      if (isDragging && selectedElementIds.size > 0 && dragStart) {
           const dx = x - dragStart.x;
           const dy = y - dragStart.y;
           setDragStart({ x, y }); // Update drag anchor
 
           setElements(prev => prev.map(el => {
-              if (el.id === selectedElementId) {
+              if (selectedElementIds.has(el.id)) {
                   const newEl = { ...el, x: el.x + dx, y: el.y + dy };
                   if (el.points) {
                       newEl.points = el.points.map(p => ({ x: p.x + dx, y: p.y + dy }));
@@ -410,7 +418,13 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack }) => {
           return;
       }
 
-      // DRAWING LOGIC
+      // RUBBER BAND SELECTION
+      if (selectionBox) {
+          setSelectionBox(prev => prev ? { ...prev, current: { x, y } } : null);
+          return;
+      }
+
+      // DRAWING
       if (!isDrawing || !currentElement) return;
 
       if (tool === 'pencil' || tool === 'eraser') {
@@ -434,20 +448,44 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack }) => {
   };
 
   const handleMouseUp = () => {
-      // Finish Drag
+      // FINISH DRAG
       if (isDragging) {
           setIsDragging(false);
           setDragStart(null);
-          // Could save history of move here if desired
           saveHistory(elements);
           return;
       }
 
-      // Finish Drawing
+      // FINISH SELECTION BOX
+      if (selectionBox) {
+          const sb = selectionBox;
+          const x1 = Math.min(sb.start.x, sb.current.x);
+          const x2 = Math.max(sb.start.x, sb.current.x);
+          const y1 = Math.min(sb.start.y, sb.current.y);
+          const y2 = Math.max(sb.start.y, sb.current.y);
+
+          const newSelection = new Set<string>();
+          
+          elements.forEach(el => {
+              const b = getElementBounds(el);
+              // Check intersection of two rectangles
+              // Box1 (Selection): x1, y1, x2, y2
+              // Box2 (Element): b.minX, b.minY, b.maxX, b.maxY
+              // If they don't NOT intersect, they intersect
+              if (!(x2 < b.minX || x1 > b.maxX || y2 < b.minY || y1 > b.maxY)) {
+                  newSelection.add(el.id);
+              }
+          });
+          
+          setSelectedElementIds(newSelection);
+          setSelectionBox(null);
+          return;
+      }
+
+      // FINISH DRAWING
       if (!isDrawing || !currentElement) return;
       setIsDrawing(false);
       
-      // Filter out accidental micro-clicks
       const isTiny = !currentElement.points && Math.abs(currentElement.width || 0) < 3 && Math.abs(currentElement.height || 0) < 3;
       
       if (!isTiny) {
@@ -469,7 +507,6 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack }) => {
       const tCtx = tempCanvas.getContext('2d');
       if (!tCtx) return;
       
-      // Fill background dark for export
       tCtx.fillStyle = '#0f172a'; // slate-950
       tCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
       tCtx.drawImage(canvas, 0, 0);
@@ -523,18 +560,39 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack }) => {
           saveHistory([]);
           setCurrentElement(null);
           setTextInput(null);
-          setSelectedElementId(null);
+          setSelectedElementIds(new Set());
       }
   };
 
   const handleDeleteSelected = () => {
-      if (selectedElementId) {
-          const nextElements = elements.filter(el => el.id !== selectedElementId);
+      if (selectedElementIds.size > 0) {
+          const nextElements = elements.filter(el => !selectedElementIds.has(el.id));
           setElements(nextElements);
           saveHistory(nextElements);
-          setSelectedElementId(null);
+          setSelectedElementIds(new Set());
       }
   };
+
+  // Calculate selection bounds for UI placement
+  const getSelectionBounds = () => {
+      if (selectedElementIds.size === 0) return null;
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+      
+      elements.forEach(el => {
+          if (selectedElementIds.has(el.id)) {
+              const b = getElementBounds(el);
+              if (b.minX < minX) minX = b.minX;
+              if (b.minY < minY) minY = b.minY;
+              if (b.maxX > maxX) maxX = b.maxX;
+              if (b.maxY > maxY) maxY = b.maxY;
+          }
+      });
+      
+      if (minX === Infinity) return null;
+      return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
+  };
+
+  const selBounds = getSelectionBounds();
 
   return (
     <div className="flex flex-col h-screen bg-slate-950 text-slate-100 overflow-hidden relative select-none">
@@ -561,8 +619,7 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack }) => {
                   key={t.id}
                   onClick={() => {
                       setTool(t.id as ToolType);
-                      // Clear selection if switching away from Selection tool
-                      if (t.id !== 'selection') setSelectedElementId(null);
+                      if (t.id !== 'selection') setSelectedElementIds(new Set());
                   }}
                   className={`p-2 rounded-xl transition-all flex-shrink-0 ${tool === t.id ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`}
                   title={t.label}
@@ -657,17 +714,21 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack }) => {
           )}
 
           {/* Floating Action Bar for Selection */}
-          {selectedElementId && !isDragging && (
+          {selectedElementIds.size > 0 && !isDragging && !selectionBox && selBounds && (
               <div 
-                  className="absolute z-40 bg-slate-800 border border-slate-700 rounded-lg p-1 flex gap-1 shadow-xl"
+                  className="absolute z-40 bg-slate-800 border border-slate-700 rounded-lg p-1 flex gap-1 shadow-xl animate-fade-in"
                   style={{
-                      left: (elements.find(e => e.id === selectedElementId)?.x || 0) + 20,
-                      top: (elements.find(e => e.id === selectedElementId)?.y || 0) - 40
+                      left: selBounds.x,
+                      top: selBounds.y - 45
                   }}
               >
-                  <button onClick={handleDeleteSelected} className="p-1.5 hover:bg-red-900/30 text-red-400 rounded transition-colors">
+                  <button onClick={handleDeleteSelected} className="p-1.5 hover:bg-red-900/30 text-red-400 rounded transition-colors" title="Delete Selection">
                       <Trash2 size={14} />
                   </button>
+                  <div className="w-px bg-slate-700 mx-1"></div>
+                  <div className="px-2 flex items-center text-xs text-slate-400">
+                      {selectedElementIds.size} selected
+                  </div>
               </div>
           )}
       </div>
