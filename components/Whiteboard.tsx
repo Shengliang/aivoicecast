@@ -4,7 +4,7 @@ import {
   ArrowLeft, Square, Circle, Minus, Type, Eraser, 
   Undo, Redo, Download, MousePointer, Pencil, Bot, 
   Loader2, X, Palette, Trash2, Maximize, Sparkles, Send, Mic, MicOff, Image as ImageIcon, Zap,
-  ZoomIn, ZoomOut, Move
+  ZoomIn, ZoomOut, Move, ArrowRight
 } from 'lucide-react';
 import { GoogleGenAI, FunctionDeclaration, Type as GenAIType, SchemaType } from '@google/genai';
 import { GEMINI_API_KEY } from '../services/private_keys';
@@ -16,7 +16,7 @@ interface WhiteboardProps {
   onBack: () => void;
 }
 
-type ToolType = 'selection' | 'pencil' | 'rectangle' | 'circle' | 'line' | 'text' | 'eraser' | 'pan';
+type ToolType = 'selection' | 'pencil' | 'rectangle' | 'circle' | 'line' | 'arrow' | 'text' | 'eraser' | 'pan';
 
 interface Point {
   x: number;
@@ -108,6 +108,21 @@ const drawTools: FunctionDeclaration[] = [
   {
     name: 'draw_line',
     description: 'Draw a line between two specific points.',
+    parameters: {
+      type: GenAIType.OBJECT,
+      properties: {
+        x1: { type: GenAIType.NUMBER },
+        y1: { type: GenAIType.NUMBER },
+        x2: { type: GenAIType.NUMBER },
+        y2: { type: GenAIType.NUMBER },
+        color: { type: GenAIType.STRING }
+      },
+      required: ['x1', 'y1', 'x2', 'y2']
+    }
+  },
+  {
+    name: 'draw_arrow',
+    description: 'Draw an arrow between two specific points.',
     parameters: {
       type: GenAIType.OBJECT,
       properties: {
@@ -246,10 +261,10 @@ const executeDiagramLayout = (args: any, startId: string): DrawingElement[] => {
             const x2 = dst.x;
             const y2 = dst.y + dst.h / 2;
 
-            // Simple line for now
+            // Use Arrow for edges
             elements.push({
                 id: `${startId}-edge-${idx}`,
-                type: 'line',
+                type: 'arrow',
                 x: x1, y: y1,
                 width: x2 - x1, 
                 height: y2 - y1,
@@ -333,7 +348,7 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack }) => {
           maxX = Math.max(el.x, el.x + (el.width || 0));
           minY = Math.min(el.y, el.y + (el.height || 0));
           maxY = Math.max(el.y, el.y + (el.height || 0));
-      } else if (el.type === 'line') {
+      } else if (el.type === 'line' || el.type === 'arrow') {
           minX = Math.min(el.x, el.x + (el.width || 0));
           maxX = Math.max(el.x, el.x + (el.width || 0));
           minY = Math.min(el.y, el.y + (el.height || 0));
@@ -364,7 +379,7 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack }) => {
           return false;
       }
 
-      if (el.type === 'line') {
+      if (el.type === 'line' || el.type === 'arrow') {
           const x1 = el.x;
           const y1 = el.y;
           const x2 = el.x + (el.width || 0);
@@ -450,9 +465,20 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack }) => {
                       ctx.lineTo(pts[pts.length - 1].x, pts[pts.length - 1].y);
                   }
               }
-          } else if (el.type === 'line') {
+          } else if (el.type === 'line' || el.type === 'arrow') {
+              const x2 = el.x + (el.width || 0);
+              const y2 = el.y + (el.height || 0);
               ctx.moveTo(el.x, el.y);
-              ctx.lineTo(el.x + (el.width || 0), el.y + (el.height || 0));
+              ctx.lineTo(x2, y2);
+              
+              if (el.type === 'arrow') {
+                  const headlen = 15 + el.strokeWidth; 
+                  const angle = Math.atan2(y2 - el.y, x2 - el.x);
+                  ctx.moveTo(x2, y2);
+                  ctx.lineTo(x2 - headlen * Math.cos(angle - Math.PI / 6), y2 - headlen * Math.sin(angle - Math.PI / 6));
+                  ctx.moveTo(x2, y2);
+                  ctx.lineTo(x2 - headlen * Math.cos(angle + Math.PI / 6), y2 - headlen * Math.sin(angle + Math.PI / 6));
+              }
           } else if (el.type === 'rectangle') {
               ctx.rect(el.x, el.y, el.width || 0, el.height || 0);
           } else if (el.type === 'circle') {
@@ -951,6 +977,13 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack }) => {
                                   width: args.x2 - args.x1, height: args.y2 - args.y1,
                                   color: args.color || color, strokeWidth
                               });
+                          } else if (fc.name === 'draw_arrow') {
+                              newEls.push({
+                                  id, type: 'arrow',
+                                  x: args.x1, y: args.y1,
+                                  width: args.x2 - args.x1, height: args.y2 - args.y1,
+                                  color: args.color || color, strokeWidth
+                              });
                           } else if (fc.name === 'add_text') {
                               newEls.push({
                                   id, type: 'text',
@@ -1071,6 +1104,14 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack }) => {
                           height: (args.y2 as number) - (args.y1 as number),
                           color: (args.color as string) || color, strokeWidth
                       });
+                  } else if (fc.name === 'draw_arrow') {
+                      newElements.push({
+                          id, type: 'arrow',
+                          x: args.x1 as number, y: args.y1 as number,
+                          width: (args.x2 as number) - (args.x1 as number), 
+                          height: (args.y2 as number) - (args.y1 as number),
+                          color: (args.color as string) || color, strokeWidth
+                      });
                   } else if (fc.name === 'add_text') {
                       newElements.push({
                           id, type: 'text',
@@ -1148,6 +1189,7 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack }) => {
               { id: 'rectangle', icon: Square, label: 'Box' },
               { id: 'circle', icon: Circle, label: 'Circle' },
               { id: 'line', icon: Minus, label: 'Line' },
+              { id: 'arrow', icon: ArrowRight, label: 'Arrow' },
               { id: 'text', icon: Type, label: 'Text' },
               { id: 'eraser', icon: Eraser, label: 'Erase' },
           ].map((t) => (
