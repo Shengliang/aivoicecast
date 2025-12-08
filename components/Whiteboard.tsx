@@ -277,6 +277,7 @@ const executeDiagramLayout = (args: any, startId: string): DrawingElement[] => {
 export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null); 
+  const inputRef = useRef<HTMLInputElement>(null);
   
   const [elements, setElements] = useState<DrawingElement[]>([]);
   const [history, setHistory] = useState<DrawingElement[][]>([]);
@@ -1223,6 +1224,7 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack }) => {
           {/* Text Input Overlay */}
           {textInput && (
               <input
+                  ref={inputRef}
                   autoFocus
                   style={{ 
                       position: 'absolute', 
@@ -1237,7 +1239,8 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack }) => {
                       padding: '4px',
                       borderRadius: '4px',
                       zIndex: 50,
-                      boxShadow: '0 4px 6px rgba(0,0,0,0.3)'
+                      boxShadow: '0 4px 6px rgba(0,0,0,0.3)',
+                      pointerEvents: 'auto'
                   }}
                   value={textInput.text}
                   onChange={(e) => setTextInput({ ...textInput, text: e.target.value })}
@@ -1246,6 +1249,9 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack }) => {
                   }}
                   onBlur={commitText} 
                   placeholder="Type..."
+                  onMouseDown={(e) => e.stopPropagation()} // FIX: Stop clicks from hitting canvas logic
+                  onClick={(e) => e.stopPropagation()}
+                  onTouchStart={(e) => e.stopPropagation()}
               />
           )}
 
