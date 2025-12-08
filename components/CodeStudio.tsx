@@ -461,11 +461,11 @@ const generateHighlightedHTML = (code: string, language: string) => {
     .replace(/'/g, "&#039;");
   
   // Use a map to protect specific tokens (strings, comments) from being partially matched by keywords
-  // CRITICAL: We must use placeholders for ALL replacements to prevent "double-dipping" (e.g. matching '400' inside 'text-blue-400')
+  // Using «PH#» delimiters to safely isolate from word boundary matches (\b)
   const placeholders: string[] = [];
   const addPlaceholder = (htmlFragment: string) => {
     placeholders.push(htmlFragment);
-    return `__PH${placeholders.length - 1}__`;
+    return `«PH${placeholders.length - 1}»`;
   };
 
   let processed = escapeHtml(code);
@@ -477,8 +477,13 @@ const generateHighlightedHTML = (code: string, language: string) => {
     processed = processed.replace(/(&#039;.*?&#039;)/g, match => addPlaceholder(`<span class="text-amber-300">${match}</span>`));
     
     // 2. Preprocessor directives
-    processed = processed.replace(/(#include|#define|#ifdef|#ifndef|#endif|#pragma)/g, match => addPlaceholder(`<span class="text-pink-400">${match}</span>`));
-    processed = processed.replace(/(&lt;.*?&gt;)/g, match => addPlaceholder(`<span class="text-emerald-300">${match}</span>`)); // <vector>
+    // Specifc match for #include <...> or #include "..." to color the header path correctly
+    processed = processed.replace(/(#include)(\s+)(&lt;.*?&gt;|&quot;.*?&quot;)/g, (_match, p1, p2, p3) => {
+        return addPlaceholder(`<span class="text-pink-400">${p1}</span>`) + p2 + addPlaceholder(`<span class="text-emerald-300">${p3}</span>`);
+    });
+    
+    // Generic match for other directives or bare #include
+    processed = processed.replace(/(#define|#ifdef|#ifndef|#endif|#pragma|#include)/g, match => addPlaceholder(`<span class="text-pink-400">${match}</span>`));
 
     // 3. Comments (Double Slash) - matches unescaped // if present (unlikely after escape) or generally works on text
     processed = processed.replace(/(\/\/.*)/g, match => addPlaceholder(`<span class="text-slate-500 italic">${match}</span>`));
@@ -503,7 +508,6 @@ const generateHighlightedHTML = (code: string, language: string) => {
     processed = processed.replace(/\b([a-zA-Z_]\w*)(?=\()/g, match => addPlaceholder(`<span class="text-yellow-200">${match}</span>`));
     
     // 7. Numbers (Only process things that aren't already placeholders)
-    // Because we've placeholder-ized everything else, this regex won't match inside a placeholder key (e.g. __PH0__)
     processed = processed.replace(/\b(\d+)\b/g, match => addPlaceholder(`<span class="text-emerald-300">${match}</span>`));
   } 
   
@@ -524,7 +528,7 @@ const generateHighlightedHTML = (code: string, language: string) => {
   // Restore placeholders iteratively
   // Using split/join avoids the issue where replacement string contains '$' which string.replace handles specially
   placeholders.forEach((ph, i) => {
-    processed = processed.split(`__PH${i}__`).join(ph);
+    processed = processed.split(`«PH${i}»`).join(ph);
   });
 
   return processed;
