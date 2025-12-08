@@ -589,6 +589,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
   const [isPreviewMode, setIsPreviewMode] = useState(false);
   const [isReviewing, setIsReviewing] = useState(false);
   const [isLoadingFile, setIsLoadingFile] = useState(false);
+  const [tutorSessionId, setTutorSessionId] = useState<string>(''); // For fresh "Teach Me" sessions
   
   // Search State
   const [searchTerm, setSearchTerm] = useState('');
@@ -1163,6 +1164,8 @@ If the user asks questions, answer based on this new context. If they just switc
 
   const handleStartTutorSession = () => {
       if (!activeFile) return;
+      // Generate a new Session ID to ensure fresh context/history
+      setTutorSessionId(Date.now().toString());
       setActiveSideView('tutor');
   };
 
@@ -1354,8 +1357,9 @@ If the user asks questions, answer based on this new context. If they just switc
       createdAt: Date.now()
   };
 
+  // Dynamic Tutor Channel based on Session ID
   const tutorChannel: Channel = {
-      id: 'code-tutor',
+      id: `code-tutor-${tutorSessionId}`, // Use Dynamic ID to ensure fresh history
       title: 'Code Tutor',
       description: 'Interactive Code Explanation',
       author: 'AI',
@@ -1695,7 +1699,7 @@ If the user asks questions, answer based on this new context. If they just switc
                             <LiveSession 
                                 channel={tutorChannel}
                                 initialContext={debouncedFileContext} // Use debounced context
-                                lectureId={`tutor-${project.id}`} // Stabilized ID to prevent unmounts
+                                lectureId={`tutor-${tutorSessionId}`} // Unique ID to force new session & saving
                                 recordingEnabled={false}
                                 onEndSession={() => setActiveSideView('none')}
                                 language="en"
