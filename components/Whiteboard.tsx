@@ -1,5 +1,5 @@
 
-import React, { useRef, useState, useEffect } from 'react';
+import React, { useRef, useState, useEffect, useCallback } from 'react';
 import { 
   ArrowLeft, Square, Circle, Minus, Type, Eraser, 
   Undo, Redo, Download, MousePointer, Pencil, Bot, 
@@ -35,6 +35,8 @@ interface DrawingElement {
 
 export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null); // Ref for container to size against
+  
   const [elements, setElements] = useState<DrawingElement[]>([]);
   const [history, setHistory] = useState<DrawingElement[][]>([]);
   const [historyStep, setHistoryStep] = useState(0);
@@ -51,180 +53,23 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack }) => {
   const [aiAnalysis, setAiAnalysis] = useState<string>('');
   const [isAnalyzing, setIsAnalyzing] = useState(false);
 
-  // Setup Canvas
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    
-    // High DPI scaling logic
-    const handleResize = () => {
-        const parent = canvas.parentElement;
-        if (parent) {
-            const dpr = window.devicePixelRatio || 1;
-            // Set actual canvas size (buffer)
-            canvas.width = parent.clientWidth * dpr;
-            canvas.height = parent.clientHeight * dpr;
-            
-            // Context configuration
-            const ctx = canvas.getContext('2d');
-            if (ctx) {
-                // Scale coordinate system to match CSS pixels
-                ctx.scale(dpr, dpr);
-                ctx.lineCap = 'round';
-                ctx.lineJoin = 'round';
-            }
-            // Trigger redraw manually if needed, but effect hook below handles it
-        }
-    };
-
-    handleResize();
-    window.addEventListener('resize', handleResize);
-    
-    return () => window.removeEventListener('resize', handleResize);
-  }, []);
-
-  // Redraw when elements change
-  useEffect(() => {
-      redraw();
-  }, [elements, currentElement]);
-
-  const saveHistory = (newElements: DrawingElement[]) => {
-      const newHistory = history.slice(0, historyStep + 1);
-      newHistory.push(newElements);
-      setHistory(newHistory);
-      setHistoryStep(newHistory.length - 1);
-  };
-
-  const undo = () => {
-      if (historyStep > 0) {
-          const prev = history[historyStep - 1];
-          setElements(prev);
-          setHistoryStep(historyStep - 1);
-      } else if (historyStep === 0) {
-          setElements([]);
-          setHistoryStep(-1);
-      }
-  };
-
-  const redo = () => {
-      if (historyStep < history.length - 1) {
-          const next = history[historyStep + 1];
-          setElements(next);
-          setHistoryStep(historyStep + 1);
-      }
-  };
-
-  const getPointerPos = (e: React.MouseEvent | React.TouchEvent) => {
-      const canvas = canvasRef.current;
-      if (!canvas) return { x: 0, y: 0 };
-      const rect = canvas.getBoundingClientRect();
-      const clientX = 'touches' in e ? e.touches[0].clientX : (e as React.MouseEvent).clientX;
-      const clientY = 'touches' in e ? e.touches[0].clientY : (e as React.MouseEvent).clientY;
-      return {
-          x: clientX - rect.left,
-          y: clientY - rect.top
-      };
-  };
-
-  const handleMouseDown = (e: React.MouseEvent | React.TouchEvent) => {
-      if (tool === 'selection') return;
-      const { x, y } = getPointerPos(e);
-
-      if (tool === 'text') {
-          if (textInput) {
-              // Commit existing text
-              if (textInput.text.trim()) {
-                  const newEl: DrawingElement = {
-                      id: crypto.randomUUID(),
-                      type: 'text',
-                      x: textInput.x,
-                      y: textInput.y,
-                      text: textInput.text,
-                      color,
-                      strokeWidth
-                  };
-                  const nextElements = [...elements, newEl];
-                  setElements(nextElements);
-                  saveHistory(nextElements);
-              }
-              setTextInput(null);
-          } else {
-              setTextInput({ x, y, text: '' });
-          }
-          return;
-      }
-
-      setIsDrawing(true);
-      const id = crypto.randomUUID();
-      
-      const newEl: DrawingElement = {
-          id,
-          type: tool,
-          x,
-          y,
-          width: 0,
-          height: 0,
-          // Initialize points with the starting dot
-          points: tool === 'pencil' || tool === 'eraser' ? [{ x, y }] : undefined,
-          color: color, 
-          strokeWidth: tool === 'eraser' ? 20 : strokeWidth
-      };
-      
-      setCurrentElement(newEl);
-  };
-
-  const handleMouseMove = (e: React.MouseEvent | React.TouchEvent) => {
-      if (!isDrawing || !currentElement) return;
-      const { x, y } = getPointerPos(e);
-
-      if (tool === 'pencil' || tool === 'eraser') {
-          setCurrentElement(prev => {
-              if (!prev) return null;
-              return {
-                  ...prev,
-                  points: [...(prev.points || []), { x, y }]
-              };
-          });
-      } else {
-          setCurrentElement(prev => {
-              if (!prev) return null;
-              return {
-                  ...prev,
-                  width: x - prev.x,
-                  height: y - prev.y
-              };
-          });
-      }
-  };
-
-  const handleMouseUp = () => {
-      if (!isDrawing || !currentElement) return;
-      setIsDrawing(false);
-      
-      // Don't save empty shapes (tiny accidental clicks)
-      const isTiny = !currentElement.points && Math.abs(currentElement.width || 0) < 3 && Math.abs(currentElement.height || 0) < 3;
-      
-      if (!isTiny) {
-          const nextElements = [...elements, currentElement];
-          setElements(nextElements);
-          saveHistory(nextElements);
-      }
-      
-      setCurrentElement(null);
-  };
-
   // The rendering loop
-  const redraw = () => {
+  const redraw = useCallback(() => {
       const canvas = canvasRef.current;
       if (!canvas) return;
       const ctx = canvas.getContext('2d');
       if (!ctx) return;
 
-      // Clear the canvas (use backing store dimensions)
-      ctx.save();
-      ctx.setTransform(1, 0, 0, 1, 0, 0); // Reset transform to clear full buffer
+      const dpr = window.devicePixelRatio || 1;
+
+      // 1. Clear the canvas (using absolute coordinates)
+      ctx.setTransform(1, 0, 0, 1, 0, 0); 
       ctx.clearRect(0, 0, canvas.width, canvas.height);
-      ctx.restore(); // Restore the DPR scale transform
+
+      // 2. Apply Scale for High DPI
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
       
       const allElements = currentElement ? [...elements, currentElement] : elements;
 
@@ -236,15 +81,13 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack }) => {
           // Handle Eraser Mode (Transparency)
           if (el.type === 'eraser') {
               ctx.globalCompositeOperation = 'destination-out';
-              ctx.strokeStyle = 'rgba(0,0,0,1)'; // Color doesn't matter for destination-out, opacity does
+              ctx.strokeStyle = 'rgba(0,0,0,1)'; 
           } else {
               ctx.globalCompositeOperation = 'source-over';
               ctx.strokeStyle = el.color;
           }
 
           ctx.lineWidth = el.strokeWidth;
-          ctx.lineCap = 'round';
-          ctx.lineJoin = 'round';
           
           ctx.beginPath();
 
@@ -256,7 +99,7 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack }) => {
                   if (pts.length < 3) {
                       // Draw a dot if not enough points for curve
                       const b = pts[0];
-                      ctx.lineTo(b.x, b.y + 0.01); // tiny line to force a cap rendering
+                      ctx.lineTo(b.x, b.y + 0.01); 
                   } else {
                       // Smooth curve drawing (quadratic bezier)
                       for (let i = 1; i < pts.length - 1; i++) {
@@ -288,7 +131,6 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack }) => {
               ctx.font = `${el.strokeWidth * 10 + 12}px sans-serif`;
               ctx.fillStyle = el.color;
               ctx.textBaseline = 'top';
-              // Text shouldn't look like a stroke usually
               ctx.lineWidth = 1; 
               ctx.fillText(el.text, el.x, el.y); 
           }
@@ -299,6 +141,175 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack }) => {
           
           ctx.restore();
       });
+  }, [elements, currentElement]);
+
+  // Setup Canvas & Resize Observer
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    const container = containerRef.current;
+    if (!canvas || !container) return;
+    
+    const updateSize = () => {
+        const dpr = window.devicePixelRatio || 1;
+        // Set display size (css)
+        canvas.style.width = '100%';
+        canvas.style.height = '100%';
+        
+        // Set buffer size (memory)
+        canvas.width = container.clientWidth * dpr;
+        canvas.height = container.clientHeight * dpr;
+        
+        // Immediately redraw after resize/clear
+        redraw();
+    };
+
+    // Initial sizing
+    updateSize();
+
+    // Resize observer is more robust than window.resize for flex containers
+    const resizeObserver = new ResizeObserver(() => {
+        updateSize();
+    });
+    resizeObserver.observe(container);
+    
+    return () => resizeObserver.disconnect();
+  }, [redraw]);
+
+  const saveHistory = (newElements: DrawingElement[]) => {
+      const newHistory = history.slice(0, historyStep + 1);
+      newHistory.push(newElements);
+      setHistory(newHistory);
+      setHistoryStep(newHistory.length - 1);
+  };
+
+  const undo = () => {
+      if (historyStep > 0) {
+          const prev = history[historyStep - 1];
+          setElements(prev);
+          setHistoryStep(historyStep - 1);
+      } else if (historyStep === 0) {
+          setElements([]);
+          setHistoryStep(-1);
+      }
+  };
+
+  const redo = () => {
+      if (historyStep < history.length - 1) {
+          const next = history[historyStep + 1];
+          setElements(next);
+          setHistoryStep(historyStep + 1);
+      }
+  };
+
+  const getPointerPos = (e: React.MouseEvent | React.TouchEvent) => {
+      const canvas = canvasRef.current;
+      if (!canvas) return { x: 0, y: 0 };
+      const rect = canvas.getBoundingClientRect();
+      
+      let clientX = 0;
+      let clientY = 0;
+
+      if ('touches' in e && e.touches.length > 0) {
+          clientX = e.touches[0].clientX;
+          clientY = e.touches[0].clientY;
+      } else if ('clientX' in e) {
+          clientX = (e as React.MouseEvent).clientX;
+          clientY = (e as React.MouseEvent).clientY;
+      }
+
+      return {
+          x: clientX - rect.left,
+          y: clientY - rect.top
+      };
+  };
+
+  const handleMouseDown = (e: React.MouseEvent | React.TouchEvent) => {
+      if (tool === 'selection') return;
+      // Prevent scrolling on touch
+      // e.preventDefault(); 
+      
+      const { x, y } = getPointerPos(e);
+
+      if (tool === 'text') {
+          if (textInput) {
+              if (textInput.text.trim()) {
+                  const newEl: DrawingElement = {
+                      id: crypto.randomUUID(),
+                      type: 'text',
+                      x: textInput.x,
+                      y: textInput.y,
+                      text: textInput.text,
+                      color,
+                      strokeWidth
+                  };
+                  const nextElements = [...elements, newEl];
+                  setElements(nextElements);
+                  saveHistory(nextElements);
+              }
+              setTextInput(null);
+          } else {
+              setTextInput({ x, y, text: '' });
+          }
+          return;
+      }
+
+      setIsDrawing(true);
+      const id = crypto.randomUUID();
+      
+      const newEl: DrawingElement = {
+          id,
+          type: tool,
+          x,
+          y,
+          width: 0,
+          height: 0,
+          points: tool === 'pencil' || tool === 'eraser' ? [{ x, y }] : undefined,
+          color: color, 
+          strokeWidth: tool === 'eraser' ? 20 : strokeWidth
+      };
+      
+      setCurrentElement(newEl);
+  };
+
+  const handleMouseMove = (e: React.MouseEvent | React.TouchEvent) => {
+      if (!isDrawing || !currentElement) return;
+      // e.preventDefault();
+      
+      const { x, y } = getPointerPos(e);
+
+      if (tool === 'pencil' || tool === 'eraser') {
+          setCurrentElement(prev => {
+              if (!prev) return null;
+              return {
+                  ...prev,
+                  points: [...(prev.points || []), { x, y }]
+              };
+          });
+      } else {
+          setCurrentElement(prev => {
+              if (!prev) return null;
+              return {
+                  ...prev,
+                  width: x - prev.x,
+                  height: y - prev.y
+              };
+          });
+      }
+  };
+
+  const handleMouseUp = () => {
+      if (!isDrawing || !currentElement) return;
+      setIsDrawing(false);
+      
+      const isTiny = !currentElement.points && Math.abs(currentElement.width || 0) < 3 && Math.abs(currentElement.height || 0) < 3;
+      
+      if (!isTiny) {
+          const nextElements = [...elements, currentElement];
+          setElements(nextElements);
+          saveHistory(nextElements);
+      }
+      
+      setCurrentElement(null);
   };
 
   const handleDownload = () => {
@@ -331,14 +342,11 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack }) => {
       setAiAnalysis('');
 
       try {
-          // Get base64 image (remove header)
           const base64Image = canvas.toDataURL('image/png').split(',')[1];
-          
           const apiKey = localStorage.getItem('gemini_api_key') || GEMINI_API_KEY || process.env.API_KEY || '';
           if (!apiKey) throw new Error("API Key required");
           
           const ai = new GoogleGenAI({ apiKey });
-          
           const prompt = "You are an AI assistant viewing a whiteboard. Analyze this sketch. If it's a diagram, explain the architecture. If it's code, explain the logic. If it's a math problem, solve it. Be concise and helpful.";
           
           const response = await ai.models.generateContent({
@@ -366,6 +374,7 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack }) => {
       if (confirm("Clear entire whiteboard?")) {
           setElements([]);
           saveHistory([]);
+          setCurrentElement(null);
       }
   };
 
@@ -439,7 +448,10 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack }) => {
       </div>
 
       {/* Canvas Area */}
-      <div className="flex-1 bg-slate-950 relative cursor-crosshair overflow-hidden touch-none">
+      <div 
+        ref={containerRef}
+        className="flex-1 bg-slate-950 relative cursor-crosshair overflow-hidden touch-none w-full h-full"
+      >
           <canvas
               ref={canvasRef}
               onMouseDown={handleMouseDown}
@@ -449,7 +461,8 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack }) => {
               onTouchStart={handleMouseDown}
               onTouchMove={handleMouseMove}
               onTouchEnd={handleMouseUp}
-              className="absolute inset-0 w-full h-full block"
+              className="block touch-none"
+              style={{ width: '100%', height: '100%' }}
           />
           
           {/* Text Input Overlay */}
@@ -462,7 +475,7 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack }) => {
                       top: textInput.y,
                       color: color,
                       fontSize: `${strokeWidth * 10 + 12}px`,
-                      background: 'rgba(30, 41, 59, 0.8)', // bg-slate-800/80
+                      background: 'rgba(30, 41, 59, 0.8)', 
                       border: '1px dashed #6366f1',
                       outline: 'none',
                       minWidth: '100px',
