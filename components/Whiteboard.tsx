@@ -39,71 +39,90 @@ interface DrawingElement {
 // --- TOOL DEFINITIONS FOR GEMINI ---
 const drawTools: FunctionDeclaration[] = [
   {
+    name: 'generate_diagram',
+    description: 'Auto-layout a structured diagram. Use this tool when asked to draw architectures, flows, or systems (e.g. "Draw DynamoDB architecture"). It handles spacing automatically to prevent overlap. Provide a logical list of nodes and edges.',
+    parameters: {
+      type: GenAIType.OBJECT,
+      properties: {
+        layout: { type: GenAIType.STRING, description: 'Layout strategy: "tiered" (default - for flows/architectures), "grid" (lists), or "linear-horizontal"' },
+        nodes: {
+          type: GenAIType.ARRAY,
+          items: {
+            type: GenAIType.OBJECT,
+            properties: {
+              id: { type: GenAIType.STRING, description: 'Unique node ID' },
+              label: { type: GenAIType.STRING, description: 'Display text' },
+              shape: { type: GenAIType.STRING, description: 'box (default), circle, cylinder' },
+              color: { type: GenAIType.STRING }
+            },
+            required: ['id', 'label']
+          }
+        },
+        edges: {
+          type: GenAIType.ARRAY,
+          items: {
+            type: GenAIType.OBJECT,
+            properties: {
+              from: { type: GenAIType.STRING },
+              to: { type: GenAIType.STRING },
+              label: { type: GenAIType.STRING, description: 'Edge label (optional)' }
+            },
+            required: ['from', 'to']
+          }
+        }
+      },
+      required: ['nodes', 'edges']
+    }
+  },
+  {
     name: 'draw_rectangle',
-    description: 'Draw a rectangle/box on the whiteboard. Useful for architectural nodes, servers, or containers.',
+    description: 'Draw a specific rectangle/box at coordinates.',
     parameters: {
       type: GenAIType.OBJECT,
       properties: {
         x: { type: GenAIType.NUMBER, description: 'X coordinate (0-1000). Center is 500.' },
         y: { type: GenAIType.NUMBER, description: 'Y coordinate (0-800). Center is 400.' },
-        width: { type: GenAIType.NUMBER, description: 'Width of rectangle' },
-        height: { type: GenAIType.NUMBER, description: 'Height of rectangle' },
-        color: { type: GenAIType.STRING, description: 'Hex color code (e.g. #ff0000)' },
-        label: { type: GenAIType.STRING, description: 'Optional text label to place inside center' }
+        width: { type: GenAIType.NUMBER, description: 'Width' },
+        height: { type: GenAIType.NUMBER, description: 'Height' },
+        color: { type: GenAIType.STRING, description: 'Hex color' },
+        label: { type: GenAIType.STRING, description: 'Label text' }
       },
       required: ['x', 'y', 'width', 'height']
     }
   },
   {
     name: 'draw_circle',
-    description: 'Draw a circle. Useful for users, databases, or start/end nodes.',
+    description: 'Draw a specific circle.',
     parameters: {
       type: GenAIType.OBJECT,
       properties: {
-        x: { type: GenAIType.NUMBER, description: 'X coordinate of bounding box top-left' },
-        y: { type: GenAIType.NUMBER, description: 'Y coordinate of bounding box top-left' },
-        diameter: { type: GenAIType.NUMBER, description: 'Diameter of the circle' },
+        x: { type: GenAIType.NUMBER },
+        y: { type: GenAIType.NUMBER },
+        diameter: { type: GenAIType.NUMBER },
         color: { type: GenAIType.STRING },
-        label: { type: GenAIType.STRING, description: 'Optional text label to place inside center' }
+        label: { type: GenAIType.STRING }
       },
       required: ['x', 'y', 'diameter']
     }
   },
   {
     name: 'draw_line',
-    description: 'Draw a straight line or connector arrow between points.',
+    description: 'Draw a line between two specific points.',
     parameters: {
       type: GenAIType.OBJECT,
       properties: {
-        x1: { type: GenAIType.NUMBER, description: 'Start X' },
-        y1: { type: GenAIType.NUMBER, description: 'Start Y' },
-        x2: { type: GenAIType.NUMBER, description: 'End X' },
-        y2: { type: GenAIType.NUMBER, description: 'End Y' },
+        x1: { type: GenAIType.NUMBER },
+        y1: { type: GenAIType.NUMBER },
+        x2: { type: GenAIType.NUMBER },
+        y2: { type: GenAIType.NUMBER },
         color: { type: GenAIType.STRING }
       },
       required: ['x1', 'y1', 'x2', 'y2']
     }
   },
   {
-    name: 'draw_path',
-    description: 'Draw a freehand sketch, curve, or complex shape (like a person, cloud, or symbol) using a series of points.',
-    parameters: {
-      type: GenAIType.OBJECT,
-      properties: {
-        points: {
-          type: GenAIType.ARRAY,
-          description: 'A flat array of coordinates [x1, y1, x2, y2, x3, y3...]. Use at least 6 points for a visible curve.',
-          items: { type: GenAIType.NUMBER }
-        },
-        color: { type: GenAIType.STRING },
-        strokeWidth: { type: GenAIType.NUMBER }
-      },
-      required: ['points']
-    }
-  },
-  {
     name: 'add_text',
-    description: 'Write free-floating text on the whiteboard.',
+    description: 'Write text at a location.',
     parameters: {
       type: GenAIType.OBJECT,
       properties: {
@@ -111,20 +130,182 @@ const drawTools: FunctionDeclaration[] = [
         y: { type: GenAIType.NUMBER },
         text: { type: GenAIType.STRING },
         color: { type: GenAIType.STRING },
-        fontSize: { type: GenAIType.NUMBER, description: 'Font size scale (1-5), default 2' }
+        fontSize: { type: GenAIType.NUMBER, description: 'Scale 1-5' }
       },
       required: ['x', 'y', 'text']
     }
   },
   {
     name: 'clear_board',
-    description: 'Clear all elements from the whiteboard.',
+    description: 'Clear all elements.',
     parameters: {
       type: GenAIType.OBJECT,
       properties: {},
     }
   }
 ];
+
+// Helper to layout diagram nodes to prevent overlap using a Layered Graph approach
+const executeDiagramLayout = (args: any, startId: string): DrawingElement[] => {
+    const nodes = args.nodes || [];
+    const edges = args.edges || [];
+    let layout = args.layout || 'tiered'; // Default to tiered for structure
+    
+    const elements: DrawingElement[] = [];
+    const nodeMap = new Map<string, {x: number, y: number, w: number, h: number}>();
+    
+    // Layout Constants
+    const START_X = 100;
+    const START_Y = 200;
+    const BOX_W = 160;
+    const BOX_H = 80;
+    
+    if (layout === 'grid') {
+        const GRID_COLS = 3;
+        nodes.forEach((node: any, idx: number) => {
+            const col = idx % GRID_COLS;
+            const row = Math.floor(idx / GRID_COLS);
+            const x = START_X + col * (BOX_W + 100);
+            const y = START_Y + row * (BOX_H + 100);
+            nodeMap.set(node.id, { x, y, w: BOX_W, h: BOX_H });
+        });
+    } else {
+        // TIERED / LINEAR LAYOUT (DAG-like)
+        // 1. Calculate In-Degree to find roots (Rank 0)
+        const inDegree = new Map<string, number>();
+        const adj = new Map<string, string[]>();
+        
+        nodes.forEach((n: any) => { 
+            inDegree.set(n.id, 0);
+            adj.set(n.id, []);
+        });
+        
+        edges.forEach((e: any) => {
+            inDegree.set(e.to, (inDegree.get(e.to) || 0) + 1);
+            const neighbors = adj.get(e.from) || [];
+            neighbors.push(e.to);
+            adj.set(e.from, neighbors);
+        });
+
+        // 2. Assign Ranks (BFS)
+        const layers: string[][] = [];
+        let queue = nodes.filter((n: any) => inDegree.get(n.id) === 0).map((n: any) => n.id);
+        
+        // Handle cycles or disconnected graphs by forcing start if no roots found
+        if (queue.length === 0 && nodes.length > 0) queue.push(nodes[0].id);
+        
+        const visited = new Set<string>();
+        
+        while (queue.length > 0) {
+            layers.push([...queue]);
+            const nextQueue: string[] = [];
+            const currentLayerSet = new Set(queue);
+            
+            // Mark visited
+            queue.forEach(id => visited.add(id));
+
+            // Find next layer candidates
+            // Simply looking at children of current layer
+            queue.forEach(id => {
+                const children = adj.get(id) || [];
+                children.forEach(childId => {
+                    if (!visited.has(childId) && !currentLayerSet.has(childId) && !nextQueue.includes(childId)) {
+                        // Check if all parents processed (for true topological sort), 
+                        // but for visual simplicity, just pushing children next is often enough
+                        nextQueue.push(childId);
+                    }
+                });
+            });
+            queue = nextQueue;
+        }
+        
+        // Add leftovers (islands)
+        const leftovers = nodes.filter((n: any) => !visited.has(n.id)).map((n: any) => n.id);
+        if (leftovers.length > 0) layers.push(leftovers);
+
+        // 3. Assign Coordinates
+        layers.forEach((layer, layerIdx) => {
+            // Horizontal spacing between layers
+            const x = START_X + layerIdx * (BOX_W + 150);
+            
+            // Vertical centering
+            const layerHeight = layer.length * (BOX_H + 50);
+            const startY = Math.max(100, 400 - layerHeight / 2); // Center on screen Y=400
+            
+            layer.forEach((nodeId, nodeIdx) => {
+                const y = startY + nodeIdx * (BOX_H + 50);
+                nodeMap.set(nodeId, { x, y, w: BOX_W, h: BOX_H });
+            });
+        });
+    }
+
+    // Generate Elements from Map
+    nodeMap.forEach((pos, id) => {
+        const node = nodes.find((n: any) => n.id === id);
+        if (!node) return;
+        
+        const color = node.color || '#ffffff';
+        const elId = `${startId}-${id}`;
+
+        // Shape
+        elements.push({
+            id: elId,
+            type: node.shape === 'circle' ? 'circle' : 'rectangle',
+            x: pos.x, y: pos.y, 
+            width: pos.w, height: pos.h,
+            color, strokeWidth: 2
+        });
+
+        // Label
+        if (node.label) {
+            elements.push({
+                id: `${elId}-label`,
+                type: 'text',
+                x: pos.x + 15, y: pos.y + 15,
+                text: node.label,
+                color, strokeWidth: 1.5
+            });
+        }
+    });
+
+    // Draw Edges
+    edges.forEach((edge: any, idx: number) => {
+        const src = nodeMap.get(edge.from);
+        const dst = nodeMap.get(edge.to);
+        if (src && dst) {
+            // Calculate connecting points (Right side of Src -> Left side of Dst)
+            const x1 = src.x + src.w;
+            const y1 = src.y + src.h / 2;
+            const x2 = dst.x;
+            const y2 = dst.y + dst.h / 2;
+
+            // Simple line for now (could be Bezier)
+            elements.push({
+                id: `${startId}-edge-${idx}`,
+                type: 'line',
+                x: x1, y: y1,
+                width: x2 - x1, 
+                height: y2 - y1,
+                color: '#94a3b8',
+                strokeWidth: 2
+            });
+            
+            if (edge.label) {
+                elements.push({
+                    id: `${startId}-edge-lbl-${idx}`,
+                    type: 'text',
+                    x: (x1 + x2) / 2,
+                    y: (y1 + y2) / 2 - 20,
+                    text: edge.label,
+                    color: '#cbd5e1',
+                    strokeWidth: 1.5
+                });
+            }
+        }
+    });
+
+    return elements;
+};
 
 export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -151,7 +332,7 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack }) => {
   const [selectedElementIds, setSelectedElementIds] = useState<Set<string>>(new Set());
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState<Point | null>(null);
-  const [isPanning, setIsPanning] = useState(false); // For middle click or pan tool
+  const [isPanning, setIsPanning] = useState(false);
   const [panStart, setPanStart] = useState<Point | null>(null);
   const [selectionBox, setSelectionBox] = useState<{start: Point, current: Point} | null>(null);
 
@@ -248,7 +429,6 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack }) => {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
       // Apply Zoom & Pan Transform
-      // Order: Scale (DPR) -> Translate (Pan) -> Scale (Zoom)
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.translate(pan.x, pan.y);
       ctx.scale(zoom, zoom);
@@ -459,14 +639,9 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack }) => {
       // Handle Pan Tool or Middle Mouse Click
       if (tool === 'pan' || ('button' in e && e.button === 1)) {
           setIsPanning(true);
-          // Store screen coordinates for panning delta
-          const canvas = canvasRef.current;
-          if (canvas) {
-              const rect = canvas.getBoundingClientRect();
-              const clientX = 'touches' in e ? e.touches[0].clientX : (e as React.MouseEvent).clientX;
-              const clientY = 'touches' in e ? e.touches[0].clientY : (e as React.MouseEvent).clientY;
-              setPanStart({ x: clientX, y: clientY });
-          }
+          const clientX = 'touches' in e ? e.touches[0].clientX : (e as React.MouseEvent).clientX;
+          const clientY = 'touches' in e ? e.touches[0].clientY : (e as React.MouseEvent).clientY;
+          setPanStart({ x: clientX, y: clientY });
           return;
       }
 
@@ -477,7 +652,6 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack }) => {
 
       // SELECTION TOOL LOGIC
       if (tool === 'selection') {
-          // Find hit element (reverse iterate for z-order)
           let clickedId: string | null = null;
           for (let i = elements.length - 1; i >= 0; i--) {
               if (isPointInElement(x, y, elements[i])) {
@@ -490,7 +664,6 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack }) => {
               if (!selectedElementIds.has(clickedId)) {
                   setSelectedElementIds(new Set([clickedId]));
               }
-              
               setIsDragging(true);
               setDragStart({ x, y });
           } else {
@@ -527,14 +700,11 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack }) => {
   };
 
   const handleMouseMove = (e: React.MouseEvent | React.TouchEvent) => {
-      // PANNING
       if (isPanning && panStart) {
           const clientX = 'touches' in e ? e.touches[0].clientX : (e as React.MouseEvent).clientX;
           const clientY = 'touches' in e ? e.touches[0].clientY : (e as React.MouseEvent).clientY;
-          
           const dx = clientX - panStart.x;
           const dy = clientY - panStart.y;
-          
           setPan(prev => ({ x: prev.x + dx, y: prev.y + dy }));
           setPanStart({ x: clientX, y: clientY });
           return;
@@ -542,7 +712,6 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack }) => {
 
       const { x, y } = getPointerPos(e);
 
-      // DRAGGING SELECTION
       if (isDragging && selectedElementIds.size > 0 && dragStart) {
           const dx = x - dragStart.x;
           const dy = y - dragStart.y;
@@ -561,13 +730,11 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack }) => {
           return;
       }
 
-      // RUBBER BAND SELECTION
       if (selectionBox) {
           setSelectionBox(prev => prev ? { ...prev, current: { x, y } } : null);
           return;
       }
 
-      // DRAWING
       if (!isDrawing || !currentElement) return;
 
       if (tool === 'pencil' || tool === 'eraser') {
@@ -597,7 +764,6 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack }) => {
           return;
       }
 
-      // FINISH DRAG
       if (isDragging) {
           setIsDragging(false);
           setDragStart(null);
@@ -605,7 +771,6 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack }) => {
           return;
       }
 
-      // FINISH SELECTION BOX
       if (selectionBox) {
           const sb = selectionBox;
           const x1 = Math.min(sb.start.x, sb.current.x);
@@ -614,10 +779,8 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack }) => {
           const y2 = Math.max(sb.start.y, sb.current.y);
 
           const newSelection = new Set<string>();
-          
           elements.forEach(el => {
               const b = getElementBounds(el);
-              // Check if bounds roughly intersect selection box
               if (!(x2 < b.minX || x1 > b.maxX || y2 < b.minY || y1 > b.maxY)) {
                   newSelection.add(el.id);
               }
@@ -628,7 +791,6 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack }) => {
           return;
       }
 
-      // FINISH DRAWING
       if (!isDrawing || !currentElement) return;
       setIsDrawing(false);
       
@@ -643,11 +805,10 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack }) => {
       setCurrentElement(null);
   };
 
-  // Zoom Controls
   const handleZoom = (direction: 'in' | 'out') => {
       setZoom(prev => {
           const newZoom = direction === 'in' ? prev * 1.2 : prev / 1.2;
-          return Math.min(Math.max(newZoom, 0.1), 5); // Limit zoom range
+          return Math.min(Math.max(newZoom, 0.1), 5);
       });
   };
 
@@ -666,7 +827,7 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack }) => {
       const tCtx = tempCanvas.getContext('2d');
       if (!tCtx) return;
       
-      tCtx.fillStyle = '#0f172a'; // slate-950 background
+      tCtx.fillStyle = '#0f172a';
       tCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
       tCtx.drawImage(canvas, 0, 0);
       
@@ -699,7 +860,6 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack }) => {
 
   useEffect(() => {
       return () => {
-          // Cleanup live connection
           liveServiceRef.current?.disconnect();
       };
   }, []);
@@ -729,19 +889,20 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack }) => {
       const systemInstruction = `You are a Technical Illustrator and Whiteboard Assistant.
       
       ROLE & BEHAVIOR:
-      1. Listen to user requests to draw architectural or technical diagrams.
-      2. When asked to draw a diagram (e.g., "DynamoDB Architecture"), you MUST Plan and Draw ALL components in the diagram.
-         - Do not stop after one box.
-         - Typical DynamoDB flow: Client -> API Gateway -> Lambda -> DynamoDB. Draw all 4.
-         - Use 'draw_rectangle' for nodes, 'draw_circle' for databases/users, 'draw_line' for connections.
-         - Use 'add_text' to label everything clearly.
-      3. Layout:
-         - Start drawing from the left side (x=100) to right side (x=900).
-         - Keep components spaced out.
-         - Use the center (500, 400) as the anchor.
-      4. Always confirm what you drew verbally after finishing the tool calls.
+      1. When asked to draw an architecture or diagram (e.g., "DynamoDB Architecture", "React Component Flow"), 
+         you MUST use the 'generate_diagram' tool.
+      2. DO NOT try to use 'draw_rectangle' to manually position nodes for complex systems.
+         - You are bad at coordinates.
+         - The system has a layout engine.
+      3. Thinking Process for Diagrams:
+         - Identify the components (Nodes).
+         - Identify the relationships (Edges).
+         - Call 'generate_diagram' with this logical list.
+         - The system will auto-arrange them (e.g. User at top, DB at bottom).
       
-      If you receive PlantUML or Mermaid code in the prompt, interpret it visually and draw it using primitives.
+      Thinking in PlantUML:
+      - Mentally construct a PlantUML diagram (e.g. "[User] -> [API] -> [DB]").
+      - Convert this mental model into the JSON for 'generate_diagram'.
       `;
 
       try {
@@ -751,7 +912,7 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack }) => {
               {
                   onOpen: () => {
                       setLiveStatus('connected');
-                      setChatHistory(prev => [...prev, { role: 'ai', text: "Live session connected. I'm listening..." }]);
+                      setChatHistory(prev => [...prev, { role: 'ai', text: "Live session connected. Ask me to draw architectures!" }]);
                   },
                   onClose: () => {
                       setLiveStatus('disconnected');
@@ -763,11 +924,8 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack }) => {
                       setIsLiveMode(false);
                       setChatHistory(prev => [...prev, { role: 'ai', text: "Connection error." }]);
                   },
-                  onVolumeUpdate: (vol) => {
-                      // Optional visualization
-                  },
+                  onVolumeUpdate: (vol) => {},
                   onTranscript: (text, isUser) => {
-                      // Fix: Update the last message if it's the same role to prevent newline spam
                       setChatHistory(prev => {
                           const last = prev[prev.length - 1];
                           if (last && last.role === (isUser ? 'user' : 'ai')) {
@@ -779,14 +937,16 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack }) => {
                       });
                   },
                   onToolCall: async (toolCall: any) => {
-                      // Execute drawing tools
                       for (const fc of toolCall.functionCalls) {
                           console.log("Tool Call:", fc.name, fc.args);
                           const args = fc.args;
                           const id = crypto.randomUUID();
                           const newEls: DrawingElement[] = [];
                           
-                          if (fc.name === 'draw_rectangle') {
+                          if (fc.name === 'generate_diagram') {
+                              const layoutEls = executeDiagramLayout(args, id);
+                              newEls.push(...layoutEls);
+                          } else if (fc.name === 'draw_rectangle') {
                               newEls.push({
                                   id, type: 'rectangle',
                                   x: args.x, y: args.y, width: args.width, height: args.height,
@@ -826,24 +986,6 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack }) => {
                                   text: args.text,
                                   color: args.color || color, strokeWidth: args.fontSize || strokeWidth
                               });
-                          } else if (fc.name === 'draw_path') {
-                              // Convert flat array [x1,y1,x2,y2] to point objects
-                              const rawPoints = args.points as number[];
-                              const points: Point[] = [];
-                              for(let i=0; i<rawPoints.length; i+=2) {
-                                  if (i+1 < rawPoints.length) {
-                                      points.push({ x: rawPoints[i], y: rawPoints[i+1] });
-                                  }
-                              }
-                              if (points.length > 0) {
-                                  newEls.push({
-                                      id, type: 'pencil',
-                                      x: points[0].x, y: points[0].y, // Reference point
-                                      points: points,
-                                      color: (args.color as string) || color, 
-                                      strokeWidth: (args.strokeWidth as number) || strokeWidth
-                                  });
-                              }
                           } else if (fc.name === 'clear_board') {
                               setElements([]);
                           }
@@ -852,7 +994,6 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack }) => {
                               setElements(prev => [...prev, ...newEls]);
                           }
                           
-                          // Send response
                           liveServiceRef.current?.sendToolResponse({
                               functionResponses: [{
                                   id: fc.id, name: fc.name, response: { result: "ok" }
@@ -896,9 +1037,15 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack }) => {
               imagePart = { inlineData: { mimeType: 'image/png', data: base64Image } };
           }
 
-          const systemInstruction = `You are a helpful Whiteboard Assistant. 
-          You can Draw shapes, lines, text, and FREEHAND PATHS using the provided tools.
-          The canvas is roughly 1000x800. Coordinate (0,0) is top-left.`;
+          const systemInstruction = `You are a helpful Whiteboard Assistant.
+          
+          Protocol for Diagrams:
+          1. Use 'generate_diagram'.
+          2. Structure nodes and edges logically.
+          3. DO NOT use manual 'draw_rectangle' coordinates for system architectures. The user wants a clean, auto-layout diagram.
+          
+          Think: "I will define the nodes and edges, and the system will draw them spaced out."
+          `;
 
           const contents = [
               ...newHistory.map(m => ({ role: m.role === 'ai' ? 'model' : 'user', parts: [{ text: m.text }] })),
@@ -926,7 +1073,11 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack }) => {
                   const args = fc.args;
                   const id = crypto.randomUUID();
                   
-                  if (fc.name === 'draw_rectangle') {
+                  if (fc.name === 'generate_diagram') {
+                      const layoutEls = executeDiagramLayout(args, id);
+                      newElements.push(...layoutEls);
+                      aiText += `\n\n*(Generated diagram with ${args.nodes.length} nodes using '${args.layout || 'tiered'}' layout)*`;
+                  } else if (fc.name === 'draw_rectangle') {
                       newElements.push({
                           id, type: 'rectangle',
                           x: args.x as number, y: args.y as number,
@@ -948,24 +1099,6 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack }) => {
                           height: (args.y2 as number) - (args.y1 as number),
                           color: (args.color as string) || color, strokeWidth
                       });
-                  } else if (fc.name === 'draw_path') {
-                      // Convert flat array [x1,y1,x2,y2] to point objects
-                      const rawPoints = args.points as number[];
-                      const points: Point[] = [];
-                      for(let i=0; i<rawPoints.length; i+=2) {
-                          if (i+1 < rawPoints.length) {
-                              points.push({ x: rawPoints[i], y: rawPoints[i+1] });
-                          }
-                      }
-                      if (points.length > 0) {
-                          newElements.push({
-                              id, type: 'pencil',
-                              x: points[0].x, y: points[0].y, // Reference point
-                              points: points,
-                              color: (args.color as string) || color, 
-                              strokeWidth: (args.strokeWidth as number) || strokeWidth
-                          });
-                      }
                   } else if (fc.name === 'add_text') {
                       newElements.push({
                           id, type: 'text',
@@ -984,7 +1117,7 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack }) => {
               } else if (newElements.length > 0) {
                   setElements(prev => [...prev, ...newElements]);
                   saveHistory([...elements, ...newElements]);
-                  aiText += `\n\n*(Added ${newElements.length} elements)*`;
+                  aiText += `\n\n*(Added elements)*`;
               }
           }
 
@@ -1195,8 +1328,8 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack }) => {
                   {chatHistory.length === 0 && (
                       <div className="text-center text-slate-500 py-8">
                           <Bot size={32} className="mx-auto mb-2 opacity-50"/>
-                          <p className="text-xs">Ask me to analyze the board or draw shapes for you.</p>
-                          <p className="text-xs italic mt-2">"Draw a red stick figure"</p>
+                          <p className="text-xs">Ask me to draw complex architectures or diagrams.</p>
+                          <p className="text-xs italic mt-2">"Draw DynamoDB architecture"</p>
                       </div>
                   )}
                   {chatHistory.map((msg, i) => (
