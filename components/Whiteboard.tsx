@@ -3,11 +3,12 @@ import React, { useRef, useState, useEffect, useCallback } from 'react';
 import { 
   ArrowLeft, Square, Circle, Minus, Type, Eraser, 
   Undo, Redo, Download, MousePointer, Pencil, Bot, 
-  Loader2, X, Palette, Trash2, Maximize, Sparkles
+  Loader2, X, Palette, Trash2, Maximize, Sparkles, Send, Mic, MicOff, Image as ImageIcon
 } from 'lucide-react';
-import { GoogleGenAI } from '@google/genai';
+import { GoogleGenAI, FunctionDeclaration, Type as GenAIType } from '@google/genai';
 import { GEMINI_API_KEY } from '../services/private_keys';
 import { MarkdownView } from './MarkdownView';
+import { ChatMessage } from '../types';
 
 interface WhiteboardProps {
   onBack: () => void;
@@ -33,6 +34,76 @@ interface DrawingElement {
   strokeWidth: number;
 }
 
+// --- TOOL DEFINITIONS FOR GEMINI ---
+const drawTools: FunctionDeclaration[] = [
+  {
+    name: 'draw_rectangle',
+    description: 'Draw a rectangle on the whiteboard.',
+    parameters: {
+      type: GenAIType.OBJECT,
+      properties: {
+        x: { type: GenAIType.NUMBER, description: 'X coordinate (0-1000)' },
+        y: { type: GenAIType.NUMBER, description: 'Y coordinate (0-800)' },
+        width: { type: GenAIType.NUMBER, description: 'Width of rectangle' },
+        height: { type: GenAIType.NUMBER, description: 'Height of rectangle' },
+        color: { type: GenAIType.STRING, description: 'Hex color code (e.g. #ff0000)' }
+      },
+      required: ['x', 'y', 'width', 'height']
+    }
+  },
+  {
+    name: 'draw_circle',
+    description: 'Draw a circle on the whiteboard.',
+    parameters: {
+      type: GenAIType.OBJECT,
+      properties: {
+        x: { type: GenAIType.NUMBER, description: 'X coordinate of bounding box top-left' },
+        y: { type: GenAIType.NUMBER, description: 'Y coordinate of bounding box top-left' },
+        diameter: { type: GenAIType.NUMBER, description: 'Diameter of the circle' },
+        color: { type: GenAIType.STRING }
+      },
+      required: ['x', 'y', 'diameter']
+    }
+  },
+  {
+    name: 'draw_line',
+    description: 'Draw a straight line.',
+    parameters: {
+      type: GenAIType.OBJECT,
+      properties: {
+        x1: { type: GenAIType.NUMBER, description: 'Start X' },
+        y1: { type: GenAIType.NUMBER, description: 'Start Y' },
+        x2: { type: GenAIType.NUMBER, description: 'End X' },
+        y2: { type: GenAIType.NUMBER, description: 'End Y' },
+        color: { type: GenAIType.STRING }
+      },
+      required: ['x1', 'y1', 'x2', 'y2']
+    }
+  },
+  {
+    name: 'add_text',
+    description: 'Write text on the whiteboard.',
+    parameters: {
+      type: GenAIType.OBJECT,
+      properties: {
+        x: { type: GenAIType.NUMBER },
+        y: { type: GenAIType.NUMBER },
+        text: { type: GenAIType.STRING },
+        color: { type: GenAIType.STRING }
+      },
+      required: ['x', 'y', 'text']
+    }
+  },
+  {
+    name: 'clear_board',
+    description: 'Clear all elements from the whiteboard.',
+    parameters: {
+      type: GenAIType.OBJECT,
+      properties: {},
+    }
+  }
+];
+
 export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null); 
@@ -56,10 +127,50 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack }) => {
   const [dragStart, setDragStart] = useState<Point | null>(null);
   const [selectionBox, setSelectionBox] = useState<{start: Point, current: Point} | null>(null);
 
-  // AI Chat State
-  const [isAiOpen, setIsAiOpen] = useState(false);
-  const [aiAnalysis, setAiAnalysis] = useState<string>('');
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  // AI Assistant State
+  const [isAssistantOpen, setIsAssistantOpen] = useState(false);
+  const [chatHistory, setChatHistory] = useState<ChatMessage[]>([]);
+  const [chatInput, setChatInput] = useState('');
+  const [isAiProcessing, setIsAiProcessing] = useState(false);
+  const [isVoiceListening, setIsVoiceListening] = useState(false);
+  const recognitionRef = useRef<any>(null);
+  const chatEndRef = useRef<HTMLDivElement>(null);
+
+  // Setup Speech Recognition
+  useEffect(() => {
+    if ('webkitSpeechRecognition' in window) {
+      const SpeechRecognition = (window as any).webkitSpeechRecognition;
+      recognitionRef.current = new SpeechRecognition();
+      recognitionRef.current.continuous = false;
+      recognitionRef.current.interimResults = false;
+      recognitionRef.current.lang = 'en-US';
+
+      recognitionRef.current.onresult = (event: any) => {
+        const transcript = event.results[0][0].transcript;
+        setChatInput(prev => prev ? prev + ' ' + transcript : transcript);
+        setIsVoiceListening(false);
+      };
+
+      recognitionRef.current.onerror = (event: any) => {
+        console.error("Speech error", event.error);
+        setIsVoiceListening(false);
+      };
+      
+      recognitionRef.current.onend = () => {
+         setIsVoiceListening(false);
+      };
+    }
+  }, []);
+
+  const toggleVoiceListen = () => {
+      if (isVoiceListening) {
+          recognitionRef.current?.stop();
+          setIsVoiceListening(false);
+      } else {
+          recognitionRef.current?.start();
+          setIsVoiceListening(true);
+      }
+  };
 
   // Helper: Get Element Bounds
   const getElementBounds = (el: DrawingElement) => {
@@ -268,6 +379,13 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack }) => {
     return () => resizeObserver.disconnect();
   }, [redraw]);
 
+  // Scroll chat
+  useEffect(() => {
+      if (isAssistantOpen) {
+          chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      }
+  }, [chatHistory, isAssistantOpen]);
+
   const saveHistory = (newElements: DrawingElement[]) => {
       const newHistory = history.slice(0, historyStep + 1);
       newHistory.push(newElements);
@@ -354,8 +472,6 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack }) => {
           }
           
           if (clickedId) {
-              // If we clicked an item NOT in current selection, replace selection
-              // (Standard behavior: clicking an item selects it. Clicking an already selected group keeps group.)
               if (!selectedElementIds.has(clickedId)) {
                   setSelectedElementIds(new Set([clickedId]));
               }
@@ -363,7 +479,6 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack }) => {
               setIsDragging(true);
               setDragStart({ x, y });
           } else {
-              // Clicked empty space: Clear selection and start rubber band
               setSelectedElementIds(new Set());
               setSelectionBox({ start: { x, y }, current: { x, y } });
           }
@@ -378,7 +493,7 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack }) => {
 
       // DRAWING TOOL LOGIC
       setIsDrawing(true);
-      setSelectedElementIds(new Set()); // Clear selection when drawing
+      setSelectedElementIds(new Set()); 
 
       const id = crypto.randomUUID();
       const newEl: DrawingElement = {
@@ -403,7 +518,7 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack }) => {
       if (isDragging && selectedElementIds.size > 0 && dragStart) {
           const dx = x - dragStart.x;
           const dy = y - dragStart.y;
-          setDragStart({ x, y }); // Update drag anchor
+          setDragStart({ x, y }); 
 
           setElements(prev => prev.map(el => {
               if (selectedElementIds.has(el.id)) {
@@ -468,10 +583,6 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack }) => {
           
           elements.forEach(el => {
               const b = getElementBounds(el);
-              // Check intersection of two rectangles
-              // Box1 (Selection): x1, y1, x2, y2
-              // Box2 (Element): b.minX, b.minY, b.maxX, b.maxY
-              // If they don't NOT intersect, they intersect
               if (!(x2 < b.minX || x1 > b.maxX || y2 < b.minY || y1 > b.maxY)) {
                   newSelection.add(el.id);
               }
@@ -517,43 +628,6 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack }) => {
       link.click();
   };
 
-  const handleAskAI = async () => {
-      const canvas = canvasRef.current;
-      if (!canvas) return;
-      
-      setIsAiOpen(true);
-      setIsAnalyzing(true);
-      setAiAnalysis('');
-
-      try {
-          const base64Image = canvas.toDataURL('image/png').split(',')[1];
-          const apiKey = localStorage.getItem('gemini_api_key') || GEMINI_API_KEY || process.env.API_KEY || '';
-          if (!apiKey) throw new Error("API Key required");
-          
-          const ai = new GoogleGenAI({ apiKey });
-          const prompt = "You are an AI assistant viewing a whiteboard. Analyze this sketch. If it's a diagram, explain the architecture. If it's code, explain the logic. If it's a math problem, solve it. Be concise and helpful.";
-          
-          const response = await ai.models.generateContent({
-              model: 'gemini-2.5-flash',
-              contents: [
-                  {
-                      parts: [
-                          { text: prompt },
-                          { inlineData: { mimeType: 'image/png', data: base64Image } }
-                      ]
-                  }
-              ]
-          });
-          
-          setAiAnalysis(response.text || "No analysis generated.");
-
-      } catch(e: any) {
-          setAiAnalysis(`Error: ${e.message}`);
-      } finally {
-          setIsAnalyzing(false);
-      }
-  };
-
   const clearCanvas = () => {
       if (confirm("Clear entire whiteboard?")) {
           setElements([]);
@@ -570,6 +644,120 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack }) => {
           setElements(nextElements);
           saveHistory(nextElements);
           setSelectedElementIds(new Set());
+      }
+  };
+
+  // --- AI ASSISTANT IMPLEMENTATION ---
+
+  const handleChatSubmit = async () => {
+      if (!chatInput.trim()) return;
+      
+      const userMsg = chatInput;
+      setChatInput('');
+      
+      const newHistory = [...chatHistory, { role: 'user', text: userMsg }];
+      setChatHistory(newHistory as any);
+      setIsAiProcessing(true);
+
+      try {
+          const apiKey = localStorage.getItem('gemini_api_key') || GEMINI_API_KEY || process.env.API_KEY || '';
+          if (!apiKey) throw new Error("API Key required. Please set it in Settings.");
+          
+          const ai = new GoogleGenAI({ apiKey });
+          
+          // Capture current canvas for context
+          const canvas = canvasRef.current;
+          let imagePart = null;
+          if (canvas) {
+              const base64Image = canvas.toDataURL('image/png').split(',')[1];
+              imagePart = { inlineData: { mimeType: 'image/png', data: base64Image } };
+          }
+
+          const systemInstruction = `You are a helpful Whiteboard Assistant. 
+          You can Draw shapes, lines, and text using the provided tools.
+          The canvas is roughly 1000x800. Coordinate (0,0) is top-left.
+          If the user asks to analyze the board, describe what you see.
+          If the user asks to draw something, use the tools.
+          If the user asks to clear, use the clear tool.`;
+
+          const contents = [
+              ...newHistory.map(m => ({ role: m.role === 'ai' ? 'model' : 'user', parts: [{ text: m.text }] })),
+              { role: 'user', parts: imagePart ? [imagePart, { text: userMsg }] : [{ text: userMsg }] }
+          ];
+
+          const response = await ai.models.generateContent({
+              model: 'gemini-2.5-flash',
+              contents: contents,
+              config: {
+                  systemInstruction,
+                  tools: [{ functionDeclarations: drawTools }],
+                  toolConfig: { functionCallingConfig: { mode: 'AUTO' } }
+              }
+          });
+
+          let aiText = response.text || "";
+          
+          // Execute Tools
+          if (response.functionCalls) {
+              const newElements: DrawingElement[] = [];
+              let shouldClear = false;
+
+              for (const fc of response.functionCalls) {
+                  const args = fc.args;
+                  const id = crypto.randomUUID();
+                  
+                  if (fc.name === 'draw_rectangle') {
+                      newElements.push({
+                          id, type: 'rectangle',
+                          x: args.x as number, y: args.y as number,
+                          width: args.width as number, height: args.height as number,
+                          color: (args.color as string) || color, strokeWidth
+                      });
+                  } else if (fc.name === 'draw_circle') {
+                      newElements.push({
+                          id, type: 'circle',
+                          x: args.x as number, y: args.y as number,
+                          width: args.diameter as number, height: args.diameter as number,
+                          color: (args.color as string) || color, strokeWidth
+                      });
+                  } else if (fc.name === 'draw_line') {
+                      newElements.push({
+                          id, type: 'line',
+                          x: args.x1 as number, y: args.y1 as number,
+                          width: (args.x2 as number) - (args.x1 as number), 
+                          height: (args.y2 as number) - (args.y1 as number),
+                          color: (args.color as string) || color, strokeWidth
+                      });
+                  } else if (fc.name === 'add_text') {
+                      newElements.push({
+                          id, type: 'text',
+                          x: args.x as number, y: args.y as number,
+                          text: args.text as string,
+                          color: (args.color as string) || color, strokeWidth
+                      });
+                  } else if (fc.name === 'clear_board') {
+                      shouldClear = true;
+                  }
+              }
+
+              if (shouldClear) {
+                  setElements([]);
+                  aiText += "\n\n*(Board cleared)*";
+              } else if (newElements.length > 0) {
+                  setElements(prev => [...prev, ...newElements]);
+                  saveHistory([...elements, ...newElements]);
+                  aiText += `\n\n*(Added ${newElements.length} elements)*`;
+              }
+          }
+
+          if (!aiText) aiText = "Done.";
+          
+          setChatHistory(prev => [...prev, { role: 'ai', text: aiText }]);
+
+      } catch(e: any) {
+          setChatHistory(prev => [...prev, { role: 'ai', text: `Error: ${e.message}` }]);
+      } finally {
+          setIsAiProcessing(false);
       }
   };
 
@@ -658,8 +846,8 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack }) => {
           </button>
           
           <button 
-              onClick={handleAskAI} 
-              className="flex items-center gap-2 px-3 py-1.5 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white rounded-xl text-xs font-bold shadow-lg ml-2 flex-shrink-0"
+              onClick={() => setIsAssistantOpen(!isAssistantOpen)} 
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-bold shadow-lg ml-2 flex-shrink-0 transition-colors ${isAssistantOpen ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-indigo-400 hover:bg-slate-700'}`}
           >
               <Bot size={16} />
               <span className="hidden sm:inline">Ask AI</span>
@@ -733,24 +921,61 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack }) => {
           )}
       </div>
 
-      {/* AI Panel */}
-      {isAiOpen && (
-          <div className="absolute top-24 right-4 w-80 bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[60vh] animate-fade-in-up z-30">
+      {/* AI Assistant Panel */}
+      {isAssistantOpen && (
+          <div className="absolute top-24 right-4 w-96 bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[70vh] animate-fade-in-up z-30">
               <div className="p-3 border-b border-slate-800 bg-slate-950/50 flex justify-between items-center">
                   <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                      <Sparkles size={14} className="text-purple-400"/> AI Analysis
+                      <Sparkles size={14} className="text-indigo-400"/> AI Assistant
                   </h3>
-                  <button onClick={() => setIsAiOpen(false)}><X size={16} className="text-slate-400 hover:text-white"/></button>
+                  <button onClick={() => setIsAssistantOpen(false)}><X size={16} className="text-slate-400 hover:text-white"/></button>
               </div>
-              <div className="p-4 overflow-y-auto flex-1 text-sm text-slate-300">
-                  {isAnalyzing ? (
-                      <div className="flex flex-col items-center justify-center py-8 text-indigo-400 gap-2">
-                          <Loader2 className="animate-spin" size={24} />
-                          <span className="text-xs">Vision Model is thinking...</span>
+              
+              <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-slate-900 scrollbar-thin scrollbar-thumb-slate-800">
+                  {chatHistory.length === 0 && (
+                      <div className="text-center text-slate-500 py-8">
+                          <Bot size={32} className="mx-auto mb-2 opacity-50"/>
+                          <p className="text-xs">Ask me to analyze the board or draw shapes for you.</p>
+                          <p className="text-xs italic mt-2">"Draw a red flow chart"</p>
                       </div>
-                  ) : (
-                      <MarkdownView content={aiAnalysis} />
                   )}
+                  {chatHistory.map((msg, i) => (
+                      <div key={i} className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
+                          <div className={`max-w-[85%] p-3 rounded-xl text-sm ${msg.role === 'user' ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-300'}`}>
+                              <MarkdownView content={msg.text} />
+                          </div>
+                      </div>
+                  ))}
+                  {isAiProcessing && (
+                      <div className="flex items-center gap-2 text-slate-500 text-xs">
+                          <Loader2 size={12} className="animate-spin"/> Thinking...
+                      </div>
+                  )}
+                  <div ref={chatEndRef} />
+              </div>
+
+              <div className="p-3 border-t border-slate-800 bg-slate-950/50 flex items-center gap-2">
+                  <button 
+                      onClick={toggleVoiceListen}
+                      className={`p-2 rounded-full transition-colors ${isVoiceListening ? 'bg-red-500 text-white animate-pulse' : 'bg-slate-800 text-slate-400 hover:text-white'}`}
+                  >
+                      {isVoiceListening ? <MicOff size={16}/> : <Mic size={16}/>}
+                  </button>
+                  <input 
+                      type="text" 
+                      value={chatInput}
+                      onChange={(e) => setChatInput(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && handleChatSubmit()}
+                      placeholder="Type or speak a command..."
+                      className="flex-1 bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500"
+                  />
+                  <button 
+                      onClick={handleChatSubmit}
+                      disabled={!chatInput.trim() || isAiProcessing}
+                      className="p-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white rounded-lg transition-colors"
+                  >
+                      <Send size={16}/>
+                  </button>
               </div>
           </div>
       )}
