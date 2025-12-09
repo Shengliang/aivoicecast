@@ -172,6 +172,8 @@ const App: React.FC = () => {
     // CHECK URL FOR SHARED SESSION (Unified)
     const params = new URLSearchParams(window.location.search);
     const session = params.get('session');
+    const viewParam = params.get('view');
+    
     // Legacy support
     const codeSession = params.get('code_session');
     const whiteboardSession = params.get('whiteboard_session');
@@ -182,10 +184,14 @@ const App: React.FC = () => {
     if (activeSession) {
         setSharedSessionId(activeSession);
         
-        // Auto-route based on legacy params if specific, otherwise default to Code
-        if (whiteboardSession) setViewState('whiteboard');
-        else if (codeSession) setViewState('code_studio');
-        // If unified session, stay on current view or default to code if generic load
+        // Auto-route based on unified view param or legacy params
+        if (viewParam === 'code_studio' || viewParam === 'whiteboard') {
+            setViewState(viewParam as ExtendedViewState);
+        } else if (whiteboardSession) {
+            setViewState('whiteboard');
+        } else if (codeSession) {
+            setViewState('code_studio');
+        }
     }
 
     let unsubscribeAuth = () => {};

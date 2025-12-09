@@ -708,6 +708,7 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack, sessionId, onSes
         
         const url = new URL(window.location.href);
         url.searchParams.set('session', boardId);
+        url.searchParams.set('view', 'whiteboard'); // Force view
         // Clean up old params
         url.searchParams.delete('whiteboard_session');
         

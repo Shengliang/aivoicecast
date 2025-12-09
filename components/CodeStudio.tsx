@@ -788,6 +788,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
           
           const url = new URL(window.location.href);
           url.searchParams.set('session', sessionToUse);
+          url.searchParams.set('view', 'code_studio'); // Force view
           // Remove old params if any
           url.searchParams.delete('code_session');
           
