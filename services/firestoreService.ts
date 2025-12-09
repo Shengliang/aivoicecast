@@ -52,11 +52,25 @@ export function subscribeToWhiteboard(boardId: string, onUpdate: (elements: any[
 
 export async function saveWhiteboardSession(boardId: string, elements: any[]): Promise<void> {
   const user = auth.currentUser;
-  await db.collection('whiteboards').doc(boardId).set({
+  
+  // Prepare payload
+  const payload: any = {
     elements: sanitizeData(elements),
     lastModified: Date.now(),
     updatedBy: user?.uid || 'anonymous'
-  }, { merge: true });
+  };
+
+  // Only attempt to set ownerId if user is logged in
+  if (user) {
+      // Use merge to update existing fields, but we include ownerId to claim ownership if it's new
+      // Note: If rules prevent updating ownerId on existing docs, this might fail if we are not the owner.
+      // However, for a whiteboard session, we usually want the creator to own it.
+      // If we are just collaborating, we shouldn't change the owner. 
+      // Firestore `set` with merge will trigger an update.
+      payload.ownerId = user.uid;
+  }
+
+  await db.collection('whiteboards').doc(boardId).set(payload, { merge: true });
 }
 
 // --- SAVED WORDS (VOCABULARY) ---

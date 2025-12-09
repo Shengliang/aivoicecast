@@ -363,7 +363,9 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack, sessionId }) => 
 
   const pushToCloud = useCallback((newElements: DrawingElement[]) => {
       if (isSharedSession && currentSessionIdRef.current) {
-          saveWhiteboardSession(currentSessionIdRef.current, newElements);
+          saveWhiteboardSession(currentSessionIdRef.current, newElements).catch(e => {
+              console.warn("Failed to push to cloud (likely permission error for guest):", e);
+          });
       }
   }, [isSharedSession]);
 
@@ -639,16 +641,22 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack, sessionId }) => 
       const boardId = currentSessionIdRef.current;
       if (!boardId) return;
       
-      // Save current state first
-      await saveWhiteboardSession(boardId, elements);
-      
-      const url = new URL(window.location.href);
-      url.searchParams.set('whiteboard_session', boardId);
-      
-      await navigator.clipboard.writeText(url.toString());
-      alert("Shared Whiteboard Link Copied!\n\nSend this to friends to collaborate in real-time.");
-      
-      setIsSharedSession(true);
+      try {
+        // Save current state first
+        await saveWhiteboardSession(boardId, elements);
+        
+        const url = new URL(window.location.href);
+        url.searchParams.set('whiteboard_session', boardId);
+        
+        await navigator.clipboard.writeText(url.toString());
+        alert("Shared Whiteboard Link Copied!\n\nSend this to friends to collaborate in real-time.");
+        
+        setIsSharedSession(true);
+      } catch(e: any) {
+          console.error(e);
+          const msg = e.message || "Unknown error";
+          alert(`Failed to share whiteboard: ${msg}. Check Firestore Rules.`);
+      }
   };
 
   const getPointerPos = (e: React.MouseEvent | React.TouchEvent) => {

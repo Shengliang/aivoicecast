@@ -1049,19 +1049,37 @@ If the user asks questions, answer based on this new context. If they ask to cha
       // 1. Ensure project is saved to Firestore
       setIsSaving(true);
       try {
-          await saveCodeProject(project);
+          // CRITICAL FIX: Ensure unique ID if using default template OR public repo to prevent permission collision.
+          // This forces a new document creation where the current user is the owner.
+          const isTemplate = ['proj-is-bst', 'proj-build-bst', 'proj-empty-cpp'].includes(project.id);
+          const isPublicRepo = project.id.startsWith('gh-');
+          const isNotOwned = project.ownerId && project.ownerId !== currentUser.uid;
+
+          let projectToSave = { ...project };
+
+          if (isTemplate || isPublicRepo || isNotOwned) {
+              const newId = `session-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+              projectToSave = { ...projectToSave, id: newId, ownerId: currentUser.uid };
+              setProject(projectToSave); // Update state to reflect new ID
+          } else {
+              // Ensure owner is set on existing personal project if missing
+              if (!projectToSave.ownerId) projectToSave.ownerId = currentUser.uid;
+          }
+
+          await saveCodeProject(projectToSave);
           
           // 2. Generate Link
           const url = new URL(window.location.href);
-          url.searchParams.set('code_session', project.id);
+          url.searchParams.set('code_session', projectToSave.id);
           
           await navigator.clipboard.writeText(url.toString());
           alert("Session Link Copied to Clipboard!\n\nSend this to your team members. They can join and edit in real-time.");
           
           setIsSharedSession(true);
-      } catch(e) {
+      } catch(e: any) {
           console.error(e);
-          alert("Failed to create share link.");
+          const msg = e.message || "Unknown error";
+          alert(`Failed to create share link: ${msg}`);
       } finally {
           setIsSaving(false);
       }
