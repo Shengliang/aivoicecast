@@ -399,7 +399,6 @@ const CodeCursor: React.FC<{ cursor: CursorPosition; currentLine: number }> = ({
     const charWidth = 8.4; // Approx char width for standard monospace font at 14px
     
     // Don't render if not on current file or user is self (should be filtered already)
-    // Basic positioning (Assuming non-wrapped lines for simplicity in code editor)
     const top = (cursor.line - 1) * lineHeight;
     const left = cursor.column * charWidth + 16; // +16 padding
 
@@ -540,6 +539,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
   const [showCommitModal, setShowCommitModal] = useState(false);
   const [needsGitHubReauth, setNeedsGitHubReauth] = useState(false);
   const [isSharedSession, setIsSharedSession] = useState(false);
+  const [guestId] = useState(() => 'guest_' + Math.floor(Math.random() * 10000));
   
   // Collaborative State
   const [remoteCursors, setRemoteCursors] = useState<CursorPosition[]>([]);
@@ -552,6 +552,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
   const activeFile = project.files[activeFileIndex] || project.files[0];
   const isMarkdown = activeFile ? activeFile.name.toLowerCase().endsWith('.md') : false;
   const isGithubLinked = currentUser?.providerData?.some((p: any) => p.providerId === 'github.com');
+  const myUserId = currentUser?.uid || guestId;
 
   const fileTree = React.useMemo(() => buildFileTree(project.files, expandedFolders), [project.files, expandedFolders]);
 
@@ -560,36 +561,30 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
       if (sessionId) {
           setIsSharedSession(true);
           const unsubscribe = subscribeToCodeProject(sessionId, (remoteProject) => {
-              // MERGE STRATEGY: 
-              // 1. Update file LIST (add/remove files).
-              // 2. Update content of ALL files EXCEPT the one currently being actively edited by the local user.
-              // This prevents "jumping" while typing but still syncs other changes.
-              
-              setProject(prev => {
-                  // Merge Cursors
-                  if (remoteProject.cursors) {
-                      const others = Object.values(remoteProject.cursors).filter(c => c.userId !== currentUser?.uid);
-                      setRemoteCursors(others);
-                  }
+              // 1. Process Remote Cursors
+              if (remoteProject.cursors) {
+                  const others = Object.values(remoteProject.cursors).filter(c => c.userId !== myUserId);
+                  setRemoteCursors(others);
+              }
 
-                  // If project structure changed (file added/removed), we must take remote
-                  // We map local dirty state to the new file list.
-                  // For simplicity in this version, we will trust remote file list.
-                  
+              // 2. Process Files
+              // MERGE STRATEGY: 
+              // Preserve content of the file currently being edited by local user to prevent jumpiness.
+              // All other files update to remote version immediately.
+              setProject(prev => {
                   const activeFileName = prev.files[activeFileIndex]?.name;
                   
-                  // Construct merged file list
+                  // Map new file list
+                  // If remote files array length or order changed, we respect remote structure
                   const mergedFiles = remoteProject.files.map(remoteFile => {
-                      // Is this the file I'm currently looking at?
                       if (remoteFile.name === activeFileName) {
-                          // If local timestamp or content is "newer" (in memory), keep local.
-                          // Since we don't track local-dirty bit easily, we assume active file is dirty if last keystroke was recent.
-                          // SIMPLEST: Keep local content for active file to prevent overwrite while typing.
-                          // Only update if remote is strictly different and we haven't typed in X seconds? 
-                          // HARD. 
-                          // Strategy: Keep local content for active file.
+                          // Check if local file exists and differs
                           const localFile = prev.files.find(f => f.name === remoteFile.name);
-                          return localFile || remoteFile; 
+                          if (localFile) {
+                              // If content is same, take remote (to be safe/clean)
+                              // If different, keep local (user is typing)
+                              return localFile.content !== remoteFile.content ? localFile : remoteFile;
+                          }
                       }
                       return remoteFile;
                   });
@@ -602,36 +597,33 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
           });
           return () => unsubscribe();
       }
-  }, [sessionId, activeFileIndex]); // Re-subscribe if active file changes? No, listener handles it inside setProject
+  }, [sessionId, activeFileIndex, myUserId]); 
 
   // Cursor Tracking
   const handleCursorUpdate = (e: React.SyntheticEvent<HTMLTextAreaElement>) => {
-      if (!isSharedSession || !currentUser) return;
+      if (!isSharedSession) return;
       
       const target = e.currentTarget;
       const val = target.value;
       const selStart = target.selectionStart;
       
-      // Calculate Line and Col
       const lines = val.substring(0, selStart).split("\n");
       const line = lines.length;
       const column = lines[lines.length - 1].length;
       
-      // Throttle cursor updates to every 500ms
       if (cursorUpdateTimerRef.current) clearTimeout(cursorUpdateTimerRef.current);
       cursorUpdateTimerRef.current = setTimeout(() => {
           updateCursor(project.id, {
-              userId: currentUser.uid,
-              userName: currentUser.displayName || 'Anon',
+              userId: myUserId,
+              userName: currentUser?.displayName || 'Guest',
               fileName: activeFile.name,
               line,
               column,
-              color: '#'+Math.floor(Math.random()*16777215).toString(16), // Persist this color ideally
+              color: '#'+Math.floor(Math.random()*16777215).toString(16), 
               updatedAt: Date.now()
           });
-      }, 500);
+      }, 500); // 500ms debounce
       
-      // Also update selection state for context
       setSelection(target.selectionStart !== target.selectionEnd ? val.substring(target.selectionStart, target.selectionEnd) : '');
   };
 
@@ -647,7 +639,6 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
       return () => clearTimeout(handler);
   }, [activeFile, selection, project.files]); 
 
-  // ... (Lazy Loading, Mobile logic same) ...
   useEffect(() => {
       const loadContent = async () => {
           if (activeFile && activeFile.isDirectory !== true && activeFile.loaded === false && !isLoadingFile) {
@@ -776,12 +767,12 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
       };
       updatedProject.files = updatedFiles;
       
-      // GRANULAR SYNC: Only update this specific file in Firestore
+      // GRANULAR SYNC
       if (isSharedSession) {
           if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
           autoSaveTimerRef.current = setTimeout(() => {
               updateCodeFile(project.id, updatedFiles[index]);
-          }, 800); // Debounce to prevent heavy writes
+          }, 800); 
       }
       
       setProject(updatedProject);
@@ -789,13 +780,8 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
 
   const handleCodeChange = (newContent: string) => {
       updateFileAtIndex(activeFileIndex, newContent);
-      // Also update cursor position during typing
-      if (isSharedSession && currentUser) {
-          // Approximate position logic for fast updates, handleCursorUpdate handles precise selection
-      }
   };
 
-  // ... (Change Management logic same) ...
   const handleAcceptChange = () => { setPendingChange(null); setChatMessages(prev => [...prev, {role: 'system', text: "✅ *Changes Accepted*"}]); };
   const handleRejectChange = () => { if (pendingChange) { updateFileAtIndex(pendingChange.fileIndex, pendingChange.original); setPendingChange(null); setChatMessages(prev => [...prev, {role: 'system', text: "❌ *Changes Reverted*"}]); } };
 

@@ -58,29 +58,32 @@ export function subscribeToCodeProject(projectId: string, onUpdate: (project: Co
 
 // Granular Update for Single File (Supports Concurrent Editing of Different Files)
 export async function updateCodeFile(projectId: string, file: CodeFile): Promise<void> {
-    // Use FieldPath to handle keys with dots or special chars if necessary
     const safeFile = sanitizeData(file);
+    // Use FieldPath to strictly treat the filename as a key, preventing dot-notation parsing
+    // e.g. 'files.main.js' becomes {'files': {'main.js': val}} instead of {'files': {'main': {'js': val}}}
+    const path = new firebase.firestore.FieldPath('files', file.name);
     
-    await db.collection('code_projects').doc(projectId).update({
-        [new firebase.firestore.FieldPath('files', file.name).toString()]: safeFile,
-        lastModified: Date.now()
-    });
+    await db.collection('code_projects').doc(projectId).update(
+        path, safeFile,
+        'lastModified', Date.now()
+    );
 }
 
 export async function deleteCodeFile(projectId: string, fileName: string): Promise<void> {
-    await db.collection('code_projects').doc(projectId).update({
-        [new firebase.firestore.FieldPath('files', fileName).toString()]: firebase.firestore.FieldValue.delete(),
-        lastModified: Date.now()
-    });
+    const path = new firebase.firestore.FieldPath('files', fileName);
+    await db.collection('code_projects').doc(projectId).update(
+        path, firebase.firestore.FieldValue.delete(),
+        'lastModified', Date.now()
+    );
 }
 
 // Update User Cursor Position
 export async function updateCursor(projectId: string, cursor: CursorPosition): Promise<void> {
     if (!cursor.userId) return;
-    const key = `cursors.${cursor.userId}`;
-    await db.collection('code_projects').doc(projectId).update({
-        [key]: sanitizeData(cursor)
-    });
+    const path = new firebase.firestore.FieldPath('cursors', cursor.userId);
+    await db.collection('code_projects').doc(projectId).update(
+        path, sanitizeData(cursor)
+    );
 }
 
 // Updated to handle both Legacy Arrays and New Maps
@@ -127,20 +130,31 @@ export async function saveWhiteboardSession(boardId: string, elements: any[]): P
 // NEW: Update Single Element (Granular Sync)
 export async function updateWhiteboardElement(boardId: string, element: any): Promise<void> {
     if (!element || !element.id) return;
-    const updateKey = `elements.${element.id}`;
+    const path = new firebase.firestore.FieldPath('elements', element.id);
     
-    await db.collection('whiteboards').doc(boardId).update({
-        [updateKey]: sanitizeData(element),
-        lastModified: Date.now()
-    });
+    await db.collection('whiteboards').doc(boardId).update(
+        path, sanitizeData(element),
+        'lastModified', Date.now()
+    );
 }
 
 // NEW: Delete Elements (Granular Sync)
 export async function deleteWhiteboardElements(boardId: string, elementIds: string[]): Promise<void> {
     if (elementIds.length === 0) return;
     
+    // We can't use a single map for FieldPath keys easily in update() without varargs
+    // but the SDK supports alternating key/values.
+    // For simplicity, we loop updates or use a batch if strictly typed, 
+    // but standard .update({...}) works if we construct the object carefully,
+    // HOWEVER, FieldPath is best. Since we can't dynamic key FieldPath in object literal easily,
+    // we iterate or use dot notation if we are sure IDs are safe.
+    // UUIDs are safe for dot notation (no dots), so we fall back to dot notation for bulk delete
+    // OR we chain updates. 
+    
+    // Better approach:
     const updateObj: any = { lastModified: Date.now() };
     elementIds.forEach(id => {
+        // IDs are UUIDs, safe to use dot notation 'elements.UUID'
         updateObj[`elements.${id}`] = firebase.firestore.FieldValue.delete();
     });
     
@@ -1074,8 +1088,6 @@ export async function saveCodeProject(project: CodeProject): Promise<void> {
   const user = auth.currentUser;
   if (!user) throw new Error("Must be logged in to save project");
   
-  // Transform files array to a Map for storage if needed, or stick to array if small.
-  // For granular updates, we want to store it as a Map/Object keyed by filename.
   const filesMap: Record<string, any> = {};
   project.files.forEach(f => {
       // Use filename as key? Firestore keys cannot have dots unless we use FieldPath for updates.
