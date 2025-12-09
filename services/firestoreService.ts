@@ -50,24 +50,19 @@ export function subscribeToWhiteboard(boardId: string, onUpdate: (elements: any[
   });
 }
 
-export async function saveWhiteboardSession(boardId: string, elements: any[]): Promise<void> {
+export async function saveWhiteboardSession(boardId: string, elements: any[], ownerId?: string): Promise<void> {
   const user = auth.currentUser;
   
-  // Prepare payload
   const payload: any = {
     elements: sanitizeData(elements),
     lastModified: Date.now(),
     updatedBy: user?.uid || 'anonymous'
   };
 
-  // Only attempt to set ownerId if user is logged in
-  if (user) {
-      // Use merge to update existing fields, but we include ownerId to claim ownership if it's new
-      // Note: If rules prevent updating ownerId on existing docs, this might fail if we are not the owner.
-      // However, for a whiteboard session, we usually want the creator to own it.
-      // If we are just collaborating, we shouldn't change the owner. 
-      // Firestore `set` with merge will trigger an update.
-      payload.ownerId = user.uid;
+  // Only set ownerId if explicitly passed (e.g., creating new board)
+  // This prevents overwriting owner during collaboration on existing boards
+  if (ownerId) {
+      payload.ownerId = ownerId;
   }
 
   await db.collection('whiteboards').doc(boardId).set(payload, { merge: true });
@@ -1005,9 +1000,14 @@ export async function saveCodeProject(project: CodeProject): Promise<void> {
   
   const projectData = {
     ...project,
-    ownerId: user.uid,
     lastModified: Date.now()
   };
+
+  // Only set/overwrite ownerId if it is missing
+  // This prevents stealing ownership of a shared project
+  if (!projectData.ownerId) {
+      projectData.ownerId = user.uid;
+  }
   
   await db.collection('code_projects').doc(project.id).set(sanitizeData(projectData), { merge: true });
   logUserActivity('save_code_project', { projectId: project.id, name: project.name });
