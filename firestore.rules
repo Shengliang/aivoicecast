@@ -1,0 +1,152 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // --- HELPER FUNCTIONS ---
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    // ----------------------------------------------------------------------
+    // Global Default: Deny everything unless explicitly allowed
+    // ----------------------------------------------------------------------
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // ----------------------------------------------------------------------
+    // USERS COLLECTION
+    // - Read: Allowed for all auth users (Required for Chat & Group Directory)
+    // - Write: Only owner can update their profile
+    // ----------------------------------------------------------------------
+    match /users/{userId} {
+      allow read: if isAuthenticated(); 
+      allow create: if isOwner(userId);
+      allow update: if isOwner(userId); 
+      // Note: Removed strict key validation to allow app fields like 'lastLogin', 'groups', 'apiUsageCount'
+    }
+
+    // ----------------------------------------------------------------------
+    // GROUPS COLLECTION (Fixes "Insufficient Permissions" Error)
+    // ----------------------------------------------------------------------
+    match /groups/{groupId} {
+      // Allow creation of new groups
+      allow create: if isAuthenticated();
+      
+      // Allow reading groups (for discovery)
+      allow read: if isAuthenticated();
+      
+      // Allow updating (Required for joining groups and adding memberIds)
+      allow update: if isAuthenticated();
+      
+      // Allow deletion only by the owner
+      allow delete: if isAuthenticated() && resource.data.ownerId == request.auth.uid;
+
+      // Group Chat Messages
+      match /messages/{msgId} {
+        allow read, write: if isAuthenticated();
+      }
+    }
+
+    // ----------------------------------------------------------------------
+    // WORKPLACE CHAT & DIRECT MESSAGES
+    // ----------------------------------------------------------------------
+    match /chat_channels/{channelId} {
+      allow read, write: if isAuthenticated();
+      
+      match /messages/{msgId} {
+        allow read, write: if isAuthenticated();
+      }
+    }
+
+    // ----------------------------------------------------------------------
+    // PODCAST CHANNELS & CONTENT
+    // ----------------------------------------------------------------------
+    match /channels/{channelId} {
+      // Public channels are readable by everyone
+      allow read: if true; 
+      
+      // Creation requires auth
+      allow create: if isAuthenticated();
+      
+      // Updates/Deletes restricted to Owner (or if ownerId is missing/legacy)
+      allow update, delete: if isAuthenticated() && (resource.data.ownerId == request.auth.uid || resource.data.ownerId == null);
+      
+      // Subcollections (Lectures, Comments)
+      match /lectures/{lectureId} { allow read, write: if true; }
+      match /comments/{commentId} { allow read, write: if true; }
+      match /meta/{docId} { allow read, write: if true; }
+    }
+
+    // ----------------------------------------------------------------------
+    // CUSTOMERS (STRIPE PAYMENTS) - FROM YOUR RULES
+    // ----------------------------------------------------------------------
+    match /customers/{uid} {
+      allow create, read, update, delete: if isOwner(uid);
+
+      match /checkout_sessions/{id} {
+        allow read, write: if isOwner(uid);
+      }
+      match /subscriptions/{id} {
+        allow read: if isOwner(uid);
+      }
+      match /payments/{id} {
+        allow read: if isOwner(uid);
+      }
+      match /portal_sessions/{id} {
+        allow read, write: if isOwner(uid);
+      }
+    }
+
+    // ----------------------------------------------------------------------
+    // SOCIAL FEATURES (Invites, Bookings, Recordings)
+    // ----------------------------------------------------------------------
+    match /invitations/{inviteId} { allow read, write: if isAuthenticated(); }
+    match /bookings/{bookingId} { allow read, write: if isAuthenticated(); }
+    match /discussions/{discussionId} { allow read, write: if isAuthenticated(); }
+    match /recordings/{recordingId} { allow read, write: if isAuthenticated(); }
+    match /saved_words/{wordId} { allow read, write: if isAuthenticated(); }
+    match /activity_logs/{logId} { allow create: if isAuthenticated(); }
+
+    // ----------------------------------------------------------------------
+    // COLLABORATION (Code Studio & Whiteboard)
+    // ----------------------------------------------------------------------
+    match /code_projects/{projectId} {
+      allow read, write: if true; // Allow shared access via link
+    }
+    match /whiteboards/{boardId} {
+      allow read, write: if true; // Allow shared access via link
+    }
+
+    // ----------------------------------------------------------------------
+    // BLOGS & POSTS
+    // ----------------------------------------------------------------------
+    match /posts/{postId} { allow read: if true; allow write: if isAuthenticated(); }
+    match /blogs/{blogId} { allow read: if true; allow write: if isAuthenticated(); }
+    
+    // Support your custom public_posts collection if used elsewhere
+    match /public_posts/{postId} {
+      allow read: if true;
+      allow create: if isAuthenticated() && request.resource.data.authorId == request.auth.uid;
+      allow update, delete: if isOwner(resource.data.authorId);
+    }
+
+    // ----------------------------------------------------------------------
+    // PRIVATE DATA (FROM YOUR RULES)
+    // ----------------------------------------------------------------------
+    match /private_data/{documentId} {
+      allow read, delete: if isOwner(resource.data.ownerId);
+      
+      allow create: if isOwner(request.resource.data.ownerId) &&
+                       request.resource.data.status in ['pending', 'approved', 'rejected'];
+
+      allow update: if isOwner(resource.data.ownerId) &&
+                       request.resource.data.status in ['pending', 'approved', 'rejected'] &&
+                       request.resource.data.ownerId == resource.data.ownerId;
+    }
+  }
+}
