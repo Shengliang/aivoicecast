@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { ArrowLeft, Share2, Trash2, Undo, PenTool, Eraser, Download, Square, Circle, Minus, ArrowRight, Type, ZoomIn, ZoomOut, MousePointer2, MoreHorizontal, Move } from 'lucide-react';
+import { ArrowLeft, Share2, Trash2, Undo, PenTool, Eraser, Download, Square, Circle, Minus, ArrowRight, Type, ZoomIn, ZoomOut, MousePointer2, Move, Highlighter, Brush, BoxSelect } from 'lucide-react';
 import { auth } from '../services/firebaseConfig';
 import { saveWhiteboardSession, subscribeToWhiteboard } from '../services/firestoreService';
 
@@ -11,6 +11,7 @@ interface WhiteboardProps {
 
 type ToolType = 'select' | 'pen' | 'eraser' | 'rect' | 'circle' | 'line' | 'arrow' | 'text' | 'pan';
 type LineStyle = 'solid' | 'dashed' | 'dotted';
+type BrushType = 'standard' | 'highlighter' | 'calligraphy' | 'square';
 
 interface WhiteboardElement {
   id: string;
@@ -26,6 +27,7 @@ interface WhiteboardElement {
   color: string;
   strokeWidth: number;
   lineStyle?: LineStyle;
+  brushType?: BrushType;
 }
 
 export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack, sessionId }) => {
@@ -39,12 +41,16 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack, sessionId }) => 
   const [color, setColor] = useState('#ffffff');
   const [lineWidth, setLineWidth] = useState(3);
   const [lineStyle, setLineStyle] = useState<LineStyle>('solid');
+  const [brushType, setBrushType] = useState<BrushType>('standard');
   
   // Selection State
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [isDraggingSelection, setIsDraggingSelection] = useState(false);
+  const [selectionBox, setSelectionBox] = useState<{ startX: number, startY: number, currX: number, currY: number } | null>(null);
+  
   const dragStartPos = useRef<{x: number, y: number} | null>(null);
-  const initialElementState = useRef<WhiteboardElement | null>(null);
+  // Store initial state of ALL selected elements for bulk moving
+  const initialSelectionStates = useRef<Map<string, WhiteboardElement>>(new Map());
 
   // Viewport State
   const [scale, setScale] = useState(1);
@@ -81,6 +87,18 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack, sessionId }) => 
           return () => clearTimeout(timeout);
       }
   }, [elements, isSharedSession]);
+
+  // --- Bulk Update Helper ---
+  const updateSelectedElements = (updates: Partial<WhiteboardElement>) => {
+      if (selectedIds.length === 0) return;
+      
+      setElements(prev => prev.map(el => {
+          if (selectedIds.includes(el.id)) {
+              return { ...el, ...updates };
+          }
+          return el;
+      }));
+  };
 
   // Hit Test Logic
   const isPointInElement = (x: number, y: number, el: WhiteboardElement): boolean => {
@@ -147,6 +165,46 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack, sessionId }) => 
       }
   };
 
+  // Check intersection for Selection Box
+  const isElementIntersectingBox = (el: WhiteboardElement, box: {x: number, y: number, w: number, h: number}): boolean => {
+      // Normalize box
+      const bx = Math.min(box.x, box.x + box.w);
+      const by = Math.min(box.y, box.y + box.h);
+      const bw = Math.abs(box.w);
+      const bh = Math.abs(box.h);
+
+      // Helper for AABB (Axis-Aligned Bounding Box) of element
+      const getBounds = (e: WhiteboardElement) => {
+          if (e.type === 'pen' || e.type === 'eraser') {
+              if (!e.points) return { x: e.x, y: e.y, w: 0, h: 0 };
+              const xs = e.points.map(p => p.x);
+              const ys = e.points.map(p => p.y);
+              return { x: Math.min(...xs), y: Math.min(...ys), w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys) };
+          } else if (e.type === 'line' || e.type === 'arrow') {
+              return {
+                  x: Math.min(e.x, e.endX || e.x),
+                  y: Math.min(e.y, e.endY || e.y),
+                  w: Math.abs((e.endX || e.x) - e.x),
+                  h: Math.abs((e.endY || e.y) - e.y)
+              };
+          } else if (e.type === 'text') {
+              return { x: e.x, y: e.y - 20, w: (e.text?.length || 5) * 12, h: 30 };
+          }
+          // Rect, Circle
+          return {
+              x: Math.min(e.x, e.x + (e.width || 0)),
+              y: Math.min(e.y, e.y + (e.height || 0)),
+              w: Math.abs(e.width || 0),
+              h: Math.abs(e.height || 0)
+          };
+      };
+
+      const eb = getBounds(el);
+      
+      // Check overlap
+      return (bx < eb.x + eb.w && bx + bw > eb.x && by < eb.y + eb.h && by + bh > eb.y);
+  };
+
   // Coordinate Conversion (Screen -> Canvas World)
   const getWorldCoordinates = (e: React.MouseEvent | React.TouchEvent) => {
       if (!canvasRef.current) return { x: 0, y: 0 };
@@ -161,9 +219,6 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack, sessionId }) => 
   };
 
   const startDrawing = (e: React.MouseEvent | React.TouchEvent) => {
-      // If we are currently editing text, committing it is handled by blur or keydown.
-      // We don't want to start a new shape if we just clicked the textarea.
-      // But e.target would be the canvas here.
       if (textInput) {
           handleTextComplete();
           return;
@@ -180,9 +235,8 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack, sessionId }) => 
       const { x, y } = getWorldCoordinates(e);
 
       if (tool === 'select') {
-          // Find top-most element that contains point
-          // Iterate backwards to hit the one rendered on top
           let hitId = null;
+          // Reverse loop to hit top-most elements first
           for (let i = elements.length - 1; i >= 0; i--) {
               if (isPointInElement(x, y, elements[i])) {
                   hitId = elements[i].id;
@@ -190,11 +244,51 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack, sessionId }) => 
               }
           }
           
-          setSelectedId(hitId);
+          const isCtrl = (e as React.MouseEvent).ctrlKey || (e as React.MouseEvent).metaKey;
+
           if (hitId) {
+              // Clicked an element
+              if (isCtrl) {
+                  // Toggle selection
+                  if (selectedIds.includes(hitId)) {
+                      setSelectedIds(prev => prev.filter(id => id !== hitId));
+                  } else {
+                      setSelectedIds(prev => [...prev, hitId]);
+                  }
+              } else {
+                  // If clicking an item NOT in selection, verify if we should clear others
+                  if (!selectedIds.includes(hitId)) {
+                      setSelectedIds([hitId]);
+                  }
+                  // If clicking an item ALREADY in selection, don't clear (user might want to drag group)
+              }
+
+              // Setup dragging for ALL selected items (including the new one if just added)
               setIsDraggingSelection(true);
               dragStartPos.current = { x, y };
-              initialElementState.current = JSON.parse(JSON.stringify(elements.find(el => el.id === hitId)));
+              
+              // Snapshot all selected elements relative positions
+              initialSelectionStates.current.clear();
+              // Logic check: state update above might be async, so we manually check IDs
+              const idsToDrag = (!isCtrl && !selectedIds.includes(hitId)) 
+                  ? [hitId] 
+                  : (isCtrl && selectedIds.includes(hitId)) ? selectedIds.filter(id => id !== hitId) // Deselecting shouldn't drag
+                  : (isCtrl && !selectedIds.includes(hitId)) ? [...selectedIds, hitId]
+                  : selectedIds;
+
+              elements.forEach(el => {
+                  if (idsToDrag.includes(el.id)) {
+                      initialSelectionStates.current.set(el.id, JSON.parse(JSON.stringify(el)));
+                  }
+              });
+
+          } else {
+              // Clicked Empty Space
+              if (!isCtrl) {
+                  setSelectedIds([]);
+              }
+              // Start Selection Box
+              setSelectionBox({ startX: x, startY: y, currX: x, currY: y });
           }
           return;
       }
@@ -206,7 +300,7 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack, sessionId }) => 
       }
 
       setIsDrawing(true);
-      setSelectedId(null); // Deselect when drawing
+      setSelectedIds([]); // Deselect when drawing
       
       const id = crypto.randomUUID();
       const newEl: WhiteboardElement = {
@@ -216,6 +310,7 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack, sessionId }) => 
           color: tool === 'eraser' ? '#0f172a' : color,
           strokeWidth: tool === 'eraser' ? 20 : lineWidth,
           lineStyle: tool === 'eraser' ? 'solid' : lineStyle,
+          brushType: brushType,
           points: tool === 'pen' || tool === 'eraser' ? [{ x, y }] : undefined,
           width: 0, height: 0,
           endX: x, endY: y
@@ -237,29 +332,37 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack, sessionId }) => 
 
       const { x, y } = getWorldCoordinates(e);
 
-      if (isDraggingSelection && selectedId && dragStartPos.current && initialElementState.current) {
+      // Selection Box Update
+      if (selectionBox) {
+          setSelectionBox(prev => prev ? ({ ...prev, currX: x, currY: y }) : null);
+          return;
+      }
+
+      // Dragging Multiple Elements
+      if (isDraggingSelection && dragStartPos.current) {
           const dx = x - dragStartPos.current.x;
           const dy = y - dragStartPos.current.y;
           
           setElements(prev => prev.map(el => {
-              if (el.id !== selectedId) return el;
-              const init = initialElementState.current!;
-              
-              const newEl = { ...el };
-              newEl.x = init.x + dx;
-              newEl.y = init.y + dy;
-              
-              if (init.type === 'line' || init.type === 'arrow') {
-                  newEl.endX = (init.endX || 0) + dx;
-                  newEl.endY = (init.endY || 0) + dy;
-              } else if (init.type === 'pen' || init.type === 'eraser') {
-                  newEl.points = init.points?.map(p => ({
-                      x: p.x + dx,
-                      y: p.y + dy
-                  }));
+              if (initialSelectionStates.current.has(el.id)) {
+                  const init = initialSelectionStates.current.get(el.id)!;
+                  
+                  const newEl = { ...el };
+                  newEl.x = init.x + dx;
+                  newEl.y = init.y + dy;
+                  
+                  if (init.type === 'line' || init.type === 'arrow') {
+                      newEl.endX = (init.endX || 0) + dx;
+                      newEl.endY = (init.endY || 0) + dy;
+                  } else if (init.type === 'pen' || init.type === 'eraser') {
+                      newEl.points = init.points?.map(p => ({
+                          x: p.x + dx,
+                          y: p.y + dy
+                      }));
+                  }
+                  return newEl;
               }
-              
-              return newEl;
+              return el;
           }));
           return;
       }
@@ -291,12 +394,37 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack, sessionId }) => 
           setIsPanning(false);
           return;
       }
+      
+      if (selectionBox) {
+          // Calculate intersection
+          const box = {
+              x: selectionBox.startX,
+              y: selectionBox.startY,
+              w: selectionBox.currX - selectionBox.startX,
+              h: selectionBox.currY - selectionBox.startY
+          };
+          
+          const hitIds = elements
+              .filter(el => isElementIntersectingBox(el, box))
+              .map(el => el.id);
+          
+          setSelectedIds(prev => {
+              // Add to selection if Ctrl pressed (technically we don't have event here, but standard select box behavior replaces selection)
+              // Since we don't have modifier key in stopDrawing easily without tracking it globally, we'll replace selection for box
+              return hitIds;
+          });
+          
+          setSelectionBox(null);
+          return;
+      }
+
       if (isDraggingSelection) {
           setIsDraggingSelection(false);
           dragStartPos.current = null;
-          initialElementState.current = null;
+          initialSelectionStates.current.clear();
           return;
       }
+
       if (isDrawing && currentElement) {
           setElements(prev => [...prev, currentElement]);
           setCurrentElement(null);
@@ -338,15 +466,33 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack, sessionId }) => 
       ctx.scale(scale, scale);
 
       const renderElement = (el: WhiteboardElement) => {
+          ctx.save();
           ctx.beginPath();
           ctx.strokeStyle = el.color;
           ctx.lineWidth = el.strokeWidth / scale;
+          
+          // Brush Styles
           ctx.lineCap = 'round';
           ctx.lineJoin = 'round';
-          
-          // Line Style
-          if (el.lineStyle === 'dashed') ctx.setLineDash([10, 10]);
-          else if (el.lineStyle === 'dotted') ctx.setLineDash([3, 5]);
+          ctx.globalAlpha = 1.0;
+
+          if (el.brushType === 'highlighter') {
+              ctx.globalAlpha = 0.5;
+              ctx.lineCap = 'butt';
+              ctx.lineWidth = (el.strokeWidth * 3) / scale;
+          } else if (el.brushType === 'square') {
+              ctx.lineCap = 'butt';
+              ctx.lineJoin = 'miter';
+          } else if (el.brushType === 'calligraphy') {
+              // Simulated calligraphy by drawing multiple thin lines (simplified) or changing cap
+              // Real calligraphy requires custom path stroking which is complex for canvas path
+              // We'll approximate with an oval transform if needed, but for simplicity, we use butt cap
+              ctx.lineCap = 'butt';
+          }
+
+          // Line Style (Dashed/Dotted)
+          if (el.lineStyle === 'dashed') ctx.setLineDash([15, 10]);
+          else if (el.lineStyle === 'dotted') ctx.setLineDash([3, 8]);
           else ctx.setLineDash([]);
 
           if (el.type === 'pen' || el.type === 'eraser') {
@@ -383,9 +529,12 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack, sessionId }) => 
               ctx.fillStyle = el.color;
               ctx.fillText(el.text, el.x, el.y);
           }
+          
+          ctx.restore(); // Restore alpha/line styles
 
           // Render Selection Highlight
-          if (selectedId === el.id) {
+          if (selectedIds.includes(el.id)) {
+              ctx.save();
               ctx.setLineDash([5, 5]);
               ctx.strokeStyle = '#3b82f6'; // Blue selection
               ctx.lineWidth = 1 / scale;
@@ -399,7 +548,6 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack, sessionId }) => 
                       Math.abs(el.height||0) + padding*2
                   );
               } else if (el.type === 'line' || el.type === 'arrow') {
-                  // Rough bounding box for line
                   const minX = Math.min(el.x, el.endX || el.x);
                   const maxX = Math.max(el.x, el.endX || el.x);
                   const minY = Math.min(el.y, el.endY || el.y);
@@ -417,6 +565,7 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack, sessionId }) => 
                       ctx.strokeRect(minX - padding, minY - padding, maxX - minX + padding*2, maxY - minY + padding*2);
                   }
               }
+              ctx.restore();
           }
       };
 
@@ -425,9 +574,23 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack, sessionId }) => 
       // Draw active element
       if (currentElement) renderElement(currentElement);
 
+      // Draw Selection Box
+      if (selectionBox) {
+          ctx.save();
+          ctx.setLineDash([5, 5]);
+          ctx.fillStyle = 'rgba(59, 130, 246, 0.1)';
+          ctx.strokeStyle = '#3b82f6';
+          ctx.lineWidth = 1 / scale;
+          const w = selectionBox.currX - selectionBox.startX;
+          const h = selectionBox.currY - selectionBox.startY;
+          ctx.fillRect(selectionBox.startX, selectionBox.startY, w, h);
+          ctx.strokeRect(selectionBox.startX, selectionBox.startY, w, h);
+          ctx.restore();
+      }
+
       ctx.restore();
 
-  }, [elements, currentElement, scale, offset, selectedId]);
+  }, [elements, currentElement, scale, offset, selectedIds, selectionBox]);
 
   // Handle Text Input Completion
   const handleTextComplete = () => {
@@ -445,7 +608,7 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack, sessionId }) => 
               setElements(prev => [...prev, newEl]);
           }
           setTextInput(null);
-          setTool('select'); // Switch to select after typing for better UX
+          setTool('select'); 
       }
   };
 
@@ -478,9 +641,9 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack, sessionId }) => 
   };
 
   const handleDeleteSelected = () => {
-      if (selectedId) {
-          setElements(prev => prev.filter(el => el.id !== selectedId));
-          setSelectedId(null);
+      if (selectedIds.length > 0) {
+          setElements(prev => prev.filter(el => !selectedIds.includes(el.id)));
+          setSelectedIds([]);
       }
   };
 
@@ -502,15 +665,14 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack, sessionId }) => 
               setElements(prev => prev.slice(0, -1));
           }
           if (e.key === 'Delete' || e.key === 'Backspace') {
-              if (selectedId && !textInput) {
-                  setElements(prev => prev.filter(el => el.id !== selectedId));
-                  setSelectedId(null);
+              if (selectedIds.length > 0 && !textInput) {
+                  handleDeleteSelected();
               }
           }
       };
       window.addEventListener('keydown', handleKeyDown);
       return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedId, textInput]);
+  }, [selectedIds, textInput]);
 
   return (
     <div className="flex flex-col h-screen bg-slate-950 text-slate-100 overflow-hidden">
@@ -545,9 +707,10 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack, sessionId }) => 
         </div>
 
         {/* Toolbar */}
-        <div className="bg-slate-900 border-b border-slate-800 p-2 flex flex-wrap justify-center gap-4 shrink-0 z-10">
+        <div className="bg-slate-900 border-b border-slate-800 p-2 flex flex-wrap justify-center gap-4 shrink-0 z-10 items-center">
+            
             <div className="flex bg-slate-800 rounded-lg p-1">
-                <button onClick={() => { setTool('select'); setIsDrawing(false); }} className={`p-2 rounded ${tool === 'select' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'}`} title="Select & Move (v)">
+                <button onClick={() => { setTool('select'); setIsDrawing(false); }} className={`p-2 rounded ${tool === 'select' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'}`} title="Select (Ctrl+Click for multiple, Drag for box)">
                     <MousePointer2 size={18}/>
                 </button>
                 <button onClick={() => setTool('pan')} className={`p-2 rounded ${tool === 'pan' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'}`} title="Pan (Space)">
@@ -578,17 +741,39 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack, sessionId }) => 
                 </button>
             </div>
             
-            {/* Line Options */}
+            {/* Brush Styles (Only for Pen) */}
+            {tool === 'pen' && (
+                <div className="flex bg-slate-800 rounded-lg p-1 animate-fade-in">
+                    <button onClick={() => setBrushType('standard')} className={`p-2 rounded ${brushType === 'standard' ? 'bg-slate-700 text-white' : 'text-slate-400'}`} title="Standard Pen">
+                        <PenTool size={16} />
+                    </button>
+                    <button onClick={() => setBrushType('highlighter')} className={`p-2 rounded ${brushType === 'highlighter' ? 'bg-slate-700 text-yellow-300' : 'text-slate-400'}`} title="Highlighter">
+                        <Highlighter size={16} />
+                    </button>
+                    <button onClick={() => setBrushType('square')} className={`p-2 rounded ${brushType === 'square' ? 'bg-slate-700 text-white' : 'text-slate-400'}`} title="Square Brush">
+                        <BoxSelect size={16} />
+                    </button>
+                    <button onClick={() => setBrushType('calligraphy')} className={`p-2 rounded ${brushType === 'calligraphy' ? 'bg-slate-700 text-white' : 'text-slate-400'}`} title="Calligraphy">
+                        <Brush size={16} />
+                    </button>
+                </div>
+            )}
+
+            {/* Line Options (Applies to new drawing AND bulk selection) */}
             <div className="flex bg-slate-800 rounded-lg p-1">
-                <button onClick={() => setLineStyle('solid')} className={`p-2 rounded text-xs font-mono ${lineStyle === 'solid' ? 'bg-slate-700 text-white' : 'text-slate-400'}`}>────</button>
-                <button onClick={() => setLineStyle('dashed')} className={`p-2 rounded text-xs font-mono ${lineStyle === 'dashed' ? 'bg-slate-700 text-white' : 'text-slate-400'}`}>- - -</button>
-                <button onClick={() => setLineStyle('dotted')} className={`p-2 rounded text-xs font-mono ${lineStyle === 'dotted' ? 'bg-slate-700 text-white' : 'text-slate-400'}`}>····</button>
+                <button onClick={() => { setLineStyle('solid'); updateSelectedElements({ lineStyle: 'solid' }); }} className={`p-2 rounded text-xs font-mono ${lineStyle === 'solid' ? 'bg-slate-700 text-white' : 'text-slate-400'}`}>────</button>
+                <button onClick={() => { setLineStyle('dashed'); updateSelectedElements({ lineStyle: 'dashed' }); }} className={`p-2 rounded text-xs font-mono ${lineStyle === 'dashed' ? 'bg-slate-700 text-white' : 'text-slate-400'}`}>- - -</button>
+                <button onClick={() => { setLineStyle('dotted'); updateSelectedElements({ lineStyle: 'dotted' }); }} className={`p-2 rounded text-xs font-mono ${lineStyle === 'dotted' ? 'bg-slate-700 text-white' : 'text-slate-400'}`}>····</button>
             </div>
 
             <div className="flex items-center gap-2 px-2 bg-slate-800 rounded-lg">
                 <input 
                     type="range" min="1" max="20" 
-                    value={lineWidth} onChange={(e) => setLineWidth(parseInt(e.target.value))}
+                    value={lineWidth} onChange={(e) => {
+                        const width = parseInt(e.target.value);
+                        setLineWidth(width);
+                        updateSelectedElements({ strokeWidth: width });
+                    }}
                     className="w-20 accent-indigo-500"
                     title="Stroke Width"
                 />
@@ -598,7 +783,11 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack, sessionId }) => 
                 {['#ffffff', '#ef4444', '#22c55e', '#3b82f6', '#eab308', '#ec4899'].map(c => (
                     <button 
                         key={c}
-                        onClick={() => { setColor(c); if(tool==='eraser') setTool('pen'); }}
+                        onClick={() => { 
+                            setColor(c); 
+                            if(tool==='eraser') setTool('pen'); 
+                            updateSelectedElements({ color: c });
+                        }}
                         className={`w-5 h-5 rounded-full border ${color === c && tool !== 'eraser' ? 'border-white scale-110' : 'border-transparent'}`}
                         style={{ backgroundColor: c }}
                     />
@@ -609,7 +798,7 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack, sessionId }) => 
                 <button onClick={() => setElements(prev => prev.slice(0, -1))} className="p-2 hover:bg-slate-800 rounded text-slate-400 hover:text-white" title="Undo (Ctrl+Z)">
                     <Undo size={18} />
                 </button>
-                <button onClick={selectedId ? handleDeleteSelected : handleClear} className="p-2 hover:bg-slate-800 rounded text-slate-400 hover:text-red-400" title={selectedId ? "Delete Selected (Del)" : "Clear All"}>
+                <button onClick={selectedIds.length > 0 ? handleDeleteSelected : handleClear} className="p-2 hover:bg-slate-800 rounded text-slate-400 hover:text-red-400" title={selectedIds.length > 0 ? "Delete Selected (Del)" : "Clear All"}>
                     <Trash2 size={18} />
                 </button>
             </div>
