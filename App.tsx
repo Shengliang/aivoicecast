@@ -1,5 +1,3 @@
-
-
 import React, { useState, useEffect, useMemo } from 'react';
 import { Channel, ViewState, UserProfile, TranscriptItem, SubscriptionTier } from './types';
 import { 
@@ -171,17 +169,23 @@ const App: React.FC = () => {
     const key = localStorage.getItem('gemini_api_key') || GEMINI_API_KEY || process.env.API_KEY;
     setHasApiKey(!!key);
 
-    // CHECK URL FOR SHARED SESSION
+    // CHECK URL FOR SHARED SESSION (Unified)
     const params = new URLSearchParams(window.location.search);
+    const session = params.get('session');
+    // Legacy support
     const codeSession = params.get('code_session');
     const whiteboardSession = params.get('whiteboard_session');
 
-    if (codeSession) {
-        setSharedSessionId(codeSession);
-        setViewState('code_studio');
-    } else if (whiteboardSession) {
-        setSharedSessionId(whiteboardSession);
-        setViewState('whiteboard');
+    // Priority: Unified Session -> Legacy Code -> Legacy Whiteboard
+    const activeSession = session || codeSession || whiteboardSession;
+
+    if (activeSession) {
+        setSharedSessionId(activeSession);
+        
+        // Auto-route based on legacy params if specific, otherwise default to Code
+        if (whiteboardSession) setViewState('whiteboard');
+        else if (codeSession) setViewState('code_studio');
+        // If unified session, stay on current view or default to code if generic load
     }
 
     let unsubscribeAuth = () => {};
@@ -229,13 +233,11 @@ const App: React.FC = () => {
   }, []);
 
   // Load Public Channels (Firestore)
-  // Dependency on currentUser ensures we re-subscribe after login if initial attempt failed due to permissions
   useEffect(() => {
     if (isFirebaseConfigured && currentUser) {
         const unsubPublic = subscribeToPublicChannels(
           (data) => setPublicChannels(data),
           (err: any) => {
-              // Gracefully handle permission errors (Guest Mode on restricted DB)
               if (err.code === 'permission-denied' || err.message?.includes('permission')) {
                   console.warn("Public channels access denied. Waiting for authentication.");
               } else {
@@ -256,11 +258,9 @@ const App: React.FC = () => {
 
   // Combine all channels
   useEffect(() => {
-    // Dedup by ID
     const all = [...HANDCRAFTED_CHANNELS, ...userChannels, ...publicChannels, ...groupChannels];
     const unique = Array.from(new Map(all.map(item => [item.id, item])).values());
     
-    // Sort: Handcrafted first, then by date desc (Default sort for data integrity)
     unique.sort((a, b) => {
         const isAHand = HANDCRAFTED_CHANNELS.some(h => h.id === a.id);
         const isBHand = HANDCRAFTED_CHANNELS.some(h => h.id === b.id);
@@ -286,7 +286,6 @@ const App: React.FC = () => {
 
   const handleVote = async (id: string, type: 'like' | 'dislike', e: React.MouseEvent) => {
     e.stopPropagation();
-    // Optimistic Update
     setChannels(prev => prev.map(c => {
       if (c.id === id) {
         return type === 'like' ? { ...c, likes: c.likes + 1 } : { ...c, dislikes: c.dislikes + 1 };
@@ -300,12 +299,11 @@ const App: React.FC = () => {
     if (newChannel.visibility === 'public') {
         await publishChannelToFirestore(newChannel);
     } else if (newChannel.visibility === 'group') {
-        await publishChannelToFirestore(newChannel); // Groups also live in Firestore but filtered
+        await publishChannelToFirestore(newChannel); 
     } else {
         await saveUserChannel(newChannel);
         setUserChannels(prev => [newChannel, ...prev]);
     }
-    // Optimistic add to main list for immediate feedback
     setChannels(prev => [newChannel, ...prev]);
   };
 
@@ -316,14 +314,12 @@ const App: React.FC = () => {
           await saveUserChannel(updatedChannel);
           setUserChannels(prev => prev.map(c => c.id === updatedChannel.id ? updatedChannel : c));
       }
-      // Force refresh logic via local state
       setChannels(prev => prev.map(c => c.id === updatedChannel.id ? updatedChannel : c));
   };
 
   const handleDeleteChannel = async () => {
       if (!channelToEdit) return;
       if (channelToEdit.visibility === 'public' || channelToEdit.visibility === 'group') {
-          // Deleting from public inspector handles firestore
           alert("Public channels must be deleted via the Inspector for now."); 
       } else {
           await deleteUserChannel(channelToEdit.id);
@@ -349,7 +345,6 @@ const App: React.FC = () => {
           attachments
       };
       
-      // Optimistic update
       const updatedChannel = { 
           ...commentsChannel, 
           comments: [...commentsChannel.comments, newComment] 
@@ -361,18 +356,16 @@ const App: React.FC = () => {
       if (commentsChannel.visibility === 'public' || commentsChannel.visibility === 'group') {
           await addCommentToChannel(commentsChannel.id, newComment);
       } else {
-          // Local update only
           await saveUserChannel(updatedChannel);
           setUserChannels(prev => prev.map(c => c.id === updatedChannel.id ? updatedChannel : c));
       }
   };
 
   const handleStartLiveSession = (channel: Channel, context?: string, recordingEnabled?: boolean, bookingId?: string, videoEnabled?: boolean, cameraEnabled?: boolean) => {
-      // Check if this is an ad-hoc channel (not in list)
       const existing = channels.find(c => c.id === channel.id);
       
       if (!existing) {
-          setTempChannel(channel); // Set ephemeral channel
+          setTempChannel(channel); 
       } else {
           setTempChannel(null);
       }
@@ -388,6 +381,18 @@ const App: React.FC = () => {
       setViewState('live_session');
   };
 
+  // Called when CodeStudio or Whiteboard creates a shared link
+  const handleSessionStart = (id: string) => {
+      setSharedSessionId(id);
+      // Update URL without reloading to reflect the new session ID
+      const url = new URL(window.location.href);
+      url.searchParams.set('session', id);
+      // Clean up legacy params if they exist
+      url.searchParams.delete('code_session');
+      url.searchParams.delete('whiteboard_session');
+      window.history.pushState({}, '', url.toString());
+  };
+
   // --- Sorting & Filtering Logic ---
 
   const handleSort = (key: SortKey) => {
@@ -397,11 +402,8 @@ const App: React.FC = () => {
       }));
   };
 
-  // Memoized: Categorized Grid Data
   const allCategoryGroups = useMemo(() => {
       const groups: Record<string, Channel[]> = {};
-      
-      // Merge "Spotlight" (Featured) content into Categories view
       groups['Spotlight'] = HANDCRAFTED_CHANNELS;
 
       Object.keys(TOPIC_CATEGORIES).forEach(category => {
@@ -417,11 +419,9 @@ const App: React.FC = () => {
       return groups;
   }, [channels]);
 
-  // Memoized: Flat Table Data
   const tableData = useMemo(() => {
       let data = [...channels];
 
-      // 1. Filter by Search
       if (searchQuery) {
           const lowerQ = searchQuery.toLowerCase();
           data = data.filter(c => 
@@ -431,7 +431,6 @@ const App: React.FC = () => {
           );
       }
 
-      // 2. Filter by Category Dropdown (if not 'All')
       if (selectedCategory !== 'All') {
           if (selectedCategory === 'Spotlight') {
               data = data.filter(c => HANDCRAFTED_CHANNELS.some(h => h.id === c.id));
@@ -441,7 +440,6 @@ const App: React.FC = () => {
           }
       }
 
-      // 3. Sort
       data.sort((a, b) => {
           const aVal = sortConfig.key === 'voiceName' ? a.voiceName : 
                        sortConfig.key === 'likes' ? a.likes : 
@@ -464,23 +462,18 @@ const App: React.FC = () => {
   }, [channels, searchQuery, selectedCategory, sortConfig]);
 
   const handleUpgradeSuccess = async (newTier: SubscriptionTier) => {
-      // 1. Optimistic Update locally so UI reflects change instantly
       if (userProfile) {
           setUserProfile({ ...userProfile, subscriptionTier: newTier });
       }
       
-      // 2. Fetch fresh from DB (in case of real latency)
       if (currentUser) {
         try {
             const fresh = await getUserProfile(currentUser.uid);
             if (fresh) setUserProfile(fresh);
-        } catch(e) {
-            // Ignore fetch error, rely on optimistic update
-        }
+        } catch(e) {}
       }
   };
 
-  // --- AUTH GATING LOGIC ---
   if (authLoading) {
       return (
           <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center text-indigo-400">
@@ -490,7 +483,6 @@ const App: React.FC = () => {
       );
   }
 
-  // Force Login if not authenticated
   if (!currentUser) {
       return <LoginPage />;
   }
@@ -502,7 +494,7 @@ const App: React.FC = () => {
       <nav className="sticky top-0 z-30 bg-slate-900/80 backdrop-blur-md border-b border-slate-800">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
-            <div className="flex items-center cursor-pointer" onClick={() => { setViewState('directory'); setSharedSessionId(undefined); }}>
+            <div className="flex items-center cursor-pointer" onClick={() => { setViewState('directory'); }}>
               <div className="bg-gradient-to-tr from-indigo-600 to-purple-600 p-2 rounded-xl shadow-lg shadow-indigo-500/20">
                 <Podcast className="text-white w-6 h-6" />
               </div>
@@ -522,7 +514,6 @@ const App: React.FC = () => {
                 value={searchQuery}
                 onChange={(e) => {
                     setSearchQuery(e.target.value);
-                    // Auto-switch to directory search view if user types
                     if (e.target.value && viewState !== 'directory') setViewState('directory');
                     if (e.target.value && activeTab !== 'categories') setActiveTab('categories');
                 }}
@@ -540,16 +531,16 @@ const App: React.FC = () => {
               </button>
 
               <button 
-                onClick={() => { setViewState('code_studio'); setSharedSessionId(undefined); }} 
-                className="hidden lg:flex items-center space-x-2 px-3 py-1.5 bg-slate-800/50 hover:bg-emerald-900/30 text-emerald-400 text-xs font-bold rounded-lg transition-colors border border-emerald-500/20"
+                onClick={() => { setViewState('code_studio'); }} 
+                className={`hidden lg:flex items-center space-x-2 px-3 py-1.5 bg-slate-800/50 hover:bg-emerald-900/30 text-emerald-400 text-xs font-bold rounded-lg transition-colors border border-emerald-500/20 ${viewState === 'code_studio' ? 'ring-1 ring-emerald-500 bg-emerald-900/40' : ''}`}
               >
                 <Code size={14}/>
                 <span>{t.code}</span>
               </button>
 
               <button 
-                onClick={() => { setViewState('whiteboard'); setSharedSessionId(undefined); }} 
-                className="hidden lg:flex items-center space-x-2 px-3 py-1.5 bg-slate-800/50 hover:bg-pink-900/30 text-pink-400 text-xs font-bold rounded-lg transition-colors border border-pink-500/20"
+                onClick={() => { setViewState('whiteboard'); }} 
+                className={`hidden lg:flex items-center space-x-2 px-3 py-1.5 bg-slate-800/50 hover:bg-pink-900/30 text-pink-400 text-xs font-bold rounded-lg transition-colors border border-pink-500/20 ${viewState === 'whiteboard' ? 'ring-1 ring-pink-500 bg-pink-900/40' : ''}`}
               >
                 <PenTool size={14}/>
                 <span>{t.whiteboard}</span>
@@ -561,7 +552,6 @@ const App: React.FC = () => {
                  <button onClick={() => setLanguage('zh')} className={`px-2 py-1 rounded-md text-[10px] font-bold transition-all ${language === 'zh' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-400 hover:text-white'}`}>中文</button>
               </div>
 
-              {/* Config Warning */}
               {!isFirebaseConfigured && (
                   <button onClick={() => setIsFirebaseModalOpen(true)} className="p-2 text-amber-500 bg-amber-900/20 rounded-full hover:bg-amber-900/40 border border-amber-900/50 animate-pulse" title="Missing Firebase Config">
                       <AlertTriangle size={18} />
@@ -608,19 +598,24 @@ const App: React.FC = () => {
       {/* Main Content Switch */}
       <div className="flex-1 overflow-y-auto">
         {viewState === 'mission' && <MissionManifesto onBack={() => setViewState('directory')} />}
+        
         {viewState === 'code_studio' && (
             <CodeStudio 
-                onBack={() => { setViewState('directory'); setSharedSessionId(undefined); }} 
+                onBack={() => { setViewState('directory'); }} 
                 currentUser={currentUser} 
                 sessionId={sharedSessionId}
+                onSessionStart={handleSessionStart} // Unified Session Handler
             />
         )}
+        
         {viewState === 'whiteboard' && (
             <Whiteboard 
-                onBack={() => { setViewState('directory'); setSharedSessionId(undefined); }}
+                onBack={() => { setViewState('directory'); }}
                 sessionId={sharedSessionId}
+                onSessionStart={handleSessionStart} // Unified Session Handler
             />
         )}
+        
         {viewState === 'blog' && <BlogView onBack={() => setViewState('directory')} currentUser={currentUser} />}
         
         {viewState === 'directory' && (
@@ -659,7 +654,6 @@ const App: React.FC = () => {
             <div className="min-h-[60vh]">
                {activeTab === 'categories' && (
                     <>
-                    {/* Controls Row (Search, Layout, Filter) */}
                     <div className="flex flex-col md:flex-row items-center justify-between gap-4 mb-6">
                         <div className="text-xl font-bold text-white flex items-center gap-2">
                             {searchQuery && (
@@ -672,7 +666,6 @@ const App: React.FC = () => {
 
                         <div className="flex items-center gap-3 w-full md:w-auto">
                             
-                            {/* NEW ACTIONS: Create & Magic */}
                             <button 
                                 onClick={() => setIsCreateModalOpen(true)}
                                 className="flex items-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-bold rounded-lg transition-colors shadow-lg shadow-indigo-500/20 whitespace-nowrap"
@@ -691,7 +684,6 @@ const App: React.FC = () => {
                                 <span className="hidden sm:inline">Magic</span>
                             </button>
 
-                            {/* Layout Toggle */}
                             <div className="flex bg-slate-800 p-1 rounded-lg border border-slate-700">
                                 <button 
                                     onClick={() => setLayoutMode('grid')}
@@ -709,7 +701,6 @@ const App: React.FC = () => {
                                 </button>
                             </div>
 
-                            {/* Filter Dropdown */}
                             <div className="relative flex-1 md:flex-none">
                                 <select 
                                     value={selectedCategory} 
@@ -735,9 +726,7 @@ const App: React.FC = () => {
                             globalVoice={globalVoice}
                         />
                     ) : (
-                        // GRID MODE
                         <div className="space-y-6">
-                            {/* Search Result Grid */}
                             {searchQuery ? (
                                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                                     {channels.filter(c => 
@@ -760,7 +749,6 @@ const App: React.FC = () => {
                                     ))}
                                 </div>
                             ) : (
-                                // Category Grouped Grid
                                 <div className="space-y-12">
                                     {Object.entries(allCategoryGroups)
                                       .filter(([name]) => selectedCategory === 'All' || selectedCategory === name)
@@ -858,7 +846,7 @@ const App: React.FC = () => {
             onStartLiveSession={(context, lectureId, recordingEnabled, videoEnabled, activeSegment, cameraEnabled) => {
                setLiveConfig({
                    context,
-                   bookingId: lectureId, // Reuse field for lecture ID if ad-hoc
+                   bookingId: lectureId, 
                    recording: recordingEnabled,
                    video: videoEnabled,
                    camera: cameraEnabled,
@@ -888,7 +876,6 @@ const App: React.FC = () => {
                activeSegment={liveConfig.segment}
                initialTranscript={liveConfig.transcript}
                onEndSession={() => {
-                   // If it was a temp/ad-hoc meeting, go to recordings instead of staying in "podcast" view
                    if (tempChannel) {
                        setTempChannel(null);
                        setActiveChannelId(null);
@@ -909,7 +896,6 @@ const App: React.FC = () => {
         {viewState === 'firestore_debug' && <FirestoreInspector onBack={() => setViewState('directory')} />}
       </div>
 
-      {/* --- Footer --- */}
       {viewState === 'directory' && (
         <footer className="bg-slate-950 border-t border-slate-900 py-12 px-4">
            <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center gap-6">
@@ -937,7 +923,6 @@ const App: React.FC = () => {
         </footer>
       )}
 
-      {/* --- Modals --- */}
       <CreateChannelModal 
         isOpen={isCreateModalOpen} 
         onClose={() => setIsCreateModalOpen(false)} 

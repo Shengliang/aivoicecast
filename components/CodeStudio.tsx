@@ -12,7 +12,8 @@ import { LiveSession } from './LiveSession';
 interface CodeStudioProps {
   onBack: () => void;
   currentUser: any;
-  sessionId?: string; // New prop for shared sessions
+  sessionId?: string; 
+  onSessionStart?: (id: string) => void;
 }
 
 const LANGUAGES = [
@@ -147,7 +148,6 @@ int main() {
   },
 };
 
-// ... (Helper functions) ...
 const getLanguageFromFilename = (filename: string): string => {
     const ext = filename.split('.').pop()?.toLowerCase();
     switch(ext) {
@@ -393,14 +393,12 @@ const generateHighlightedHTML = (code: string, language: string) => {
   return processed;
 };
 
-// Component to render remote cursors
 const CodeCursor: React.FC<{ cursor: CursorPosition; currentLine: number }> = ({ cursor, currentLine }) => {
-    const lineHeight = 24; // Fixed line height
-    const charWidth = 8.4; // Approx char width for standard monospace font at 14px
+    const lineHeight = 24;
+    const charWidth = 8.4;
     
-    // Don't render if not on current file or user is self (should be filtered already)
     const top = (cursor.line - 1) * lineHeight;
-    const left = cursor.column * charWidth + 16; // +16 padding
+    const left = cursor.column * charWidth + 16; 
 
     return (
         <div 
@@ -418,7 +416,6 @@ const CodeCursor: React.FC<{ cursor: CursorPosition; currentLine: number }> = ({
             >
                 {cursor.userName}
             </div>
-            {/* Always show small nametag bubble on hover or active */}
             <div 
                 className="absolute -top-4 -left-1 w-2 h-2 rounded-full"
                 style={{ backgroundColor: cursor.color }}
@@ -466,7 +463,6 @@ const EnhancedEditor = ({ code, language, onChange, onScroll, onSelect, textArea
                 />
             </pre>
             
-            {/* Render Remote Cursors */}
             {cursors && cursors.map((c: CursorPosition) => (
                 <CodeCursor key={c.clientId || c.userId} cursor={c} currentLine={0} />
             ))}
@@ -503,7 +499,7 @@ const updateFileTool: FunctionDeclaration = {
     }
 };
 
-export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, sessionId }) => {
+export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, sessionId, onSessionStart }) => {
   const [project, setProject] = useState<CodeProject>(EXAMPLE_PROJECTS['is_bst']);
   const [activeFileIndex, setActiveFileIndex] = useState(0);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
@@ -541,10 +537,8 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
   const [isSharedSession, setIsSharedSession] = useState(false);
   const [guestId] = useState(() => 'guest_' + Math.floor(Math.random() * 10000));
   
-  // Unique Session ID for this tab (allows multiple tabs of same user)
   const [localClientId] = useState(() => crypto.randomUUID());
   
-  // Collaborative State
   const [remoteCursors, setRemoteCursors] = useState<CursorPosition[]>([]);
   const cursorUpdateTimerRef = useRef<any>(null);
   
@@ -559,23 +553,14 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
 
   const fileTree = React.useMemo(() => buildFileTree(project.files, expandedFolders), [project.files, expandedFolders]);
 
-  // Real-time Collaboration Subscription
   useEffect(() => {
       if (sessionId) {
           setIsSharedSession(true);
           const unsubscribe = subscribeToCodeProject(sessionId, (remoteProject) => {
-              // 1. Process Remote Cursors
               if (remoteProject.cursors) {
-                  // IMPORTANT: Filter by Client ID so we see other tabs from same user
                   const others = Object.values(remoteProject.cursors).filter(c => c.clientId !== localClientId);
                   setRemoteCursors(others);
               }
-
-              // 2. Process Files
-              // STRATEGY: Last Write Wins (Simplest viable sync for non-CRDT)
-              // We do NOT block remote updates anymore. This allows merging.
-              // Tradeoff: If typing simultaneously, characters might jump or overwrite.
-              // But if users work on different lines or files, it syncs.
               setProject(prev => {
                   return { ...remoteProject };
               });
@@ -584,7 +569,6 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
       }
   }, [sessionId, activeFileIndex, myUserId, localClientId]); 
 
-  // Cursor Tracking
   const handleCursorUpdate = (e: React.SyntheticEvent<HTMLTextAreaElement>) => {
       if (!isSharedSession) return;
       
@@ -608,7 +592,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
               color: '#'+Math.floor(Math.random()*16777215).toString(16), 
               updatedAt: Date.now()
           });
-      }, 500); // 500ms debounce
+      }, 500); 
       
       setSelection(target.selectionStart !== target.selectionEnd ? val.substring(target.selectionStart, target.selectionEnd) : '');
   };
@@ -753,7 +737,6 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
       };
       updatedProject.files = updatedFiles;
       
-      // GRANULAR SYNC
       if (isSharedSession) {
           if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
           autoSaveTimerRef.current = setTimeout(() => {
@@ -781,24 +764,33 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
       if (!currentUser) { alert("Please sign in to share."); return; }
       setIsSaving(true);
       try {
-          const isTemplate = ['proj-is-bst', 'proj-build-bst', 'proj-empty-cpp'].includes(project.id);
-          const isPublicRepo = project.id.startsWith('gh-');
-          const isNotOwned = project.ownerId && project.ownerId !== currentUser.uid;
-
-          let projectToSave = { ...project };
-          if (isTemplate || isPublicRepo || isNotOwned) {
-              const newId = crypto.randomUUID();
-              projectToSave = { ...projectToSave, id: newId, ownerId: currentUser.uid };
-              setProject(projectToSave); 
-          } else {
-              if (!projectToSave.ownerId) projectToSave.ownerId = currentUser.uid;
+          // If we already have a session ID passed down, reuse it.
+          // Otherwise, generate a new one.
+          let sessionToUse = sessionId;
+          
+          if (!sessionToUse) {
+              sessionToUse = crypto.randomUUID();
           }
 
-          // Initial Save
+          let projectToSave = { ...project };
+          
+          // Ensure we save it with the session ID as the doc ID
+          projectToSave = { ...projectToSave, id: sessionToUse, ownerId: currentUser.uid };
+          setProject(projectToSave);
+
+          // Initial Save to unified ID
           await saveCodeProject(projectToSave);
           
+          // Notify App to update URL/State
+          if (onSessionStart && !sessionId) {
+              onSessionStart(sessionToUse);
+          }
+          
           const url = new URL(window.location.href);
-          url.searchParams.set('code_session', projectToSave.id);
+          url.searchParams.set('session', sessionToUse);
+          // Remove old params if any
+          url.searchParams.delete('code_session');
+          
           await navigator.clipboard.writeText(url.toString());
           alert(`Session Link Copied!\n\n${url.toString()}`);
           setIsSharedSession(true);
@@ -873,7 +865,6 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
       try { await saveCodeProject(project); alert("Saved!"); } catch(e) { alert("Failed."); } finally { setIsSaving(false); }
   };
 
-  // Live Session Handler
   const handleLiveCodeUpdate = async (name: string, args: any) => {
       if (name === 'update_file') {
           const newCode = args.code;

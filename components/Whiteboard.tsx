@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { ArrowLeft, Share2, Trash2, Undo, PenTool, Eraser, Download, Square, Circle, Minus, ArrowRight, Type, ZoomIn, ZoomOut, MousePointer2, Move, Highlighter, Brush, BoxSelect } from 'lucide-react';
 import { auth } from '../services/firebaseConfig';
@@ -7,6 +6,7 @@ import { saveWhiteboardSession, subscribeToWhiteboard, updateWhiteboardElement, 
 interface WhiteboardProps {
   onBack: () => void;
   sessionId?: string;
+  onSessionStart?: (id: string) => void;
 }
 
 type ToolType = 'select' | 'pen' | 'eraser' | 'rect' | 'circle' | 'line' | 'arrow' | 'text' | 'pan';
@@ -32,7 +32,7 @@ interface WhiteboardElement {
   fontFamily?: string;
 }
 
-export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack, sessionId }) => {
+export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack, sessionId, onSessionStart }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [elements, setElements] = useState<WhiteboardElement[]>([]);
   const [isDrawing, setIsDrawing] = useState(false);
@@ -75,9 +75,6 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack, sessionId }) => 
         setIsSharedSession(true);
         currentSessionIdRef.current = sessionId;
         const unsubscribe = subscribeToWhiteboard(sessionId, (remoteElements) => {
-            // When remote updates come in, we update state.
-            // Note: If user is actively drawing 'currentElement', it is separate state so won't be overwritten.
-            // If user is dragging existing elements, there might be a conflict/jump, but last-write-wins is acceptable for this MVP.
             if (remoteElements) {
                 setElements(remoteElements);
             }
@@ -86,7 +83,6 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack, sessionId }) => 
     }
   }, [sessionId]);
 
-  // Sync color/style changes to selected elements
   useEffect(() => {
       if (selectedIds.length === 1) {
           const el = elements.find(e => e.id === selectedIds[0]);
@@ -127,7 +123,6 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack, sessionId }) => 
           return el;
       }));
       
-      // Sync changes
       updatedElements.forEach(el => syncUpdate(el));
   };
 
@@ -181,7 +176,6 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack, sessionId }) => 
           }
           case 'text':
               const fs = el.fontSize || 24;
-              // Simple check - refine for multi-line later if needed
               const w = el.width || ((el.text?.length || 1) * fs * 0.6);
               const h = el.height || fs * 1.2;
               return x >= el.x && x <= el.x + w && y >= el.y && y <= el.y + h;
@@ -237,7 +231,6 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack, sessionId }) => 
   };
 
   const startDrawing = (e: React.MouseEvent | React.TouchEvent) => {
-      // If text input is open, commit it first and return
       if (textInput) {
           handleTextComplete();
           return;
@@ -412,7 +405,6 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack, sessionId }) => 
           const x = Math.min(textDragStart.x, textDragCurrent.x);
           const y = Math.min(textDragStart.y, textDragCurrent.y);
           
-          // Minimum drag to count as a box, else treat as single click point
           const isBox = width > 20 && height > 20;
           
           const id = crypto.randomUUID();
@@ -444,7 +436,6 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack, sessionId }) => 
       }
 
       if (isDraggingSelection) {
-          // Sync changes for all moved elements
           if (isSharedSession) {
               const movedElements = elements.filter(el => initialSelectionStates.current.has(el.id));
               movedElements.forEach(el => syncUpdate(el));
@@ -458,7 +449,6 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack, sessionId }) => 
 
       if (isDrawing && currentElement) {
           setElements(prev => [...prev, currentElement]);
-          // Sync new element
           syncUpdate(currentElement);
           
           setCurrentElement(null);
@@ -486,7 +476,6 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack, sessionId }) => 
       ctx.fill();
   };
 
-  // Helper to wrap text for canvas
   const drawWrappedText = (ctx: CanvasRenderingContext2D, text: string, x: number, y: number, maxWidth: number, lineHeight: number) => {
       const paragraphs = text.split('\n');
       let cursorY = y;
@@ -589,7 +578,6 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack, sessionId }) => 
               if (el.width) {
                   drawWrappedText(ctx, el.text, el.x, el.y, el.width, (el.fontSize || 24) * 1.2);
               } else {
-                  // Fallback for non-wrapped text (split newlines manually)
                   const lines = el.text.split('\n');
                   lines.forEach((line, i) => {
                       ctx.fillText(line, el.x, el.y + i * (el.fontSize || 24) * 1.2);
@@ -654,11 +642,10 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack, sessionId }) => 
           ctx.restore();
       }
       
-      // Draw drag box for text tool
       if (tool === 'text' && isDrawing && textDragStart && textDragCurrent) {
           ctx.save();
           ctx.setLineDash([5, 5]);
-          ctx.strokeStyle = '#22c55e'; // Green for text box creation
+          ctx.strokeStyle = '#22c55e'; 
           ctx.lineWidth = 1 / scale;
           const w = textDragCurrent.x - textDragStart.x;
           const h = textDragCurrent.y - textDragStart.y;
@@ -674,7 +661,6 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack, sessionId }) => 
       if (textInput) {
           if (textInput.text.trim()) {
               const fs = fontSize;
-              // Estimate height if not set (for click-to-type)
               const lineCount = textInput.text.split('\n').length;
               
               const newEl: WhiteboardElement = {
@@ -702,17 +688,33 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack, sessionId }) => 
           alert("Please sign in to share.");
           return;
       }
-      const boardId = currentSessionIdRef.current;
+      
+      // Use existing session ID if available, or generate a new one
+      let boardId = currentSessionIdRef.current;
+      
+      // If we are sharing for the first time without a session ID from props
+      if (!sessionId && !isSharedSession) {
+          boardId = crypto.randomUUID();
+          currentSessionIdRef.current = boardId;
+      }
       
       try {
         await saveWhiteboardSession(boardId, elements);
         
+        // Notify App to update URL
+        if (onSessionStart && !sessionId) {
+            onSessionStart(boardId);
+        }
+        
         const url = new URL(window.location.href);
-        url.searchParams.set('whiteboard_session', boardId);
+        url.searchParams.set('session', boardId);
+        // Clean up old params
+        url.searchParams.delete('whiteboard_session');
+        
         const link = url.toString();
         
         await navigator.clipboard.writeText(link);
-        alert(`Shared Whiteboard Link Copied!\n\nLink: ${link}\n\nSend this to friends to collaborate in real-time.`);
+        alert(`Shared Session Link Copied!\n\nLink: ${link}\n\nThis link syncs both Whiteboard and Code Studio.`);
         
         setIsSharedSession(true);
       } catch(e: any) {
@@ -946,7 +948,6 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack, sessionId }) => 
                 style={{ cursor: tool === 'pan' ? (isPanning ? 'grabbing' : 'grab') : tool === 'select' ? 'default' : 'crosshair' }}
             />
             
-            {/* Text Input Overlay */}
             {textInput && (
                 <textarea
                     autoFocus
@@ -964,7 +965,6 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack, sessionId }) => 
                         background: 'transparent',
                         border: '1px dashed #64748b',
                         outline: 'none',
-                        // If width is defined (dragged), use it and wrap. Else auto width.
                         width: textInput.width ? textInput.width * scale : 'auto',
                         minWidth: '50px',
                         height: textInput.height ? textInput.height * scale : 'auto',
