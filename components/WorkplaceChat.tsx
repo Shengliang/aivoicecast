@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { ChatChannel, RealTimeMessage, Group, UserProfile } from '../types';
-import { sendMessage, subscribeToMessages, getUserGroups, getAllUsers, createOrGetDMChannel, getUserDMChannels } from '../services/firestoreService';
+import { sendMessage, subscribeToMessages, getUserGroups, getAllUsers, createOrGetDMChannel, getUserDMChannels, getUniqueGroupMembers } from '../services/firestoreService';
 import { auth } from '../services/firebaseConfig';
-import { Send, Hash, Lock, User, Plus, Search, MessageSquare, MoreVertical, Paperclip, Loader2, ArrowLeft, Menu } from 'lucide-react';
+import { Send, Hash, Lock, User, Plus, Search, MessageSquare, MoreVertical, Paperclip, Loader2, ArrowLeft, Menu, Users, Briefcase } from 'lucide-react';
 
 interface WorkplaceChatProps {
   onBack: () => void;
@@ -20,6 +20,7 @@ export const WorkplaceChat: React.FC<WorkplaceChatProps> = ({ onBack, currentUse
   const [groups, setGroups] = useState<Group[]>([]);
   const [dms, setDms] = useState<ChatChannel[]>([]);
   const [allUsers, setAllUsers] = useState<UserProfile[]>([]);
+  const [coworkers, setCoworkers] = useState<UserProfile[]>([]);
   
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [isSearchingUsers, setIsSearchingUsers] = useState(false);
@@ -33,6 +34,7 @@ export const WorkplaceChat: React.FC<WorkplaceChatProps> = ({ onBack, currentUse
       getUserGroups(currentUser.uid).then(setGroups);
       getUserDMChannels().then(setDms);
       getAllUsers().then(users => setAllUsers(users.filter(u => u.uid !== currentUser.uid)));
+      getUniqueGroupMembers(currentUser.uid).then(setCoworkers);
     }
   }, [currentUser]);
 
@@ -149,6 +151,27 @@ export const WorkplaceChat: React.FC<WorkplaceChatProps> = ({ onBack, currentUse
                   </div>
               </div>
 
+              {/* Coworkers / Group Members */}
+              {coworkers.length > 0 && (
+                  <div>
+                      <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 px-2 flex justify-between items-center">
+                          Team Members
+                      </h3>
+                      <div className="space-y-0.5">
+                          {coworkers.map(member => (
+                              <button 
+                                  key={member.uid}
+                                  onClick={() => handleStartDM(member.uid, member.displayName)}
+                                  className="w-full flex items-center gap-2 px-2 py-1.5 rounded text-sm text-slate-400 hover:bg-slate-800 hover:text-white group"
+                              >
+                                  <div className={`w-2 h-2 rounded-full ${member.lastLogin ? 'bg-emerald-500' : 'bg-slate-600'}`}></div>
+                                  <span className="truncate">{member.displayName}</span>
+                              </button>
+                          ))}
+                      </div>
+                  </div>
+              )}
+
               {/* Direct Messages */}
               <div>
                   <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 px-2 flex justify-between items-center">
@@ -190,7 +213,7 @@ export const WorkplaceChat: React.FC<WorkplaceChatProps> = ({ onBack, currentUse
                               onClick={() => { setActiveChannelId(dm.id); setActiveChannelType('dm'); setActiveChannelName(dm.name.replace(currentUser?.displayName || '', '').replace('&', '').trim() || 'DM'); if(window.innerWidth < 768) setIsSidebarOpen(false); }}
                               className={`w-full flex items-center gap-2 px-2 py-1.5 rounded text-sm ${activeChannelId === dm.id ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}
                           >
-                              <div className="w-2 h-2 rounded-full bg-emerald-500"></div>
+                              <User size={14} />
                               <span className="truncate">{dm.name.replace(currentUser?.displayName || '', '').replace('&', '').trim() || 'Chat'}</span>
                           </button>
                       ))}

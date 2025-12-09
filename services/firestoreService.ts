@@ -640,25 +640,31 @@ export async function createGroup(name: string): Promise<string> {
   const user = auth.currentUser;
   if (!user) throw new Error("Must be logged in");
 
+  const newGroupRef = db.collection('groups').doc();
   const newGroup: Group = {
-    id: '', 
+    id: newGroupRef.id, 
     name,
     ownerId: user.uid,
     memberIds: [user.uid],
     createdAt: Date.now()
   };
 
-  const docRef = await db.collection('groups').add(sanitizeData(newGroup));
-  await docRef.update({ id: docRef.id });
+  // Use set instead of add/update to prevent permission errors on incomplete docs
+  await newGroupRef.set(sanitizeData(newGroup));
 
   const userRef = db.collection('users').doc(user.uid);
-  await userRef.update({
-    groups: firebase.firestore.FieldValue.arrayUnion(docRef.id)
-  });
+  // We try to update user, but if rules block it, the group is still created
+  try {
+      await userRef.update({
+        groups: firebase.firestore.FieldValue.arrayUnion(newGroupRef.id)
+      });
+  } catch (e) {
+      console.warn("Could not link group to user profile directly (might be handled by rules or triggers)", e);
+  }
   
-  logUserActivity('create_group', { groupId: docRef.id, name });
+  logUserActivity('create_group', { groupId: newGroupRef.id, name });
 
-  return docRef.id;
+  return newGroupRef.id;
 }
 
 export async function joinGroup(groupId: string): Promise<void> {
@@ -707,6 +713,28 @@ export async function getGroupMembers(memberIds: string[]): Promise<UserProfile[
   const promises = memberIds.map(uid => getUserProfile(uid));
   const results = await Promise.all(promises);
   return results.filter(p => p !== null) as UserProfile[];
+}
+
+// Get all unique members from all groups a user is in (for Workspace Chat)
+export async function getUniqueGroupMembers(uid: string): Promise<UserProfile[]> {
+    const userGroups = await getUserGroups(uid);
+    if (userGroups.length === 0) return [];
+
+    // Collect all member IDs
+    const allMemberIds = new Set<string>();
+    userGroups.forEach(g => {
+        if (g.memberIds) {
+            g.memberIds.forEach(mid => {
+                if (mid !== uid) allMemberIds.add(mid); // Exclude self
+            });
+        }
+    });
+
+    if (allMemberIds.size === 0) return [];
+    
+    // Fetch profiles
+    const profiles = await getGroupMembers(Array.from(allMemberIds));
+    return profiles;
 }
 
 export async function removeMemberFromGroup(groupId: string, memberId: string): Promise<void> {
