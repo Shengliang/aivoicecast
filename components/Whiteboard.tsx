@@ -28,6 +28,8 @@ interface WhiteboardElement {
   strokeWidth: number;
   lineStyle?: LineStyle;
   brushType?: BrushType;
+  fontSize?: number;
+  fontFamily?: string;
 }
 
 export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack, sessionId }) => {
@@ -42,6 +44,8 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack, sessionId }) => 
   const [lineWidth, setLineWidth] = useState(3);
   const [lineStyle, setLineStyle] = useState<LineStyle>('solid');
   const [brushType, setBrushType] = useState<BrushType>('standard');
+  const [fontSize, setFontSize] = useState(24);
+  const [fontFamily, setFontFamily] = useState('sans-serif');
   
   // Selection State
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -87,6 +91,27 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack, sessionId }) => 
           return () => clearTimeout(timeout);
       }
   }, [elements, isSharedSession]);
+
+  // Sync state with selection
+  useEffect(() => {
+      if (selectedIds.length === 1) {
+          const el = elements.find(e => e.id === selectedIds[0]);
+          if (el) {
+              setColor(el.color);
+              setLineWidth(el.strokeWidth);
+              if (el.type === 'line' || el.type === 'arrow' || el.type === 'rect' || el.type === 'circle') {
+                  setLineStyle(el.lineStyle || 'solid');
+              }
+              if (el.type === 'text') {
+                  setFontSize(el.fontSize || 24);
+                  setFontFamily(el.fontFamily || 'sans-serif');
+              }
+              if (el.type === 'pen') {
+                  setBrushType(el.brushType || 'standard');
+              }
+          }
+      }
+  }, [selectedIds, elements]);
 
   // --- Bulk Update Helper ---
   const updateSelectedElements = (updates: Partial<WhiteboardElement>) => {
@@ -157,9 +182,11 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack, sessionId }) => 
           }
           case 'text':
               // Approx check for text
-              const w = (el.text?.length || 5) * 12; // Rough char width
-              const h = 24;
-              return x >= el.x && x <= el.x + w && y >= el.y - h && y <= el.y;
+              const fs = el.fontSize || 24;
+              const w = (el.text?.length || 1) * fs * 0.6; // Rough char width
+              const h = fs;
+              // Top baseline hit test
+              return x >= el.x && x <= el.x + w && y >= el.y && y <= el.y + h;
           default:
               return false;
       }
@@ -188,7 +215,8 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack, sessionId }) => 
                   h: Math.abs((e.endY || e.y) - e.y)
               };
           } else if (e.type === 'text') {
-              return { x: e.x, y: e.y - 20, w: (e.text?.length || 5) * 12, h: 30 };
+              const fs = e.fontSize || 24;
+              return { x: e.x, y: e.y, w: (e.text?.length || 1) * fs * 0.6, h: fs };
           }
           // Rect, Circle
           return {
@@ -219,7 +247,10 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack, sessionId }) => 
   };
 
   const startDrawing = (e: React.MouseEvent | React.TouchEvent) => {
+      // If user clicks outside textarea, commit it first
       if (textInput) {
+          // If we clicked *on* the textarea, the event shouldn't be here (textarea swallows clicks)
+          // So this means we clicked the canvas.
           handleTextComplete();
           return;
       }
@@ -410,7 +441,6 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack, sessionId }) => 
           
           setSelectedIds(prev => {
               // Add to selection if Ctrl pressed (technically we don't have event here, but standard select box behavior replaces selection)
-              // Since we don't have modifier key in stopDrawing easily without tracking it globally, we'll replace selection for box
               return hitIds;
           });
           
@@ -484,9 +514,6 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack, sessionId }) => 
               ctx.lineCap = 'butt';
               ctx.lineJoin = 'miter';
           } else if (el.brushType === 'calligraphy') {
-              // Simulated calligraphy by drawing multiple thin lines (simplified) or changing cap
-              // Real calligraphy requires custom path stroking which is complex for canvas path
-              // We'll approximate with an oval transform if needed, but for simplicity, we use butt cap
               ctx.lineCap = 'butt';
           }
 
@@ -525,7 +552,8 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack, sessionId }) => 
               ctx.setLineDash([]); // Arrowhead always solid
               drawArrowHead(ctx, el.x, el.y, ex, ey, el.color);
           } else if (el.type === 'text' && el.text) {
-              ctx.font = `${20}px sans-serif`;
+              ctx.font = `${el.fontSize || 24}px ${el.fontFamily || 'sans-serif'}`;
+              ctx.textBaseline = 'top'; // Align top-left like HTML element
               ctx.fillStyle = el.color;
               ctx.fillText(el.text, el.x, el.y);
           }
@@ -554,8 +582,10 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack, sessionId }) => 
                   const maxY = Math.max(el.y, el.endY || el.y);
                   ctx.strokeRect(minX - padding, minY - padding, maxX - minX + padding*2, maxY - minY + padding*2);
               } else if (el.type === 'text') {
+                  const fs = el.fontSize || 24;
+                  ctx.font = `${fs}px ${el.fontFamily || 'sans-serif'}`;
                   const width = ctx.measureText(el.text || '').width;
-                  ctx.strokeRect(el.x - padding, el.y - 20 - padding, width + padding*2, 30 + padding*2);
+                  ctx.strokeRect(el.x - padding, el.y - padding, width + padding*2, fs + padding*2);
               } else if (el.type === 'pen' || el.type === 'eraser') {
                   if (el.points) {
                       const minX = Math.min(...el.points.map(p => p.x));
@@ -603,7 +633,9 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack, sessionId }) => 
                   y: textInput.y,
                   text: textInput.text,
                   color: color,
-                  strokeWidth: 1
+                  strokeWidth: 1,
+                  fontSize: fontSize,
+                  fontFamily: fontFamily
               };
               setElements(prev => [...prev, newEl]);
           }
@@ -759,7 +791,39 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack, sessionId }) => 
                 </div>
             )}
 
-            {/* Line Options (Applies to new drawing AND bulk selection) */}
+            {/* Text Options (Font Size/Family) */}
+            {(tool === 'text' || (selectedIds.length > 0 && elements.some(el => selectedIds.includes(el.id) && el.type === 'text'))) && (
+                <div className="flex items-center gap-2 px-2 bg-slate-800 rounded-lg animate-fade-in py-1">
+                    <select 
+                        value={fontFamily} 
+                        onChange={(e) => {
+                            setFontFamily(e.target.value);
+                            updateSelectedElements({ fontFamily: e.target.value });
+                        }}
+                        className="bg-transparent text-xs text-white outline-none w-20 border-r border-slate-700 mr-2"
+                    >
+                        <option value="sans-serif">Sans</option>
+                        <option value="serif">Serif</option>
+                        <option value="monospace">Mono</option>
+                        <option value="cursive">Hand</option>
+                    </select>
+                    
+                    <input 
+                        type="number" 
+                        value={fontSize} 
+                        onChange={(e) => {
+                            const size = parseInt(e.target.value);
+                            setFontSize(size);
+                            updateSelectedElements({ fontSize: size });
+                        }}
+                        className="bg-transparent text-xs text-white outline-none w-10 text-center"
+                        min="8" max="128"
+                    />
+                    <span className="text-[10px] text-slate-500">px</span>
+                </div>
+            )}
+
+            {/* Line Options */}
             <div className="flex bg-slate-800 rounded-lg p-1">
                 <button onClick={() => { setLineStyle('solid'); updateSelectedElements({ lineStyle: 'solid' }); }} className={`p-2 rounded text-xs font-mono ${lineStyle === 'solid' ? 'bg-slate-700 text-white' : 'text-slate-400'}`}>────</button>
                 <button onClick={() => { setLineStyle('dashed'); updateSelectedElements({ lineStyle: 'dashed' }); }} className={`p-2 rounded text-xs font-mono ${lineStyle === 'dashed' ? 'bg-slate-700 text-white' : 'text-slate-400'}`}>- - -</button>
@@ -830,19 +894,23 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack, sessionId }) => 
                     style={{
                         position: 'absolute',
                         left: textInput.x * scale + offset.x,
-                        top: textInput.y * scale + offset.y - 12,
-                        fontSize: `${20 * scale}px`,
+                        top: textInput.y * scale + offset.y,
+                        fontSize: `${fontSize * scale}px`,
+                        fontFamily: fontFamily,
                         color: color,
                         background: 'transparent',
                         border: '1px dashed #64748b',
                         outline: 'none',
-                        minWidth: '100px',
+                        minWidth: '50px',
                         overflow: 'hidden',
-                        resize: 'none',
-                        fontFamily: 'sans-serif',
-                        zIndex: 20
+                        resize: 'both',
+                        whiteSpace: 'pre',
+                        zIndex: 20,
+                        padding: 0,
+                        margin: 0,
+                        lineHeight: 1
                     }}
-                    placeholder="Type here..."
+                    placeholder="Type..."
                 />
             )}
         </div>
