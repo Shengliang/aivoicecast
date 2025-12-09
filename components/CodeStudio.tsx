@@ -1073,7 +1073,7 @@ If the user asks questions, answer based on this new context. If they ask to cha
           url.searchParams.set('code_session', projectToSave.id);
           
           await navigator.clipboard.writeText(url.toString());
-          alert("Session Link Copied to Clipboard!\n\nSend this to your team members. They can join and edit in real-time.");
+          alert(`Session Link Copied to Clipboard!\n\nLink: ${url.toString()}\n\nSend this to your team members. They can join and edit in real-time.`);
           
           setIsSharedSession(true);
       } catch(e: any) {
