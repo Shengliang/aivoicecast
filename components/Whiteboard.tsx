@@ -639,16 +639,21 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack, sessionId }) => 
       const boardId = currentSessionIdRef.current;
       if (!boardId) return;
       
-      // Save current state first
-      await saveWhiteboardSession(boardId, elements);
-      
-      const url = new URL(window.location.href);
-      url.searchParams.set('whiteboard_session', boardId);
-      
-      await navigator.clipboard.writeText(url.toString());
-      alert("Shared Whiteboard Link Copied!\n\nSend this to friends to collaborate in real-time.");
-      
-      setIsSharedSession(true);
+      try {
+          // Save current state first
+          await saveWhiteboardSession(boardId, elements);
+          
+          const url = new URL(window.location.href);
+          url.searchParams.set('whiteboard_session', boardId);
+          
+          await navigator.clipboard.writeText(url.toString());
+          alert("Shared Whiteboard Link Copied!\n\nSend this to friends to collaborate in real-time.");
+          
+          setIsSharedSession(true);
+      } catch (e: any) {
+          console.error("Whiteboard share error:", e);
+          alert(`Failed to create share link: ${e.message}`);
+      }
   };
 
   const getPointerPos = (e: React.MouseEvent | React.TouchEvent) => {

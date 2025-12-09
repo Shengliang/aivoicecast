@@ -1046,22 +1046,34 @@ If the user asks questions, answer based on this new context. If they ask to cha
           return;
       }
       
-      // 1. Ensure project is saved to Firestore
       setIsSaving(true);
       try {
-          await saveCodeProject(project);
+          // Clone to a new shareable session ID to ensure clean permissions and no overwrites of templates
+          const shareId = `share-${crypto.randomUUID()}`;
+          const projectToShare = {
+              ...project,
+              id: shareId,
+              name: `${project.name} (Shared)`,
+              ownerId: currentUser.uid, // Explicitly take ownership
+              lastModified: Date.now()
+          };
           
-          // 2. Generate Link
+          await saveCodeProject(projectToShare);
+          
+          // Switch to this new project context
+          setProject(projectToShare);
+          setIsSharedSession(true);
+
+          // Generate Link
           const url = new URL(window.location.href);
-          url.searchParams.set('code_session', project.id);
+          url.searchParams.set('code_session', shareId);
           
           await navigator.clipboard.writeText(url.toString());
           alert("Session Link Copied to Clipboard!\n\nSend this to your team members. They can join and edit in real-time.");
           
-          setIsSharedSession(true);
-      } catch(e) {
-          console.error(e);
-          alert("Failed to create share link.");
+      } catch(e: any) {
+          console.error("Share error:", e);
+          alert(`Failed to create share link: ${e.message}`);
       } finally {
           setIsSaving(false);
       }
