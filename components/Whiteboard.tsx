@@ -13,7 +13,7 @@ interface WhiteboardProps {
 
 type ToolType = 'select' | 'pen' | 'eraser' | 'rect' | 'circle' | 'line' | 'arrow' | 'text' | 'pan';
 type LineStyle = 'solid' | 'dashed' | 'dotted';
-type BrushType = 'standard' | 'pencil' | 'marker' | 'calligraphy-pen' | 'airbrush' | 'oil' | 'watercolor' | 'crayon';
+type BrushType = 'standard' | 'pencil' | 'marker' | 'calligraphy-pen' | 'writing-brush' | 'airbrush' | 'oil' | 'watercolor' | 'crayon';
 
 interface WhiteboardElement {
   id: string;
@@ -658,9 +658,10 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack, sessionId, acces
               ctx.lineJoin = 'bevel';
               ctx.lineWidth = Math.max(el.strokeWidth, 8) / scale; 
           } else if (el.brushType === 'calligraphy-pen') {
-              ctx.lineCap = 'butt';
-              // Calligraphy simulation often involves drawing path multiple times with offset or transforming context
-              // For simplicity in standard canvas, we use a fixed nib angle via lineCap butt
+              // Western Calligraphy: Slanted Pen via Matrix Transform
+              ctx.lineCap = 'butt'; // Flat tip
+              // Apply shear transformation (45 degrees approx) to simulate flat nib angle
+              ctx.transform(1, 0, -0.5, 1, 0, 0); 
           } else if (el.brushType === 'airbrush') {
               ctx.lineCap = 'round';
               ctx.shadowBlur = 15;
@@ -679,7 +680,6 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack, sessionId, acces
           } else if (el.brushType === 'crayon') {
               ctx.lineCap = 'butt';
               ctx.lineJoin = 'bevel';
-              // Crayon texture is hard without a pattern, we simulate with roughness via bevel join and no anti-alias tricks (default)
           }
 
           if (el.lineStyle === 'dashed') ctx.setLineDash([15, 10]);
@@ -687,12 +687,56 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack, sessionId, acces
           else ctx.setLineDash([]);
 
           if (el.type === 'pen' || el.type === 'eraser') {
-              if (el.points && el.points.length > 0) {
-                  ctx.moveTo(el.points[0].x, el.points[0].y);
-                  for (let i = 1; i < el.points.length; i++) {
-                      ctx.lineTo(el.points[i].x, el.points[i].y);
+              // Special Rendering for Chinese Brush (Variable Width)
+              if (el.brushType === 'writing-brush' && el.points && el.points.length > 2) {
+                  ctx.lineCap = 'round';
+                  ctx.lineJoin = 'round';
+                  ctx.shadowBlur = 2; // Slight bleed
+                  ctx.shadowColor = el.color;
+                  
+                  let p1 = el.points[0];
+                  let p2 = el.points[1];
+                  let lastWidth = el.strokeWidth / scale;
+
+                  ctx.beginPath();
+                  
+                  // Iterate points to draw segments with variable width
+                  for (let i = 1; i < el.points.length - 1; i++) {
+                      let p3 = el.points[i+1];
+                      
+                      // Calculate midpoints for QuadCurve
+                      let mid1 = { x: (p1.x + p2.x) / 2, y: (p1.y + p2.y) / 2 };
+                      let mid2 = { x: (p2.x + p3.x) / 2, y: (p2.y + p3.y) / 2 };
+                      
+                      // Velocity-based width calculation
+                      const dist = Math.hypot(p2.x - p1.x, p2.y - p1.y);
+                      // Faster = Thinner, Slower = Thicker
+                      const targetWidth = (el.strokeWidth / scale) * Math.max(0.2, (1.2 - Math.min(1, dist / 20))); 
+                      
+                      // Smooth transition
+                      const width = lastWidth * 0.6 + targetWidth * 0.4;
+
+                      // Draw segment
+                      ctx.beginPath();
+                      ctx.moveTo(mid1.x, mid1.y);
+                      ctx.quadraticCurveTo(p2.x, p2.y, mid2.x, mid2.y);
+                      ctx.lineWidth = width;
+                      ctx.stroke();
+                      
+                      p1 = p2;
+                      p2 = p3;
+                      lastWidth = width;
                   }
-                  ctx.stroke();
+              } else {
+                  // Standard uniform stroke
+                  if (el.points && el.points.length > 0) {
+                      ctx.beginPath();
+                      ctx.moveTo(el.points[0].x, el.points[0].y);
+                      for (let i = 1; i < el.points.length; i++) {
+                          ctx.lineTo(el.points[i].x, el.points[i].y);
+                      }
+                      ctx.stroke();
+                  }
               }
           } else if (el.type === 'rect') {
               ctx.strokeRect(el.x, el.y, el.width || 0, el.height || 0);
@@ -980,13 +1024,16 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack, sessionId, acces
                     <button onClick={() => setBrushType('standard')} className={`p-1.5 rounded ${brushType === 'standard' ? 'bg-slate-700 text-white' : 'text-slate-400 hover:text-slate-300'}`} title="Standard Pen">
                         <PenTool size={16} />
                     </button>
+                    <button onClick={() => setBrushType('writing-brush')} className={`p-1.5 rounded ${brushType === 'writing-brush' ? 'bg-slate-700 text-white' : 'text-slate-400 hover:text-slate-300'}`} title="Chinese Brush">
+                        <Brush size={16} />
+                    </button>
                     <button onClick={() => setBrushType('pencil')} className={`p-1.5 rounded ${brushType === 'pencil' ? 'bg-slate-700 text-white' : 'text-slate-400 hover:text-slate-300'}`} title="Natural Pencil">
                         <Pencil size={16} />
                     </button>
                     <button onClick={() => setBrushType('marker')} className={`p-1.5 rounded ${brushType === 'marker' ? 'bg-slate-700 text-yellow-300' : 'text-slate-400 hover:text-slate-300'}`} title="Marker">
                         <Highlighter size={16} />
                     </button>
-                    <button onClick={() => setBrushType('calligraphy-pen')} className={`p-1.5 rounded ${brushType === 'calligraphy-pen' ? 'bg-slate-700 text-white' : 'text-slate-400 hover:text-slate-300'}`} title="Calligraphy Pen">
+                    <button onClick={() => setBrushType('calligraphy-pen')} className={`p-1.5 rounded ${brushType === 'calligraphy-pen' ? 'bg-slate-700 text-white' : 'text-slate-400 hover:text-slate-300'}`} title="Ribbon Pen">
                         <Feather size={16} />
                     </button>
                     <button onClick={() => setBrushType('airbrush')} className={`p-1.5 rounded ${brushType === 'airbrush' ? 'bg-slate-700 text-white' : 'text-slate-400 hover:text-slate-300'}`} title="Airbrush">
