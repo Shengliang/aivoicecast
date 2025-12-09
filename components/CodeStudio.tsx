@@ -549,7 +549,8 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
           setIsSharedSession(true);
           const unsubscribe = subscribeToCodeProject(sessionId, (remoteProject) => {
               if (remoteProject.cursors) {
-                  const others = Object.values(remoteProject.cursors).filter(c => c.clientId !== localClientId);
+                  // FILTER: Hide my own cursors based on User ID (even if from another tab/window)
+                  const others = Object.values(remoteProject.cursors).filter(c => c.userId !== myUserId);
                   setRemoteCursors(others);
               }
               setProject(prev => {
