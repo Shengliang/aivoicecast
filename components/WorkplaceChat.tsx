@@ -1,5 +1,4 @@
 
-
 import React, { useState, useEffect, useRef } from 'react';
 import { ChatChannel, RealTimeMessage, Group, UserProfile } from '../types';
 import { sendMessage, subscribeToMessages, getUserGroups, getAllUsers, createOrGetDMChannel, getUserDMChannels, getUniqueGroupMembers, deleteMessage } from '../services/firestoreService';
@@ -29,6 +28,7 @@ export const WorkplaceChat: React.FC<WorkplaceChatProps> = ({ onBack, currentUse
   const [userSearchQuery, setUserSearchQuery] = useState('');
   
   const [replyingTo, setReplyingTo] = useState<RealTimeMessage | null>(null);
+  const [selectedMessageId, setSelectedMessageId] = useState<string | null>(null);
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -62,6 +62,7 @@ export const WorkplaceChat: React.FC<WorkplaceChatProps> = ({ onBack, currentUse
   // Reset reply state when changing channels
   useEffect(() => {
       setReplyingTo(null);
+      setSelectedMessageId(null);
   }, [activeChannelId]);
 
   const handleSendMessage = async (e?: React.FormEvent) => {
@@ -261,8 +262,8 @@ export const WorkplaceChat: React.FC<WorkplaceChatProps> = ({ onBack, currentUse
           {/* User Profile Footer */}
           {currentUser && (
               <div className="p-3 bg-slate-950 border-t border-slate-800 flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-full bg-indigo-600 flex items-center justify-center text-white font-bold">
-                      {currentUser.photoURL ? <img src={currentUser.photoURL} className="w-full h-full rounded-full"/> : currentUser.displayName?.[0]}
+                  <div className="w-8 h-8 rounded-full bg-indigo-600 flex items-center justify-center text-white font-bold overflow-hidden">
+                      {currentUser.photoURL ? <img src={currentUser.photoURL} className="w-full h-full object-cover"/> : currentUser.displayName?.[0]}
                   </div>
                   <div className="flex-1 min-w-0">
                       <p className="text-sm font-bold text-white truncate">{currentUser.displayName}</p>
@@ -295,7 +296,7 @@ export const WorkplaceChat: React.FC<WorkplaceChatProps> = ({ onBack, currentUse
           </div>
 
           {/* Messages */}
-          <div className="flex-1 overflow-y-auto p-4 space-y-4">
+          <div className="flex-1 overflow-y-auto p-4 space-y-2">
               {messages.length === 0 ? (
                   <div className="h-full flex flex-col items-center justify-center text-slate-500">
                       <MessageSquare size={48} className="mb-4 opacity-20"/>
@@ -304,27 +305,31 @@ export const WorkplaceChat: React.FC<WorkplaceChatProps> = ({ onBack, currentUse
               ) : (
                   messages.map((msg, i) => {
                       const isMe = msg.senderId === currentUser?.uid;
-                      const showHeader = i === 0 || messages[i-1].senderId !== msg.senderId || (msg.timestamp?.toMillis() - messages[i-1].timestamp?.toMillis() > 300000);
+                      const showHeader = i === 0 || messages[i-1].senderId !== msg.senderId || (msg.timestamp?.toMillis && messages[i-1].timestamp?.toMillis && (msg.timestamp.toMillis() - messages[i-1].timestamp.toMillis() > 300000));
+                      const isSelected = selectedMessageId === msg.id;
                       
                       return (
-                          <div key={msg.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'} group mb-2 relative`}>
+                          <div key={msg.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'} mb-1 group/row`}>
                               
-                              {/* Actions (Reply, Delete) */}
-                              <div className={`absolute top-0 ${isMe ? 'left-0 -translate-x-full pr-2' : 'right-0 translate-x-full pl-2'} opacity-0 group-hover:opacity-100 flex items-center gap-1 h-full transition-opacity`}>
-                                <button onClick={() => setReplyingTo(msg)} className="p-1.5 rounded-full bg-slate-800 text-slate-400 hover:text-white border border-slate-700 hover:bg-slate-700" title="Reply">
-                                    <Reply size={12}/>
-                                </button>
-                                {isMe && (
-                                    <button onClick={() => handleDeleteMessage(msg.id)} className="p-1.5 rounded-full bg-slate-800 text-slate-400 hover:text-red-400 border border-slate-700 hover:bg-slate-700" title="Unsend Message">
-                                        <Trash2 size={12}/>
-                                    </button>
-                                )}
-                              </div>
+                              {/* Left Avatar (Others) */}
+                              {!isMe && (
+                                  <div className="flex-shrink-0 w-8 mr-2 flex flex-col justify-start pt-1">
+                                      {showHeader && (
+                                          msg.senderImage ? (
+                                              <img src={msg.senderImage} className="w-8 h-8 rounded-full object-cover border border-slate-700" alt={msg.senderName} />
+                                          ) : (
+                                              <div className="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center text-xs text-slate-400 font-bold border border-slate-700">
+                                                  {msg.senderName?.[0]?.toUpperCase()}
+                                              </div>
+                                          )
+                                      )}
+                                  </div>
+                              )}
 
-                              <div className={`flex flex-col max-w-[80%] ${isMe ? 'items-end' : 'items-start'}`}>
+                              <div className={`flex flex-col max-w-[75%] ${isMe ? 'items-end' : 'items-start'}`}>
                                   {showHeader && (
-                                      <div className="flex items-baseline gap-2 mb-1">
-                                          {!isMe && <span className="text-xs font-bold text-slate-300">{msg.senderName}</span>}
+                                      <div className={`flex items-baseline gap-2 mb-1 ${isMe ? 'flex-row-reverse' : ''}`}>
+                                          <span className="text-xs font-bold text-slate-300">{msg.senderName}</span>
                                           <span className="text-[10px] text-slate-500">
                                               {msg.timestamp?.toMillis ? new Date(msg.timestamp.toMillis()).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : ''}
                                           </span>
@@ -332,10 +337,41 @@ export const WorkplaceChat: React.FC<WorkplaceChatProps> = ({ onBack, currentUse
                                   )}
                                   
                                   <div 
-                                      className={`px-4 py-2 rounded-2xl text-sm leading-relaxed relative cursor-pointer ${isMe ? 'bg-indigo-600 text-white rounded-tr-sm' : 'bg-slate-800 text-slate-200 rounded-tl-sm hover:bg-slate-700 transition-colors'}`}
+                                      className={`px-4 py-2 rounded-2xl text-sm leading-relaxed relative cursor-pointer group/bubble 
+                                      ${isMe ? 'bg-indigo-600 text-white rounded-tr-sm' : 'bg-slate-800 text-slate-200 rounded-tl-sm hover:bg-slate-700 transition-colors'}
+                                      `}
+                                      onClick={() => setSelectedMessageId(isSelected ? null : msg.id)}
                                       onDoubleClick={() => setReplyingTo(msg)}
-                                      title="Double-click to reply"
+                                      title="Click for options"
                                   >
+                                      {/* Actions */}
+                                      <div className={`absolute top-0 h-full flex items-center gap-1 transition-opacity duration-200 ${
+                                          isMe 
+                                            ? 'left-0 -translate-x-full pr-2 flex-row-reverse' 
+                                            : 'right-0 translate-x-full pl-2'
+                                          } ${isSelected ? 'opacity-100 pointer-events-auto' : 'opacity-0 group-hover/bubble:opacity-100 pointer-events-none'}`}
+                                      >
+                                          {/* Reply Button */}
+                                          <button 
+                                              onClick={(e) => { e.stopPropagation(); setReplyingTo(msg); setSelectedMessageId(null); }} 
+                                              className="p-1.5 rounded-full bg-slate-800 text-slate-400 hover:text-white border border-slate-700 hover:bg-slate-700 shadow-sm"
+                                              title="Reply"
+                                          >
+                                              <Reply size={14} />
+                                          </button>
+                                          
+                                          {/* Delete Button (Only if isMe) */}
+                                          {isMe && (
+                                              <button 
+                                                  onClick={(e) => { e.stopPropagation(); handleDeleteMessage(msg.id); setSelectedMessageId(null); }} 
+                                                  className="p-1.5 rounded-full bg-slate-800 text-slate-400 hover:text-red-400 border border-slate-700 hover:bg-slate-700 shadow-sm" 
+                                                  title="Unsend Message"
+                                              >
+                                                  <Trash2 size={14} />
+                                              </button>
+                                          )}
+                                      </div>
+
                                       {/* Reply Quote Block */}
                                       {msg.replyTo && (
                                           <div className="mb-2 pl-2 border-l-2 border-white/30 text-xs opacity-70 bg-black/10 p-1 rounded-r select-none">
@@ -346,6 +382,21 @@ export const WorkplaceChat: React.FC<WorkplaceChatProps> = ({ onBack, currentUse
                                       {msg.text}
                                   </div>
                               </div>
+
+                              {/* Right Avatar (Me) */}
+                              {isMe && (
+                                  <div className="flex-shrink-0 w-8 ml-2 flex flex-col justify-start pt-1">
+                                      {showHeader && (
+                                          msg.senderImage ? (
+                                              <img src={msg.senderImage} className="w-8 h-8 rounded-full object-cover border border-indigo-500/30" alt={msg.senderName} />
+                                          ) : (
+                                              <div className="w-8 h-8 rounded-full bg-indigo-700 flex items-center justify-center text-xs text-indigo-200 font-bold border border-indigo-600">
+                                                  {msg.senderName?.[0]?.toUpperCase()}
+                                              </div>
+                                          )
+                                      )}
+                                  </div>
+                              )}
                           </div>
                       );
                   })
