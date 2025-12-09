@@ -16,7 +16,6 @@ import { auth } from '../services/firebaseConfig';
 interface WhiteboardProps {
   onBack: () => void;
   sessionId?: string;
-  currentUser?: any;
 }
 
 type ToolType = 'selection' | 'pencil' | 'rectangle' | 'circle' | 'line' | 'arrow' | 'text' | 'eraser' | 'pan';
@@ -292,7 +291,7 @@ const executeDiagramLayout = (args: any, startId: string): DrawingElement[] => {
     return elements;
 };
 
-export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack, sessionId, currentUser }) => {
+export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack, sessionId }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null); 
   const inputRef = useRef<HTMLInputElement>(null);
@@ -633,29 +632,23 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack, sessionId, curre
   };
 
   const handleShare = async () => {
-      const user = currentUser || auth.currentUser;
-      if (!user) {
+      if (!auth.currentUser) {
           alert("Please sign in to share.");
           return;
       }
       const boardId = currentSessionIdRef.current;
       if (!boardId) return;
       
-      try {
-          // Save current state first
-          await saveWhiteboardSession(boardId, elements);
-          
-          const url = new URL(window.location.href);
-          url.searchParams.set('whiteboard_session', boardId);
-          
-          await navigator.clipboard.writeText(url.toString());
-          alert("Shared Whiteboard Link Copied!\n\nSend this to friends to collaborate in real-time.");
-          
-          setIsSharedSession(true);
-      } catch (e: any) {
-          console.error("Whiteboard share error:", e);
-          alert(`Failed to create share link: ${e.message}`);
-      }
+      // Save current state first
+      await saveWhiteboardSession(boardId, elements);
+      
+      const url = new URL(window.location.href);
+      url.searchParams.set('whiteboard_session', boardId);
+      
+      await navigator.clipboard.writeText(url.toString());
+      alert("Shared Whiteboard Link Copied!\n\nSend this to friends to collaborate in real-time.");
+      
+      setIsSharedSession(true);
   };
 
   const getPointerPos = (e: React.MouseEvent | React.TouchEvent) => {

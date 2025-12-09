@@ -1,4 +1,5 @@
 
+
 import React, { useState, useEffect, useMemo } from 'react';
 import { Channel, ViewState, UserProfile, TranscriptItem, SubscriptionTier } from './types';
 import { 
@@ -148,8 +149,6 @@ const App: React.FC = () => {
 
   // Collaboration State
   const [sharedSessionId, setSharedSessionId] = useState<string | undefined>(undefined);
-  // GitHub Launch State
-  const [githubLaunchConfig, setGithubLaunchConfig] = useState<{owner: string, repo: string, path: string} | null>(null);
 
   // Live Session Config
   const [liveConfig, setLiveConfig] = useState<{
@@ -176,9 +175,6 @@ const App: React.FC = () => {
     const params = new URLSearchParams(window.location.search);
     const codeSession = params.get('code_session');
     const whiteboardSession = params.get('whiteboard_session');
-    const ghOwner = params.get('gh_owner');
-    const ghRepo = params.get('gh_repo');
-    const ghPath = params.get('gh_path');
 
     if (codeSession) {
         setSharedSessionId(codeSession);
@@ -186,31 +182,12 @@ const App: React.FC = () => {
     } else if (whiteboardSession) {
         setSharedSessionId(whiteboardSession);
         setViewState('whiteboard');
-    } else if (ghOwner && ghRepo && ghPath) {
-        setGithubLaunchConfig({ owner: ghOwner, repo: ghRepo, path: ghPath });
-        setViewState('code_studio');
     }
 
     let unsubscribeAuth = () => {};
 
-    // CHECK FOR DEV MODE BYPASS
-    const isDevMode = localStorage.getItem('aivoicecast_dev_mode') === 'true';
-    if (isDevMode) {
-        const mockUser = { uid: 'dev-user', email: 'dev@local', displayName: 'Dev User', photoURL: '' };
-        setCurrentUser(mockUser);
-        setUserProfile({
-            uid: 'dev-user',
-            email: 'dev@local',
-            displayName: 'Dev User',
-            photoURL: '',
-            groups: [],
-            apiUsageCount: 0,
-            subscriptionTier: 'pro'
-        });
-        setAuthLoading(false);
-    } 
-    // Only attempt to connect auth if we have a valid config AND not in dev mode
-    else if (isFirebaseConfigured) {
+    // Only attempt to connect auth if we have a valid config, otherwise we risk a crash
+    if (isFirebaseConfigured) {
         unsubscribeAuth = auth.onAuthStateChanged(async (user) => {
           setCurrentUser(user);
           if (user) {
@@ -252,13 +229,15 @@ const App: React.FC = () => {
   }, []);
 
   // Load Public Channels (Firestore)
+  // Dependency on currentUser ensures we re-subscribe after login if initial attempt failed due to permissions
   useEffect(() => {
     if (isFirebaseConfigured && currentUser) {
         const unsubPublic = subscribeToPublicChannels(
           (data) => setPublicChannels(data),
           (err: any) => {
+              // Gracefully handle permission errors (Guest Mode on restricted DB)
               if (err.code === 'permission-denied' || err.message?.includes('permission')) {
-                  console.warn("Public channels access denied.");
+                  console.warn("Public channels access denied. Waiting for authentication.");
               } else {
                   console.error("Public channels error", err);
               }
@@ -631,24 +610,23 @@ const App: React.FC = () => {
         {viewState === 'mission' && <MissionManifesto onBack={() => setViewState('directory')} />}
         {viewState === 'code_studio' && (
             <CodeStudio 
-                onBack={() => { setViewState('directory'); setSharedSessionId(undefined); setGithubLaunchConfig(null); }} 
+                onBack={() => { setViewState('directory'); setSharedSessionId(undefined); }} 
                 currentUser={currentUser} 
                 sessionId={sharedSessionId}
-                initialGithub={githubLaunchConfig}
             />
         )}
         {viewState === 'whiteboard' && (
             <Whiteboard 
                 onBack={() => { setViewState('directory'); setSharedSessionId(undefined); }}
                 sessionId={sharedSessionId}
-                currentUser={currentUser} // Pass currentUser here!
             />
         )}
         {viewState === 'blog' && <BlogView onBack={() => setViewState('directory')} currentUser={currentUser} />}
         
         {viewState === 'directory' && (
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 animate-fade-in">
-            {/* ... (Existing Directory Content) ... */}
+            
+            {/* Tabs */}
             <div className="flex space-x-2 overflow-x-auto pb-4 mb-4 scrollbar-hide">
                {[
                  { id: 'categories', label: t.podcasts, icon: Layout },

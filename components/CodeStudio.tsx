@@ -1,5 +1,4 @@
-
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { GoogleGenAI, FunctionDeclaration, Type } from '@google/genai';
 import { ArrowLeft, Save, Folder, File, Code, Plus, Trash2, Loader2, ChevronRight, ChevronDown, X, MessageSquare, FileCode, FileJson, FileType, Search, Coffee, Hash, CloudUpload, Edit3, BookOpen, Bot, Send, Maximize2, Minimize2, GripVertical, UserCheck, AlertTriangle, Archive, Sparkles, Video, Mic, CheckCircle, Monitor, FileText, Eye, Github, GitBranch, GitCommit, FolderOpen, RefreshCw, GraduationCap, DownloadCloud, Terminal, Undo2, Check, Share2, Copy } from 'lucide-react';
 import { GEMINI_API_KEY } from '../services/private_keys';
@@ -7,14 +6,13 @@ import { CodeProject, CodeFile, ChatMessage, Channel, GithubMetadata } from '../
 import { MarkdownView } from './MarkdownView';
 import { saveCodeProject, subscribeToCodeProject } from '../services/firestoreService';
 import { signInWithGitHub, reauthenticateWithGitHub } from '../services/authService';
-import { fetchUserRepos, fetchRepoContents, commitToRepo, fetchPublicRepoInfo, fetchFileContent, fetchRepoSubTree, createFileInRepo } from '../services/githubService';
+import { fetchUserRepos, fetchRepoContents, commitToRepo, fetchPublicRepoInfo, fetchFileContent, fetchRepoSubTree } from '../services/githubService';
 import { LiveSession } from './LiveSession';
 
 interface CodeStudioProps {
   onBack: () => void;
   currentUser: any;
   sessionId?: string; // New prop for shared sessions
-  initialGithub?: { owner: string, repo: string, path?: string } | null;
 }
 
 const LANGUAGES = [
@@ -54,6 +52,15 @@ const LANGUAGES = [
         id: 'typescript', label: 'TypeScript', ext: 'ts', 
         defaultCode: `console.log("Hello TypeScript");` 
     },
+];
+
+const QUICK_REPOS = [
+  { name: "Shengliang/codestudio", value: "Shengliang/codestudio" },
+  { name: "Shengliang/aivoicecast", value: "Shengliang/aivoicecast" },
+  { name: "torvalds/linux", value: "torvalds/linux" },
+  { name: "postgres/postgres", value: "postgres/postgres" },
+  { name: "mysql/mysql-server", value: "mysql/mysql-server" },
+  { name: "redis/redis", value: "redis/redis" }
 ];
 
 const EXAMPLE_PROJECTS: Record<string, CodeProject> = {
@@ -582,281 +589,1581 @@ const EnhancedEditor = ({ code, language, onChange, onScroll, onSelect, textArea
             <pre
                 className="absolute top-0 left-0 w-full h-full p-4 pointer-events-none margin-0 whitespace-pre overflow-hidden leading-6"
                 aria-hidden="true"
-                style={{
-                    fontFamily: 'monospace',
-                    tabSize: 4
-                }}
-                dangerouslySetInnerHTML={{ __html: generateHighlightedHTML(code, language) }}
-            />
+                style={{ fontFamily: 'monospace' }}
+            >
+                <code 
+                    dangerouslySetInnerHTML={{ __html: generateHighlightedHTML(code, language) + '<br/>' }} 
+                />
+            </pre>
 
-            {/* Actual Text Area (Foreground, Transparent) */}
+            {/* Editing Layer (Foreground) */}
             <textarea
                 ref={textAreaRef}
                 value={code}
-                onChange={onChange}
+                onChange={(e) => onChange(e.target.value)}
                 onScroll={onScroll}
                 onSelect={onSelect}
+                className="absolute top-0 left-0 w-full h-full p-4 bg-transparent text-transparent caret-white outline-none resize-none leading-6 whitespace-pre overflow-auto"
                 spellCheck={false}
-                className="absolute top-0 left-0 w-full h-full p-4 bg-transparent text-transparent caret-white outline-none resize-none overflow-auto whitespace-pre leading-6"
-                style={{
-                    fontFamily: 'monospace',
-                    tabSize: 4
-                }}
+                autoCapitalize="off"
+                autoComplete="off"
+                autoCorrect="off"
+                style={{ fontFamily: 'monospace' }}
             />
         </div>
     </div>
   );
 };
 
-export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, sessionId, initialGithub }) => {
-  const [project, setProject] = useState<CodeProject>(EXAMPLE_PROJECTS.is_bst);
+// Define tool for updating file
+const updateFileTool: FunctionDeclaration = {
+    name: 'update_file',
+    description: 'Overwrite the current file content with new code if user asks for changes.',
+    parameters: {
+        type: Type.OBJECT,
+        properties: {
+            code: { type: Type.STRING, description: 'The full new code content for the file.' }
+        },
+        required: ['code']
+    }
+};
+
+export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, sessionId }) => {
+  const [project, setProject] = useState<CodeProject>(EXAMPLE_PROJECTS['is_bst']);
   const [activeFileIndex, setActiveFileIndex] = useState(0);
+  const [output, setOutput] = useState('');
+  const [humanComments, setHumanComments] = useState('');
+  const [interviewFeedback, setInterviewFeedback] = useState('');
+  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [expandedFolders, setExpandedFolders] = useState<Record<string, boolean>>({});
-  const [loadingFolders, setLoadingFolders] = useState<Record<string, boolean>>({});
-  const [githubToken, setGithubToken] = useState<string | null>(null);
-  const [isSharedSession, setIsSharedSession] = useState(!!sessionId);
+  const [loadingFolders, setLoadingFolders] = useState<Record<string, boolean>>({}); // Track folder fetches
+  const [activeSideView, setActiveSideView] = useState<'none' | 'chat' | 'tutor' | 'review'>('chat');
+  const [sidebarTab, setSidebarTab] = useState<'explorer' | 'search'>('explorer');
   const [isSaving, setIsSaving] = useState(false);
-  const [shareLink, setShareLink] = useState<string | null>(null);
+  const [showLanguageDropdown, setShowLanguageDropdown] = useState(false);
+  const [showExamplesDropdown, setShowExamplesDropdown] = useState(false);
+  const [isPreviewMode, setIsPreviewMode] = useState(false);
+  const [isReviewing, setIsReviewing] = useState(false);
+  const [isLoadingFile, setIsLoadingFile] = useState(false);
+  const [tutorSessionId, setTutorSessionId] = useState<string>(''); // For fresh "Teach Me" sessions
   
-  // Rebuild file tree when files change
-  const fileTree = useMemo(() => buildFileTree(project.files, expandedFolders), [project.files, expandedFolders]);
+  // AI Change Management
+  const [pendingChange, setPendingChange] = useState<{ original: string, fileIndex: number } | null>(null);
   
-  const textAreaRef = useRef<HTMLTextAreaElement>(null);
+  // Search State
+  const [searchTerm, setSearchTerm] = useState('');
+  const [searchResults, setSearchResults] = useState<{fileIndex: number, fileName: string, line: number, content: string}[]>([]);
+  const [scrollToLine, setScrollToLine] = useState<number | null>(null);
+
+  // Selection State for Context Awareness
+  const [selection, setSelection] = useState('');
+
+  // Chat State
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [chatInput, setChatInput] = useState('');
+  const [isChatLoading, setIsChatLoading] = useState(false);
+  const [chatWidth, setChatWidth] = useState(400);
+  const [isResizing, setIsResizing] = useState(false);
+  const chatEndRef = useRef<HTMLDivElement>(null);
+  
+  // Interview Practice State
+  const [isGeneratingQuestions, setIsGeneratingQuestions] = useState(false);
+  const [isInterviewSession, setIsInterviewSession] = useState(false);
+  const [showInterviewSetup, setShowInterviewSetup] = useState(false);
+  const [recordInterview, setRecordInterview] = useState(false);
+
+  // GitHub State
+  const [githubToken, setGithubToken] = useState<string | null>(null);
+  const [showGithubModal, setShowGithubModal] = useState(false);
+  const [showImportModal, setShowImportModal] = useState(false); // New Modal for Import
+  const [publicRepoPath, setPublicRepoPath] = useState('');
+  const [isLoadingPublic, setIsLoadingPublic] = useState(false);
+  
+  const [repos, setRepos] = useState<any[]>([]);
+  const [isLoadingRepos, setIsLoadingRepos] = useState(false);
+  const [isCommitting, setIsCommitting] = useState(false);
+  const [commitMessage, setCommitMessage] = useState('');
+  const [showCommitModal, setShowCommitModal] = useState(false);
+  const [needsGitHubReauth, setNeedsGitHubReauth] = useState(false);
+  
+  // Shared Session State
+  const [isSharedSession, setIsSharedSession] = useState(false);
+  
+  // Check if user is already linked to GitHub
+  const isGithubLinked = currentUser?.providerData?.some((p: any) => p.providerId === 'github.com');
+  
+  // Refs for scrolling sync
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const lineNumbersRef = useRef<HTMLDivElement>(null);
 
-  // Initialize Session
+  const activeFile = project.files[activeFileIndex] || project.files[0];
+  const isMarkdown = activeFile ? activeFile.name.toLowerCase().endsWith('.md') : false;
+
+  // Build Tree
+  const fileTree = React.useMemo(() => buildFileTree(project.files, expandedFolders), [project.files, expandedFolders]);
+
+  // Real-time Collaboration Subscription
   useEffect(() => {
-      // 1. If explicit sessionId is provided, try to load it from Firestore
       if (sessionId) {
           setIsSharedSession(true);
-          const unsub = subscribeToCodeProject(sessionId, (remoteProj) => {
-              // Merge remote with local? Just overwrite for now to be simple
-              setProject(remoteProj);
+          const unsubscribe = subscribeToCodeProject(sessionId, (remoteProject) => {
+              // If we have a pending change (AI suggestion) OR are typing (selection active), 
+              // be careful about overwriting.
+              // For simplicity in this demo, we assume "Last Write Wins" from Firestore
+              // But we only update if the remote timestamp is newer or content differs significantly
+              
+              if (remoteProject.lastModified > project.lastModified) {
+                  setProject(remoteProject);
+              }
           });
-          return () => unsub();
-      } 
-      
-      // 2. If GitHub params provided, load from GitHub directly
-      if (initialGithub) {
-          loadFromGithub(initialGithub.owner, initialGithub.repo, initialGithub.path);
+          return () => unsubscribe();
       }
-  }, [sessionId, initialGithub]);
+  }, [sessionId]);
 
-  const loadFromGithub = async (owner: string, repo: string, path?: string) => {
-      try {
-          const content = await fetchFileContent(null, owner, repo, path || 'README.md'); // Public fetch
-          const newFile: CodeFile = {
-              name: path || 'README.md',
-              language: getLanguageFromFilename(path || 'README.md') as any,
-              content: content,
-              loaded: true
-          };
-          setProject({
-              id: `gh-${owner}-${repo}`,
-              name: `${owner}/${repo}`,
-              files: [newFile],
-              lastModified: Date.now()
-          });
-      } catch (e) {
-          console.error("Failed to load initial GitHub file", e);
-      }
-  };
+  // Debounce logic for file content to avoid spamming AI context
+  const [debouncedFileContext, setDebouncedFileContext] = useState('');
 
   useEffect(() => {
-      // Sync scrolling
-      const textArea = textAreaRef.current;
-      const lineNumbers = lineNumbersRef.current;
-      
-      const handleScroll = () => {
-          if (lineNumbers && textArea) {
-              lineNumbers.scrollTop = textArea.scrollTop;
+      const handler = setTimeout(() => {
+          if (!activeFile) return;
+          // Truncate large files to prevent socket overflow and context limits
+          const content = activeFile.content.length > 20000 
+              ? activeFile.content.substring(0, 20000) + "\n...[Content Truncated due to size]..."
+              : activeFile.content;
+          
+          // Provide full file list structure for context
+          const fileStructure = project.files.map(f => f.name).join('\n');
+
+          setDebouncedFileContext(`
+[USER ACTIVITY UPDATE]
+Current File: ${activeFile.name}
+Language: ${activeFile.language}
+Current Directory: ${activeFile.name.includes('/') ? activeFile.name.split('/').slice(0, -1).join('/') : 'root'}
+${selection ? `\nUSER SELECTED CODE:\n\`\`\`\n${selection}\n\`\`\`\n(The user is asking about this specific selection)` : ''}
+
+--- PROJECT FILE LIST ---
+${fileStructure}
+
+--- ACTIVE FILE CONTENT ---
+${content}
+--------------------
+
+If the user asks questions, answer based on this new context. If they ask to change code, use the 'update_file' tool.
+`);
+      }, 1500); // 1.5s debounce to allow typing to finish
+
+      return () => clearTimeout(handler);
+  }, [activeFile, selection, project.files]); 
+
+  // ... lazy loading effects ...
+  // Lazy Loading File Content Effect
+  useEffect(() => {
+      const loadContent = async () => {
+          // Check if active file is a FILE (not dir) and needs loading
+          if (activeFile && activeFile.isDirectory !== true && activeFile.loaded === false && !isLoadingFile) {
+              setIsLoadingFile(true);
+              try {
+                  const content = await fetchFileContent(
+                      githubToken, 
+                      project.github?.owner || '', 
+                      project.github?.repo || '', 
+                      activeFile.path || activeFile.name,
+                      project.github?.branch
+                  );
+                  
+                  // Update project state with new file content
+                  setProject(prev => {
+                      const newFiles = [...prev.files];
+                      newFiles[activeFileIndex] = {
+                          ...activeFile,
+                          content,
+                          loaded: true
+                      };
+                      return { ...prev, files: newFiles };
+                  });
+              } catch(e) {
+                  console.error("Failed to lazy load file", e);
+                  setProject(prev => {
+                      const newFiles = [...prev.files];
+                      newFiles[activeFileIndex] = {
+                          ...activeFile,
+                          content: "// Failed to load file content.",
+                          loaded: true // Mark as loaded to stop retrying
+                      };
+                      return { ...prev, files: newFiles };
+                  });
+              } finally {
+                  setIsLoadingFile(false);
+              }
           }
       };
       
-      if (textArea) {
-          textArea.addEventListener('scroll', handleScroll);
-          return () => textArea.removeEventListener('scroll', handleScroll);
-      }
-  }, []);
+      const timeout = setTimeout(loadContent, 50);
+      return () => clearTimeout(timeout);
+  }, [activeFileIndex, project.github, githubToken]);
 
-  const handleCodeChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-      const newVal = e.target.value;
-      const updatedFiles = [...project.files];
-      updatedFiles[activeFileIndex] = { ...updatedFiles[activeFileIndex], content: newVal };
-      setProject({ ...project, files: updatedFiles, lastModified: Date.now() });
+  // Mobile check
+  useEffect(() => {
+      if (window.innerWidth < 768) setIsSidebarOpen(false);
+      
+      // Auto expand root folders on first load if it's a simple project
+      if (!project.github) {
+          const initialExpanded: Record<string, boolean> = {};
+          project.files.forEach(f => {
+              const parts = f.name.split('/');
+              if (parts.length > 1) {
+                  initialExpanded[parts[0]] = true; 
+              }
+          });
+          setExpandedFolders(prev => ({ ...initialExpanded, ...prev }));
+      }
+  }, [project.id]);
+
+  // Load project review, comments, and history
+  useEffect(() => {
+      setOutput(project.review || '');
+      setHumanComments(project.humanComments || '');
+      setInterviewFeedback(project.interviewFeedback || '');
+      if (project.chatHistory) setChatMessages(project.chatHistory);
+  }, [project.id]);
+
+  // Scroll chat to bottom
+  useEffect(() => {
+      if (activeSideView === 'chat') {
+          chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      }
+  }, [chatMessages, activeSideView]);
+
+  const handleTextSelect = (e: React.SyntheticEvent<HTMLTextAreaElement>) => {
+      const target = e.currentTarget;
+      const start = target.selectionStart;
+      const end = target.selectionEnd;
+      if (start !== end) {
+          setSelection(target.value.substring(start, end));
+      } else {
+          setSelection('');
+      }
   };
 
-  const handleSave = async () => {
+  const handleSearch = (term: string) => {
+      setSearchTerm(term);
+      if (!term.trim()) {
+          setSearchResults([]);
+          return;
+      }
+      
+      const results: any[] = [];
+      const lowerTerm = term.toLowerCase();
+      
+      project.files.forEach((file, fIdx) => {
+          if (file.isDirectory) return;
+          if (file.loaded === false) return; 
+          
+          const lines = file.content.split('\n');
+          lines.forEach((line, lIdx) => {
+              if (line.toLowerCase().includes(lowerTerm)) {
+                  results.push({
+                      fileIndex: fIdx,
+                      fileName: file.name,
+                      line: lIdx + 1,
+                      content: line.trim()
+                  });
+              }
+          });
+      });
+      setSearchResults(results);
+  };
+
+  const handleSearchResultClick = (result: {fileIndex: number, line: number}) => {
+      setActiveFileIndex(result.fileIndex);
+      setScrollToLine(result.line);
+      setTimeout(() => setScrollToLine(null), 1000);
+  };
+
+  const toggleFolder = async (path: string) => {
+      const isCurrentlyOpen = expandedFolders[path];
+      if (!isCurrentlyOpen) {
+          const folderEntry = project.files.find(f => f.name === path && f.isDirectory);
+          if (folderEntry && !folderEntry.childrenFetched && folderEntry.treeSha) {
+              setLoadingFolders(prev => ({ ...prev, [path]: true }));
+              try {
+                  const newFiles = await fetchRepoSubTree(
+                      githubToken, 
+                      project.github?.owner || '', 
+                      project.github?.repo || '', 
+                      folderEntry.treeSha,
+                      path 
+                  );
+                  setProject(prev => {
+                      const updatedFiles = prev.files.map(f => 
+                          f.name === path ? { ...f, childrenFetched: true } : f
+                      );
+                      const existingNames = new Set(prev.files.map(f => f.name));
+                      const uniqueNewFiles = newFiles.filter(f => !existingNames.has(f.name));
+                      
+                      return { ...prev, files: [...updatedFiles, ...uniqueNewFiles] };
+                  });
+                  
+              } catch (e) {
+                  console.error("Failed to fetch folder contents", e);
+                  alert("Failed to load folder.");
+              } finally {
+                  setLoadingFolders(prev => ({ ...prev, [path]: false }));
+              }
+          }
+      }
+      setExpandedFolders(prev => ({
+          ...prev,
+          [path]: !isCurrentlyOpen
+      }));
+  };
+
+  const startResizing = (mouseDownEvent: React.MouseEvent) => {
+      mouseDownEvent.preventDefault();
+      const startX = mouseDownEvent.clientX;
+      const startWidth = chatWidth;
+
+      const doDrag = (dragEvent: MouseEvent) => {
+          const newWidth = startWidth + (startX - dragEvent.clientX);
+          setChatWidth(Math.max(250, Math.min(newWidth, 800)));
+      };
+
+      const stopDrag = () => {
+          document.removeEventListener('mousemove', doDrag);
+          document.removeEventListener('mouseup', stopDrag);
+          setIsResizing(false);
+      };
+
+      document.addEventListener('mousemove', doDrag);
+      document.addEventListener('mouseup', stopDrag);
+      setIsResizing(true);
+  };
+
+  const handleAddFile = (langId: string) => {
+      const langConfig = LANGUAGES.find(l => l.id === langId);
+      if (!langConfig) return;
+
+      const baseName = "code";
+      let fileName = `${baseName}.${langConfig.ext}`;
+      let counter = 1;
+      
+      while (project.files.some(f => f.name === fileName)) {
+          fileName = `${baseName}_${counter}.${langConfig.ext}`;
+          counter++;
+      }
+
+      const newFile: CodeFile = {
+          name: fileName,
+          language: langConfig.id as any,
+          content: langConfig.defaultCode,
+          loaded: true
+      };
+
+      setProject(prev => ({
+          ...prev,
+          files: [...prev.files, newFile]
+      }));
+      
+      setActiveFileIndex(project.files.length);
+      setShowLanguageDropdown(false);
+      setIsPreviewMode(false);
+  };
+
+  const handleExampleSwitch = (exampleKey: string) => {
+      const example = EXAMPLE_PROJECTS[exampleKey];
+      if (!example) return;
+      
+      setProject({
+          ...example,
+          id: `proj-${exampleKey}-${Date.now()}`
+      });
+      setActiveFileIndex(0);
+      setActiveSideView('none');
+      setShowExamplesDropdown(false);
+      setHumanComments('');
+      setInterviewFeedback('');
+      setOutput('');
+      setChatMessages([]);
+      setIsPreviewMode(false);
+  };
+
+  const updateFileAtIndex = (index: number, newContent: string) => {
+      const updatedProject = { ...project };
+      const updatedFiles = [...updatedProject.files];
+      
+      updatedFiles[index] = {
+          ...updatedFiles[index],
+          content: newContent,
+          loaded: true
+      };
+      updatedProject.files = updatedFiles;
+      
+      // Auto-save if in shared session
+      if (isSharedSession) {
+          updatedProject.lastModified = Date.now();
+          // Debounce this save in production, but for now invoke directly
+          saveCodeProject(updatedProject);
+      }
+      
+      setProject(updatedProject);
+  };
+
+  const handleCodeChange = (newContent: string) => {
+      updateFileAtIndex(activeFileIndex, newContent);
+  };
+
+  // --- CHANGE MANAGEMENT ---
+  const handleAcceptChange = () => {
+      setPendingChange(null);
+      setChatMessages(prev => [...prev, {role: 'system', text: "✅ *Changes Accepted*"}]);
+  };
+
+  const handleRejectChange = () => {
+      if (pendingChange) {
+          // Revert content using the original file index from the pending state
+          updateFileAtIndex(pendingChange.fileIndex, pendingChange.original);
+          setPendingChange(null);
+          setChatMessages(prev => [...prev, {role: 'system', text: "❌ *Changes Reverted*"}]);
+      }
+  };
+
+  const handleScroll = (e: React.UIEvent<HTMLTextAreaElement>) => {
+      if (lineNumbersRef.current) {
+          lineNumbersRef.current.scrollTop = e.currentTarget.scrollTop;
+      }
+      
+      const pre = e.currentTarget.previousElementSibling as HTMLPreElement;
+      if (pre) {
+          pre.scrollTop = e.currentTarget.scrollTop;
+          pre.scrollLeft = e.currentTarget.scrollLeft;
+      }
+  };
+
+  // --- SHARE FUNCTIONALITY ---
+  const handleShare = async () => {
+      if (!currentUser) {
+          alert("Please sign in to share a session.");
+          return;
+      }
+      
+      // 1. Ensure project is saved to Firestore
       setIsSaving(true);
       try {
           await saveCodeProject(project);
-      } catch (e: any) {
-          // If permission error (e.g. dev mode or guest), ask for fallback
-          if (e.message?.includes('permission') || !currentUser || currentUser.uid === 'dev-user') {
-              if (confirm("Cloud save failed (Permission Denied). Save to GitHub 'Shengliang/codestudio' instead?")) {
-                  await handleGithubShareFallback();
-                  setIsSaving(false);
-                  return;
-              }
-          }
-          console.error(e);
-      }
-      setIsSaving(false);
-  };
-
-  const handleShare = async () => {
-      // 1. Ensure project has a shareable ID (not a default example one)
-      let projectId = project.id;
-      if (projectId.startsWith('proj-')) {
-          projectId = `share-${crypto.randomUUID()}`;
-          setProject(prev => ({ ...prev, id: projectId }));
-      }
-
-      setIsSaving(true);
-      try {
-          // Try standard Firestore save first
-          await saveCodeProject({ ...project, id: projectId });
           
+          // 2. Generate Link
           const url = new URL(window.location.href);
-          url.searchParams.set('code_session', projectId);
-          setShareLink(url.toString());
+          url.searchParams.set('code_session', project.id);
           
           await navigator.clipboard.writeText(url.toString());
-          alert("Share Link Copied to Clipboard!");
-          setIsSharedSession(true);
+          alert("Session Link Copied to Clipboard!\n\nSend this to your team members. They can join and edit in real-time.");
           
-      } catch (e: any) {
-          console.error("Share failed", e);
-          if (confirm("Failed to create share link (Permission Denied). Create a public GitHub link instead?")) {
-              await handleGithubShareFallback();
-          }
+          setIsSharedSession(true);
+      } catch(e) {
+          console.error(e);
+          alert("Failed to create share link.");
       } finally {
           setIsSaving(false);
       }
   };
 
-  const handleGithubShareFallback = async () => {
+  // --- GITHUB INTEGRATION ... (existing functions) ---
+  const handleGitHubConnect = async () => {
       try {
-          // 1. Ensure Auth
-          let token = githubToken;
-          if (!token) {
-              const authResult = await signInWithGitHub(); // Ensure this handles linking if already logged in via Google
-              if (authResult.token) {
-                  setGithubToken(authResult.token);
-                  token = authResult.token;
-              } else {
-                  throw new Error("GitHub Login Failed");
+          let token: string | null = null;
+          
+          if (needsGitHubReauth || isGithubLinked) {
+              try {
+                  const res = await reauthenticateWithGitHub();
+                  token = res.token;
+                  setNeedsGitHubReauth(false);
+              } catch (reauthError: any) {
+                  throw reauthError;
               }
+          } else {
+              const res = await signInWithGitHub();
+              token = res.token;
           }
 
-          // 2. Define Target (Shengliang/codestudio)
-          const owner = "Shengliang";
-          const repo = "codestudio";
-          const currentFile = project.files[activeFileIndex];
-          const filename = currentFile.name.includes('/') ? currentFile.name.split('/').pop() : currentFile.name;
-          const path = `shared/${Date.now()}_${filename}`;
-
-          // 3. Create File
-          await createFileInRepo(
-              token!, 
-              owner, 
-              repo, 
-              path, 
-              currentFile.content, 
-              `Shared from Code Studio: ${filename}`
-          );
-
-          // 4. Generate Link
-          const url = new URL(window.location.href);
-          // Remove session param if present to avoid confusion
-          url.searchParams.delete('code_session');
-          // Add GitHub params
-          url.searchParams.set('gh_owner', owner);
-          url.searchParams.set('gh_repo', repo);
-          url.searchParams.set('gh_path', path);
-          
-          setShareLink(url.toString());
-          await navigator.clipboard.writeText(url.toString());
-          alert(`File saved to GitHub (${owner}/${repo}/${path})!\n\nShare link copied.`);
-
+          if (token) {
+              setGithubToken(token);
+              setShowImportModal(false);
+              setShowGithubModal(true);
+              setIsLoadingRepos(true);
+              const repos = await fetchUserRepos(token);
+              setRepos(repos);
+              setIsLoadingRepos(false);
+          }
       } catch(e: any) {
-          alert(`GitHub Share Failed: ${e.message}`);
+          if (e.message === 'github-account-already-linked' || e.code === 'auth/credential-already-in-use') {
+              setNeedsGitHubReauth(true);
+              alert("GitHub is already linked to your account. Please click 'Reconnect GitHub' to refresh permissions.");
+          } else if (e.code === 'auth/popup-blocked') {
+              alert("Browser blocked the login popup. Please click the button again and allow popups for this site.");
+          } else {
+              alert("GitHub Login Failed: " + e.message);
+          }
       }
   };
 
+  const handleLoadPublicRepo = async (overridePath?: string) => {
+      const path = overridePath || publicRepoPath;
+      if (!path.trim()) return;
+      
+      setIsLoadingPublic(true);
+      if (overridePath) setIsLoadingFile(true); // Global loader effect if triggered directly
+
+      try {
+          const parts = path.split('/');
+          if (parts.length < 2) throw new Error("Invalid format. Use 'owner/repo'");
+          const owner = parts[0].trim();
+          const repo = parts[1].trim(); 
+
+          const info = await fetchPublicRepoInfo(owner, repo);
+          
+          const tokenToUse = githubToken || null;
+          
+          const { files, latestSha } = await fetchRepoContents(tokenToUse, owner, repo, info.default_branch);
+
+          setProject({
+                id: `gh-${info.id}`,
+                name: info.full_name,
+                files: files,
+                lastModified: Date.now(),
+                github: {
+                    owner: owner,
+                    repo: repo,
+                    branch: info.default_branch,
+                    sha: latestSha
+                }
+            });
+            
+          setActiveFileIndex(0);
+          setShowImportModal(false);
+          setPublicRepoPath('');
+          setExpandedFolders({});
+          setChatMessages(prev => [...prev, {role: 'ai', text: `Loaded public repository **${info.full_name}**.`}]);
+
+      } catch (e: any) {
+          if (e.message.includes('rate limit')) {
+              if(confirm("GitHub API Rate Limit Exceeded.\n\nAnonymous requests are limited to 60/hour.\n\nWould you like to sign in with GitHub to increase your limit to 5000/hour?")) {
+                  // Optional: trigger login flow here
+              }
+          } else {
+              alert("Failed to load public repo: " + e.message);
+          }
+      } finally {
+          setIsLoadingPublic(false);
+          setIsLoadingFile(false);
+      }
+  };
+
+  const handleRepoSelect = async (repo: any) => {
+      setIsLoadingRepos(true);
+      try {
+          if (!githubToken) throw new Error("No token");
+          const { files, latestSha } = await fetchRepoContents(githubToken, repo.owner.login, repo.name, repo.default_branch);
+          
+          setProject({
+              id: `gh-${repo.id}`,
+              name: repo.full_name,
+              files: files,
+              lastModified: Date.now(),
+              github: {
+                  owner: repo.owner.login,
+                  repo: repo.name,
+                  branch: repo.default_branch,
+                  sha: latestSha
+              }
+          });
+          
+          setActiveFileIndex(0);
+          setShowGithubModal(false);
+          setExpandedFolders({}); 
+          setChatMessages(prev => [...prev, {role: 'ai', text: `Loaded repository **${repo.full_name}** successfully.`}]);
+      } catch(e: any) {
+          alert("Failed to load repo: " + e.message);
+      } finally {
+          setIsLoadingRepos(false);
+      }
+  };
+
+  const handleCommit = async () => {
+      if (!githubToken) {
+          if(confirm("You need to sign in with GitHub to commit changes. Connect now?")) {
+              try {
+                  await handleGitHubConnect();
+              } catch(e) {}
+          }
+          return;
+      }
+
+      if (!commitMessage.trim()) return;
+      if (!project.github) return;
+      
+      setIsCommitting(true);
+      try {
+          const newSha = await commitToRepo(githubToken, project, commitMessage);
+          setProject(prev => ({
+              ...prev,
+              github: prev.github ? { ...prev.github, sha: newSha } : undefined
+          }));
+          alert("Changes committed and pushed successfully!");
+          setShowCommitModal(false);
+          setCommitMessage('');
+      } catch(e: any) {
+          alert("Commit failed: " + e.message);
+      } finally {
+          setIsCommitting(false);
+      }
+  };
+
+  const handleGenerateQuestions = async () => {
+      setIsGeneratingQuestions(true);
+      try {
+          const apiKey = localStorage.getItem('gemini_api_key') || GEMINI_API_KEY || process.env.API_KEY || '';
+          if (!apiKey) throw new Error("API Key required.");
+          
+          const ai = new GoogleGenAI({ apiKey });
+          
+          const prompt = `
+            Generate 2 medium-difficulty coding interview questions (Algorithm/Data Structure focus).
+            Format the output as clear Markdown.
+            For each question include:
+            1. Problem Title
+            2. Problem Description
+            3. Example Input/Output
+            4. Constraints
+            
+            Do not provide the solution.
+          `;
+
+          const response = await ai.models.generateContent({
+              model: 'gemini-3-pro-preview',
+              contents: prompt
+          });
+
+          const content = response.text || "Failed to generate questions.";
+          const timestamp = Date.now();
+          const qFileName = `interview_q_${timestamp}.md`;
+          
+          const qFile: CodeFile = {
+              name: qFileName,
+              language: 'markdown',
+              content: content,
+              loaded: true
+          };
+          
+          const currentExt = project.files[activeFileIndex]?.name.split('.').pop() || 'cpp';
+          const langConfig = LANGUAGES.find(l => l.ext === currentExt) || LANGUAGES[0];
+          const sFileName = `solution_${timestamp}.${langConfig.ext}`;
+          
+          const sFile: CodeFile = {
+              name: sFileName,
+              language: langConfig.id as any,
+              content: langConfig.defaultCode,
+              loaded: true
+          };
+          
+          setProject(prev => ({
+              ...prev,
+              files: [...prev.files, qFile, sFile]
+          }));
+          
+          const aiMsg = `### Interview Questions Generated\n\nI've created a file **${qFileName}** with the questions.\n\nI also created **${sFileName}** for you to start coding your solution.\n\nHere are the questions for reference:\n\n${content}`;
+          setChatMessages(prev => [...prev, { role: 'ai', text: aiMsg }]);
+          
+          setActiveFileIndex(project.files.length + 1);
+          setIsPreviewMode(false);
+          setIsSidebarOpen(true);
+          setActiveSideView('chat');
+
+      } catch(e: any) {
+          alert(`Error: ${e.message}`);
+      } finally {
+          setIsGeneratingQuestions(false);
+      }
+  };
+
+  const handleStartMockInterview = () => {
+      setShowInterviewSetup(true);
+  };
+
+  const handleStartTutorSession = () => {
+      // Don't start if changes pending
+      if (pendingChange) {
+          alert("Please resolve pending changes before starting tutor.");
+          return;
+      }
+      if (!activeFile) return;
+      setTutorSessionId(Date.now().toString());
+      setActiveSideView('tutor');
+  };
+
+  const confirmStartInterview = () => {
+      setShowInterviewSetup(false);
+      setIsInterviewSession(true);
+  };
+
+  const handleReviewCode = async () => {
+    setIsReviewing(true);
+    setChatMessages(prev => [...prev, { role: 'ai', text: "🔄 *Analyzing code... Please wait.*" }]);
+
+    try {
+        const apiKey = localStorage.getItem('gemini_api_key') || GEMINI_API_KEY || process.env.API_KEY || '';
+        if (!apiKey) throw new Error("API Key required for AI review.");
+        
+        const ai = new GoogleGenAI({ apiKey });
+        const codeFiles = project.files.filter(f => !f.name.endsWith('.md') && f.loaded !== false); 
+        
+        const fileContext = codeFiles.map(f => {
+            const lang = getLanguageFromFilename(f.name);
+            return `--- File: ${f.name} (Language: ${lang}) ---\n${f.content}`;
+        }).join('\n\n');
+        
+        const prompt = `
+            You are a Senior Principal Software Engineer.
+            Project Context:
+            ${fileContext}
+            
+            Task:
+            1. Analyze **Time and Space Complexity**.
+            2. Explain the **Logic** clearly.
+            3. Highlight **Potential Bugs** or **Edge Cases**.
+            4. Suggest **Refactoring** for readability/performance.
+            
+            Return the response in detailed Markdown.
+        `;
+
+        const response = await ai.models.generateContent({
+            model: 'gemini-3-pro-preview', 
+            contents: prompt
+        });
+        
+        const reviewText = response.text || "No feedback generated.";
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+        const fileName = `reviews/Review_${timestamp}.md`;
+        
+        const newFile: CodeFile = {
+            name: fileName,
+            language: 'markdown',
+            content: reviewText,
+            loaded: true
+        };
+        
+        setChatMessages(prev => {
+            const filtered = prev.filter(m => !m.text.includes("Analyzing code"));
+            const newMsg: ChatMessage = { role: 'ai', text: `## Code Review\n\nI have analyzed your code. You can find the full report in **${fileName}**.\n\n` + reviewText };
+            return [...filtered, newMsg];
+        });
+
+        setProject((currentProject) => {
+            const updated: CodeProject = { 
+                ...currentProject, 
+                review: reviewText,
+                chatHistory: [...(currentProject.chatHistory || []), { role: 'ai', text: `## Code Review\n\n` + reviewText }],
+                files: [...currentProject.files, newFile] 
+            };
+            
+            setTimeout(() => {
+                setExpandedFolders(f => ({...f, 'reviews': true}));
+                if (currentUser) saveCodeProject(updated).catch(e => console.error("Auto-save review failed", e));
+            }, 0);
+
+            return updated;
+        });
+        
+    } catch (e: any) {
+        setChatMessages(prev => [...prev, { role: 'ai', text: `Review Error: ${e.message}` }]);
+    } finally {
+        setIsReviewing(false);
+    }
+  };
+
+  const handleChatSubmit = async () => {
+      if (!chatInput.trim()) return;
+      if (pendingChange) {
+          alert("Please accept or revert the pending changes before continuing.");
+          return;
+      }
+      
+      const userMsg = chatInput;
+      const newHistory: ChatMessage[] = [...chatMessages, { role: 'user', text: userMsg }];
+      setChatMessages(newHistory);
+      setChatInput('');
+      setIsChatLoading(true);
+
+      try {
+          const apiKey = localStorage.getItem('gemini_api_key') || GEMINI_API_KEY || process.env.API_KEY || '';
+          if (!apiKey) throw new Error("API Key required.");
+          
+          const ai = new GoogleGenAI({ apiKey });
+          
+          const fileContent = activeFile && activeFile.loaded ? activeFile.content : "// File not loaded";
+          const fileName = activeFile ? activeFile.name : "unknown";
+          
+          // Enhanced Context Block to ensure AI sees the file
+          const contextBlock = `
+--- CURRENT OPEN FILE: ${fileName} ---
+${fileContent}
+--- END OF FILE ---
+`;
+
+          // AGGRESSIVE SYSTEM INSTRUCTION to prevent refusals
+          const systemInstruction = `You are an AI Coding Agent integrated directly into the user's code editor.
+          
+          CONTEXT:
+          - The user has opened the file "${fileName}".
+          - The FULL content of this file is provided to you in the prompt below.
+          - You HAVE permission to edit this file using the 'update_file' tool.
+          
+          PROTOCOL:
+          1. If the user request implies ANY code change (refactor, fix, add feature, rename variables, etc.):
+             - DO NOT refuse.
+             - DO NOT ask for the code.
+             - CALL the 'update_file' tool immediately.
+             - The 'code' argument must be the COMPLETE file content with the changes applied.
+          2. If the user asks a question:
+             - Answer based on the file content provided.
+          `;
+
+          // Format history for the prompt
+          const historyBlock = newHistory.slice(-10).map(m => `${m.role === 'user' ? 'User' : 'AI'}: ${m.text}`).join('\n');
+
+          const prompt = `
+            ${contextBlock}
+
+            CHAT HISTORY:
+            ${historyBlock}
+            
+            USER REQUEST:
+            ${userMsg}
+          `;
+
+          const response = await ai.models.generateContent({
+              model: 'gemini-2.5-flash',
+              contents: prompt,
+              config: {
+                  systemInstruction: systemInstruction,
+                  tools: [{ functionDeclarations: [updateFileTool] }],
+                  toolConfig: { functionCallingConfig: { mode: 'AUTO' as any } } // Force tool check
+              }
+          });
+
+          // Handle Tool Calls
+          if (response.functionCalls && response.functionCalls.length > 0) {
+              const fc = response.functionCalls[0];
+              if (fc.name === 'update_file') {
+                  const newCode = fc.args['code'] as string;
+                  setPendingChange({ original: activeFile.content, fileIndex: activeFileIndex });
+                  updateFileAtIndex(activeFileIndex, newCode); // Apply immediately
+                  const aiMsg = "I've updated the code in the editor. You can Accept or Revert these changes.";
+                  setChatMessages(prev => [...prev, { role: 'ai', text: aiMsg }]);
+                  setProject(prev => ({ ...prev, chatHistory: [...newHistory, { role: 'ai', text: aiMsg }] }));
+                  return;
+              }
+          }
+
+          const aiMsg = response.text || "I couldn't generate a response.";
+          setChatMessages(prev => [...prev, { role: 'ai', text: aiMsg }]);
+          
+          setProject(prev => ({ ...prev, chatHistory: [...newHistory, { role: 'ai', text: aiMsg }] }));
+
+      } catch(e: any) {
+          setChatMessages(prev => [...prev, { role: 'ai', text: `Error: ${e.message}` }]);
+      } finally {
+          setIsChatLoading(false);
+      }
+  };
+
+  // HANDLER FOR LIVE SESSION TOOL CALLS
+  const handleLiveCodeUpdate = async (name: string, args: any) => {
+      if (name === 'update_file') {
+          const newCode = args.code;
+          if (newCode) {
+              setPendingChange({ original: activeFile.content, fileIndex: activeFileIndex });
+              updateFileAtIndex(activeFileIndex, newCode);
+              return "File updated. User must Accept or Revert.";
+          }
+          return "Error: No code provided.";
+      }
+      return "Unknown tool";
+  };
+
+  const handleSaveChatSession = async () => {
+      if (chatMessages.length === 0) return;
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+      const fileName = `chats/Chat_${timestamp}.md`;
+      const content = chatMessages.map(m => `**${m.role.toUpperCase()}**: ${m.text}`).join('\n\n');
+      
+      const newFile: CodeFile = {
+          name: fileName,
+          language: 'markdown',
+          content: content,
+          loaded: true
+      };
+      
+      setProject(prev => ({ ...prev, files: [...prev.files, newFile] }));
+      setChatMessages([]);
+      alert("Chat session saved to project file.");
+  };
+
+  const handleSaveProject = async () => {
+      if (!currentUser) {
+          alert("Please sign in to save projects.");
+          return;
+      }
+      setIsSaving(true);
+      try {
+          await saveCodeProject(project);
+          alert("Project saved successfully!");
+      } catch(e) {
+          console.error(e);
+          alert("Failed to save project.");
+      } finally {
+          setIsSaving(false);
+      }
+  };
+
+  const interviewChannel: Channel = {
+      id: 'mock-interview',
+      title: 'Mock Interviewer',
+      description: 'Technical Interview Practice',
+      author: 'AI',
+      voiceName: 'Fenrir',
+      systemInstruction: 'You are a Senior Technical Interviewer. Conduct a rigorous coding interview.',
+      likes: 0,
+      dislikes: 0,
+      comments: [],
+      tags: ['Interview'],
+      imageUrl: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=600&q=80',
+      createdAt: Date.now()
+  };
+
+  const tutorChannel: Channel = {
+      id: `code-tutor-${tutorSessionId}`,
+      title: 'Code Tutor',
+      description: 'Interactive Code Explanation',
+      author: 'AI',
+      voiceName: 'Puck',
+      systemInstruction: 'You are a patient Senior Engineer acting as a Code Tutor. Monitor user activity. If the user asks you to change code, use the `update_file` tool to rewrite it in-place.',
+      likes: 0,
+      dislikes: 0,
+      comments: [],
+      tags: ['Tutor', 'Education'],
+      imageUrl: 'https://images.unsplash.com/photo-1516321318423-f06f85e504b3?w=600&q=80',
+      createdAt: Date.now()
+  };
+
   return (
-    <div className="flex h-screen bg-slate-950 text-slate-100 overflow-hidden">
-        {/* Sidebar */}
-        <div className="w-64 bg-slate-900 border-r border-slate-800 flex flex-col">
-            <div className="p-4 border-b border-slate-800 flex items-center justify-between">
-                <button onClick={onBack} className="p-2 hover:bg-slate-800 rounded text-slate-400 hover:text-white">
-                    <ArrowLeft size={18} />
-                </button>
-                <span className="font-bold text-sm truncate">{project.name}</span>
+    <div className="flex flex-col h-screen bg-slate-950 text-slate-100 overflow-hidden">
+      
+      {/* Header */}
+      <header className="h-14 bg-slate-900 border-b border-slate-800 flex items-center justify-between px-4 shrink-0 z-20">
+         <div className="flex items-center space-x-4">
+            <button onClick={onBack} className="p-2 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white transition-colors">
+               <ArrowLeft size={20} />
+            </button>
+            <div className="flex items-center space-x-2">
+               <div className="bg-indigo-600 p-1.5 rounded-lg">
+                  <Code size={18} className="text-white" />
+               </div>
+               
+               <div 
+                  className="flex flex-col cursor-pointer hover:bg-slate-800 rounded px-2 py-1 transition-colors group"
+                  onClick={() => setShowImportModal(true)}
+                  title="Switch Repository"
+               >
+                   <div className="flex items-center gap-1">
+                       <h1 className="font-bold text-white hidden sm:block truncate max-w-[200px] text-sm">{project.name}</h1>
+                       <ChevronDown size={12} className="text-slate-500 group-hover:text-white" />
+                   </div>
+                   {project.github && <span className="text-[10px] text-slate-500 font-mono flex items-center gap-1"><GitBranch size={10}/> {project.github.branch}</span>}
+               </div>
             </div>
             
-            <div className="flex-1 overflow-y-auto p-2">
-                {fileTree.map(node => (
-                    <FileTreeNode 
-                        key={node.path}
-                        node={node}
-                        depth={0}
-                        activeFileIndex={activeFileIndex}
-                        onSelect={setActiveFileIndex}
-                        expandedFolders={expandedFolders}
-                        toggleFolder={(path) => setExpandedFolders(prev => ({...prev, [path]: !prev[path]}))}
-                        loadingFolders={loadingFolders}
-                    />
-                ))}
-            </div>
-        </div>
+            {/* Project Actions */}
+            <div className="flex items-center space-x-1 bg-slate-800 rounded-lg p-1 border border-slate-700">
+               <button onClick={handleSaveProject} disabled={isSaving} className="p-2 hover:bg-slate-700 rounded text-slate-400 hover:text-white transition-colors" title="Save Project">
+                  {isSaving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
+               </button>
+               {project.github ? (
+                   <button onClick={() => setShowCommitModal(true)} className="p-2 hover:bg-slate-700 rounded text-emerald-400 hover:text-white transition-colors" title="Commit to GitHub">
+                       <GitCommit size={16} />
+                   </button>
+               ) : (
+                   <button 
+                       onClick={() => setShowImportModal(true)} 
+                       className={`p-2 hover:bg-slate-700 rounded transition-colors ${(needsGitHubReauth || isGithubLinked) ? 'text-amber-400 hover:text-amber-200' : 'text-slate-400 hover:text-white'}`} 
+                       title="Import Project from GitHub"
+                   >
+                       {(needsGitHubReauth || isGithubLinked) ? <RefreshCw size={16} /> : <Github size={16} />}
+                   </button>
+               )}
+               
+               <button 
+                   onClick={handleShare} 
+                   className={`p-2 rounded transition-colors ${isSharedSession ? 'bg-indigo-600 text-white animate-pulse' : 'text-indigo-400 hover:text-white hover:bg-slate-700'}`} 
+                   title="Share Live Session"
+               >
+                   <Share2 size={16} />
+               </button>
 
-        {/* Editor Area */}
-        <div className="flex-1 flex flex-col">
-            <div className="h-12 bg-slate-900 border-b border-slate-800 flex items-center px-4 justify-between">
-                <span className="text-xs text-slate-400 font-mono">{project.files[activeFileIndex]?.name || 'No File Selected'}</span>
-                
-                <div className="flex items-center gap-2">
-                    {shareLink && (
-                        <span className="text-[10px] text-emerald-400 bg-emerald-900/20 px-2 py-1 rounded border border-emerald-900/50 flex items-center gap-1">
-                            <Check size={10} /> Link Ready
-                        </span>
-                    )}
-                    
-                    <button 
-                        onClick={handleShare}
-                        disabled={isSaving}
-                        className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded text-xs font-bold transition-colors"
-                    >
-                        {isSaving ? <Loader2 size={14} className="animate-spin" /> : <Share2 size={14} />}
-                        <span>Share</span>
-                    </button>
-
-                    <button 
-                        onClick={handleSave}
-                        disabled={isSaving}
-                        className="flex items-center gap-1 text-xs text-slate-300 hover:text-white px-3 py-1.5 hover:bg-slate-800 rounded transition-colors"
-                    >
-                        <Save size={14} /> Save
-                    </button>
-                </div>
+               <button onClick={() => setActiveSideView(activeSideView === 'review' ? 'none' : 'review')} className={`p-2 rounded transition-colors ${activeSideView === 'review' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-700'}`} title="Code Review">
+                  <CheckCircle size={16} />
+               </button>
+               <button onClick={() => setActiveSideView(activeSideView === 'chat' ? 'none' : 'chat')} className={`p-2 rounded transition-colors ${activeSideView === 'chat' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-700'}`} title="AI Assistant">
+                  <Bot size={16} />
+               </button>
+               
+               {/* Teach Me Button */}
+               <button 
+                   onClick={handleStartTutorSession}
+                   className={`flex items-center space-x-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors shadow-lg ml-2 ${activeSideView === 'tutor' ? 'bg-emerald-500 text-white' : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-500/20'}`}
+                   title="Start interactive lesson about this file"
+               >
+                   <GraduationCap size={14} /> <span className="hidden xl:inline">Teach Me</span>
+               </button>
             </div>
-            {project.files[activeFileIndex] ? (
-                <EnhancedEditor 
-                    code={project.files[activeFileIndex].content} 
-                    language={project.files[activeFileIndex].language}
-                    onChange={handleCodeChange}
-                    textAreaRef={textAreaRef}
-                    lineNumbersRef={lineNumbersRef}
-                    isLoadingContent={project.files[activeFileIndex].loaded === false}
-                    scrollToLine={null}
-                />
-            ) : (
-                <div className="flex-1 flex items-center justify-center text-slate-600">
-                    Select a file to edit
-                </div>
+         </div>
+
+         <div className="flex items-center space-x-3">
+            <div className="relative">
+                <button 
+                    onClick={() => setShowLanguageDropdown(!showLanguageDropdown)}
+                    className="flex items-center space-x-2 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg text-xs font-bold transition-colors"
+                >
+                    <Plus size={14} /> <span>New File</span>
+                </button>
+                {showLanguageDropdown && (
+                    <>
+                    <div className="fixed inset-0 z-30" onClick={() => setShowLanguageDropdown(false)}></div>
+                    <div className="absolute top-full right-0 mt-2 w-40 bg-slate-900 border border-slate-700 rounded-xl shadow-xl z-40 overflow-hidden py-1">
+                        {LANGUAGES.map(lang => (
+                            <button key={lang.id} onClick={() => handleAddFile(lang.id)} className="w-full text-left px-4 py-2 hover:bg-slate-800 text-xs text-slate-300 hover:text-white">
+                                {lang.label}
+                            </button>
+                        ))}
+                    </div>
+                    </>
+                )}
+            </div>
+
+            <div className="relative">
+                <button 
+                    onClick={() => setShowExamplesDropdown(!showExamplesDropdown)}
+                    className="flex items-center space-x-2 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-bold transition-colors shadow-lg shadow-indigo-500/20"
+                >
+                    <BookOpen size={14} /> <span>Examples</span>
+                </button>
+                {showExamplesDropdown && (
+                    <>
+                    <div className="fixed inset-0 z-30" onClick={() => setShowExamplesDropdown(false)}></div>
+                    <div className="absolute top-full right-0 mt-2 w-64 bg-slate-900 border border-slate-700 rounded-xl shadow-xl z-40 overflow-hidden py-1">
+                        <div className="px-4 py-2 text-[10px] font-bold text-slate-500 uppercase">Offline Templates</div>
+                        {Object.keys(EXAMPLE_PROJECTS).map(key => (
+                            <button key={key} onClick={() => handleExampleSwitch(key)} className="w-full text-left px-4 py-2 hover:bg-slate-800 text-xs text-slate-300 hover:text-white">
+                                {EXAMPLE_PROJECTS[key].name}
+                            </button>
+                        ))}
+                        <div className="border-t border-slate-800 my-1"></div>
+                        <div className="px-4 py-2 text-[10px] font-bold text-slate-500 uppercase">Online Repos</div>
+                        <button onClick={() => { setShowExamplesDropdown(false); handleLoadPublicRepo("Shengliang/codestudio"); }} className="w-full text-left px-4 py-2 hover:bg-slate-800 text-xs text-indigo-300 hover:text-white flex items-center gap-2">
+                            <Github size={12} /> Load Shengliang/codestudio
+                        </button>
+                    </div>
+                    </>
+                )}
+            </div>
+         </div>
+      </header>
+
+      <div className="flex-1 flex overflow-hidden relative">
+         
+         {/* Sidebar (Explorer / Search) */}
+         <div className={`${isSidebarOpen ? 'w-64' : 'w-0'} bg-slate-900 border-r border-slate-800 flex-shrink-0 transition-all duration-300 overflow-hidden flex flex-col`}>
+            
+            {/* Tabs */}
+            <div className="flex border-b border-slate-800 shrink-0">
+               <button onClick={() => setSidebarTab('explorer')} className={`flex-1 py-2 text-xs font-bold flex justify-center items-center gap-1 ${sidebarTab === 'explorer' ? 'bg-slate-800 text-white border-b-2 border-indigo-500' : 'text-slate-500 hover:text-white'}`}>
+                  <FolderOpen size={14}/> Explorer
+               </button>
+               <button onClick={() => setSidebarTab('search')} className={`flex-1 py-2 text-xs font-bold flex justify-center items-center gap-1 ${sidebarTab === 'search' ? 'bg-slate-800 text-white border-b-2 border-indigo-500' : 'text-slate-500 hover:text-white'}`}>
+                  <Search size={14}/> Search
+               </button>
+            </div>
+
+            {/* Tab Content */}
+            <div className="flex-1 overflow-y-auto">
+               {sidebarTab === 'explorer' ? (
+                  <div className="p-2 space-y-0.5">
+                     {fileTree.map(node => (
+                       <FileTreeNode 
+                           key={node.path}
+                           node={node}
+                           depth={0}
+                           activeFileIndex={activeFileIndex}
+                           onSelect={(idx) => { setActiveFileIndex(idx); setSelection(''); }}
+                           expandedFolders={expandedFolders}
+                           toggleFolder={toggleFolder}
+                           loadingFolders={loadingFolders}
+                       />
+                     ))}
+                     {fileTree.length === 0 && <p className="text-xs text-slate-600 italic p-4 text-center">No files.</p>}
+                  </div>
+               ) : (
+                  <div className="p-4 flex flex-col h-full">
+                     <div className="relative mb-4">
+                        <input 
+                           type="text" 
+                           placeholder="Find in files..." 
+                           value={searchTerm}
+                           onChange={(e) => handleSearch(e.target.value)}
+                           className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500"
+                        />
+                        <Search size={12} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500"/>
+                     </div>
+                     
+                     <div className="flex-1 overflow-y-auto space-y-2">
+                        {searchResults.length === 0 ? (
+                           <p className="text-xs text-slate-500 text-center">{searchTerm ? "No matches found." : "Enter term to search."}</p>
+                        ) : (
+                           searchResults.map((res, i) => (
+                              <div key={i} onClick={() => handleSearchResultClick(res)} className="bg-slate-800/50 hover:bg-slate-800 border border-slate-800 hover:border-slate-700 p-2 rounded cursor-pointer group">
+                                 <div className="flex justify-between items-center mb-1">
+                                    <span className="text-xs font-bold text-indigo-300 truncate" title={res.fileName}>{res.fileName.split('/').pop()}</span>
+                                    <span className="text-[10px] text-slate-500 font-mono">L{res.line}</span>
+                                 </div>
+                                 <div className="text-[10px] text-slate-400 font-mono bg-slate-950/50 p-1 rounded truncate">
+                                    {res.content}
+                                 </div>
+                              </div>
+                           ))
+                        )}
+                     </div>
+                  </div>
+               )}
+            </div>
+            
+            {/* Sidebar Footer (Tools) */}
+            {sidebarTab === 'explorer' && (
+            <div className="p-4 border-t border-slate-800 shrink-0">
+               <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">Tools</h3>
+               <div className="space-y-2">
+                   <button 
+                      onClick={handleGenerateQuestions} 
+                      disabled={isGeneratingQuestions}
+                      className="w-full flex items-center space-x-2 px-3 py-2 bg-slate-800 hover:bg-indigo-600 hover:text-white text-slate-400 rounded-lg text-xs font-medium transition-colors border border-slate-700"
+                   >
+                      {isGeneratingQuestions ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
+                      <span>Generate Questions</span>
+                   </button>
+                   <button 
+                      onClick={handleStartMockInterview}
+                      className="w-full flex items-center space-x-2 px-3 py-2 bg-slate-800 hover:bg-emerald-600 hover:text-white text-slate-400 rounded-lg text-xs font-medium transition-colors border border-slate-700"
+                   >
+                      <Mic size={14} />
+                      <span>Live Mock Interview</span>
+                   </button>
+               </div>
+            </div>
             )}
-        </div>
+         </div>
+
+         {/* Main Editor Area */}
+         <div className="flex-1 flex flex-col min-w-0 relative">
+            
+            {/* Editor Tabs */}
+            <div className="flex items-center bg-slate-900 border-b border-slate-800 px-2 overflow-x-auto scrollbar-hide">
+               <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="p-2 text-slate-500 hover:text-white mr-2">
+                  {isSidebarOpen ? <Minimize2 size={16}/> : <Maximize2 size={16}/>}
+               </button>
+               
+               {project.files.map((file, idx) => {
+                  const isPending = pendingChange?.fileIndex === idx;
+                  return (
+                  <div 
+                    key={idx}
+                    onClick={() => setActiveFileIndex(idx)}
+                    className={`flex items-center space-x-2 px-4 py-2.5 border-r border-slate-800 cursor-pointer min-w-[120px] max-w-[200px] ${activeFileIndex === idx ? 'bg-slate-950 text-white border-t-2 border-t-indigo-500' : 'bg-slate-900 text-slate-500 hover:bg-slate-800 hover:text-slate-300'} ${isPending ? 'border-t-2 border-t-emerald-500 bg-emerald-900/10' : ''}`}
+                  >
+                     <FileIcon filename={file.name} />
+                     <span className="text-xs font-medium truncate" title={file.name}>{file.name.split('/').pop()}</span>
+                     {activeFileIndex === idx && (
+                        <button className="ml-auto text-slate-500 hover:text-red-400" onClick={(e) => { e.stopPropagation(); /* close file logic */ }}>
+                           <X size={12} />
+                        </button>
+                     )}
+                  </div>
+               )})}
+            </div>
+
+            {/* Editor Content */}
+            <div className="flex-1 relative bg-slate-950 flex overflow-hidden">
+                {/* Markdown Preview Toggle */}
+                {isMarkdown && (
+                    <button
+                        onClick={() => setIsPreviewMode(!isPreviewMode)}
+                        className="absolute top-2 right-6 z-20 px-3 py-1.5 bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-white text-xs font-bold rounded-lg border border-slate-700 shadow-lg flex items-center gap-2 backdrop-blur-sm transition-all"
+                    >
+                        {isPreviewMode ? <Code size={14}/> : <Eye size={14}/>}
+                        <span>{isPreviewMode ? "Edit Source" : "Preview"}</span>
+                    </button>
+                )}
+
+                {/* Directory Placeholder */}
+                {activeFile && activeFile.isDirectory ? (
+                    <div className="flex-1 flex flex-col items-center justify-center bg-slate-950 text-slate-500">
+                        <FolderOpen size={48} className="opacity-20 mb-4" />
+                        <p>Select a file to edit.</p>
+                    </div>
+                ) : isMarkdown && isPreviewMode ? (
+                    <div className="flex-1 overflow-y-auto p-8 bg-slate-950">
+                        <div className="max-w-3xl mx-auto pb-20">
+                            <MarkdownView content={activeFile.content} />
+                        </div>
+                    </div>
+                ) : (
+                    <EnhancedEditor 
+                        code={activeFile.content}
+                        language={getLanguageFromFilename(activeFile.name)}
+                        onChange={(val: string) => handleCodeChange(val)}
+                        onScroll={handleScroll}
+                        onSelect={handleTextSelect}
+                        textAreaRef={textareaRef}
+                        lineNumbersRef={lineNumbersRef}
+                        isLoadingContent={isLoadingFile}
+                        scrollToLine={scrollToLine}
+                    />
+                )}
+                
+                {/* Pending Change Overlay (Accept/Reject AI Edit) */}
+                {pendingChange && (
+                    <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 p-3 bg-slate-900 border border-emerald-500/50 rounded-xl shadow-2xl animate-fade-in-up">
+                        <span className="text-sm font-bold text-emerald-300 mr-2">AI Suggested Changes</span>
+                        <button 
+                            onClick={handleRejectChange}
+                            className="px-4 py-2 bg-slate-800 hover:bg-red-900/30 text-slate-300 hover:text-red-300 rounded-lg text-xs font-bold flex items-center gap-2 border border-slate-700 transition-colors"
+                        >
+                            <Undo2 size={14}/> Revert
+                        </button>
+                        <button 
+                            onClick={handleAcceptChange}
+                            className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold flex items-center gap-2 shadow-lg transition-colors"
+                        >
+                            <Check size={14}/> Accept
+                        </button>
+                    </div>
+                )}
+
+                {/* Live Session Overlay (Mock Interview) */}
+                {isInterviewSession && (
+                    <div className="absolute right-4 bottom-4 w-80 h-96 z-50 bg-slate-900 rounded-xl shadow-2xl border border-indigo-500/50 overflow-hidden flex flex-col animate-fade-in-up">
+                        <div className="bg-indigo-900/20 p-2 flex justify-between items-center border-b border-indigo-500/20">
+                            <span className="text-xs font-bold text-indigo-300 flex items-center gap-2"><Mic size={12}/> Live Interview</span>
+                            <button onClick={() => setIsInterviewSession(false)} className="text-indigo-400 hover:text-white"><X size={14}/></button>
+                        </div>
+                        <div className="flex-1 relative">
+                            <LiveSession 
+                                channel={interviewChannel}
+                                recordingEnabled={recordInterview}
+                                onEndSession={() => setIsInterviewSession(false)}
+                                language="en"
+                            />
+                        </div>
+                    </div>
+                )}
+            </div>
+         </div>
+
+         {/* Resizable Chat/Review/Tutor Panel */}
+         {activeSideView !== 'none' && (
+             <>
+                <div 
+                    className="w-1 bg-slate-800 hover:bg-indigo-500 cursor-col-resize z-30 transition-colors"
+                    onMouseDown={startResizing}
+                />
+                <div style={{ width: chatWidth }} className="bg-slate-900 border-l border-slate-800 flex flex-col flex-shrink-0 relative">
+                    <div className="p-3 border-b border-slate-800 flex justify-between items-center bg-slate-950/50">
+                        <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                            {activeSideView === 'tutor' && <><GraduationCap size={16} className="text-emerald-400"/> Code Tutor</>}
+                            {activeSideView === 'chat' && <><Bot size={16} className="text-indigo-400"/> AI Assistant</>}
+                            {activeSideView === 'review' && <><CheckCircle size={16} className="text-purple-400"/> Code Review</>}
+                        </h3>
+                        <div className="flex gap-1">
+                            {activeSideView === 'chat' && (
+                                <button onClick={handleSaveChatSession} className="p-1.5 text-slate-400 hover:text-emerald-400 rounded hover:bg-slate-800" title="Save Chat">
+                                    <Archive size={16} />
+                                </button>
+                            )}
+                            <button onClick={() => setActiveSideView('none')} className="p-1.5 text-slate-400 hover:text-white rounded hover:bg-slate-800">
+                                <X size={16} />
+                            </button>
+                        </div>
+                    </div>
+                    
+                    {/* Content Area */}
+                    <div className="flex-1 overflow-y-auto relative scrollbar-thin scrollbar-thumb-slate-700">
+                        {activeSideView === 'tutor' ? (
+                            <LiveSession 
+                                channel={tutorChannel}
+                                initialContext={debouncedFileContext} // Use debounced context
+                                lectureId={`tutor-${tutorSessionId}`} // Unique ID to force new session & saving
+                                recordingEnabled={false}
+                                onEndSession={() => setActiveSideView('none')}
+                                language="en"
+                                // Inject tool for editing code
+                                customTools={[updateFileTool]}
+                                onCustomToolCall={handleLiveCodeUpdate}
+                            />
+                        ) : activeSideView === 'review' ? (
+                            <div className="p-4 space-y-4">
+                                <div className="text-center mb-4">
+                                    <button onClick={handleReviewCode} disabled={isReviewing} className="w-full py-2 bg-indigo-600 hover:bg-indigo-500 rounded-lg text-white text-xs font-bold shadow-lg transition-colors flex items-center justify-center gap-2">
+                                        <Search size={14}/> Run New Analysis
+                                    </button>
+                                </div>
+                                {isReviewing ? (
+                                    <div className="text-center text-slate-500"><Loader2 className="animate-spin mx-auto mb-2"/> Analyzing code...</div>
+                                ) : project.review ? (
+                                    <MarkdownView content={project.review} />
+                                ) : (
+                                    <p className="text-slate-500 text-center text-sm">No review generated yet.</p>
+                                )}
+                            </div>
+                        ) : (
+                            // Chat View
+                            <div className="p-4 space-y-4 min-h-full">
+                                {chatMessages.length === 0 && (
+                                    <div className="text-center text-slate-500 mt-10">
+                                        <Bot size={32} className="mx-auto mb-2 opacity-50"/>
+                                        <p className="text-xs">Ask me to explain code, find bugs, or optimize algorithms.</p>
+                                    </div>
+                                )}
+                                {chatMessages.map((msg, idx) => (
+                                    <div key={idx} className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
+                                        <div className={`max-w-[90%] p-3 rounded-xl text-sm ${msg.role === 'user' ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-300'}`}>
+                                            <MarkdownView content={msg.text} />
+                                        </div>
+                                    </div>
+                                ))}
+                                {isChatLoading && (
+                                    <div className="flex items-center space-x-2 text-slate-500 text-xs">
+                                        <Loader2 size={12} className="animate-spin"/>
+                                        <span>Thinking...</span>
+                                    </div>
+                                )}
+                                <div ref={chatEndRef} />
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Chat Input (Only for Chat Mode) */}
+                    {activeSideView === 'chat' && (
+                        <div className="p-3 border-t border-slate-800 bg-slate-900">
+                            <div className="flex items-center gap-2 bg-slate-800 border border-slate-700 rounded-lg p-1">
+                                <input 
+                                    type="text" 
+                                    value={chatInput}
+                                    onChange={(e) => setChatInput(e.target.value)}
+                                    onKeyDown={(e) => e.key === 'Enter' && handleChatSubmit()}
+                                    placeholder="Type a message..."
+                                    className="flex-1 bg-transparent text-sm text-white px-2 focus:outline-none"
+                                />
+                                <button onClick={handleChatSubmit} disabled={!chatInput.trim() || isChatLoading} className="p-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white rounded-md">
+                                    <Send size={14} />
+                                </button>
+                            </div>
+                        </div>
+                    )}
+                </div>
+             </>
+         )}
+      </div>
+
+      {/* Import Modal... (keep existing) */}
+      {showImportModal && (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
+              <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-lg shadow-2xl p-6">
+                  <div className="flex justify-between items-center mb-6">
+                      <h3 className="text-xl font-bold text-white flex items-center gap-2">
+                          <CloudUpload size={24} className="text-indigo-400"/> Import Project
+                      </h3>
+                      <button onClick={() => setShowImportModal(false)} className="text-slate-400 hover:text-white"><X size={20}/></button>
+                  </div>
+
+                  <div className="space-y-6">
+                      {/* Public Repo Option */}
+                      <div className="space-y-2">
+                          <label className="text-xs font-bold text-slate-500 uppercase">Public Repository (Read-Only)</label>
+                          <div className="flex gap-2">
+                              <input 
+                                  type="text" 
+                                  placeholder="owner/repo (e.g. facebook/react)" 
+                                  value={publicRepoPath}
+                                  onChange={e => setPublicRepoPath(e.target.value)}
+                                  className="flex-1 bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500"
+                              />
+                              <button 
+                                  onClick={() => handleLoadPublicRepo()} 
+                                  disabled={isLoadingPublic || !publicRepoPath.trim()}
+                                  className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white font-bold rounded-lg text-xs transition-colors border border-slate-700"
+                              >
+                                  {isLoadingPublic ? <Loader2 size={14} className="animate-spin"/> : 'Load'}
+                              </button>
+                          </div>
+                          
+                          {/* Quick Select Dropdown */}
+                          <div className="relative">
+                              <select
+                                  onChange={(e) => setPublicRepoPath(e.target.value)}
+                                  className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-400 focus:text-white focus:border-indigo-500 outline-none appearance-none cursor-pointer"
+                                  defaultValue=""
+                              >
+                                  <option value="" disabled>Select a popular repository...</option>
+                                  {QUICK_REPOS.map(repo => (
+                                      <option key={repo.value} value={repo.value}>{repo.name}</option>
+                                  ))}
+                              </select>
+                              <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-slate-500">
+                                  <ChevronDown size={14} />
+                              </div>
+                          </div>
+
+                          <p className="text-[10px] text-slate-500">Fast load. No login required. Changes cannot be pushed back.</p>
+                      </div>
+
+                      <div className="relative flex py-2 items-center">
+                          <div className="flex-grow border-t border-slate-800"></div>
+                          <span className="flex-shrink-0 mx-4 text-slate-500 text-xs font-bold">OR</span>
+                          <div className="flex-grow border-t border-slate-800"></div>
+                      </div>
+
+                      {/* GitHub Connect Option */}
+                      <div className="text-center space-y-3">
+                          <button 
+                              onClick={handleGitHubConnect}
+                              className="w-full py-3 bg-slate-800 hover:bg-slate-700 text-white font-bold rounded-xl flex items-center justify-center gap-2 transition-all border border-slate-700 hover:border-slate-500"
+                          >
+                              <Github size={18} />
+                              <span>{(needsGitHubReauth || isGithubLinked) ? "Reconnect GitHub Account" : "Connect GitHub Account"}</span>
+                          </button>
+                          <p className="text-[10px] text-slate-500">Required for private repositories and committing changes.</p>
+                      </div>
+                  </div>
+              </div>
+          </div>
+      )}
+
+      {/* Interview Setup Modal... (keep existing) */}
+      {showInterviewSetup && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
+              <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-sm shadow-2xl p-6 animate-fade-in-up">
+                  <div className="text-center mb-6">
+                      <div className="w-16 h-16 bg-indigo-500/20 rounded-full flex items-center justify-center mx-auto mb-3">
+                          <Mic size={32} className="text-indigo-400" />
+                      </div>
+                      <h3 className="text-xl font-bold text-white">Start Mock Interview</h3>
+                      <p className="text-sm text-slate-400 mt-1">Real-time voice conversation with AI interviewer.</p>
+                  </div>
+                  
+                  <div className="space-y-4">
+                      <div 
+                          onClick={() => setRecordInterview(!recordInterview)}
+                          className={`p-3 rounded-xl border cursor-pointer flex items-center justify-between ${recordInterview ? 'bg-red-900/20 border-red-500/50' : 'bg-slate-800 border-slate-700'}`}
+                      >
+                          <span className={`text-sm font-bold ${recordInterview ? 'text-red-400' : 'text-slate-400'}`}>Record Session</span>
+                          <div className={`w-5 h-5 rounded-full border flex items-center justify-center ${recordInterview ? 'border-red-500 bg-red-500 text-white' : 'border-slate-500'}`}>
+                              {recordInterview && <CheckCircle size={12}/>}
+                          </div>
+                      </div>
+                      
+                      <button onClick={confirmStartInterview} className="w-full py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl shadow-lg">
+                          Begin Interview
+                      </button>
+                      <button onClick={() => setShowInterviewSetup(false)} className="w-full py-2 text-slate-400 hover:text-white text-sm">
+                          Cancel
+                      </button>
+                  </div>
+              </div>
+          </div>
+      )}
+
+      {/* GitHub Repo Selection Modal... (keep existing) */}
+      {showGithubModal && (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
+              <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-lg shadow-2xl p-6 flex flex-col max-h-[80vh]">
+                  <div className="flex justify-between items-center mb-4">
+                      <h3 className="text-xl font-bold text-white flex items-center gap-2"><Github size={24} className="text-white"/> Select Repository</h3>
+                      <button onClick={() => setShowGithubModal(false)} className="text-slate-400 hover:text-white"><X size={20}/></button>
+                  </div>
+                  <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar">
+                      {isLoadingRepos ? (
+                          <div className="py-10 text-center"><Loader2 className="animate-spin mx-auto text-indigo-400"/></div>
+                      ) : repos.length === 0 ? (
+                          <div className="py-10 text-center text-slate-500">No repositories found.</div>
+                      ) : (
+                          <div className="space-y-2">
+                              {repos.map((repo: any) => (
+                                  <button key={repo.id} onClick={() => handleRepoSelect(repo)} className="w-full text-left p-3 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 flex items-center justify-between group">
+                                      <div>
+                                          <div className="font-bold text-white text-sm">{repo.full_name}</div>
+                                          <div className="text-xs text-slate-400 flex items-center gap-2">
+                                              <span>{repo.private ? "Private" : "Public"}</span>
+                                              <span>•</span>
+                                              <span>{repo.default_branch}</span>
+                                          </div>
+                                      </div>
+                                      <ChevronRight size={16} className="text-slate-500 group-hover:text-white"/>
+                                  </button>
+                              ))}
+                          </div>
+                      )}
+                  </div>
+              </div>
+          </div>
+      )}
+
+      {/* Commit Modal... (keep existing) */}
+      {showCommitModal && (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
+              <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-md shadow-2xl p-6">
+                  <div className="flex justify-between items-center mb-4">
+                      <h3 className="text-xl font-bold text-white flex items-center gap-2"><GitCommit size={20} className="text-emerald-400"/> Commit & Push</h3>
+                      <button onClick={() => setShowCommitModal(false)} className="text-slate-400 hover:text-white"><X size={20}/></button>
+                  </div>
+                  
+                  <div className="space-y-4">
+                      <div>
+                          <label className="text-xs font-bold text-slate-500 uppercase">Repository</label>
+                          <div className="text-sm text-white font-mono bg-slate-800 p-2 rounded mt-1 border border-slate-700">
+                              {project.github?.owner}/{project.github?.repo} ({project.github?.branch})
+                          </div>
+                      </div>
+                      
+                      <div>
+                          <label className="text-xs font-bold text-slate-500 uppercase">Commit Message</label>
+                          <textarea 
+                              value={commitMessage}
+                              onChange={e => setCommitMessage(e.target.value)}
+                              className="w-full bg-slate-950 border border-slate-700 rounded-lg p-3 text-sm text-white mt-1 h-24 focus:outline-none focus:border-emerald-500"
+                              placeholder="Update solution..."
+                          />
+                      </div>
+                      
+                      <button 
+                          onClick={handleCommit}
+                          disabled={isCommitting || !commitMessage}
+                          className="w-full py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-bold rounded-lg flex items-center justify-center gap-2"
+                      >
+                          {isCommitting ? <Loader2 size={16} className="animate-spin"/> : <CloudUpload size={16}/>}
+                          <span>Push Changes</span>
+                      </button>
+                  </div>
+              </div>
+          </div>
+      )}
+
     </div>
   );
 };

@@ -160,50 +160,7 @@ export async function fetchRepoSubTree(token: string | null, owner: string, repo
     return files;
 }
 
-// Create or Update a Single File via Contents API
-export async function createFileInRepo(
-  token: string,
-  owner: string,
-  repo: string,
-  path: string,
-  content: string,
-  message: string,
-  branch: string = 'main'
-): Promise<void> {
-    // 1. Check if file exists to get SHA (for update)
-    let sha: string | undefined;
-    try {
-        const checkRes = await fetch(`${GITHUB_API_BASE}/repos/${owner}/${repo}/contents/${path}?ref=${branch}`, {
-            headers: { Authorization: `token ${token}` }
-        });
-        if (checkRes.ok) {
-            const data = await checkRes.json();
-            sha = data.sha;
-        }
-    } catch(e) {}
-
-    // 2. PUT file
-    const res = await fetch(`${GITHUB_API_BASE}/repos/${owner}/${repo}/contents/${path}`, {
-        method: 'PUT',
-        headers: {
-            Authorization: `token ${token}`,
-            'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-            message,
-            content: btoa(content), // Base64 encode
-            branch,
-            sha // Include SHA if updating
-        })
-    });
-    
-    if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.message || "Failed to create file");
-    }
-}
-
-// Commit and Push changes (Git Database API)
+// Commit and Push changes
 export async function commitToRepo(
   token: string, 
   project: CodeProject, 

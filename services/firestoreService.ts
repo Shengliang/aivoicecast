@@ -1,4 +1,3 @@
-
 // [FORCE-SYNC-v3.44.0] Timestamp: ${new Date().toISOString()}
 import { db, auth, storage } from './firebaseConfig';
 import firebase from 'firebase/compat/app';
@@ -8,8 +7,12 @@ import { SPOTLIGHT_DATA } from '../utils/spotlightContent';
 import { OFFLINE_LECTURES, OFFLINE_CHANNEL_ID } from '../utils/offlineContent';
 
 // --- STRIPE CONFIGURATION ---
+// REPLACE THIS WITH YOUR ACTUAL STRIPE PRICE ID FROM THE DASHBOARD
+
 export const STRIPE_PRICE_ID_PROMO = 'price_1ScFfnIVNYhSs7Hca9yHlHwA'; // $0.01 for 1st month
 export const STRIPE_PRICE_ID_REGULAR = 'price_1ScGG7IVNYhSs7HchATUVYY4'; // $29.00/mo normal
+
+// Set the active price ID here
 export const STRIPE_PRICE_ID = STRIPE_PRICE_ID_PROMO; 
 
 // Helper to remove undefined fields which Firestore rejects
@@ -27,21 +30,6 @@ function sanitizeData(data: any): any {
     return clean;
   }
   return data;
-}
-
-// --- AUTH HELPER (HANDLES DEV MODE) ---
-function getActiveUser() {
-    // 1. Real User
-    if (auth.currentUser) return auth.currentUser;
-    // 2. Dev Mode User
-    if (localStorage.getItem('aivoicecast_dev_mode') === 'true') {
-        return {
-            uid: 'dev-user',
-            email: 'dev@local',
-            displayName: 'Dev User'
-        } as any;
-    }
-    return null;
 }
 
 // --- REAL-TIME COLLABORATION LISTENERS ---
@@ -63,7 +51,7 @@ export function subscribeToWhiteboard(boardId: string, onUpdate: (elements: any[
 }
 
 export async function saveWhiteboardSession(boardId: string, elements: any[]): Promise<void> {
-  const user = getActiveUser();
+  const user = auth.currentUser;
   await db.collection('whiteboards').doc(boardId).set({
     elements: sanitizeData(elements),
     lastModified: Date.now(),
@@ -294,10 +282,13 @@ export async function incrementApiUsage(uid: string): Promise<void> {
 export async function createStripeCheckoutSession(uid: string): Promise<string> {
     if (!uid) throw new Error("User ID missing");
 
+    // SAFETY CHECK: Ensure Price ID is valid (basic check)
     if (!STRIPE_PRICE_ID || STRIPE_PRICE_ID.includes('placeholder')) {
         throw new Error("Configuration Error: The 'STRIPE_PRICE_ID' in services/firestoreService.ts is invalid.");
     }
 
+    // 1. Create a document in the checkout_sessions collection
+    // This triggers the "Run Payments with Stripe" extension
     try {
         const sessionRef = await db
             .collection('customers')
@@ -309,6 +300,7 @@ export async function createStripeCheckoutSession(uid: string): Promise<string> 
                 cancel_url: window.location.href,
             });
 
+        // 2. Listen for the `url` field to be populated by the extension
         return new Promise<string>((resolve, reject) => {
             const unsubscribe = sessionRef.onSnapshot((snap) => {
                 const data = snap.data();
@@ -336,6 +328,7 @@ export async function createStripeCheckoutSession(uid: string): Promise<string> 
     }
 }
 
+// Create a session for the Stripe Customer Portal (Cancel/Manage Subscription)
 export async function createStripePortalSession(uid: string): Promise<string> {
     if (!uid) throw new Error("User ID missing");
 
@@ -360,6 +353,7 @@ export async function createStripePortalSession(uid: string): Promise<string> {
                     reject(new Error(data.error.message));
                 }
             });
+            // Timeout after 15s
             setTimeout(() => {
                 unsubscribe();
                 reject(new Error("Timeout waiting for Stripe Portal."));
@@ -373,31 +367,38 @@ export async function createStripePortalSession(uid: string): Promise<string> {
     }
 }
 
+// Listen for subscription changes in real-time
 export function setupSubscriptionListener(uid: string, onUpdate: (tier: SubscriptionTier) => void) {
     if (!uid) return () => {};
 
+    // Watch the `subscriptions` sub-collection for this user
     return db
         .collection('customers')
         .doc(uid)
         .collection('subscriptions')
         .where('status', 'in', ['active', 'trialing'])
         .onSnapshot(async (snapshot) => {
+            // If any active subscription exists, they are PRO
             const isPro = !snapshot.empty;
             const newTier: SubscriptionTier = isPro ? 'pro' : 'free';
             
+            // Sync to User Profile for easier access elsewhere
             const userRef = db.collection('users').doc(uid);
             await userRef.set({ subscriptionTier: newTier }, { merge: true });
             
             onUpdate(newTier);
         }, (error) => {
+            // console.warn("Subscription listener error:", error);
             // Permissions errors are common here if rules aren't set, suppress warning spam
         });
 }
 
+// Legacy Mock function - Deprecated, kept for backward compat if needed temporarily
 export async function upgradeUserSubscription(uid: string, tier: SubscriptionTier): Promise<boolean> {
-    return true; 
+    return true; // No-op, now handled by Stripe listener
 }
 
+// FORCE UPGRADE FOR DEBUGGING
 export async function forceUpgradeDebug(uid: string): Promise<void> {
     const userRef = db.collection('users').doc(uid);
     await userRef.set({ subscriptionTier: 'pro' }, { merge: true });
@@ -405,6 +406,7 @@ export async function forceUpgradeDebug(uid: string): Promise<void> {
 }
 
 export async function downgradeUserSubscription(uid: string): Promise<boolean> {
+    // This handles manual local downgrade if needed, but Portal is preferred.
     const userRef = db.collection('users').doc(uid);
     try {
         await userRef.set({
@@ -419,6 +421,7 @@ export async function downgradeUserSubscription(uid: string): Promise<boolean> {
 }
 
 export async function getBillingHistory(uid: string): Promise<any[]> {
+    // In real app, query `customers/{uid}/payments`
     return [
         { date: new Date().toLocaleDateString(), amount: '29.00', status: 'paid' },
     ];
@@ -427,7 +430,7 @@ export async function getBillingHistory(uid: string): Promise<any[]> {
 // --- ACTIVITY LOGS (METRICS) ---
 
 export async function logUserActivity(type: string, metadata: any = {}): Promise<void> {
-  const user = getActiveUser();
+  const user = auth.currentUser;
   if (!user) return;
   
   try {
@@ -444,8 +447,11 @@ export async function logUserActivity(type: string, metadata: any = {}): Promise
   }
 }
 
+// ... (Rest of existing functions for Groups, Channels, Bookings, Blog, Code Projects unchanged) ...
+// (Including createGroup, joinGroup, getUserGroups, etc... till end of file)
+
 export async function createGroup(name: string): Promise<string> {
-  const user = getActiveUser();
+  const user = auth.currentUser;
   if (!user) throw new Error("Must be logged in");
 
   const newGroup: Group = {
@@ -470,7 +476,7 @@ export async function createGroup(name: string): Promise<string> {
 }
 
 export async function joinGroup(groupId: string): Promise<void> {
-  const user = getActiveUser();
+  const user = auth.currentUser;
   if (!user) throw new Error("Must be logged in");
 
   const groupRef = db.collection('groups').doc(groupId);
@@ -537,7 +543,7 @@ export async function removeMemberFromGroup(groupId: string, memberId: string): 
 // --- INVITATIONS ---
 
 export async function sendInvitation(groupId: string, toEmail: string): Promise<void> {
-  const user = getActiveUser();
+  const user = auth.currentUser;
   if (!user || !user.email) throw new Error("Must be logged in");
   
   const groupRef = db.collection('groups').doc(groupId);
@@ -578,7 +584,7 @@ export async function getPendingInvitations(userEmail: string): Promise<Invitati
 }
 
 export async function respondToInvitation(invitation: Invitation, accept: boolean): Promise<void> {
-  const user = getActiveUser();
+  const user = auth.currentUser;
   if (!user) throw new Error("Must be logged in");
 
   const batch = db.batch();
@@ -883,7 +889,7 @@ export async function deleteRecordingReference(recordingId: string, mediaUrl: st
 // --- BOOKINGS ---
 
 export async function createBooking(booking: Booking): Promise<void> {
-  const user = getActiveUser();
+  const user = auth.currentUser;
   if (!user) throw new Error("Must be logged in to book a session.");
   await db.collection('bookings').add(sanitizeData(booking));
   logUserActivity('create_booking', { mentor: booking.mentorName, date: booking.date });
@@ -980,7 +986,7 @@ export async function deleteBookingRecording(bookingId: string, recordingUrl?: s
 // --- CODE PROJECTS ---
 
 export async function saveCodeProject(project: CodeProject): Promise<void> {
-  const user = getActiveUser();
+  const user = auth.currentUser;
   if (!user) throw new Error("Must be logged in to save project");
   
   const projectData = {
