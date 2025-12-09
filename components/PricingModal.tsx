@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, Check, Zap, Loader2, Sparkles, Crown } from 'lucide-react';
+import { X, Check, Zap, Loader2, Sparkles, Crown, CreditCard } from 'lucide-react';
 import { UserProfile, SubscriptionTier } from '../types';
 import { upgradeUserSubscription } from '../services/firestoreService';
 
@@ -11,12 +11,12 @@ interface PricingModalProps {
 }
 
 export const PricingModal: React.FC<PricingModalProps> = ({ isOpen, onClose, user, onSuccess }) => {
-  const [processingTier, setProcessingTier] = useState<SubscriptionTier | null>(null);
+  const [processingTier, setProcessingTier] = useState<string | null>(null);
 
   if (!isOpen) return null;
 
-  const handleUpgrade = async (tier: SubscriptionTier) => {
-    setProcessingTier(tier);
+  const handleUpgrade = async (tier: SubscriptionTier, method: 'card' | 'paypal') => {
+    setProcessingTier(method);
     try {
       // Simulate API latency
       await new Promise(resolve => setTimeout(resolve, 2000));
@@ -27,7 +27,7 @@ export const PricingModal: React.FC<PricingModalProps> = ({ isOpen, onClose, use
       // Refresh local state immediately via parent callback
       onSuccess(tier);
       onClose();
-      alert(`Successfully upgraded to ${tier.toUpperCase()} plan!`);
+      alert(`Successfully upgraded to ${tier.toUpperCase()} plan via ${method === 'paypal' ? 'PayPal' : 'Credit Card'}!`);
     } catch (e: any) {
       console.error("Subscription Upgrade Failed:", e);
       alert(`Payment failed: ${e.message || "Unknown error."}`);
@@ -95,20 +95,29 @@ export const PricingModal: React.FC<PricingModalProps> = ({ isOpen, onClose, use
                  {currentTier === 'pro' ? (
                      <button disabled className="w-full py-4 bg-slate-700 text-white font-bold rounded-xl text-sm border border-slate-600">Plan Active</button>
                  ) : (
-                     <button 
-                        onClick={() => handleUpgrade('pro')}
-                        disabled={!!processingTier}
-                        className="w-full py-4 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl text-sm shadow-xl shadow-indigo-500/20 transition-all flex justify-center items-center gap-2"
-                     >
-                        {processingTier === 'pro' ? <Loader2 className="animate-spin" size={18}/> : 'Upgrade to Pro'}
-                     </button>
+                     <div className="space-y-3">
+                        <button 
+                            onClick={() => handleUpgrade('pro', 'card')}
+                            disabled={!!processingTier}
+                            className="w-full py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl text-sm shadow-xl shadow-indigo-500/20 transition-all flex justify-center items-center gap-2"
+                        >
+                            {processingTier === 'card' ? <Loader2 className="animate-spin" size={18}/> : <><CreditCard size={18}/> Pay with Card</>}
+                        </button>
+                        <button 
+                            onClick={() => handleUpgrade('pro', 'paypal')}
+                            disabled={!!processingTier}
+                            className="w-full py-3 bg-[#0070ba] hover:bg-[#003087] text-white font-bold rounded-xl text-sm shadow-xl transition-all flex justify-center items-center gap-2"
+                        >
+                            {processingTier === 'paypal' ? <Loader2 className="animate-spin" size={18}/> : <span className="italic font-extrabold tracking-wide">PayPal</span>}
+                        </button>
+                     </div>
                  )}
               </div>
 
            </div>
            
            <div className="mt-8 text-center text-xs text-slate-500">
-              <p>Secure payment processing via Stripe. You can cancel at any time.</p>
+              <p>Secure payment processing via Stripe & PayPal. You can cancel at any time.</p>
               <p className="mt-1">All prices in USD. Enterprise plans available.</p>
            </div>
         </div>
