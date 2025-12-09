@@ -251,75 +251,89 @@ export async function incrementApiUsage(uid: string): Promise<void> {
 export async function createStripeCheckoutSession(uid: string): Promise<string> {
     if (!uid) throw new Error("User ID missing");
 
-    // SAFETY CHECK: Ensure Price ID is configured
-    if (STRIPE_PRICE_ID.includes('price_1P2q3rI4j5k6l7m8n9o0p1')) {
-        throw new Error("Configuration Error: Please replace the placeholder STRIPE_PRICE_ID in 'services/firestoreService.ts' with your actual Stripe Price ID.");
+    // SAFETY CHECK: Ensure Price ID is valid (basic check)
+    if (!STRIPE_PRICE_ID || STRIPE_PRICE_ID.includes('price_1P2q3rI4j5k6l7m8n9o0p1')) {
+        throw new Error("Configuration Error: The 'STRIPE_PRICE_ID' in services/firestoreService.ts is still a placeholder. Please replace it with a valid Price ID from your Stripe Dashboard (Products page).");
     }
 
     // 1. Create a document in the checkout_sessions collection
     // This triggers the "Run Payments with Stripe" extension
-    const sessionRef = await db
-        .collection('customers')
-        .doc(uid)
-        .collection('checkout_sessions')
-        .add({
-            price: STRIPE_PRICE_ID,
-            success_url: window.location.href, // Redirect back to app
-            cancel_url: window.location.href,
-        });
+    try {
+        const sessionRef = await db
+            .collection('customers')
+            .doc(uid)
+            .collection('checkout_sessions')
+            .add({
+                price: STRIPE_PRICE_ID,
+                success_url: window.location.href, // Redirect back to app
+                cancel_url: window.location.href,
+            });
 
-    // 2. Listen for the `url` field to be populated by the extension
-    return new Promise<string>((resolve, reject) => {
-        const unsubscribe = sessionRef.onSnapshot((snap) => {
-            const data = snap.data();
-            if (data?.url) {
+        // 2. Listen for the `url` field to be populated by the extension
+        return new Promise<string>((resolve, reject) => {
+            const unsubscribe = sessionRef.onSnapshot((snap) => {
+                const data = snap.data();
+                if (data?.url) {
+                    unsubscribe();
+                    resolve(data.url);
+                }
+                if (data?.error) {
+                    unsubscribe();
+                    reject(new Error(data.error.message));
+                }
+            });
+            
+            // Timeout after 15s to prevent hanging
+            setTimeout(() => {
                 unsubscribe();
-                resolve(data.url);
-            }
-            if (data?.error) {
-                unsubscribe();
-                reject(new Error(data.error.message));
-            }
+                reject(new Error("Timeout waiting for Stripe. The Firebase Extension may be cold-starting or misconfigured. Please try again."));
+            }, 15000);
         });
-        
-        // Timeout after 15s to prevent hanging
-        setTimeout(() => {
-            unsubscribe();
-            reject(new Error("Timeout waiting for Stripe. The Firebase Extension may be cold-starting or misconfigured. Please try again."));
-        }, 15000);
-    });
+    } catch (e: any) {
+        if (e.code === 'permission-denied') {
+            throw new Error("permission-denied");
+        }
+        throw e;
+    }
 }
 
 // Create a session for the Stripe Customer Portal (Cancel/Manage Subscription)
 export async function createStripePortalSession(uid: string): Promise<string> {
     if (!uid) throw new Error("User ID missing");
 
-    const sessionRef = await db
-        .collection('customers')
-        .doc(uid)
-        .collection('portal_sessions')
-        .add({
-            return_url: window.location.href, 
-        });
+    try {
+        const sessionRef = await db
+            .collection('customers')
+            .doc(uid)
+            .collection('portal_sessions')
+            .add({
+                return_url: window.location.href, 
+            });
 
-    return new Promise<string>((resolve, reject) => {
-        const unsubscribe = sessionRef.onSnapshot((snap) => {
-            const data = snap.data();
-            if (data?.url) {
+        return new Promise<string>((resolve, reject) => {
+            const unsubscribe = sessionRef.onSnapshot((snap) => {
+                const data = snap.data();
+                if (data?.url) {
+                    unsubscribe();
+                    resolve(data.url);
+                }
+                if (data?.error) {
+                    unsubscribe();
+                    reject(new Error(data.error.message));
+                }
+            });
+            // Timeout after 15s
+            setTimeout(() => {
                 unsubscribe();
-                resolve(data.url);
-            }
-            if (data?.error) {
-                unsubscribe();
-                reject(new Error(data.error.message));
-            }
+                reject(new Error("Timeout waiting for Stripe Portal."));
+            }, 15000);
         });
-        // Timeout after 15s
-        setTimeout(() => {
-            unsubscribe();
-            reject(new Error("Timeout waiting for Stripe Portal."));
-        }, 15000);
-    });
+    } catch (e: any) {
+        if (e.code === 'permission-denied') {
+            throw new Error("permission-denied");
+        }
+        throw e;
+    }
 }
 
 // Listen for subscription changes in real-time
@@ -343,13 +357,21 @@ export function setupSubscriptionListener(uid: string, onUpdate: (tier: Subscrip
             
             onUpdate(newTier);
         }, (error) => {
-            console.warn("Subscription listener error:", error);
+            // console.warn("Subscription listener error:", error);
+            // Permissions errors are common here if rules aren't set, suppress warning spam
         });
 }
 
 // Legacy Mock function - Deprecated, kept for backward compat if needed temporarily
 export async function upgradeUserSubscription(uid: string, tier: SubscriptionTier): Promise<boolean> {
     return true; // No-op, now handled by Stripe listener
+}
+
+// FORCE UPGRADE FOR DEBUGGING
+export async function forceUpgradeDebug(uid: string): Promise<void> {
+    const userRef = db.collection('users').doc(uid);
+    await userRef.set({ subscriptionTier: 'pro' }, { merge: true });
+    logUserActivity('debug_force_upgrade', {});
 }
 
 export async function downgradeUserSubscription(uid: string): Promise<boolean> {

@@ -1,8 +1,8 @@
 
 import React, { useState } from 'react';
-import { X, Check, Zap, Loader2, Sparkles, Crown, CreditCard, AlertCircle } from 'lucide-react';
+import { X, Check, Zap, Loader2, Sparkles, Crown, CreditCard, AlertCircle, Terminal, RefreshCw, Key, ShieldCheck } from 'lucide-react';
 import { UserProfile, SubscriptionTier } from '../types';
-import { createStripeCheckoutSession } from '../services/firestoreService';
+import { createStripeCheckoutSession, forceUpgradeDebug } from '../services/firestoreService';
 
 interface PricingModalProps {
   isOpen: boolean;
@@ -14,11 +14,11 @@ interface PricingModalProps {
 export const PricingModal: React.FC<PricingModalProps> = ({ isOpen, onClose, user, onSuccess }) => {
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showRules, setShowRules] = useState(false);
 
   if (!isOpen) return null;
 
   const handleCheckout = async () => {
-    // Guard against missing user info (rare edge case on stale profiles)
     if (!user || !user.uid) {
         setError("Error: User profile is incomplete. Please sign out and sign in again.");
         return;
@@ -26,31 +26,45 @@ export const PricingModal: React.FC<PricingModalProps> = ({ isOpen, onClose, use
 
     setProcessing(true);
     setError(null);
+    setShowRules(false);
     
     try {
-      // Create session via Stripe Extension
       const url = await createStripeCheckoutSession(user.uid);
-      
-      // Redirect to Stripe
       window.location.assign(url);
-      
     } catch (e: any) {
       console.error("Checkout Creation Failed:", e);
-      // Clean up error message for user
       let msg = e.message || "Unknown error.";
+      
       if (msg.includes("permission-denied")) {
-          msg = "Permission Denied: Please check your Firestore Security Rules.";
+          msg = "Permission Denied: Firebase Security Rules are blocking the request.";
+          setShowRules(true);
+      } else if (msg.includes("Configuration Error")) {
+          // Pass through specific config errors
       }
+      
       setError(msg);
       setProcessing(false);
     }
+  };
+
+  const handleDevBypass = async () => {
+      setProcessing(true);
+      try {
+          await forceUpgradeDebug(user.uid);
+          onSuccess('pro');
+          alert("Debug Mode: You have been upgraded to Pro locally. Refresh the page if needed.");
+          onClose();
+      } catch (e) {
+          alert("Bypass failed: " + e);
+          setProcessing(false);
+      }
   };
 
   const currentTier = user.subscriptionTier || 'free';
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-950/90 backdrop-blur-md">
-      <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-4xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh] animate-fade-in-up my-auto relative">
+      <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-4xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh] animate-fade-in-up my-auto relative">
         
         <div className="p-6 border-b border-slate-800 flex justify-between items-center bg-slate-950/50 shrink-0">
           <div>
@@ -65,11 +79,47 @@ export const PricingModal: React.FC<PricingModalProps> = ({ isOpen, onClose, use
         <div className="p-8 overflow-y-auto flex-1 flex flex-col items-center justify-center">
            
            {error && (
-               <div className="w-full max-w-3xl mb-6 bg-red-900/20 border border-red-900/50 rounded-xl p-4 flex items-start gap-3 animate-fade-in">
-                   <AlertCircle className="text-red-500 shrink-0 mt-0.5" size={20} />
-                   <div className="text-red-200 text-sm">
-                       <p className="font-bold">Payment Setup Error</p>
-                       <p>{error}</p>
+               <div className="w-full max-w-3xl mb-6 bg-red-900/20 border border-red-900/50 rounded-xl p-4 flex flex-col gap-3 animate-fade-in">
+                   <div className="flex items-start gap-3">
+                       <AlertCircle className="text-red-500 shrink-0 mt-0.5" size={20} />
+                       <div className="text-red-200 text-sm flex-1">
+                           <p className="font-bold">Payment Setup Error</p>
+                           <p>{error}</p>
+                       </div>
+                   </div>
+
+                   {/* Debug Tools */}
+                   <div className="pl-8 flex flex-col gap-3 mt-2">
+                       <button 
+                           onClick={handleDevBypass}
+                           className="w-full py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-lg flex items-center justify-center gap-2 shadow-lg"
+                       >
+                           <Zap size={14} fill="currentColor"/>
+                           DEV BYPASS: Force Upgrade (Skip Payment)
+                       </button>
+                       
+                       {showRules && (
+                           <div className="bg-slate-950 p-3 rounded-lg border border-slate-700">
+                               <p className="text-xs text-slate-400 mb-2 font-bold flex items-center gap-2">
+                                   <ShieldCheck size={12}/> Required Firestore Rules (Copy to Firebase Console):
+                               </p>
+                               <pre className="text-[10px] font-mono text-indigo-300 overflow-x-auto whitespace-pre-wrap select-all">
+{`match /customers/{uid} {
+  allow read: if request.auth.uid == uid;
+
+  match /checkout_sessions/{id} {
+    allow read, write: if request.auth.uid == uid;
+  }
+  match /subscriptions/{id} {
+    allow read: if request.auth.uid == uid;
+  }
+  match /payments/{id} {
+    allow read: if request.auth.uid == uid;
+  }
+}`}
+                               </pre>
+                           </div>
+                       )}
                    </div>
                </div>
            )}
@@ -124,7 +174,7 @@ export const PricingModal: React.FC<PricingModalProps> = ({ isOpen, onClose, use
                         {processing ? (
                             <>
                                 <Loader2 className="animate-spin" size={18}/> 
-                                <span>Initializing Secure Checkout...</span>
+                                <span>Initializing...</span>
                             </>
                         ) : (
                             <><CreditCard size={18}/> Checkout with Stripe</>

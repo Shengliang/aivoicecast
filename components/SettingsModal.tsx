@@ -47,7 +47,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         window.location.assign(url);
     } catch (e: any) {
         console.error(e);
-        setError("Failed to open billing portal: " + e.message);
+        let msg = e.message || "Unknown error";
+        if (msg.includes("permission-denied")) {
+            msg = "Permission Error: Check Firestore Security Rules for 'customers' collection.";
+        }
+        setError("Failed to open portal: " + msg);
         setIsProcessingPortal(false);
     }
   };
