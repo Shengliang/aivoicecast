@@ -83,6 +83,49 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack, sessionId, onSes
     }
   }, [sessionId]);
 
+  const handleShare = async () => {
+      if (!auth.currentUser) {
+          alert("Please sign in to share.");
+          return;
+      }
+      
+      // Use existing session ID if available, or generate a new one
+      let boardId = currentSessionIdRef.current;
+      
+      // If we are sharing for the first time without a session ID from props
+      if (!sessionId && !isSharedSession) {
+          boardId = crypto.randomUUID();
+          currentSessionIdRef.current = boardId;
+      }
+      
+      try {
+        await saveWhiteboardSession(boardId, elements);
+        
+        // Notify App to update URL
+        if (onSessionStart && !sessionId) {
+            onSessionStart(boardId);
+        }
+        
+        const url = new URL(window.location.href);
+        // Set unified session param
+        url.searchParams.set('session', boardId);
+        // Clean up legacy conflicting params
+        url.searchParams.delete('whiteboard_session');
+        url.searchParams.delete('code_session');
+        url.searchParams.delete('view');
+        
+        const link = url.toString();
+        
+        await navigator.clipboard.writeText(link);
+        alert(`Shared Session Link Copied!\n\nLink: ${link}\n\nThis link syncs both Whiteboard and Code Studio.`);
+        
+        setIsSharedSession(true);
+      } catch(e: any) {
+          console.error(e);
+          alert(`Failed to share: ${e.message}`);
+      }
+  };
+
   useEffect(() => {
       if (selectedIds.length === 1) {
           const el = elements.find(e => e.id === selectedIds[0]);
@@ -680,47 +723,6 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack, sessionId, onSes
               syncUpdate(newEl);
           }
           setTextInput(null);
-      }
-  };
-
-  const handleShare = async () => {
-      if (!auth.currentUser) {
-          alert("Please sign in to share.");
-          return;
-      }
-      
-      // Use existing session ID if available, or generate a new one
-      let boardId = currentSessionIdRef.current;
-      
-      // If we are sharing for the first time without a session ID from props
-      if (!sessionId && !isSharedSession) {
-          boardId = crypto.randomUUID();
-          currentSessionIdRef.current = boardId;
-      }
-      
-      try {
-        await saveWhiteboardSession(boardId, elements);
-        
-        // Notify App to update URL
-        if (onSessionStart && !sessionId) {
-            onSessionStart(boardId);
-        }
-        
-        const url = new URL(window.location.href);
-        url.searchParams.set('session', boardId);
-        url.searchParams.set('view', 'whiteboard'); // Force view
-        // Clean up old params
-        url.searchParams.delete('whiteboard_session');
-        
-        const link = url.toString();
-        
-        await navigator.clipboard.writeText(link);
-        alert(`Shared Session Link Copied!\n\nLink: ${link}\n\nThis link syncs both Whiteboard and Code Studio.`);
-        
-        setIsSharedSession(true);
-      } catch(e: any) {
-          console.error(e);
-          alert(`Failed to share: ${e.message}`);
       }
   };
 

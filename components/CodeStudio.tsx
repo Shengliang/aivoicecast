@@ -12,7 +12,7 @@ import { LiveSession } from './LiveSession';
 interface CodeStudioProps {
   onBack: () => void;
   currentUser: any;
-  sessionId?: string; 
+  sessionId?: string;
   onSessionStart?: (id: string) => void;
 }
 
@@ -53,15 +53,6 @@ const LANGUAGES = [
         id: 'typescript', label: 'TypeScript', ext: 'ts', 
         defaultCode: `console.log("Hello TypeScript");` 
     },
-];
-
-const QUICK_REPOS = [
-  { name: "Shengliang/codestudio", value: "Shengliang/codestudio" },
-  { name: "Shengliang/aivoicecast", value: "Shengliang/aivoicecast" },
-  { name: "torvalds/linux", value: "torvalds/linux" },
-  { name: "postgres/postgres", value: "postgres/postgres" },
-  { name: "mysql/mysql-server", value: "mysql/mysql-server" },
-  { name: "redis/redis", value: "redis/redis" }
 ];
 
 const EXAMPLE_PROJECTS: Record<string, CodeProject> = {
@@ -787,10 +778,12 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
           }
           
           const url = new URL(window.location.href);
+          // Set unified session param
           url.searchParams.set('session', sessionToUse);
-          url.searchParams.set('view', 'code_studio'); // Force view
-          // Remove old params if any
+          // Clean up legacy conflicting params
           url.searchParams.delete('code_session');
+          url.searchParams.delete('whiteboard_session');
+          url.searchParams.delete('view');
           
           await navigator.clipboard.writeText(url.toString());
           alert(`Session Link Copied!\n\n${url.toString()}`);

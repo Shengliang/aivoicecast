@@ -172,26 +172,11 @@ const App: React.FC = () => {
     // CHECK URL FOR SHARED SESSION (Unified)
     const params = new URLSearchParams(window.location.search);
     const session = params.get('session');
-    const viewParam = params.get('view');
-    
-    // Legacy support
-    const codeSession = params.get('code_session');
-    const whiteboardSession = params.get('whiteboard_session');
 
-    // Priority: Unified Session -> Legacy Code -> Legacy Whiteboard
-    const activeSession = session || codeSession || whiteboardSession;
-
-    if (activeSession) {
-        setSharedSessionId(activeSession);
-        
-        // Auto-route based on unified view param or legacy params
-        if (viewParam === 'code_studio' || viewParam === 'whiteboard') {
-            setViewState(viewParam as ExtendedViewState);
-        } else if (whiteboardSession) {
-            setViewState('whiteboard');
-        } else if (codeSession) {
-            setViewState('code_studio');
-        }
+    if (session) {
+        setSharedSessionId(session);
+        // Default to Code Studio for shared sessions
+        setViewState('code_studio');
     }
 
     let unsubscribeAuth = () => {};
@@ -392,10 +377,15 @@ const App: React.FC = () => {
       setSharedSessionId(id);
       // Update URL without reloading to reflect the new session ID
       const url = new URL(window.location.href);
-      url.searchParams.set('session', id);
-      // Clean up legacy params if they exist
+      
+      // Clean up all possible params first
+      url.searchParams.delete('session');
       url.searchParams.delete('code_session');
       url.searchParams.delete('whiteboard_session');
+      url.searchParams.delete('view');
+
+      url.searchParams.set('session', id);
+      
       window.history.pushState({}, '', url.toString());
   };
 
@@ -943,7 +933,7 @@ const App: React.FC = () => {
 
       <ApiKeyModal 
         isOpen={isApiKeyModalOpen} 
-        onClose={() => setIsApiKeyModalOpen(false)}
+        onClose={() => setIsApiKeyModalOpen(false)} 
         onKeyUpdate={setHasApiKey}
       />
 
