@@ -640,7 +640,7 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack, sessionId }) => 
               setElements(prev => [...prev, newEl]);
           }
           setTextInput(null);
-          setTool('select'); 
+          // Don't switch tool, allow multiple text inputs in sequence
       }
   };
 
@@ -800,12 +800,12 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack, sessionId }) => 
                             setFontFamily(e.target.value);
                             updateSelectedElements({ fontFamily: e.target.value });
                         }}
-                        className="bg-transparent text-xs text-white outline-none w-20 border-r border-slate-700 mr-2"
+                        className="bg-slate-800 text-xs text-white outline-none w-20 border-r border-slate-700 mr-2 cursor-pointer"
                     >
-                        <option value="sans-serif">Sans</option>
-                        <option value="serif">Serif</option>
-                        <option value="monospace">Mono</option>
-                        <option value="cursive">Hand</option>
+                        <option value="sans-serif" className="bg-slate-900 text-white">Sans</option>
+                        <option value="serif" className="bg-slate-900 text-white">Serif</option>
+                        <option value="monospace" className="bg-slate-900 text-white">Mono</option>
+                        <option value="cursive" className="bg-slate-900 text-white">Hand</option>
                     </select>
                     
                     <input 
