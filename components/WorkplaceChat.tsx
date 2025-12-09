@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { ChatChannel, RealTimeMessage, Group, UserProfile } from '../types';
 import { sendMessage, subscribeToMessages, getUserGroups, getAllUsers, createOrGetDMChannel, getUserDMChannels, getUniqueGroupMembers, deleteMessage } from '../services/firestoreService';
@@ -92,7 +93,7 @@ export const WorkplaceChat: React.FC<WorkplaceChatProps> = ({ onBack, currentUse
   };
 
   const handleDeleteMessage = async (msgId: string) => {
-      if (!confirm("Delete this message?")) return;
+      if (!confirm("Unsend this message? It will be removed for everyone.")) return;
       
       let collectionPath;
       if (activeChannelType === 'group') {
@@ -313,7 +314,7 @@ export const WorkplaceChat: React.FC<WorkplaceChatProps> = ({ onBack, currentUse
                                     <Reply size={12}/>
                                 </button>
                                 {isMe && (
-                                    <button onClick={() => handleDeleteMessage(msg.id)} className="p-1.5 rounded-full bg-slate-800 text-slate-400 hover:text-red-400 border border-slate-700 hover:bg-slate-700" title="Delete">
+                                    <button onClick={() => handleDeleteMessage(msg.id)} className="p-1.5 rounded-full bg-slate-800 text-slate-400 hover:text-red-400 border border-slate-700 hover:bg-slate-700" title="Unsend Message">
                                         <Trash2 size={12}/>
                                     </button>
                                 )}
@@ -329,10 +330,14 @@ export const WorkplaceChat: React.FC<WorkplaceChatProps> = ({ onBack, currentUse
                                       </div>
                                   )}
                                   
-                                  <div className={`px-4 py-2 rounded-2xl text-sm leading-relaxed relative ${isMe ? 'bg-indigo-600 text-white rounded-tr-sm' : 'bg-slate-800 text-slate-200 rounded-tl-sm'}`}>
+                                  <div 
+                                      className={`px-4 py-2 rounded-2xl text-sm leading-relaxed relative cursor-pointer ${isMe ? 'bg-indigo-600 text-white rounded-tr-sm' : 'bg-slate-800 text-slate-200 rounded-tl-sm hover:bg-slate-700 transition-colors'}`}
+                                      onDoubleClick={() => setReplyingTo(msg)}
+                                      title="Double-click to reply"
+                                  >
                                       {/* Reply Quote Block */}
                                       {msg.replyTo && (
-                                          <div className="mb-2 pl-2 border-l-2 border-white/30 text-xs opacity-70 bg-black/10 p-1 rounded-r">
+                                          <div className="mb-2 pl-2 border-l-2 border-white/30 text-xs opacity-70 bg-black/10 p-1 rounded-r select-none">
                                               <p className="font-bold mb-0.5">{msg.replyTo.senderName}</p>
                                               <p className="truncate line-clamp-1">{msg.replyTo.text}</p>
                                           </div>
@@ -352,7 +357,7 @@ export const WorkplaceChat: React.FC<WorkplaceChatProps> = ({ onBack, currentUse
               
               {/* Reply Banner */}
               {replyingTo && (
-                  <div className="flex justify-between items-center bg-slate-800 p-2 rounded-t-lg border-x border-t border-slate-700 text-xs mb-2">
+                  <div className="flex justify-between items-center bg-slate-800 p-2 rounded-t-lg border-x border-t border-slate-700 text-xs mb-2 animate-fade-in-up">
                       <div className="flex items-center gap-2 overflow-hidden">
                           <Reply size={14} className="text-indigo-400 shrink-0" />
                           <div className="truncate">
