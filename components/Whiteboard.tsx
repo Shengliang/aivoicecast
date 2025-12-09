@@ -53,7 +53,6 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack, sessionId }) => 
   const [selectionBox, setSelectionBox] = useState<{ startX: number, startY: number, currX: number, currY: number } | null>(null);
   
   const dragStartPos = useRef<{x: number, y: number} | null>(null);
-  // Store initial state of ALL selected elements for bulk moving
   const initialSelectionStates = useRef<Map<string, WhiteboardElement>>(new Map());
 
   // Viewport State
@@ -67,7 +66,9 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack, sessionId }) => 
   const currentSessionIdRef = useRef<string>(sessionId || crypto.randomUUID());
 
   // Text Input State
-  const [textInput, setTextInput] = useState<{ id: string; x: number; y: number; text: string } | null>(null);
+  const [textInput, setTextInput] = useState<{ id: string; x: number; y: number; text: string; width?: number; height?: number } | null>(null);
+  const [textDragStart, setTextDragStart] = useState<{x: number, y: number} | null>(null);
+  const [textDragCurrent, setTextDragCurrent] = useState<{x: number, y: number} | null>(null);
 
   useEffect(() => {
     if (sessionId) {
@@ -82,7 +83,6 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack, sessionId }) => 
     }
   }, [sessionId]);
 
-  // Auto-save for shared sessions
   useEffect(() => {
       if (isSharedSession) {
           const timeout = setTimeout(() => {
@@ -92,7 +92,6 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack, sessionId }) => 
       }
   }, [elements, isSharedSession]);
 
-  // Sync state with selection
   useEffect(() => {
       if (selectedIds.length === 1) {
           const el = elements.find(e => e.id === selectedIds[0]);
@@ -113,10 +112,8 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack, sessionId }) => 
       }
   }, [selectedIds, elements]);
 
-  // --- Bulk Update Helper ---
   const updateSelectedElements = (updates: Partial<WhiteboardElement>) => {
       if (selectedIds.length === 0) return;
-      
       setElements(prev => prev.map(el => {
           if (selectedIds.includes(el.id)) {
               return { ...el, ...updates };
@@ -125,7 +122,6 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack, sessionId }) => 
       }));
   };
 
-  // Hit Test Logic
   const isPointInElement = (x: number, y: number, el: WhiteboardElement): boolean => {
       const tolerance = 10 / scale;
       
@@ -137,7 +133,6 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack, sessionId }) => 
               const ry = Math.abs(el.height || 0) / 2;
               const cx = el.x + (el.width || 0) / 2;
               const cy = el.y + (el.height || 0) / 2;
-              // Check if point is inside ellipse
               const normX = (x - cx) / rx;
               const normY = (y - cy) / ry;
               return (normX * normX + normY * normY) <= 1;
@@ -146,7 +141,6 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack, sessionId }) => 
           case 'arrow': {
               const x1 = el.x, y1 = el.y;
               const x2 = el.endX || x1, y2 = el.endY || y1;
-              // Distance from point to line segment
               const A = x - x1;
               const B = y - y1;
               const C = x2 - x1;
@@ -166,41 +160,33 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack, sessionId }) => 
           case 'pen':
           case 'eraser': {
               if (!el.points) return false;
-              // Simple bounding box check first
               const minX = Math.min(...el.points.map(p => p.x)) - tolerance;
               const maxX = Math.max(...el.points.map(p => p.x)) + tolerance;
               const minY = Math.min(...el.points.map(p => p.y)) - tolerance;
               const maxY = Math.max(...el.points.map(p => p.y)) + tolerance;
-              
               if (x < minX || x > maxX || y < minY || y > maxY) return false;
-              
-              // Precise point check
               return el.points.some(p => {
                   const dist = Math.sqrt((p.x - x) ** 2 + (p.y - y) ** 2);
                   return dist < tolerance;
               });
           }
           case 'text':
-              // Approx check for text
               const fs = el.fontSize || 24;
-              const w = (el.text?.length || 1) * fs * 0.6; // Rough char width
-              const h = fs;
-              // Top baseline hit test
+              // Simple check - refine for multi-line later if needed
+              const w = el.width || ((el.text?.length || 1) * fs * 0.6);
+              const h = el.height || fs * 1.2;
               return x >= el.x && x <= el.x + w && y >= el.y && y <= el.y + h;
           default:
               return false;
       }
   };
 
-  // Check intersection for Selection Box
   const isElementIntersectingBox = (el: WhiteboardElement, box: {x: number, y: number, w: number, h: number}): boolean => {
-      // Normalize box
       const bx = Math.min(box.x, box.x + box.w);
       const by = Math.min(box.y, box.y + box.h);
       const bw = Math.abs(box.w);
       const bh = Math.abs(box.h);
 
-      // Helper for AABB (Axis-Aligned Bounding Box) of element
       const getBounds = (e: WhiteboardElement) => {
           if (e.type === 'pen' || e.type === 'eraser') {
               if (!e.points) return { x: e.x, y: e.y, w: 0, h: 0 };
@@ -216,9 +202,8 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack, sessionId }) => 
               };
           } else if (e.type === 'text') {
               const fs = e.fontSize || 24;
-              return { x: e.x, y: e.y, w: (e.text?.length || 1) * fs * 0.6, h: fs };
+              return { x: e.x, y: e.y, w: e.width || ((e.text?.length || 1) * fs * 0.6), h: e.height || fs };
           }
-          // Rect, Circle
           return {
               x: Math.min(e.x, e.x + (e.width || 0)),
               y: Math.min(e.y, e.y + (e.height || 0)),
@@ -228,18 +213,14 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack, sessionId }) => 
       };
 
       const eb = getBounds(el);
-      
-      // Check overlap
       return (bx < eb.x + eb.w && bx + bw > eb.x && by < eb.y + eb.h && by + bh > eb.y);
   };
 
-  // Coordinate Conversion (Screen -> Canvas World)
   const getWorldCoordinates = (e: React.MouseEvent | React.TouchEvent) => {
       if (!canvasRef.current) return { x: 0, y: 0 };
       const rect = canvasRef.current.getBoundingClientRect();
       const clientX = 'touches' in e ? e.touches[0].clientX : (e as React.MouseEvent).clientX;
       const clientY = 'touches' in e ? e.touches[0].clientY : (e as React.MouseEvent).clientY;
-      
       return {
           x: (clientX - rect.left - offset.x) / scale,
           y: (clientY - rect.top - offset.y) / scale
@@ -247,10 +228,8 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack, sessionId }) => 
   };
 
   const startDrawing = (e: React.MouseEvent | React.TouchEvent) => {
-      // If user clicks outside textarea, commit it first
+      // If text input is open, commit it first and return
       if (textInput) {
-          // If we clicked *on* the textarea, the event shouldn't be here (textarea swallows clicks)
-          // So this means we clicked the canvas.
           handleTextComplete();
           return;
       }
@@ -265,9 +244,15 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack, sessionId }) => 
 
       const { x, y } = getWorldCoordinates(e);
 
+      if (tool === 'text') {
+          setIsDrawing(true);
+          setTextDragStart({ x, y });
+          setTextDragCurrent({ x, y });
+          return;
+      }
+
       if (tool === 'select') {
           let hitId = null;
-          // Reverse loop to hit top-most elements first
           for (let i = elements.length - 1; i >= 0; i--) {
               if (isPointInElement(x, y, elements[i])) {
                   hitId = elements[i].id;
@@ -278,32 +263,25 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack, sessionId }) => 
           const isCtrl = (e as React.MouseEvent).ctrlKey || (e as React.MouseEvent).metaKey;
 
           if (hitId) {
-              // Clicked an element
               if (isCtrl) {
-                  // Toggle selection
                   if (selectedIds.includes(hitId)) {
                       setSelectedIds(prev => prev.filter(id => id !== hitId));
                   } else {
                       setSelectedIds(prev => [...prev, hitId]);
                   }
               } else {
-                  // If clicking an item NOT in selection, verify if we should clear others
                   if (!selectedIds.includes(hitId)) {
                       setSelectedIds([hitId]);
                   }
-                  // If clicking an item ALREADY in selection, don't clear (user might want to drag group)
               }
 
-              // Setup dragging for ALL selected items (including the new one if just added)
               setIsDraggingSelection(true);
               dragStartPos.current = { x, y };
-              
-              // Snapshot all selected elements relative positions
               initialSelectionStates.current.clear();
-              // Logic check: state update above might be async, so we manually check IDs
+              
               const idsToDrag = (!isCtrl && !selectedIds.includes(hitId)) 
                   ? [hitId] 
-                  : (isCtrl && selectedIds.includes(hitId)) ? selectedIds.filter(id => id !== hitId) // Deselecting shouldn't drag
+                  : (isCtrl && selectedIds.includes(hitId)) ? selectedIds.filter(id => id !== hitId)
                   : (isCtrl && !selectedIds.includes(hitId)) ? [...selectedIds, hitId]
                   : selectedIds;
 
@@ -314,24 +292,14 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack, sessionId }) => 
               });
 
           } else {
-              // Clicked Empty Space
-              if (!isCtrl) {
-                  setSelectedIds([]);
-              }
-              // Start Selection Box
+              if (!isCtrl) setSelectedIds([]);
               setSelectionBox({ startX: x, startY: y, currX: x, currY: y });
           }
           return;
       }
 
-      if (tool === 'text') {
-          const id = crypto.randomUUID();
-          setTextInput({ id, x, y, text: '' });
-          return;
-      }
-
       setIsDrawing(true);
-      setSelectedIds([]); // Deselect when drawing
+      setSelectedIds([]); 
       
       const id = crypto.randomUUID();
       const newEl: WhiteboardElement = {
@@ -363,13 +331,16 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack, sessionId }) => 
 
       const { x, y } = getWorldCoordinates(e);
 
-      // Selection Box Update
+      if (tool === 'text' && isDrawing && textDragStart) {
+          setTextDragCurrent({ x, y });
+          return;
+      }
+
       if (selectionBox) {
           setSelectionBox(prev => prev ? ({ ...prev, currX: x, currY: y }) : null);
           return;
       }
 
-      // Dragging Multiple Elements
       if (isDraggingSelection && dragStartPos.current) {
           const dx = x - dragStartPos.current.x;
           const dy = y - dragStartPos.current.y;
@@ -377,7 +348,6 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack, sessionId }) => 
           setElements(prev => prev.map(el => {
               if (initialSelectionStates.current.has(el.id)) {
                   const init = initialSelectionStates.current.get(el.id)!;
-                  
                   const newEl = { ...el };
                   newEl.x = init.x + dx;
                   newEl.y = init.y + dy;
@@ -386,10 +356,7 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack, sessionId }) => 
                       newEl.endX = (init.endX || 0) + dx;
                       newEl.endY = (init.endY || 0) + dy;
                   } else if (init.type === 'pen' || init.type === 'eraser') {
-                      newEl.points = init.points?.map(p => ({
-                          x: p.x + dx,
-                          y: p.y + dy
-                      }));
+                      newEl.points = init.points?.map(p => ({ x: p.x + dx, y: p.y + dy }));
                   }
                   return newEl;
               }
@@ -425,25 +392,44 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack, sessionId }) => 
           setIsPanning(false);
           return;
       }
+
+      if (tool === 'text' && isDrawing && textDragStart && textDragCurrent) {
+          setIsDrawing(false);
+          const rawW = textDragCurrent.x - textDragStart.x;
+          const rawH = textDragCurrent.y - textDragStart.y;
+          const width = Math.abs(rawW);
+          const height = Math.abs(rawH);
+          
+          const x = Math.min(textDragStart.x, textDragCurrent.x);
+          const y = Math.min(textDragStart.y, textDragCurrent.y);
+          
+          // Minimum drag to count as a box, else treat as single click point
+          const isBox = width > 20 && height > 20;
+          
+          const id = crypto.randomUUID();
+          setTextInput({ 
+              id, 
+              x: isBox ? x : textDragStart.x, 
+              y: isBox ? y : textDragStart.y, 
+              text: '',
+              width: isBox ? width : undefined,
+              height: isBox ? height : undefined
+          });
+          
+          setTextDragStart(null);
+          setTextDragCurrent(null);
+          return;
+      }
       
       if (selectionBox) {
-          // Calculate intersection
           const box = {
               x: selectionBox.startX,
               y: selectionBox.startY,
               w: selectionBox.currX - selectionBox.startX,
               h: selectionBox.currY - selectionBox.startY
           };
-          
-          const hitIds = elements
-              .filter(el => isElementIntersectingBox(el, box))
-              .map(el => el.id);
-          
-          setSelectedIds(prev => {
-              // Add to selection if Ctrl pressed (technically we don't have event here, but standard select box behavior replaces selection)
-              return hitIds;
-          });
-          
+          const hitIds = elements.filter(el => isElementIntersectingBox(el, box)).map(el => el.id);
+          setSelectedIds(hitIds);
           setSelectionBox(null);
           return;
       }
@@ -462,7 +448,14 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack, sessionId }) => 
       }
   };
 
-  // Helper: Draw Arrow Head
+  const handleDoubleClick = (e: React.MouseEvent) => {
+      if (tool === 'pan') return;
+      const { x, y } = getWorldCoordinates(e);
+      const id = crypto.randomUUID();
+      setTool('text');
+      setTextInput({ id, x, y, text: '' });
+  };
+
   const drawArrowHead = (ctx: CanvasRenderingContext2D, fromX: number, fromY: number, toX: number, toY: number, color: string) => {
       const headLength = 15;
       const angle = Math.atan2(toY - fromY, toX - fromX);
@@ -475,20 +468,42 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack, sessionId }) => 
       ctx.fill();
   };
 
-  // Render Canvas
+  // Helper to wrap text for canvas
+  const drawWrappedText = (ctx: CanvasRenderingContext2D, text: string, x: number, y: number, maxWidth: number, lineHeight: number) => {
+      const paragraphs = text.split('\n');
+      let cursorY = y;
+
+      for (const paragraph of paragraphs) {
+          const words = paragraph.split(' ');
+          let line = '';
+          for (let n = 0; n < words.length; n++) {
+              const testLine = line + words[n] + ' ';
+              const metrics = ctx.measureText(testLine);
+              const testWidth = metrics.width;
+              if (testWidth > maxWidth && n > 0) {
+                  ctx.fillText(line, x, cursorY);
+                  line = words[n] + ' ';
+                  cursorY += lineHeight;
+              } else {
+                  line = testLine;
+              }
+          }
+          ctx.fillText(line, x, cursorY);
+          cursorY += lineHeight;
+      }
+  };
+
   useEffect(() => {
       const canvas = canvasRef.current;
       if (!canvas) return;
       const ctx = canvas.getContext('2d');
       if (!ctx) return;
 
-      // Handle resize
       canvas.width = canvas.parentElement?.clientWidth || 800;
       canvas.height = canvas.parentElement?.clientHeight || 600;
 
-      // Clear & Transform
       ctx.clearRect(0, 0, canvas.width, canvas.height);
-      ctx.fillStyle = '#0f172a'; // Background
+      ctx.fillStyle = '#0f172a';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
       
       ctx.save();
@@ -501,7 +516,6 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack, sessionId }) => 
           ctx.strokeStyle = el.color;
           ctx.lineWidth = el.strokeWidth / scale;
           
-          // Brush Styles
           ctx.lineCap = 'round';
           ctx.lineJoin = 'round';
           ctx.globalAlpha = 1.0;
@@ -517,7 +531,6 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack, sessionId }) => 
               ctx.lineCap = 'butt';
           }
 
-          // Line Style (Dashed/Dotted)
           if (el.lineStyle === 'dashed') ctx.setLineDash([15, 10]);
           else if (el.lineStyle === 'dotted') ctx.setLineDash([3, 8]);
           else ctx.setLineDash([]);
@@ -549,22 +562,29 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack, sessionId }) => 
               ctx.moveTo(el.x, el.y);
               ctx.lineTo(ex, ey);
               ctx.stroke();
-              ctx.setLineDash([]); // Arrowhead always solid
+              ctx.setLineDash([]);
               drawArrowHead(ctx, el.x, el.y, ex, ey, el.color);
           } else if (el.type === 'text' && el.text) {
               ctx.font = `${el.fontSize || 24}px ${el.fontFamily || 'sans-serif'}`;
-              ctx.textBaseline = 'top'; // Align top-left like HTML element
+              ctx.textBaseline = 'top';
               ctx.fillStyle = el.color;
-              ctx.fillText(el.text, el.x, el.y);
+              if (el.width) {
+                  drawWrappedText(ctx, el.text, el.x, el.y, el.width, (el.fontSize || 24) * 1.2);
+              } else {
+                  // Fallback for non-wrapped text (split newlines manually)
+                  const lines = el.text.split('\n');
+                  lines.forEach((line, i) => {
+                      ctx.fillText(line, el.x, el.y + i * (el.fontSize || 24) * 1.2);
+                  });
+              }
           }
           
-          ctx.restore(); // Restore alpha/line styles
+          ctx.restore();
 
-          // Render Selection Highlight
           if (selectedIds.includes(el.id)) {
               ctx.save();
               ctx.setLineDash([5, 5]);
-              ctx.strokeStyle = '#3b82f6'; // Blue selection
+              ctx.strokeStyle = '#3b82f6';
               ctx.lineWidth = 1 / scale;
               const padding = 5;
               
@@ -584,8 +604,9 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack, sessionId }) => 
               } else if (el.type === 'text') {
                   const fs = el.fontSize || 24;
                   ctx.font = `${fs}px ${el.fontFamily || 'sans-serif'}`;
-                  const width = ctx.measureText(el.text || '').width;
-                  ctx.strokeRect(el.x - padding, el.y - padding, width + padding*2, fs + padding*2);
+                  const width = el.width || ctx.measureText(el.text || '').width;
+                  const height = el.height || (fs * (el.text?.split('\n').length || 1) * 1.2);
+                  ctx.strokeRect(el.x - padding, el.y - padding, width + padding*2, height + padding*2);
               } else if (el.type === 'pen' || el.type === 'eraser') {
                   if (el.points) {
                       const minX = Math.min(...el.points.map(p => p.x));
@@ -599,12 +620,9 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack, sessionId }) => 
           }
       };
 
-      // Draw saved elements
       elements.forEach(renderElement);
-      // Draw active element
       if (currentElement) renderElement(currentElement);
 
-      // Draw Selection Box
       if (selectionBox) {
           ctx.save();
           ctx.setLineDash([5, 5]);
@@ -617,15 +635,30 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack, sessionId }) => 
           ctx.strokeRect(selectionBox.startX, selectionBox.startY, w, h);
           ctx.restore();
       }
+      
+      // Draw drag box for text tool
+      if (tool === 'text' && isDrawing && textDragStart && textDragCurrent) {
+          ctx.save();
+          ctx.setLineDash([5, 5]);
+          ctx.strokeStyle = '#22c55e'; // Green for text box creation
+          ctx.lineWidth = 1 / scale;
+          const w = textDragCurrent.x - textDragStart.x;
+          const h = textDragCurrent.y - textDragStart.y;
+          ctx.strokeRect(textDragStart.x, textDragStart.y, w, h);
+          ctx.restore();
+      }
 
       ctx.restore();
 
-  }, [elements, currentElement, scale, offset, selectedIds, selectionBox]);
+  }, [elements, currentElement, scale, offset, selectedIds, selectionBox, tool, isDrawing, textDragStart, textDragCurrent]);
 
-  // Handle Text Input Completion
   const handleTextComplete = () => {
       if (textInput) {
           if (textInput.text.trim()) {
+              const fs = fontSize;
+              // Estimate height if not set (for click-to-type)
+              const lineCount = textInput.text.split('\n').length;
+              
               const newEl: WhiteboardElement = {
                   id: textInput.id,
                   type: 'text',
@@ -635,12 +668,13 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack, sessionId }) => 
                   color: color,
                   strokeWidth: 1,
                   fontSize: fontSize,
-                  fontFamily: fontFamily
+                  fontFamily: fontFamily,
+                  width: textInput.width,
+                  height: textInput.height || (fs * lineCount * 1.2)
               };
               setElements(prev => [...prev, newEl]);
           }
           setTextInput(null);
-          // Don't switch tool, allow multiple text inputs in sequence
       }
   };
 
@@ -690,7 +724,6 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack, sessionId }) => 
       }
   };
 
-  // Keyboard shortcut for Undo (Ctrl+Z) and Delete
   useEffect(() => {
       const handleKeyDown = (e: KeyboardEvent) => {
           if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
@@ -755,7 +788,7 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack, sessionId }) => 
                 <button onClick={() => setTool('eraser')} className={`p-2 rounded ${tool === 'eraser' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'}`} title="Eraser">
                     <Eraser size={18}/>
                 </button>
-                <button onClick={() => setTool('text')} className={`p-2 rounded ${tool === 'text' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'}`} title="Text">
+                <button onClick={() => setTool('text')} className={`p-2 rounded ${tool === 'text' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'}`} title="Text (Click to type, Drag for box)">
                     <Type size={18}/>
                 </button>
                 <div className="w-px bg-slate-700 mx-1"></div>
@@ -876,6 +909,7 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack, sessionId }) => 
                 onMouseMove={draw}
                 onMouseUp={stopDrawing}
                 onMouseLeave={stopDrawing}
+                onDoubleClick={handleDoubleClick}
                 onTouchStart={startDrawing}
                 onTouchMove={draw}
                 onTouchEnd={stopDrawing}
@@ -901,14 +935,17 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack, sessionId }) => 
                         background: 'transparent',
                         border: '1px dashed #64748b',
                         outline: 'none',
+                        // If width is defined (dragged), use it and wrap. Else auto width.
+                        width: textInput.width ? textInput.width * scale : 'auto',
                         minWidth: '50px',
+                        height: textInput.height ? textInput.height * scale : 'auto',
                         overflow: 'hidden',
                         resize: 'both',
-                        whiteSpace: 'pre',
+                        whiteSpace: textInput.width ? 'pre-wrap' : 'pre',
                         zIndex: 20,
                         padding: 0,
                         margin: 0,
-                        lineHeight: 1
+                        lineHeight: 1.2
                     }}
                     placeholder="Type..."
                 />
