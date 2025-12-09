@@ -1,8 +1,8 @@
 
 import React, { useState, useEffect } from 'react';
 import { Channel, Group, Chapter } from '../types';
-import { X, Podcast, Sparkles, Lock, Globe, Users, FileText, Loader2, Clipboard } from 'lucide-react';
-import { getUserGroups } from '../services/firestoreService';
+import { X, Podcast, Sparkles, Lock, Globe, Users, FileText, Loader2, Clipboard, Crown } from 'lucide-react';
+import { getUserGroups, getUserProfile } from '../services/firestoreService';
 import { generateChannelFromDocument } from '../services/channelGenerator';
 import { auth } from '../services/firebaseConfig';
 
@@ -31,11 +31,14 @@ export const CreateChannelModal: React.FC<CreateChannelModalProps> = ({ isOpen, 
   const [selectedGroupId, setSelectedGroupId] = useState('');
   const [userGroups, setUserGroups] = useState<Group[]>([]);
   const [loadingGroups, setLoadingGroups] = useState(false);
+  
+  // Membership State
+  const [isPro, setIsPro] = useState(false);
 
   const currentUser = auth.currentUser;
 
   useEffect(() => {
-    if (isOpen) {
+    if (isOpen && currentUser) {
       // Reset
       setTitle('');
       setDescription('');
@@ -43,9 +46,17 @@ export const CreateChannelModal: React.FC<CreateChannelModalProps> = ({ isOpen, 
       setScriptText('');
       setImportedChapters([]);
       setActiveTab('manual');
-      setVisibility('private');
+      setVisibility('public'); // Default to public for free users
+      
+      // Check Membership
+      getUserProfile(currentUser.uid).then(profile => {
+          const pro = profile?.subscriptionTier === 'pro';
+          setIsPro(pro);
+          // If pro, default to private for convenience
+          if (pro) setVisibility('private');
+      });
     }
-  }, [isOpen]);
+  }, [isOpen, currentUser]);
 
   useEffect(() => {
     if (isOpen && currentUser && visibility === 'group') {
@@ -202,14 +213,19 @@ export const CreateChannelModal: React.FC<CreateChannelModalProps> = ({ isOpen, 
 
               {/* Visibility Section */}
               <div className="bg-slate-800/50 p-4 rounded-lg border border-slate-700 space-y-3">
-                <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider">Visibility & Sharing</label>
+                <div className="flex justify-between items-center">
+                    <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider">Visibility & Sharing</label>
+                    {!isPro && <span className="text-[10px] text-amber-400 flex items-center gap-1"><Crown size={10}/> Upgrade for Private</span>}
+                </div>
+                
                 <div className="flex gap-2">
                     <button
                       type="button"
+                      disabled={!isPro}
                       onClick={() => setVisibility('private')}
-                      className={`flex-1 py-2 rounded-lg text-sm font-medium flex items-center justify-center space-x-2 border transition-all ${visibility === 'private' ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-slate-800 border-slate-700 text-slate-400 hover:bg-slate-700'}`}
+                      className={`flex-1 py-2 rounded-lg text-sm font-medium flex items-center justify-center space-x-2 border transition-all ${visibility === 'private' ? 'bg-indigo-600 border-indigo-500 text-white' : !isPro ? 'bg-slate-900/50 border-slate-800 text-slate-600 cursor-not-allowed' : 'bg-slate-800 border-slate-700 text-slate-400 hover:bg-slate-700'}`}
                     >
-                      <Lock size={14} />
+                      {isPro ? <Lock size={14} /> : <Lock size={14} />}
                       <span>Private</span>
                     </button>
                     <button
@@ -222,10 +238,11 @@ export const CreateChannelModal: React.FC<CreateChannelModalProps> = ({ isOpen, 
                     </button>
                     <button
                       type="button"
+                      disabled={!isPro}
                       onClick={() => setVisibility('group')}
-                      className={`flex-1 py-2 rounded-lg text-sm font-medium flex items-center justify-center space-x-2 border transition-all ${visibility === 'group' ? 'bg-purple-600 border-purple-500 text-white' : 'bg-slate-800 border-slate-700 text-slate-400 hover:bg-slate-700'}`}
+                      className={`flex-1 py-2 rounded-lg text-sm font-medium flex items-center justify-center space-x-2 border transition-all ${visibility === 'group' ? 'bg-purple-600 border-purple-500 text-white' : !isPro ? 'bg-slate-900/50 border-slate-800 text-slate-600 cursor-not-allowed' : 'bg-slate-800 border-slate-700 text-slate-400 hover:bg-slate-700'}`}
                     >
-                      <Users size={14} />
+                      {isPro ? <Users size={14} /> : <Users size={14} />}
                       <span>Group</span>
                     </button>
                 </div>

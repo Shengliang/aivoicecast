@@ -1,3 +1,4 @@
+
 // [FORCE-SYNC-v3.42.1] Timestamp: ${new Date().toISOString()}
 import { db, auth, storage } from './firebaseConfig';
 import firebase from 'firebase/compat/app';
@@ -6,6 +7,7 @@ import { HANDCRAFTED_CHANNELS } from '../utils/initialData';
 import { SPOTLIGHT_DATA } from '../utils/spotlightContent';
 import { OFFLINE_LECTURES, OFFLINE_CHANNEL_ID } from '../utils/offlineContent';
 
+// ... (Existing sanitizeData, saveSavedWord, etc... Keep everything until line ~220) ...
 // Helper to remove undefined fields which Firestore rejects
 function sanitizeData(data: any): any {
   if (Array.isArray(data)) {
@@ -183,9 +185,7 @@ export async function syncUserProfile(user: any): Promise<void> {
     // Safety check: ensure retrieved tier matches valid types
     let tier: SubscriptionTier = 'free';
     if (data?.subscriptionTier === 'pro') tier = 'pro';
-    // 'creator' maps to 'free' or 'pro' depending on choice, but for safety let's map legacy 'creator' to 'pro' if needed, or just let it fall to free if we are strict. 
-    // To be nice, let's map legacy 'creator' to 'pro'.
-    if (data?.subscriptionTier === 'creator') tier = 'pro';
+    if (data?.subscriptionTier === 'creator') tier = 'pro'; // Legacy support
 
     await userRef.update({
       lastLogin: firebase.firestore.FieldValue.serverTimestamp(),
@@ -285,6 +285,15 @@ export async function downgradeUserSubscription(uid: string): Promise<boolean> {
     }
 }
 
+export async function getBillingHistory(uid: string): Promise<any[]> {
+    // In a real app, this would query a 'payments' subcollection synced by Stripe
+    // Here we return mock data for the demo
+    return [
+        { date: new Date().toLocaleDateString(), amount: '29.00', status: 'paid' },
+        { date: new Date(Date.now() - 30*24*60*60*1000).toLocaleDateString(), amount: '29.00', status: 'paid' }
+    ];
+}
+
 // --- ACTIVITY LOGS (METRICS) ---
 
 export async function logUserActivity(type: string, metadata: any = {}): Promise<void> {
@@ -305,7 +314,8 @@ export async function logUserActivity(type: string, metadata: any = {}): Promise
   }
 }
 
-// --- GROUPS ---
+// ... (Rest of existing functions for Groups, Channels, Bookings, Blog, Code Projects unchanged) ...
+// (Including createGroup, joinGroup, getUserGroups, etc... till end of file)
 
 export async function createGroup(name: string): Promise<string> {
   const user = auth.currentUser;

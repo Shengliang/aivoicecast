@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+
+import React, { useState, useEffect } from 'react';
 import { UserProfile } from '../types';
-import { X, User, Shield, CreditCard, LogOut, CheckCircle, AlertTriangle, Bell, Lock, Database, Trash2, Edit2, Save } from 'lucide-react';
-import { downgradeUserSubscription, logUserActivity } from '../services/firestoreService';
-import { clearAudioCache } from '../services/tts'; // Reusing existing clear function
+import { X, User, Shield, CreditCard, LogOut, CheckCircle, AlertTriangle, Bell, Lock, Database, Trash2, Edit2, Save, FileText, ExternalLink } from 'lucide-react';
+import { downgradeUserSubscription, logUserActivity, getBillingHistory } from '../services/firestoreService';
+import { clearAudioCache } from '../services/tts';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -21,6 +22,16 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [isEditingName, setIsEditingName] = useState(false);
   const [emailNotifs, setEmailNotifs] = useState(true);
   const [publicProfile, setPublicProfile] = useState(true);
+  
+  // Billing State
+  const [billingHistory, setBillingHistory] = useState<any[]>([]);
+
+  useEffect(() => {
+      if (activeTab === 'billing' && user.subscriptionTier === 'pro') {
+          // Simulate fetch
+          getBillingHistory(user.uid).then(setBillingHistory);
+      }
+  }, [activeTab, user]);
 
   if (!isOpen) return null;
 
@@ -46,7 +57,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   };
 
   const handleSaveProfile = () => {
-      // In a real app, update Firestore user doc here
       if (onUpdateProfile) {
           onUpdateProfile({ ...user, displayName });
       }
@@ -57,7 +67,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const handleClearCache = () => {
       if(confirm("Clear all downloaded audio and local settings? This will free up space but require re-downloading content.")) {
           clearAudioCache();
-          // Also clear localStorage keys specific to app preferences if needed
           alert("Local cache cleared.");
       }
   };
@@ -66,7 +75,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       const confirmText = prompt("Type 'DELETE' to confirm account deletion. This action is irreversible.");
       if (confirmText === 'DELETE') {
           alert("Account deletion request submitted. (Mock action)");
-          // In real app: call cloud function to wipe user data
       }
   };
 
@@ -100,69 +108,36 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             
             {activeTab === 'general' && (
                 <div className="space-y-8">
-                    {/* Profile Section */}
+                    {/* ... (Keep General settings same) ... */}
                     <div className="flex items-start gap-6">
                         <div className="relative group">
                             {user.photoURL ? (
                                 <img src={user.photoURL} alt={user.displayName} className="w-20 h-20 rounded-full border-2 border-slate-700 object-cover" />
                             ) : (
-                                <div className="w-20 h-20 rounded-full bg-slate-800 flex items-center justify-center text-slate-500">
-                                    <User size={32} />
-                                </div>
+                                <div className="w-20 h-20 rounded-full bg-slate-800 flex items-center justify-center text-slate-500"><User size={32} /></div>
                             )}
-                            <div className="absolute bottom-0 right-0 bg-slate-800 p-1 rounded-full border border-slate-600 text-slate-400 cursor-pointer hover:text-white">
-                                <Edit2 size={12} />
-                            </div>
+                            <div className="absolute bottom-0 right-0 bg-slate-800 p-1 rounded-full border border-slate-600 text-slate-400 cursor-pointer hover:text-white"><Edit2 size={12} /></div>
                         </div>
-                        
                         <div className="flex-1 space-y-4">
                             <div>
                                 <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Display Name</label>
                                 <div className="flex gap-2">
-                                    <input 
-                                        type="text" 
-                                        value={displayName}
-                                        onChange={(e) => setDisplayName(e.target.value)}
-                                        disabled={!isEditingName}
-                                        className={`flex-1 bg-slate-950 border ${isEditingName ? 'border-indigo-500' : 'border-slate-800'} rounded-lg px-3 py-2 text-white text-sm focus:outline-none`}
-                                    />
-                                    {isEditingName ? (
-                                        <button onClick={handleSaveProfile} className="p-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-500">
-                                            <Save size={16} />
-                                        </button>
-                                    ) : (
-                                        <button onClick={() => setIsEditingName(true)} className="p-2 bg-slate-800 text-slate-400 rounded-lg hover:text-white">
-                                            <Edit2 size={16} />
-                                        </button>
-                                    )}
+                                    <input type="text" value={displayName} onChange={(e) => setDisplayName(e.target.value)} disabled={!isEditingName} className={`flex-1 bg-slate-950 border ${isEditingName ? 'border-indigo-500' : 'border-slate-800'} rounded-lg px-3 py-2 text-white text-sm focus:outline-none`} />
+                                    {isEditingName ? <button onClick={handleSaveProfile} className="p-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-500"><Save size={16} /></button> : <button onClick={() => setIsEditingName(true)} className="p-2 bg-slate-800 text-slate-400 rounded-lg hover:text-white"><Edit2 size={16} /></button>}
                                 </div>
                             </div>
-                            
                             <div>
                                 <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Email Address</label>
-                                <div className="bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-slate-400 text-sm flex justify-between items-center">
-                                    <span>{user.email}</span>
-                                    <span className="text-[10px] bg-slate-800 px-2 py-0.5 rounded text-slate-500">Google Linked</span>
-                                </div>
+                                <div className="bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-slate-400 text-sm flex justify-between items-center"><span>{user.email}</span><span className="text-[10px] bg-slate-800 px-2 py-0.5 rounded text-slate-500">Google Linked</span></div>
                             </div>
                         </div>
                     </div>
-
                     <div className="h-px bg-slate-800 w-full" />
-
-                    {/* Danger Zone */}
                     <div className="space-y-4">
-                        <h4 className="text-sm font-bold text-red-500 uppercase tracking-wider flex items-center gap-2">
-                            <AlertTriangle size={16}/> Danger Zone
-                        </h4>
+                        <h4 className="text-sm font-bold text-red-500 uppercase tracking-wider flex items-center gap-2"><AlertTriangle size={16}/> Danger Zone</h4>
                         <div className="bg-red-900/10 border border-red-900/30 rounded-xl p-4 flex items-center justify-between">
-                            <div className="text-sm text-red-200">
-                                <p className="font-bold">Delete Account</p>
-                                <p className="text-xs opacity-70">Permanently remove your profile and all data.</p>
-                            </div>
-                            <button onClick={handleDeleteAccount} className="px-4 py-2 bg-red-900/20 hover:bg-red-900/40 text-red-400 border border-red-900/50 rounded-lg text-xs font-bold transition-colors">
-                                Delete
-                            </button>
+                            <div className="text-sm text-red-200"><p className="font-bold">Delete Account</p><p className="text-xs opacity-70">Permanently remove your profile and all data.</p></div>
+                            <button onClick={handleDeleteAccount} className="px-4 py-2 bg-red-900/20 hover:bg-red-900/40 text-red-400 border border-red-900/50 rounded-lg text-xs font-bold transition-colors">Delete</button>
                         </div>
                     </div>
                 </div>
@@ -170,52 +145,30 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
             {activeTab === 'preferences' && (
                 <div className="space-y-6">
+                    {/* ... (Keep Preferences same) ... */}
                     <div className="space-y-4">
-                        <h4 className="text-sm font-bold text-slate-400 uppercase tracking-wider flex items-center gap-2">
-                            <Bell size={16}/> Notifications
-                        </h4>
+                        <h4 className="text-sm font-bold text-slate-400 uppercase tracking-wider flex items-center gap-2"><Bell size={16}/> Notifications</h4>
                         <div className="bg-slate-800/30 border border-slate-700 rounded-xl p-4 space-y-4">
                             <div className="flex items-center justify-between">
-                                <div>
-                                    <p className="text-sm font-bold text-white">Email Notifications</p>
-                                    <p className="text-xs text-slate-400">Receive updates about your account and new features.</p>
-                                </div>
-                                <button onClick={() => setEmailNotifs(!emailNotifs)} className={`w-10 h-5 rounded-full relative transition-colors ${emailNotifs ? 'bg-indigo-600' : 'bg-slate-600'}`}>
-                                    <div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all ${emailNotifs ? 'left-6' : 'left-1'}`}></div>
-                                </button>
+                                <div><p className="text-sm font-bold text-white">Email Notifications</p><p className="text-xs text-slate-400">Receive updates about your account and new features.</p></div>
+                                <button onClick={() => setEmailNotifs(!emailNotifs)} className={`w-10 h-5 rounded-full relative transition-colors ${emailNotifs ? 'bg-indigo-600' : 'bg-slate-600'}`}><div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all ${emailNotifs ? 'left-6' : 'left-1'}`}></div></button>
                             </div>
                         </div>
                     </div>
-
                     <div className="space-y-4">
-                        <h4 className="text-sm font-bold text-slate-400 uppercase tracking-wider flex items-center gap-2">
-                            <Lock size={16}/> Privacy
-                        </h4>
+                        <h4 className="text-sm font-bold text-slate-400 uppercase tracking-wider flex items-center gap-2"><Lock size={16}/> Privacy</h4>
                         <div className="bg-slate-800/30 border border-slate-700 rounded-xl p-4 space-y-4">
                             <div className="flex items-center justify-between">
-                                <div>
-                                    <p className="text-sm font-bold text-white">Public Profile</p>
-                                    <p className="text-xs text-slate-400">Allow other members to find you in the directory.</p>
-                                </div>
-                                <button onClick={() => setPublicProfile(!publicProfile)} className={`w-10 h-5 rounded-full relative transition-colors ${publicProfile ? 'bg-emerald-600' : 'bg-slate-600'}`}>
-                                    <div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all ${publicProfile ? 'left-6' : 'left-1'}`}></div>
-                                </button>
+                                <div><p className="text-sm font-bold text-white">Public Profile</p><p className="text-xs text-slate-400">Allow other members to find you in the directory.</p></div>
+                                <button onClick={() => setPublicProfile(!publicProfile)} className={`w-10 h-5 rounded-full relative transition-colors ${publicProfile ? 'bg-emerald-600' : 'bg-slate-600'}`}><div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all ${publicProfile ? 'left-6' : 'left-1'}`}></div></button>
                             </div>
                         </div>
                     </div>
-
                     <div className="space-y-4">
-                        <h4 className="text-sm font-bold text-slate-400 uppercase tracking-wider flex items-center gap-2">
-                            <Database size={16}/> Data & Storage
-                        </h4>
+                        <h4 className="text-sm font-bold text-slate-400 uppercase tracking-wider flex items-center gap-2"><Database size={16}/> Data & Storage</h4>
                         <div className="bg-slate-800/30 border border-slate-700 rounded-xl p-4 flex items-center justify-between">
-                            <div>
-                                <p className="text-sm font-bold text-white">Clear Local Cache</p>
-                                <p className="text-xs text-slate-400">Remove downloaded audio and temporary files.</p>
-                            </div>
-                            <button onClick={handleClearCache} className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-xs font-bold border border-slate-600">
-                                Clear Data
-                            </button>
+                            <div><p className="text-sm font-bold text-white">Clear Local Cache</p><p className="text-xs text-slate-400">Remove downloaded audio and temporary files.</p></div>
+                            <button onClick={handleClearCache} className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-xs font-bold border border-slate-600">Clear Data</button>
                         </div>
                     </div>
                 </div>
@@ -251,22 +204,43 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     </div>
 
                     {isPaid && (
-                        <div className="space-y-4">
-                            <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider">Payment Method</h4>
+                        <div className="space-y-6">
+                            {/* Payment Method */}
                             <div className="bg-slate-950 border border-slate-800 rounded-xl p-4 flex items-center justify-between opacity-75">
                                 <div className="flex items-center gap-3">
-                                    <div className="bg-slate-800 p-2 rounded text-slate-300">
-                                        <CreditCard size={20} />
-                                    </div>
-                                    <div>
-                                        <p className="text-sm font-bold text-slate-300">Visa ending in 4242</p>
-                                        <p className="text-xs text-slate-500">Expires 12/28</p>
-                                    </div>
+                                    <div className="bg-slate-800 p-2 rounded text-slate-300"><CreditCard size={20} /></div>
+                                    <div><p className="text-sm font-bold text-slate-300">Visa ending in 4242</p><p className="text-xs text-slate-500">Expires 12/28</p></div>
                                 </div>
-                                <button className="text-xs text-indigo-400 hover:text-white font-bold">Update</button>
+                                <button className="text-xs text-indigo-400 hover:text-white font-bold flex items-center gap-1">Update <ExternalLink size={10}/></button>
                             </div>
 
-                            <div className="pt-4 border-t border-slate-800 flex justify-end">
+                            {/* Billing History */}
+                            <div className="space-y-2">
+                                <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider">Payment History</h4>
+                                {billingHistory.length > 0 ? (
+                                    <div className="border border-slate-800 rounded-xl overflow-hidden">
+                                        {billingHistory.map((bill, i) => (
+                                            <div key={i} className="flex justify-between items-center p-3 bg-slate-800/30 border-b border-slate-800 last:border-0 hover:bg-slate-800/50">
+                                                <div>
+                                                    <p className="text-sm font-bold text-white">${bill.amount}</p>
+                                                    <p className="text-[10px] text-slate-500">{bill.date}</p>
+                                                </div>
+                                                <div className="flex items-center gap-2">
+                                                    <span className="text-[10px] bg-emerald-900/50 text-emerald-400 px-2 py-0.5 rounded uppercase font-bold">Paid</span>
+                                                    <button className="p-1.5 text-slate-400 hover:text-white"><FileText size={14}/></button>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                ) : (
+                                    <p className="text-xs text-slate-500 italic">No invoices found.</p>
+                                )}
+                            </div>
+
+                            <div className="pt-4 border-t border-slate-800 flex justify-between items-center">
+                                <a href="#" className="text-xs text-slate-400 hover:text-white flex items-center gap-1">
+                                    Manage Subscription in Stripe <ExternalLink size={12}/>
+                                </a>
                                 <button 
                                     onClick={handleDowngrade}
                                     disabled={isDowngrading}
