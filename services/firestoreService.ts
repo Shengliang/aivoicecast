@@ -8,9 +8,12 @@ import { OFFLINE_LECTURES, OFFLINE_CHANNEL_ID } from '../utils/offlineContent';
 
 // --- STRIPE CONFIGURATION ---
 // REPLACE THIS WITH YOUR ACTUAL STRIPE PRICE ID FROM THE DASHBOARD
-// Example: 'price_1P2q3rI4j5k6l7m8n9o0p1'
-// export const STRIPE_PRICE_ID = 'price_1ScFfnIVNYhSs7Hca9yHlHwA'; 
-export const STRIPE_PRICE_ID = 'price_1ScGG7IVNYhSs7HchATUVYY4'; 
+
+export const STRIPE_PRICE_ID_PROMO = 'price_1ScFfnIVNYhSs7Hca9yHlHwA'; // $0.01 for 1st month
+export const STRIPE_PRICE_ID_REGULAR = 'price_1ScGG7IVNYhSs7HchATUVYY4'; // $29.00/mo normal
+
+// Set the active price ID here
+export const STRIPE_PRICE_ID = STRIPE_PRICE_ID_PROMO; 
 
 // Helper to remove undefined fields which Firestore rejects
 function sanitizeData(data: any): any {
@@ -253,8 +256,8 @@ export async function createStripeCheckoutSession(uid: string): Promise<string> 
     if (!uid) throw new Error("User ID missing");
 
     // SAFETY CHECK: Ensure Price ID is valid (basic check)
-    if (!STRIPE_PRICE_ID || STRIPE_PRICE_ID.includes('price_1P2q3rI4j5k6l7m8n9o0p1')) {
-        throw new Error("Configuration Error: The 'STRIPE_PRICE_ID' in services/firestoreService.ts is still a placeholder. Please replace it with a valid Price ID from your Stripe Dashboard (Products page).");
+    if (!STRIPE_PRICE_ID || STRIPE_PRICE_ID.includes('placeholder')) {
+        throw new Error("Configuration Error: The 'STRIPE_PRICE_ID' in services/firestoreService.ts is invalid.");
     }
 
     // 1. Create a document in the checkout_sessions collection

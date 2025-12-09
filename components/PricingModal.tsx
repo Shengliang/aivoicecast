@@ -149,11 +149,20 @@ export const PricingModal: React.FC<PricingModalProps> = ({ isOpen, onClose, use
 
               {/* PRO TIER */}
               <div className="bg-gradient-to-b from-indigo-900/20 to-slate-900 border border-indigo-500 rounded-2xl p-8 flex flex-col relative transform hover:scale-[1.02] transition-transform shadow-2xl shadow-indigo-500/10">
-                 <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-indigo-600 text-white text-xs uppercase font-bold px-4 py-1.5 rounded-full shadow-lg flex items-center gap-1">
-                    <Crown size={12} fill="currentColor"/> Best Value
+                 <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-gradient-to-r from-amber-500 to-orange-600 text-white text-xs uppercase font-bold px-4 py-1.5 rounded-full shadow-lg flex items-center gap-1 whitespace-nowrap z-10">
+                    <Sparkles size={12} fill="currentColor"/> Limited Offer: 1¢ First Month
                  </div>
                  <h3 className="text-xl font-bold text-indigo-300 mb-2 flex items-center gap-2">Pro Membership</h3>
-                 <div className="text-4xl font-bold text-white mb-6">$29 <span className="text-sm font-normal text-slate-500">/mo</span></div>
+                 
+                 {/* Pricing Promotion Display */}
+                 <div className="flex items-baseline gap-2 mb-2">
+                    <div className="text-4xl font-bold text-white">$0.01</div>
+                    <div className="flex flex-col items-start leading-none">
+                        <span className="text-xs text-emerald-400 font-bold uppercase">1st Month</span>
+                        <span className="text-xs text-slate-500 decoration-slate-600 line-through">$29.00</span>
+                    </div>
+                 </div>
+                 <p className="text-xs text-slate-400 mb-6">Then $29/mo. Cancel anytime.</p>
                  
                  <ul className="space-y-4 mb-8 flex-1">
                     <li className="flex items-center gap-3 text-sm text-white"><Check size={18} className="text-indigo-400"/> <strong>Unlimited</strong> AI Generation</li>
@@ -177,7 +186,7 @@ export const PricingModal: React.FC<PricingModalProps> = ({ isOpen, onClose, use
                                 <span>Initializing...</span>
                             </>
                         ) : (
-                            <><CreditCard size={18}/> Checkout with Stripe</>
+                            <><CreditCard size={18}/> Claim Offer: $0.01 for 1st Mo</>
                         )}
                      </button>
                  )}
