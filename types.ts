@@ -171,7 +171,7 @@ export interface TodoItem {
 
 export interface CodeFile {
   name: string;
-  language: 'python' | 'javascript' | 'typescript' | 'html' | 'css' | 'java' | 'c++' | 'c' | 'rust' | 'go' | 'c#' | 'json' | 'markdown' | 'text' | 'typescript (react)' | 'javascript (react)';
+  language: 'python' | 'javascript' | 'typescript' | 'html' | 'css' | 'java' | 'c++' | 'c' | 'rust' | 'go' | 'c#' | 'json' | 'markdown' | 'text' | 'typescript (react)' | 'javascript (react)' | 'plantuml';
   content: string;
   sha?: string; // GitHub blob SHA for updates
   path?: string; // Full path in repo

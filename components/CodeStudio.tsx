@@ -1,6 +1,7 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { GoogleGenAI, FunctionDeclaration, Type } from '@google/genai';
-import { ArrowLeft, Save, Folder, File, Code, Plus, Trash2, Loader2, ChevronRight, ChevronDown, X, MessageSquare, FileCode, FileJson, FileType, Search, Coffee, Hash, CloudUpload, Edit3, BookOpen, Bot, Send, Maximize2, Minimize2, GripVertical, UserCheck, AlertTriangle, Archive, Sparkles, Video, Mic, CheckCircle, Monitor, FileText, Eye, Github, GitBranch, GitCommit, FolderOpen, RefreshCw, GraduationCap, DownloadCloud, Terminal, Undo2, Check, Share2, Copy, Lock, Link } from 'lucide-react';
+import { ArrowLeft, Save, Folder, File, Code, Plus, Trash2, Loader2, ChevronRight, ChevronDown, X, MessageSquare, FileCode, FileJson, FileType, Search, Coffee, Hash, CloudUpload, Edit3, BookOpen, Bot, Send, Maximize2, Minimize2, GripVertical, UserCheck, AlertTriangle, Archive, Sparkles, Video, Mic, CheckCircle, Monitor, FileText, Eye, Github, GitBranch, GitCommit, FolderOpen, RefreshCw, GraduationCap, DownloadCloud, Terminal, Undo2, Check, Share2, Copy, Lock, Link, Image as ImageIcon } from 'lucide-react';
 import { GEMINI_API_KEY } from '../services/private_keys';
 import { CodeProject, CodeFile, ChatMessage, Channel, GithubMetadata, CursorPosition } from '../types';
 import { MarkdownView } from './MarkdownView';
@@ -8,6 +9,7 @@ import { saveCodeProject, subscribeToCodeProject, updateCodeFile, deleteCodeFile
 import { signInWithGitHub, reauthenticateWithGitHub } from '../services/authService';
 import { fetchUserRepos, fetchRepoContents, commitToRepo, fetchPublicRepoInfo, fetchFileContent, fetchRepoSubTree } from '../services/githubService';
 import { LiveSession } from './LiveSession';
+import { encodePlantUML } from '../utils/plantuml';
 
 interface CodeStudioProps {
   onBack: () => void;
@@ -54,6 +56,10 @@ const LANGUAGES = [
         id: 'typescript', label: 'TypeScript', ext: 'ts', 
         defaultCode: `console.log("Hello TypeScript");` 
     },
+    {
+        id: 'plantuml', label: 'PlantUML', ext: 'puml',
+        defaultCode: `@startuml\nactor User\nparticipant "Frontend" as A\nparticipant "Backend" as B\nUser -> A: Click Button\nA -> B: Request Data\nB --> A: Response\nA --> User: Show Data\n@enduml`
+    }
 ];
 
 const EXAMPLE_PROJECTS: Record<string, CodeProject> = {
@@ -158,6 +164,7 @@ const getLanguageFromFilename = (filename: string): string => {
         case 'c': return 'c';
         case 'md': return 'markdown';
         case 'cs': return 'c#';
+        case 'puml': case 'plantuml': case 'iuml': return 'plantuml';
         default: return 'text';
     }
 };
@@ -200,6 +207,9 @@ const FileIcon = ({ filename }: { filename: string }) => {
     } else if (ext === 'md') {
         color = 'text-gray-400';
         Icon = FileText;
+    } else if (['puml', 'plantuml', 'iuml'].includes(ext || '')) {
+        color = 'text-emerald-400';
+        Icon = ImageIcon;
     }
 
     return <Icon size={14} className={color} />;
@@ -492,6 +502,48 @@ const updateFileTool: FunctionDeclaration = {
     }
 };
 
+const PlantUMLPreview = ({ code }: { code: string }) => {
+    const [imageUrl, setImageUrl] = useState<string | null>(null);
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+
+    useEffect(() => {
+        const fetchImage = async () => {
+            if (!code.trim()) return;
+            setLoading(true);
+            setError(null);
+            try {
+                const encoded = await encodePlantUML(code);
+                if (encoded) {
+                    setImageUrl(`https://www.plantuml.com/plantuml/svg/${encoded}`);
+                } else {
+                    setError("Failed to encode PlantUML.");
+                }
+            } catch (e: any) {
+                setError(e.message || "Encoding error");
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        const timer = setTimeout(fetchImage, 800); // Debounce
+        return () => clearTimeout(timer);
+    }, [code]);
+
+    return (
+        <div className="flex-1 bg-slate-900 border-l border-slate-800 p-4 overflow-auto flex flex-col items-center justify-center">
+            {loading && <div className="text-indigo-400 flex flex-col items-center"><Loader2 className="animate-spin mb-2" size={24}/><span>Rendering...</span></div>}
+            {error && <div className="text-red-400 p-4 border border-red-500/20 bg-red-900/10 rounded">{error}</div>}
+            {!loading && !error && imageUrl && (
+                <div className="bg-white p-4 rounded-lg shadow-xl overflow-auto max-w-full">
+                    <img src={imageUrl} alt="Diagram" className="max-w-full" />
+                </div>
+            )}
+            {!loading && !imageUrl && !error && <div className="text-slate-500">Generating preview...</div>}
+        </div>
+    );
+};
+
 export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, sessionId, accessKey, onSessionStart }) => {
   const [project, setProject] = useState<CodeProject>(EXAMPLE_PROJECTS['is_bst']);
   const [activeFileIndex, setActiveFileIndex] = useState(0);
@@ -544,6 +596,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
 
   const activeFile = project.files[activeFileIndex] || project.files[0];
   const isMarkdown = activeFile ? activeFile.name.toLowerCase().endsWith('.md') : false;
+  const isPlantUML = activeFile ? ['puml', 'plantuml', 'iuml'].includes(activeFile.name.split('.').pop()?.toLowerCase() || '') : false;
   const isGithubLinked = currentUser?.providerData?.some((p: any) => p.providerId === 'github.com');
   const myUserId = currentUser?.uid || guestId;
 
@@ -1121,9 +1174,9 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
             </div>
 
             <div className="flex-1 relative bg-slate-950 flex overflow-hidden">
-                {isMarkdown && (
+                {(isMarkdown || isPlantUML) && (
                     <button onClick={() => setIsPreviewMode(!isPreviewMode)} className="absolute top-2 right-6 z-20 px-3 py-1.5 bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-white text-xs font-bold rounded-lg border border-slate-700 shadow-lg flex items-center gap-2 backdrop-blur-sm transition-all">
-                        {isPreviewMode ? <Code size={14}/> : <Eye size={14}/>} <span>{isPreviewMode ? "Edit Source" : "Preview"}</span>
+                        {isPreviewMode ? <Code size={14}/> : (isPlantUML ? <ImageIcon size={14} /> : <Eye size={14}/>)} <span>{isPreviewMode ? "Edit Source" : "Preview"}</span>
                     </button>
                 )}
 
@@ -1136,6 +1189,8 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
                     <div className="flex-1 overflow-y-auto p-8 bg-slate-950">
                         <div className="max-w-3xl mx-auto pb-20"><MarkdownView content={activeFile.content} /></div>
                     </div>
+                ) : isPlantUML && isPreviewMode ? (
+                    <PlantUMLPreview code={activeFile.content} />
                 ) : (
                     <EnhancedEditor 
                         code={activeFile.content}
