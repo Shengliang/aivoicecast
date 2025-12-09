@@ -328,7 +328,15 @@ export const WorkplaceChat: React.FC<WorkplaceChatProps> = ({ onBack, currentUse
 
                               <div className={`flex flex-col max-w-[75%] ${isMe ? 'items-end' : 'items-start'}`}>
                                   {showHeader && (
-                                      <div className={`flex items-baseline gap-2 mb-1 ${isMe ? 'flex-row-reverse' : ''}`}>
+                                      <div className={`flex items-center gap-2 mb-1 ${isMe ? 'flex-row-reverse' : ''}`}>
+                                          {/* Header Avatar (Name Line) */}
+                                          {msg.senderImage ? (
+                                              <img src={msg.senderImage} className="w-4 h-4 rounded-full object-cover border border-slate-600 opacity-80" alt="" />
+                                          ) : (
+                                              <div className="w-4 h-4 rounded-full bg-slate-700 flex items-center justify-center text-[8px] text-white opacity-80">
+                                                  {msg.senderName?.[0]?.toUpperCase()}
+                                              </div>
+                                          )}
                                           <span className="text-xs font-bold text-slate-300">{msg.senderName}</span>
                                           <span className="text-[10px] text-slate-500">
                                               {msg.timestamp?.toMillis ? new Date(msg.timestamp.toMillis()).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : ''}
@@ -337,24 +345,25 @@ export const WorkplaceChat: React.FC<WorkplaceChatProps> = ({ onBack, currentUse
                                   )}
                                   
                                   <div 
-                                      className={`px-4 py-2 rounded-2xl text-sm leading-relaxed relative cursor-pointer group/bubble 
-                                      ${isMe ? 'bg-indigo-600 text-white rounded-tr-sm' : 'bg-slate-800 text-slate-200 rounded-tl-sm hover:bg-slate-700 transition-colors'}
+                                      className={`px-4 py-2 rounded-2xl text-sm leading-relaxed relative cursor-pointer group/bubble transition-all duration-200
+                                      ${isMe ? 'bg-indigo-600 text-white rounded-tr-sm' : 'bg-slate-800 text-slate-200 rounded-tl-sm hover:bg-slate-700'}
+                                      ${isSelected ? 'ring-2 ring-inset ring-white/20' : ''}
                                       `}
-                                      onClick={() => setSelectedMessageId(isSelected ? null : msg.id)}
+                                      onClick={(e) => { e.stopPropagation(); setSelectedMessageId(isSelected ? null : msg.id); }}
                                       onDoubleClick={() => setReplyingTo(msg)}
-                                      title="Click for options"
+                                      title="Click to see options"
                                   >
-                                      {/* Actions */}
-                                      <div className={`absolute top-0 h-full flex items-center gap-1 transition-opacity duration-200 ${
+                                      {/* Actions Menu - Improved Visibility */}
+                                      <div className={`absolute top-1/2 -translate-y-1/2 flex items-center gap-1 transition-all duration-200 z-10 ${
                                           isMe 
-                                            ? 'left-0 -translate-x-full pr-2 flex-row-reverse' 
-                                            : 'right-0 translate-x-full pl-2'
-                                          } ${isSelected ? 'opacity-100 pointer-events-auto' : 'opacity-0 group-hover/bubble:opacity-100 pointer-events-none'}`}
+                                            ? 'left-auto right-full mr-2' // Position to the left of the bubble
+                                            : 'right-auto left-full ml-2' // Position to the right of the bubble
+                                          } ${isSelected ? 'opacity-100 pointer-events-auto scale-100' : 'opacity-0 pointer-events-none scale-90 group-hover/bubble:opacity-100 group-hover/bubble:pointer-events-auto group-hover/bubble:scale-100'}`}
                                       >
                                           {/* Reply Button */}
                                           <button 
                                               onClick={(e) => { e.stopPropagation(); setReplyingTo(msg); setSelectedMessageId(null); }} 
-                                              className="p-1.5 rounded-full bg-slate-800 text-slate-400 hover:text-white border border-slate-700 hover:bg-slate-700 shadow-sm"
+                                              className="p-1.5 rounded-full bg-slate-700 hover:bg-indigo-600 text-slate-300 hover:text-white shadow-lg transition-colors border border-slate-600"
                                               title="Reply"
                                           >
                                               <Reply size={14} />
@@ -364,8 +373,8 @@ export const WorkplaceChat: React.FC<WorkplaceChatProps> = ({ onBack, currentUse
                                           {isMe && (
                                               <button 
                                                   onClick={(e) => { e.stopPropagation(); handleDeleteMessage(msg.id); setSelectedMessageId(null); }} 
-                                                  className="p-1.5 rounded-full bg-slate-800 text-slate-400 hover:text-red-400 border border-slate-700 hover:bg-slate-700 shadow-sm" 
-                                                  title="Unsend Message"
+                                                  className="p-1.5 rounded-full bg-slate-700 hover:bg-red-600 text-slate-300 hover:text-white shadow-lg transition-colors border border-slate-600" 
+                                                  title="Delete Message"
                                               >
                                                   <Trash2 size={14} />
                                               </button>
@@ -383,7 +392,7 @@ export const WorkplaceChat: React.FC<WorkplaceChatProps> = ({ onBack, currentUse
                                   </div>
                               </div>
 
-                              {/* Right Avatar (Me) */}
+                              {/* Right Avatar (Me) - Column */}
                               {isMe && (
                                   <div className="flex-shrink-0 w-8 ml-2 flex flex-col justify-start pt-1">
                                       {showHeader && (
