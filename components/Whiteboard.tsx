@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { ArrowLeft, Share2, Trash2, Undo, PenTool, Eraser, Download, Square, Circle, Minus, ArrowRight, Type, ZoomIn, ZoomOut, MousePointer2, Move, Highlighter, Brush, BoxSelect, Lock, Eye, Edit3 } from 'lucide-react';
+import { ArrowLeft, Share2, Trash2, Undo, PenTool, Eraser, Download, Square, Circle, Minus, ArrowRight, Type, ZoomIn, ZoomOut, MousePointer2, Move, Highlighter, Brush, BoxSelect, Lock, Eye, Edit3, Feather, SprayCan, Droplet, Pencil } from 'lucide-react';
 import { auth } from '../services/firebaseConfig';
 import { saveWhiteboardSession, subscribeToWhiteboard, updateWhiteboardElement, deleteWhiteboardElements } from '../services/firestoreService';
 
@@ -13,7 +13,7 @@ interface WhiteboardProps {
 
 type ToolType = 'select' | 'pen' | 'eraser' | 'rect' | 'circle' | 'line' | 'arrow' | 'text' | 'pan';
 type LineStyle = 'solid' | 'dashed' | 'dotted';
-type BrushType = 'standard' | 'highlighter' | 'calligraphy' | 'square';
+type BrushType = 'standard' | 'pencil' | 'marker' | 'calligraphy-pen' | 'airbrush' | 'oil' | 'watercolor' | 'crayon';
 
 interface WhiteboardElement {
   id: string;
@@ -642,19 +642,44 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack, sessionId, acces
           ctx.strokeStyle = el.color;
           ctx.lineWidth = el.strokeWidth / scale;
           
+          // Default caps
           ctx.lineCap = 'round';
           ctx.lineJoin = 'round';
           ctx.globalAlpha = 1.0;
+          ctx.shadowBlur = 0;
 
-          if (el.brushType === 'highlighter') {
-              ctx.globalAlpha = 0.5;
+          // --- Brush Specific Styling ---
+          if (el.brushType === 'pencil') {
+              ctx.lineWidth = 1 / scale; // Always thin
+              ctx.globalAlpha = 0.85;
+          } else if (el.brushType === 'marker') {
+              ctx.globalAlpha = 0.6;
+              ctx.lineCap = 'square';
+              ctx.lineJoin = 'bevel';
+              ctx.lineWidth = Math.max(el.strokeWidth, 8) / scale; 
+          } else if (el.brushType === 'calligraphy-pen') {
               ctx.lineCap = 'butt';
-              ctx.lineWidth = (el.strokeWidth * 3) / scale;
-          } else if (el.brushType === 'square') {
+              // Calligraphy simulation often involves drawing path multiple times with offset or transforming context
+              // For simplicity in standard canvas, we use a fixed nib angle via lineCap butt
+          } else if (el.brushType === 'airbrush') {
+              ctx.lineCap = 'round';
+              ctx.shadowBlur = 15;
+              ctx.shadowColor = el.color;
+              ctx.globalAlpha = 0.6;
+          } else if (el.brushType === 'oil') {
+              ctx.shadowBlur = 1;
+              ctx.shadowColor = 'rgba(0,0,0,0.5)';
+              ctx.shadowOffsetX = 1;
+              ctx.shadowOffsetY = 1;
+              ctx.globalAlpha = 1.0;
+          } else if (el.brushType === 'watercolor') {
+              ctx.shadowBlur = 20;
+              ctx.shadowColor = el.color;
+              ctx.globalAlpha = 0.4;
+          } else if (el.brushType === 'crayon') {
               ctx.lineCap = 'butt';
-              ctx.lineJoin = 'miter';
-          } else if (el.brushType === 'calligraphy') {
-              ctx.lineCap = 'butt';
+              ctx.lineJoin = 'bevel';
+              // Crayon texture is hard without a pattern, we simulate with roughness via bevel join and no anti-alias tricks (default)
           }
 
           if (el.lineStyle === 'dashed') ctx.setLineDash([15, 10]);
@@ -925,7 +950,7 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack, sessionId, acces
                     <Move size={18}/>
                 </button>
                 <div className="w-px bg-slate-700 mx-1"></div>
-                <button onClick={() => setTool('pen')} className={`p-2 rounded ${tool === 'pen' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'}`} title="Pen">
+                <button onClick={() => setTool('pen')} className={`p-2 rounded ${tool === 'pen' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'}`} title="Brushes">
                     <PenTool size={18}/>
                 </button>
                 <button onClick={() => setTool('eraser')} className={`p-2 rounded ${tool === 'eraser' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'}`} title="Eraser">
@@ -949,20 +974,32 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack, sessionId, acces
                 </button>
             </div>
             
-            {/* Brush Styles (Only for Pen) */}
+            {/* Extended Brush Styles (Only for Pen) */}
             {tool === 'pen' && (
-                <div className="flex bg-slate-800 rounded-lg p-1 animate-fade-in">
-                    <button onClick={() => setBrushType('standard')} className={`p-2 rounded ${brushType === 'standard' ? 'bg-slate-700 text-white' : 'text-slate-400'}`} title="Standard Pen">
+                <div className="flex bg-slate-800 rounded-lg p-1 animate-fade-in gap-1 max-w-md flex-wrap justify-center">
+                    <button onClick={() => setBrushType('standard')} className={`p-1.5 rounded ${brushType === 'standard' ? 'bg-slate-700 text-white' : 'text-slate-400 hover:text-slate-300'}`} title="Standard Pen">
                         <PenTool size={16} />
                     </button>
-                    <button onClick={() => setBrushType('highlighter')} className={`p-2 rounded ${brushType === 'highlighter' ? 'bg-slate-700 text-yellow-300' : 'text-slate-400'}`} title="Highlighter">
+                    <button onClick={() => setBrushType('pencil')} className={`p-1.5 rounded ${brushType === 'pencil' ? 'bg-slate-700 text-white' : 'text-slate-400 hover:text-slate-300'}`} title="Natural Pencil">
+                        <Pencil size={16} />
+                    </button>
+                    <button onClick={() => setBrushType('marker')} className={`p-1.5 rounded ${brushType === 'marker' ? 'bg-slate-700 text-yellow-300' : 'text-slate-400 hover:text-slate-300'}`} title="Marker">
                         <Highlighter size={16} />
                     </button>
-                    <button onClick={() => setBrushType('square')} className={`p-2 rounded ${brushType === 'square' ? 'bg-slate-700 text-white' : 'text-slate-400'}`} title="Square Brush">
-                        <BoxSelect size={16} />
+                    <button onClick={() => setBrushType('calligraphy-pen')} className={`p-1.5 rounded ${brushType === 'calligraphy-pen' ? 'bg-slate-700 text-white' : 'text-slate-400 hover:text-slate-300'}`} title="Calligraphy Pen">
+                        <Feather size={16} />
                     </button>
-                    <button onClick={() => setBrushType('calligraphy')} className={`p-2 rounded ${brushType === 'calligraphy' ? 'bg-slate-700 text-white' : 'text-slate-400'}`} title="Calligraphy">
+                    <button onClick={() => setBrushType('airbrush')} className={`p-1.5 rounded ${brushType === 'airbrush' ? 'bg-slate-700 text-white' : 'text-slate-400 hover:text-slate-300'}`} title="Airbrush">
+                        <SprayCan size={16} />
+                    </button>
+                    <button onClick={() => setBrushType('oil')} className={`p-1.5 rounded ${brushType === 'oil' ? 'bg-slate-700 text-white' : 'text-slate-400 hover:text-slate-300'}`} title="Oil Brush">
                         <Brush size={16} />
+                    </button>
+                    <button onClick={() => setBrushType('watercolor')} className={`p-1.5 rounded ${brushType === 'watercolor' ? 'bg-slate-700 text-blue-300' : 'text-slate-400 hover:text-slate-300'}`} title="Watercolor">
+                        <Droplet size={16} />
+                    </button>
+                    <button onClick={() => setBrushType('crayon')} className={`p-1.5 rounded ${brushType === 'crayon' ? 'bg-slate-700 text-orange-300' : 'text-slate-400 hover:text-slate-300'}`} title="Crayon">
+                        <Edit3 size={16} />
                     </button>
                 </div>
             )}
