@@ -1,9 +1,9 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { ChatChannel, RealTimeMessage, Group, UserProfile } from '../types';
-import { sendMessage, subscribeToMessages, getUserGroups, getAllUsers, createOrGetDMChannel, getUserDMChannels, getUniqueGroupMembers, deleteMessage } from '../services/firestoreService';
+import { sendMessage, subscribeToMessages, getUserGroups, getAllUsers, createOrGetDMChannel, getUserDMChannels, getUniqueGroupMembers, deleteMessage, uploadFileToStorage } from '../services/firestoreService';
 import { auth } from '../services/firebaseConfig';
-import { Send, Hash, Lock, User, Plus, Search, MessageSquare, MoreVertical, Paperclip, Loader2, ArrowLeft, Menu, Users, Briefcase, Reply, Trash2, X } from 'lucide-react';
+import { Send, Hash, Lock, User, Plus, Search, MessageSquare, MoreVertical, Paperclip, Loader2, ArrowLeft, Menu, Users, Briefcase, Reply, Trash2, X, FileText, Image as ImageIcon, Video } from 'lucide-react';
 
 interface WorkplaceChatProps {
   onBack: () => void;
@@ -29,6 +29,11 @@ export const WorkplaceChat: React.FC<WorkplaceChatProps> = ({ onBack, currentUse
   
   const [replyingTo, setReplyingTo] = useState<RealTimeMessage | null>(null);
   const [selectedMessageId, setSelectedMessageId] = useState<string | null>(null);
+  
+  // Attachments State
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const [isUploading, setIsUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -63,11 +68,23 @@ export const WorkplaceChat: React.FC<WorkplaceChatProps> = ({ onBack, currentUse
   useEffect(() => {
       setReplyingTo(null);
       setSelectedMessageId(null);
+      setSelectedFiles([]);
   }, [activeChannelId]);
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+      if (e.target.files && e.target.files.length > 0) {
+          setSelectedFiles(prev => [...prev, ...Array.from(e.target.files || [])]);
+      }
+      e.target.value = '';
+  };
+
+  const removeAttachment = (index: number) => {
+      setSelectedFiles(prev => prev.filter((_, i) => i !== index));
+  };
 
   const handleSendMessage = async (e?: React.FormEvent) => {
     e?.preventDefault();
-    if (!newMessage.trim()) return;
+    if (!newMessage.trim() && selectedFiles.length === 0) return;
 
     let collectionPath;
     if (activeChannelType === 'group') {
@@ -76,7 +93,22 @@ export const WorkplaceChat: React.FC<WorkplaceChatProps> = ({ onBack, currentUse
         collectionPath = `chat_channels/${activeChannelId}/messages`;
     }
 
+    setIsUploading(true);
+    const attachmentData = [];
+
     try {
+        // Upload Files
+        for (const file of selectedFiles) {
+             const path = `chat_attachments/${activeChannelId}/${Date.now()}_${file.name}`;
+             const url = await uploadFileToStorage(path, file);
+             
+             let type = 'file';
+             if (file.type.startsWith('image/')) type = 'image';
+             else if (file.type.startsWith('video/')) type = 'video';
+             
+             attachmentData.push({ type, url, name: file.name });
+        }
+
         let replyData = undefined;
         if (replyingTo) {
             replyData = {
@@ -86,11 +118,15 @@ export const WorkplaceChat: React.FC<WorkplaceChatProps> = ({ onBack, currentUse
             };
         }
 
-        await sendMessage(activeChannelId, newMessage, collectionPath, replyData);
+        await sendMessage(activeChannelId, newMessage, collectionPath, replyData, attachmentData);
         setNewMessage('');
         setReplyingTo(null);
+        setSelectedFiles([]);
     } catch (error) {
         console.error("Send failed", error);
+        alert("Failed to send message.");
+    } finally {
+        setIsUploading(false);
     }
   };
 
@@ -188,27 +224,6 @@ export const WorkplaceChat: React.FC<WorkplaceChatProps> = ({ onBack, currentUse
                       ))}
                   </div>
               </div>
-
-              {/* Coworkers / Group Members */}
-              {coworkers.length > 0 && (
-                  <div>
-                      <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 px-2 flex justify-between items-center">
-                          Team Members
-                      </h3>
-                      <div className="space-y-0.5">
-                          {coworkers.map(member => (
-                              <button 
-                                  key={member.uid}
-                                  onClick={() => handleStartDM(member.uid, member.displayName)}
-                                  className="w-full flex items-center gap-2 px-2 py-1.5 rounded text-sm text-slate-400 hover:bg-slate-800 hover:text-white group"
-                              >
-                                  <div className={`w-2 h-2 rounded-full ${member.lastLogin ? 'bg-emerald-500' : 'bg-slate-600'}`}></div>
-                                  <span className="truncate">{member.displayName}</span>
-                              </button>
-                          ))}
-                      </div>
-                  </div>
-              )}
 
               {/* Direct Messages */}
               <div>
@@ -308,17 +323,20 @@ export const WorkplaceChat: React.FC<WorkplaceChatProps> = ({ onBack, currentUse
                       const showHeader = i === 0 || messages[i-1].senderId !== msg.senderId || (msg.timestamp?.toMillis && messages[i-1].timestamp?.toMillis && (msg.timestamp.toMillis() - messages[i-1].timestamp.toMillis() > 300000));
                       const isSelected = selectedMessageId === msg.id;
                       
+                      // Explicit cast to handle attachments if present in DB
+                      const attachments = (msg as any).attachments || [];
+
                       return (
                           <div key={msg.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'} mb-1 group/row`}>
                               
                               {/* Left Avatar (Others) */}
                               {!isMe && (
-                                  <div className="flex-shrink-0 w-8 mr-2 flex flex-col justify-start pt-1">
+                                  <div className="flex-shrink-0 w-10 mr-2 flex flex-col justify-start pt-1">
                                       {showHeader && (
                                           msg.senderImage ? (
-                                              <img src={msg.senderImage} className="w-8 h-8 rounded-full object-cover border border-slate-700" alt={msg.senderName} />
+                                              <img src={msg.senderImage} className="w-10 h-10 rounded-full object-cover border-2 border-slate-700 shadow-md" alt={msg.senderName} />
                                           ) : (
-                                              <div className="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center text-xs text-slate-400 font-bold border border-slate-700">
+                                              <div className="w-10 h-10 rounded-full bg-slate-800 flex items-center justify-center text-xs text-slate-400 font-bold border-2 border-slate-700 shadow-md">
                                                   {msg.senderName?.[0]?.toUpperCase()}
                                               </div>
                                           )
@@ -329,14 +347,6 @@ export const WorkplaceChat: React.FC<WorkplaceChatProps> = ({ onBack, currentUse
                               <div className={`flex flex-col max-w-[75%] ${isMe ? 'items-end' : 'items-start'}`}>
                                   {showHeader && (
                                       <div className={`flex items-center gap-2 mb-1 ${isMe ? 'flex-row-reverse' : ''}`}>
-                                          {/* Header Avatar (Name Line) */}
-                                          {msg.senderImage ? (
-                                              <img src={msg.senderImage} className="w-4 h-4 rounded-full object-cover border border-slate-600 opacity-80" alt="" />
-                                          ) : (
-                                              <div className="w-4 h-4 rounded-full bg-slate-700 flex items-center justify-center text-[8px] text-white opacity-80">
-                                                  {msg.senderName?.[0]?.toUpperCase()}
-                                              </div>
-                                          )}
                                           <span className="text-xs font-bold text-slate-300">{msg.senderName}</span>
                                           <span className="text-[10px] text-slate-500">
                                               {msg.timestamp?.toMillis ? new Date(msg.timestamp.toMillis()).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : ''}
@@ -351,35 +361,29 @@ export const WorkplaceChat: React.FC<WorkplaceChatProps> = ({ onBack, currentUse
                                       `}
                                       onClick={(e) => { e.stopPropagation(); setSelectedMessageId(isSelected ? null : msg.id); }}
                                       onDoubleClick={() => setReplyingTo(msg)}
-                                      title="Click to see options"
+                                      title="Click for options"
                                   >
-                                      {/* Actions Menu - Improved Visibility */}
-                                      <div className={`absolute top-1/2 -translate-y-1/2 flex items-center gap-1 transition-all duration-200 z-10 ${
-                                          isMe 
-                                            ? 'left-auto right-full mr-2' // Position to the left of the bubble
-                                            : 'right-auto left-full ml-2' // Position to the right of the bubble
-                                          } ${isSelected ? 'opacity-100 pointer-events-auto scale-100' : 'opacity-0 pointer-events-none scale-90 group-hover/bubble:opacity-100 group-hover/bubble:pointer-events-auto group-hover/bubble:scale-100'}`}
-                                      >
-                                          {/* Reply Button */}
-                                          <button 
-                                              onClick={(e) => { e.stopPropagation(); setReplyingTo(msg); setSelectedMessageId(null); }} 
-                                              className="p-1.5 rounded-full bg-slate-700 hover:bg-indigo-600 text-slate-300 hover:text-white shadow-lg transition-colors border border-slate-600"
-                                              title="Reply"
-                                          >
-                                              <Reply size={14} />
-                                          </button>
-                                          
-                                          {/* Delete Button (Only if isMe) */}
-                                          {isMe && (
+                                      {/* Actions Menu (Inside bubble for better context, positioned appropriately) */}
+                                      {isSelected && (
+                                          <div className={`absolute -bottom-8 ${isMe ? 'right-0' : 'left-0'} flex items-center gap-1 z-20 bg-slate-900 border border-slate-700 rounded-lg p-1 shadow-xl animate-fade-in-up`}>
                                               <button 
-                                                  onClick={(e) => { e.stopPropagation(); handleDeleteMessage(msg.id); setSelectedMessageId(null); }} 
-                                                  className="p-1.5 rounded-full bg-slate-700 hover:bg-red-600 text-slate-300 hover:text-white shadow-lg transition-colors border border-slate-600" 
-                                                  title="Delete Message"
+                                                  onClick={(e) => { e.stopPropagation(); setReplyingTo(msg); setSelectedMessageId(null); }} 
+                                                  className="p-1.5 rounded hover:bg-slate-800 text-slate-400 hover:text-white"
+                                                  title="Reply"
                                               >
-                                                  <Trash2 size={14} />
+                                                  <Reply size={14} />
                                               </button>
-                                          )}
-                                      </div>
+                                              {isMe && (
+                                                  <button 
+                                                      onClick={(e) => { e.stopPropagation(); handleDeleteMessage(msg.id); setSelectedMessageId(null); }} 
+                                                      className="p-1.5 rounded hover:bg-slate-800 text-slate-400 hover:text-red-500" 
+                                                      title="Delete Message"
+                                                  >
+                                                      <Trash2 size={14} />
+                                                  </button>
+                                              )}
+                                          </div>
+                                      )}
 
                                       {/* Reply Quote Block */}
                                       {msg.replyTo && (
@@ -388,18 +392,40 @@ export const WorkplaceChat: React.FC<WorkplaceChatProps> = ({ onBack, currentUse
                                               <p className="truncate line-clamp-1">{msg.replyTo.text}</p>
                                           </div>
                                       )}
+                                      
+                                      {/* Main Text */}
                                       {msg.text}
+
+                                      {/* Attachments Rendering */}
+                                      {attachments.length > 0 && (
+                                          <div className="mt-2 space-y-2">
+                                              {attachments.map((att: any, idx: number) => (
+                                                  <div key={idx} className="rounded overflow-hidden">
+                                                      {att.type === 'image' ? (
+                                                          <img src={att.url} alt="attachment" className="max-w-full rounded-lg border border-white/10 max-h-60 object-cover" />
+                                                      ) : att.type === 'video' ? (
+                                                          <video src={att.url} controls className="max-w-full rounded-lg border border-white/10 max-h-60" />
+                                                      ) : (
+                                                          <a href={att.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 bg-black/20 p-2 rounded-lg hover:bg-black/30 transition-colors">
+                                                              <div className="p-2 bg-slate-700 rounded text-slate-300"><FileText size={16}/></div>
+                                                              <span className="text-xs truncate underline">{att.name}</span>
+                                                          </a>
+                                                      )}
+                                                  </div>
+                                              ))}
+                                          </div>
+                                      )}
                                   </div>
                               </div>
 
                               {/* Right Avatar (Me) - Column */}
                               {isMe && (
-                                  <div className="flex-shrink-0 w-8 ml-2 flex flex-col justify-start pt-1">
+                                  <div className="flex-shrink-0 w-10 ml-2 flex flex-col justify-start pt-1">
                                       {showHeader && (
                                           msg.senderImage ? (
-                                              <img src={msg.senderImage} className="w-8 h-8 rounded-full object-cover border border-indigo-500/30" alt={msg.senderName} />
+                                              <img src={msg.senderImage} className="w-10 h-10 rounded-full object-cover border-2 border-indigo-500 shadow-md" alt={msg.senderName} />
                                           ) : (
-                                              <div className="w-8 h-8 rounded-full bg-indigo-700 flex items-center justify-center text-xs text-indigo-200 font-bold border border-indigo-600">
+                                              <div className="w-10 h-10 rounded-full bg-indigo-700 flex items-center justify-center text-xs text-indigo-200 font-bold border-2 border-indigo-600 shadow-md">
                                                   {msg.senderName?.[0]?.toUpperCase()}
                                               </div>
                                           )
@@ -432,10 +458,33 @@ export const WorkplaceChat: React.FC<WorkplaceChatProps> = ({ onBack, currentUse
                   </div>
               )}
 
+              {/* Attachments Preview */}
+              {selectedFiles.length > 0 && (
+                  <div className="flex gap-2 overflow-x-auto pb-2 mb-2">
+                      {selectedFiles.map((file, idx) => (
+                          <div key={idx} className="relative group shrink-0 w-16 h-16 bg-slate-800 rounded border border-slate-700 flex items-center justify-center overflow-hidden">
+                              {file.type.startsWith('image/') ? (
+                                  <img src={URL.createObjectURL(file)} className="w-full h-full object-cover opacity-80" />
+                              ) : (
+                                  <FileText size={24} className="text-slate-400"/>
+                              )}
+                              <button onClick={() => removeAttachment(idx)} className="absolute top-0 right-0 bg-red-500 text-white p-0.5 rounded-bl hover:bg-red-600"><X size={10}/></button>
+                          </div>
+                      ))}
+                  </div>
+              )}
+
               <form onSubmit={handleSendMessage} className="bg-slate-800 border border-slate-700 rounded-xl flex items-center p-2 gap-2 relative z-10">
-                  <button type="button" className="p-2 text-slate-400 hover:text-white hover:bg-slate-700 rounded-lg">
-                      <Plus size={20} />
+                  <button 
+                      type="button" 
+                      onClick={() => fileInputRef.current?.click()}
+                      className="p-2 text-slate-400 hover:text-white hover:bg-slate-700 rounded-lg transition-colors"
+                      title="Attach File"
+                  >
+                      <Paperclip size={20} />
                   </button>
+                  <input type="file" ref={fileInputRef} className="hidden" multiple onChange={handleFileSelect} />
+                  
                   <input 
                       type="text" 
                       value={newMessage}
@@ -443,8 +492,8 @@ export const WorkplaceChat: React.FC<WorkplaceChatProps> = ({ onBack, currentUse
                       placeholder={`Message #${activeChannelName}`}
                       className="flex-1 bg-transparent text-white outline-none placeholder-slate-500"
                   />
-                  <button type="submit" disabled={!newMessage.trim()} className="p-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed">
-                      <Send size={18} />
+                  <button type="submit" disabled={(!newMessage.trim() && selectedFiles.length === 0) || isUploading} className="p-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed">
+                      {isUploading ? <Loader2 size={18} className="animate-spin"/> : <Send size={18} />}
                   </button>
               </form>
           </div>

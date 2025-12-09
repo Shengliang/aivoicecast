@@ -35,7 +35,7 @@ function sanitizeData(data: any): any {
 
 // --- WORKPLACE CHAT ---
 
-export async function sendMessage(channelId: string, text: string, collectionPath?: string, replyTo?: any): Promise<void> {
+export async function sendMessage(channelId: string, text: string, collectionPath?: string, replyTo?: any, attachments?: any[]): Promise<void> {
     const user = auth.currentUser;
     if (!user) throw new Error("Must be logged in");
 
@@ -53,6 +53,10 @@ export async function sendMessage(channelId: string, text: string, collectionPat
     if (replyTo) {
         payload.replyTo = sanitizeData(replyTo);
     }
+
+    if (attachments && attachments.length > 0) {
+        payload.attachments = sanitizeData(attachments);
+    }
     
     await db.collection(basePath).add(payload);
 
@@ -60,7 +64,7 @@ export async function sendMessage(channelId: string, text: string, collectionPat
     if (basePath.startsWith('chat_channels')) {
         db.collection('chat_channels').doc(channelId).set({
             lastMessage: {
-                text,
+                text: text || (attachments ? 'Sent an attachment' : ''),
                 senderName: user.displayName || 'Anonymous',
                 timestamp: Date.now()
             }
