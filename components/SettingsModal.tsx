@@ -22,6 +22,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [isEditingName, setIsEditingName] = useState(false);
   const [emailNotifs, setEmailNotifs] = useState(true);
   const [publicProfile, setPublicProfile] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   
   // Billing State
   const [billingHistory, setBillingHistory] = useState<any[]>([]);
@@ -40,12 +41,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
   const handleManageSubscription = async () => {
     setIsProcessingPortal(true);
+    setError(null);
     try {
         const url = await createStripePortalSession(user.uid);
         window.location.assign(url);
     } catch (e: any) {
         console.error(e);
-        alert("Failed to open billing portal: " + e.message);
+        setError("Failed to open billing portal: " + e.message);
         setIsProcessingPortal(false);
     }
   };
@@ -170,6 +172,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
             {activeTab === 'billing' && (
                 <div className="space-y-6">
+                    {error && (
+                        <div className="bg-red-900/20 border border-red-900/50 rounded-lg p-3 text-red-300 text-sm">
+                            {error}
+                        </div>
+                    )}
+
                     <div className="flex items-center justify-between bg-slate-800/50 p-6 rounded-xl border border-slate-700">
                         <div>
                             <h4 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-1 flex items-center gap-2">

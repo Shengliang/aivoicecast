@@ -182,7 +182,7 @@ export interface CodeFile {
 }
 
 export interface ChatMessage {
-  role: 'user' | 'ai';
+  role: 'user' | 'ai' | 'system';
   text: string;
 }
 
@@ -231,4 +231,5 @@ export interface BlogPost {
   likes: number;
   imageUrl?: string;
   comments?: Comment[];
+  commentCount?: number;
 }

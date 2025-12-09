@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { X, Check, Zap, Loader2, Sparkles, Crown, CreditCard } from 'lucide-react';
+import { X, Check, Zap, Loader2, Sparkles, Crown, CreditCard, AlertCircle } from 'lucide-react';
 import { UserProfile, SubscriptionTier } from '../types';
 import { createStripeCheckoutSession } from '../services/firestoreService';
 
@@ -13,17 +13,20 @@ interface PricingModalProps {
 
 export const PricingModal: React.FC<PricingModalProps> = ({ isOpen, onClose, user, onSuccess }) => {
   const [processing, setProcessing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   if (!isOpen) return null;
 
   const handleCheckout = async () => {
     // Guard against missing user info (rare edge case on stale profiles)
     if (!user || !user.uid) {
-        alert("Error: User profile is incomplete. Please sign out and sign in again.");
+        setError("Error: User profile is incomplete. Please sign out and sign in again.");
         return;
     }
 
     setProcessing(true);
+    setError(null);
+    
     try {
       // Create session via Stripe Extension
       const url = await createStripeCheckoutSession(user.uid);
@@ -33,7 +36,12 @@ export const PricingModal: React.FC<PricingModalProps> = ({ isOpen, onClose, use
       
     } catch (e: any) {
       console.error("Checkout Creation Failed:", e);
-      alert(`Checkout failed: ${e.message || "Unknown error."}`);
+      // Clean up error message for user
+      let msg = e.message || "Unknown error.";
+      if (msg.includes("permission-denied")) {
+          msg = "Permission Denied: Please check your Firestore Security Rules.";
+      }
+      setError(msg);
       setProcessing(false);
     }
   };
@@ -55,6 +63,17 @@ export const PricingModal: React.FC<PricingModalProps> = ({ isOpen, onClose, use
         </div>
 
         <div className="p-8 overflow-y-auto flex-1 flex flex-col items-center justify-center">
+           
+           {error && (
+               <div className="w-full max-w-3xl mb-6 bg-red-900/20 border border-red-900/50 rounded-xl p-4 flex items-start gap-3 animate-fade-in">
+                   <AlertCircle className="text-red-500 shrink-0 mt-0.5" size={20} />
+                   <div className="text-red-200 text-sm">
+                       <p className="font-bold">Payment Setup Error</p>
+                       <p>{error}</p>
+                   </div>
+               </div>
+           )}
+
            <div className="grid grid-cols-1 md:grid-cols-2 gap-8 w-full max-w-3xl">
               
               {/* FREE TIER */}
@@ -102,7 +121,14 @@ export const PricingModal: React.FC<PricingModalProps> = ({ isOpen, onClose, use
                         disabled={processing}
                         className="w-full py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl text-sm shadow-xl shadow-indigo-500/20 transition-all flex justify-center items-center gap-2"
                      >
-                        {processing ? <Loader2 className="animate-spin" size={18}/> : <><CreditCard size={18}/> Checkout with Stripe</>}
+                        {processing ? (
+                            <>
+                                <Loader2 className="animate-spin" size={18}/> 
+                                <span>Initializing Secure Checkout...</span>
+                            </>
+                        ) : (
+                            <><CreditCard size={18}/> Checkout with Stripe</>
+                        )}
                      </button>
                  )}
               </div>

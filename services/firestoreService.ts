@@ -9,7 +9,7 @@ import { OFFLINE_LECTURES, OFFLINE_CHANNEL_ID } from '../utils/offlineContent';
 // --- STRIPE CONFIGURATION ---
 // REPLACE THIS WITH YOUR ACTUAL STRIPE PRICE ID FROM THE DASHBOARD
 // Example: 'price_1P2q3rI4j5k6l7m8n9o0p1'
-export const STRIPE_PRICE_ID = 'price_1P2q3rI4j5k6l7m8n9o0p1'; 
+export const STRIPE_PRICE_ID = 'prod_TZOSdzGN5aW4Ci'; 
 
 // Helper to remove undefined fields which Firestore rejects
 function sanitizeData(data: any): any {
@@ -251,6 +251,11 @@ export async function incrementApiUsage(uid: string): Promise<void> {
 export async function createStripeCheckoutSession(uid: string): Promise<string> {
     if (!uid) throw new Error("User ID missing");
 
+    // SAFETY CHECK: Ensure Price ID is configured
+    if (STRIPE_PRICE_ID.includes('price_1P2q3rI4j5k6l7m8n9o0p1')) {
+        throw new Error("Configuration Error: Please replace the placeholder STRIPE_PRICE_ID in 'services/firestoreService.ts' with your actual Stripe Price ID.");
+    }
+
     // 1. Create a document in the checkout_sessions collection
     // This triggers the "Run Payments with Stripe" extension
     const sessionRef = await db
@@ -280,7 +285,7 @@ export async function createStripeCheckoutSession(uid: string): Promise<string> 
         // Timeout after 15s to prevent hanging
         setTimeout(() => {
             unsubscribe();
-            reject(new Error("Timeout waiting for Stripe session. Check your Stripe Extension config."));
+            reject(new Error("Timeout waiting for Stripe. The Firebase Extension may be cold-starting or misconfigured. Please try again."));
         }, 15000);
     });
 }
@@ -312,7 +317,7 @@ export async function createStripePortalSession(uid: string): Promise<string> {
         // Timeout after 15s
         setTimeout(() => {
             unsubscribe();
-            reject(new Error("Timeout waiting for Stripe Portal. Ensure 'Run Payments with Stripe' extension is configured."));
+            reject(new Error("Timeout waiting for Stripe Portal."));
         }, 15000);
     });
 }

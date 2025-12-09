@@ -1,4 +1,5 @@
 
+
 import React, { useState, useEffect, useMemo } from 'react';
 import { Channel, ViewState, UserProfile, TranscriptItem, SubscriptionTier } from './types';
 import { 
@@ -858,7 +859,7 @@ const App: React.FC = () => {
                videoEnabled={liveConfig.video}
                cameraEnabled={liveConfig.camera}
                activeSegment={liveConfig.segment}
-               initialTranscript={liveConfig.initialTranscript}
+               initialTranscript={liveConfig.transcript}
                onEndSession={() => {
                    // If it was a temp/ad-hoc meeting, go to recordings instead of staying in "podcast" view
                    if (tempChannel) {
