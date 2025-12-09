@@ -1,4 +1,5 @@
 
+
 import React, { useState, useEffect, useRef } from 'react';
 import { GoogleGenAI, FunctionDeclaration, Type } from '@google/genai';
 import { ArrowLeft, Save, Folder, File, Code, Plus, Trash2, Loader2, ChevronRight, ChevronDown, X, MessageSquare, FileCode, FileJson, FileType, Search, Coffee, Hash, CloudUpload, Edit3, BookOpen, Bot, Send, Maximize2, Minimize2, GripVertical, UserCheck, AlertTriangle, Archive, Sparkles, Video, Mic, CheckCircle, Monitor, FileText, Eye, Github, GitBranch, GitCommit, FolderOpen, RefreshCw, GraduationCap, DownloadCloud, Terminal, Undo2, Check, Share2, Copy, Lock, Link, Image as ImageIcon } from 'lucide-react';
@@ -503,43 +504,80 @@ const updateFileTool: FunctionDeclaration = {
 };
 
 const PlantUMLPreview = ({ code }: { code: string }) => {
-    const [imageUrl, setImageUrl] = useState<string | null>(null);
+    const [encodedCode, setEncodedCode] = useState<string | null>(null);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
     useEffect(() => {
-        const fetchImage = async () => {
+        const process = async () => {
             if (!code.trim()) return;
             setLoading(true);
             setError(null);
             try {
                 const encoded = await encodePlantUML(code);
-                if (encoded) {
-                    setImageUrl(`https://www.plantuml.com/plantuml/svg/${encoded}`);
-                } else {
-                    setError("Failed to encode PlantUML.");
-                }
+                setEncodedCode(encoded);
             } catch (e: any) {
                 setError(e.message || "Encoding error");
             } finally {
                 setLoading(false);
             }
         };
-
-        const timer = setTimeout(fetchImage, 800); // Debounce
+        const timer = setTimeout(process, 800);
         return () => clearTimeout(timer);
     }, [code]);
 
+    const handleDownload = async (format: 'svg' | 'png' | 'pdf') => {
+        if (!encodedCode) return;
+        const url = `https://www.plantuml.com/plantuml/${format}/${encodedCode}`;
+        
+        // For PDF, we just open in new tab as it might be a binary stream that browser handles or downloads
+        if (format === 'pdf') {
+             window.open(url, '_blank');
+             return;
+        }
+
+        try {
+            const res = await fetch(url);
+            if(!res.ok) throw new Error("Failed to fetch");
+            const blob = await res.blob();
+            const localUrl = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = localUrl;
+            a.download = `diagram.${format}`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(localUrl);
+        } catch(e) {
+            // Fallback
+            window.open(url, '_blank');
+        }
+    };
+
     return (
-        <div className="flex-1 bg-slate-900 border-l border-slate-800 p-4 overflow-auto flex flex-col items-center justify-center">
-            {loading && <div className="text-indigo-400 flex flex-col items-center"><Loader2 className="animate-spin mb-2" size={24}/><span>Rendering...</span></div>}
-            {error && <div className="text-red-400 p-4 border border-red-500/20 bg-red-900/10 rounded">{error}</div>}
-            {!loading && !error && imageUrl && (
-                <div className="bg-white p-4 rounded-lg shadow-xl overflow-auto max-w-full">
-                    <img src={imageUrl} alt="Diagram" className="max-w-full" />
-                </div>
-            )}
-            {!loading && !imageUrl && !error && <div className="text-slate-500">Generating preview...</div>}
+        <div className="flex-1 bg-slate-900 border-l border-slate-800 flex flex-col overflow-hidden">
+             <div className="p-2 border-b border-slate-800 bg-slate-900 flex justify-end gap-2 shrink-0">
+                <button onClick={() => handleDownload('png')} disabled={!encodedCode} className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-xs font-bold text-slate-300 hover:text-white rounded flex items-center gap-2 transition-colors disabled:opacity-50 border border-slate-700">
+                    <ImageIcon size={14} /> PNG
+                </button>
+                <button onClick={() => handleDownload('svg')} disabled={!encodedCode} className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-xs font-bold text-slate-300 hover:text-white rounded flex items-center gap-2 transition-colors disabled:opacity-50 border border-slate-700">
+                    <Code size={14} /> SVG
+                </button>
+                <button onClick={() => handleDownload('pdf')} disabled={!encodedCode} className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-xs font-bold text-slate-300 hover:text-white rounded flex items-center gap-2 transition-colors disabled:opacity-50 border border-slate-700">
+                    <FileText size={14} /> PDF
+                </button>
+             </div>
+
+             <div className="flex-1 overflow-auto p-4 flex flex-col items-center justify-center bg-slate-900/50">
+                {loading && <div className="text-indigo-400 flex flex-col items-center"><Loader2 className="animate-spin mb-2" size={24}/><span>Rendering...</span></div>}
+                {error && <div className="text-red-400 p-4 border border-red-500/20 bg-red-900/10 rounded">{error}</div>}
+                {!loading && !error && encodedCode && (
+                    <div className="bg-white p-4 rounded-lg shadow-xl overflow-auto max-w-full border border-slate-600">
+                        <img src={`https://www.plantuml.com/plantuml/svg/${encodedCode}`} alt="Diagram" className="max-w-full" />
+                    </div>
+                )}
+                {!loading && !encodedCode && !error && <div className="text-slate-500">Preview will appear here...</div>}
+            </div>
         </div>
     );
 };
