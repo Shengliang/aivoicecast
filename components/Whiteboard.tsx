@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { ArrowLeft, Share2, Trash2, Undo, PenTool, Eraser, Download, Square, Circle, Minus, ArrowRight, Type, ZoomIn, ZoomOut, MousePointer2, Move, Highlighter, Brush, BoxSelect, Lock, Eye, Edit3 } from 'lucide-react';
 import { auth } from '../services/firebaseConfig';
@@ -80,75 +81,19 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack, sessionId, acces
         setIsSharedSession(true);
         currentSessionIdRef.current = sessionId;
         const unsubscribe = subscribeToWhiteboard(sessionId, (remoteData: any) => {
-            // Check if remoteData is an array (legacy) or object (new format with metadata)
             let remoteElements: WhiteboardElement[] = [];
-            let metadata: any = {};
-
+            
             if (Array.isArray(remoteData)) {
                 remoteElements = remoteData;
-                // If array, we can't extract owner/token easily from the subscription callback 
-                // unless we change the subscription logic to return the full doc.
-                // Assuming `subscribeToWhiteboard` in firestoreService returns the doc data wrapper now,
-                // or we need to update it.
-                // Based on `subscribeToWhiteboard` implementation provided previously, it returns `elements` array.
-                // WE NEED TO PATCH `subscribeToWhiteboard` or fetch once to check permissions.
-                // HOWEVER, for simplicity, let's assume `subscribeToWhiteboard` passes just elements.
-                
-                // CRITICAL FIX: The `subscribeToWhiteboard` previously returned just elements array. 
-                // We can't check permissions there easily without fetching the doc.
-                // Let's rely on an initial fetch or update the service.
-                // Given the constraints, let's just use the elements for rendering.
-            } else if (remoteData && typeof remoteData === 'object') {
-                 // New format where we might pass the whole doc
-                 // If the service returns the doc, we can check.
             }
-            
-            // To properly check permissions, we really should fetch the doc once.
-            // But let's assume standard behavior:
             setElements(remoteElements);
         });
         
-        // Separate check for permissions (simulated via subscription or one-off fetch logic in real app)
-        // For this implementation, we will assume `subscribeToWhiteboard` can't easily be changed to return metadata without breaking types.
-        // So we will just default to Edit unless we enforce it.
-        // WAIT: The previous CodeStudio used `subscribeToCodeProject` which returns the full object.
-        // Whiteboard service returned `elements`. We should have updated `subscribeToWhiteboard`.
-        
-        // Actually, let's look at `subscribeToWhiteboard` implementation in `firestoreService.ts`:
-        // It returns `onUpdate(elements)`.
-        // We can't verify ownership easily there.
-        // We will assume for Whiteboard, we are permissive OR we need to update the service.
-        // Let's rely on the `saveWhiteboardSession` which updates metadata.
-        
-        // TEMPORARY FIX: All whiteboard users are editors for now unless we change the service signature.
-        // Or we can just use the CodeStudio pattern?
-        // Let's assume write access for now to avoid breaking the app if we can't change the service file easily in this response (I can only change 2 files).
-        // Actually, I can change App, CodeStudio, Whiteboard.
-        // I will assume Whiteboard is open or requires logic update I can't do here without `firestoreService`.
-        // I will implement "Read Only" purely based on URL param presence for now, 
-        // acknowledging it's imperfect without the backend service update, BUT
-        // since `CodeStudio` has full project object, `Whiteboard` is the outlier.
-        
-        // Let's rely on the passed `accessKey`.
-        // If `accessKey` is present, we treat it as write access.
-        // If `accessKey` is missing, we treat it as Read Only (unless we are the creator in this session).
-        // Since we don't have the `ownerId` from the whiteboard doc subscription easily, 
-        // we will be slightly less secure here than CodeStudio, but still improved UX.
-        
         const hasKey = !!accessKey;
-        // If I am the creator (I have the session in my state before sharing), I'm fine.
-        // If I just arrived, do I have a key?
-        // Check local storage for "my sessions"?
-        
-        // Better: We will store the `writeToken` in local state when we create the session.
-        // If we have it, we are editor.
-        
         if (accessKey) {
             setWriteToken(accessKey);
             setIsReadOnly(false);
         } else {
-            // If I don't have a key, and I didn't create it just now...
-            // Check if I have the token in state (I am creator)
             if (!writeToken) {
                  setIsReadOnly(true);
             }
@@ -171,37 +116,29 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack, sessionId, acces
           return;
       }
       
-      // Use existing session ID if available, or generate a new one
       let boardId = currentSessionIdRef.current;
       let token = writeToken;
       
-      // If we are sharing for the first time without a session ID from props
       if (!sessionId && !isSharedSession) {
           boardId = crypto.randomUUID();
           currentSessionIdRef.current = boardId;
           token = crypto.randomUUID();
           setWriteToken(token);
-          // Save initial session with metadata (requires service update to support metadata saving)
-          // `saveWhiteboardSession` supports passing payload.
       }
       
       if (!token) {
-          // If we are editing an existing one but lost the token (shouldn't happen if we are owner)
           token = crypto.randomUUID();
           setWriteToken(token);
       }
       
       try {
         await saveWhiteboardSession(boardId, elements);
-        // Note: We ideally save the token to DB here.
         
-        // Notify App to update URL
         if (onSessionStart && !sessionId) {
             onSessionStart(boardId);
         }
         
         const url = new URL(window.location.href);
-        // Set unified session param
         url.searchParams.set('session', boardId);
         
         if (mode === 'edit') {
@@ -210,7 +147,6 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack, sessionId, acces
             url.searchParams.delete('key');
         }
 
-        // Clean up legacy conflicting params
         url.searchParams.delete('whiteboard_session');
         url.searchParams.delete('code_session');
         url.searchParams.delete('view');
@@ -223,7 +159,7 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack, sessionId, acces
         
         setIsSharedSession(true);
         setShowShareDropdown(false);
-        setIsReadOnly(false); // I am sharing, so I am editor
+        setIsReadOnly(false);
       } catch(e: any) {
           console.error(e);
           alert(`Failed to share: ${e.message}`);
@@ -391,7 +327,6 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack, sessionId, acces
           return;
       }
 
-      // Read Only stops here (allows pan, stops edit)
       if (isReadOnly) return;
 
       const { x, y } = getWorldCoordinates(e);
@@ -481,7 +416,6 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack, sessionId, acces
           return;
       }
 
-      // Read Only check again for drag moves
       if (isReadOnly) return;
 
       const { x, y } = getWorldCoordinates(e);
@@ -614,9 +548,36 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack, sessionId, acces
   const handleDoubleClick = (e: React.MouseEvent) => {
       if (isReadOnly || tool === 'pan') return;
       const { x, y } = getWorldCoordinates(e);
-      const id = crypto.randomUUID();
-      setTool('text');
-      setTextInput({ id, x, y, text: '' });
+      
+      // Check if user clicked on existing text
+      let hitElement: WhiteboardElement | null = null;
+      for (let i = elements.length - 1; i >= 0; i--) {
+          if (elements[i].type === 'text' && isPointInElement(x, y, elements[i])) {
+              hitElement = elements[i];
+              break;
+          }
+      }
+
+      if (hitElement) {
+          // Edit existing text
+          setTextInput({
+              id: hitElement.id,
+              x: hitElement.x,
+              y: hitElement.y,
+              text: hitElement.text || '',
+              width: hitElement.width,
+              height: hitElement.height
+          });
+          // Update Toolbar to match
+          setColor(hitElement.color);
+          if (hitElement.fontSize) setFontSize(hitElement.fontSize);
+          if (hitElement.fontFamily) setFontFamily(hitElement.fontFamily);
+      } else {
+          // Create new text
+          const id = crypto.randomUUID();
+          setTool('text');
+          setTextInput({ id, x, y, text: '' });
+      }
   };
 
   const drawArrowHead = (ctx: CanvasRenderingContext2D, fromX: number, fromY: number, toX: number, toY: number, color: string) => {
@@ -673,6 +634,9 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack, sessionId, acces
       ctx.scale(scale, scale);
 
       const renderElement = (el: WhiteboardElement) => {
+          // If we are editing this text element, do not draw it on canvas (to avoid ghosting)
+          if (textInput && el.id === textInput.id) return;
+
           ctx.save();
           ctx.beginPath();
           ctx.strokeStyle = el.color;
@@ -810,7 +774,7 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack, sessionId, acces
 
       ctx.restore();
 
-  }, [elements, currentElement, scale, offset, selectedIds, selectionBox, tool, isDrawing, textDragStart, textDragCurrent]);
+  }, [elements, currentElement, scale, offset, selectedIds, selectionBox, tool, isDrawing, textDragStart, textDragCurrent, textInput]);
 
   const handleTextComplete = () => {
       if (isReadOnly) { setTextInput(null); return; }
@@ -833,7 +797,17 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack, sessionId, acces
                   width: textInput.width,
                   height: textInput.height || (fs * lineCount * 1.2)
               };
-              setElements(prev => [...prev, newEl]);
+              
+              setElements(prev => {
+                  const idx = prev.findIndex(e => e.id === newEl.id);
+                  if (idx >= 0) {
+                      const copy = [...prev];
+                      copy[idx] = newEl;
+                      return copy;
+                  }
+                  return [...prev, newEl];
+              });
+              
               syncUpdate(newEl);
           }
           setTextInput(null);
@@ -944,7 +918,7 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack, sessionId, acces
         <div className={`bg-slate-900 border-b border-slate-800 p-2 flex flex-wrap justify-center gap-4 shrink-0 z-10 items-center ${isReadOnly ? 'opacity-50 pointer-events-none' : ''}`}>
             
             <div className="flex bg-slate-800 rounded-lg p-1">
-                <button onClick={() => { setTool('select'); setIsDrawing(false); }} className={`p-2 rounded ${tool === 'select' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'}`} title="Select (Ctrl+Click for multiple, Drag for box)">
+                <button onClick={() => { setTool('select'); setIsDrawing(false); }} className={`p-2 rounded ${tool === 'select' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'}`} title="Select (Double click text to edit)">
                     <MousePointer2 size={18}/>
                 </button>
                 <button onClick={() => setTool('pan')} className={`p-2 rounded ${tool === 'pan' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'} ${isReadOnly ? 'pointer-events-auto opacity-100' : ''}`} title="Pan (Space)">
