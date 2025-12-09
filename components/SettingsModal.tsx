@@ -1,8 +1,8 @@
 
 import React, { useState, useEffect } from 'react';
 import { UserProfile } from '../types';
-import { X, User, Shield, CreditCard, LogOut, CheckCircle, AlertTriangle, Bell, Lock, Database, Trash2, Edit2, Save, FileText, ExternalLink } from 'lucide-react';
-import { downgradeUserSubscription, logUserActivity, getBillingHistory } from '../services/firestoreService';
+import { X, User, Shield, CreditCard, LogOut, CheckCircle, AlertTriangle, Bell, Lock, Database, Trash2, Edit2, Save, FileText, ExternalLink, Loader2 } from 'lucide-react';
+import { logUserActivity, getBillingHistory, createStripePortalSession } from '../services/firestoreService';
 import { clearAudioCache } from '../services/tts';
 
 interface SettingsModalProps {
@@ -17,7 +17,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   isOpen, onClose, user, onUpdateProfile, onUpgradeClick 
 }) => {
   const [activeTab, setActiveTab] = useState<'general' | 'preferences' | 'billing'>('general');
-  const [isDowngrading, setIsDowngrading] = useState(false);
+  const [isProcessingPortal, setIsProcessingPortal] = useState(false);
   const [displayName, setDisplayName] = useState(user.displayName);
   const [isEditingName, setIsEditingName] = useState(false);
   const [emailNotifs, setEmailNotifs] = useState(true);
@@ -38,21 +38,15 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const currentTier = user.subscriptionTier || 'free';
   const isPaid = currentTier === 'pro';
 
-  const handleDowngrade = async () => {
-    if (!confirm("Are you sure you want to cancel your subscription? You will lose access to premium features at the end of your billing cycle.")) return;
-    
-    setIsDowngrading(true);
+  const handleManageSubscription = async () => {
+    setIsProcessingPortal(true);
     try {
-        await downgradeUserSubscription(user.uid);
-        if (onUpdateProfile) {
-            onUpdateProfile({ ...user, subscriptionTier: 'free' });
-        }
-        alert("Subscription canceled. You have been downgraded to the Free plan.");
-    } catch (e) {
+        const url = await createStripePortalSession(user.uid);
+        window.location.assign(url);
+    } catch (e: any) {
         console.error(e);
-        alert("Failed to downgrade. Please try again.");
-    } finally {
-        setIsDowngrading(false);
+        alert("Failed to open billing portal: " + e.message);
+        setIsProcessingPortal(false);
     }
   };
 
@@ -205,18 +199,23 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
                     {isPaid && (
                         <div className="space-y-6">
-                            {/* Payment Method */}
-                            <div className="bg-slate-950 border border-slate-800 rounded-xl p-4 flex items-center justify-between opacity-75">
-                                <div className="flex items-center gap-3">
-                                    <div className="bg-slate-800 p-2 rounded text-slate-300"><CreditCard size={20} /></div>
-                                    <div><p className="text-sm font-bold text-slate-300">Visa ending in 4242</p><p className="text-xs text-slate-500">Expires 12/28</p></div>
-                                </div>
-                                <button className="text-xs text-indigo-400 hover:text-white font-bold flex items-center gap-1">Update <ExternalLink size={10}/></button>
+                            {/* Manage Subscription Button (Portal) */}
+                            <div className="bg-slate-950 border border-slate-800 rounded-xl p-6 flex flex-col items-center justify-center text-center space-y-3">
+                                <p className="text-sm text-slate-400">Need to update your card, download invoices, or cancel your plan?</p>
+                                <button 
+                                    onClick={handleManageSubscription}
+                                    disabled={isProcessingPortal}
+                                    className="px-6 py-3 bg-slate-800 hover:bg-slate-700 text-white border border-slate-600 rounded-xl font-bold text-sm flex items-center gap-2 transition-all hover:border-slate-500"
+                                >
+                                    {isProcessingPortal ? <Loader2 size={16} className="animate-spin"/> : <CreditCard size={16} />}
+                                    <span>Manage Billing on Stripe</span>
+                                    <ExternalLink size={14} className="text-slate-500" />
+                                </button>
                             </div>
 
                             {/* Billing History */}
                             <div className="space-y-2">
-                                <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider">Payment History</h4>
+                                <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider">Recent Payments</h4>
                                 {billingHistory.length > 0 ? (
                                     <div className="border border-slate-800 rounded-xl overflow-hidden">
                                         {billingHistory.map((bill, i) => (
@@ -235,19 +234,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                 ) : (
                                     <p className="text-xs text-slate-500 italic">No invoices found.</p>
                                 )}
-                            </div>
-
-                            <div className="pt-4 border-t border-slate-800 flex justify-between items-center">
-                                <a href="#" className="text-xs text-slate-400 hover:text-white flex items-center gap-1">
-                                    Manage Subscription in Stripe <ExternalLink size={12}/>
-                                </a>
-                                <button 
-                                    onClick={handleDowngrade}
-                                    disabled={isDowngrading}
-                                    className="text-xs text-red-400 hover:text-red-300 underline disabled:opacity-50"
-                                >
-                                    {isDowngrading ? 'Processing...' : 'Cancel Subscription'}
-                                </button>
                             </div>
                         </div>
                     )}

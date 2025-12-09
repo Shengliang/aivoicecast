@@ -285,6 +285,38 @@ export async function createStripeCheckoutSession(uid: string): Promise<string> 
     });
 }
 
+// Create a session for the Stripe Customer Portal (Cancel/Manage Subscription)
+export async function createStripePortalSession(uid: string): Promise<string> {
+    if (!uid) throw new Error("User ID missing");
+
+    const sessionRef = await db
+        .collection('customers')
+        .doc(uid)
+        .collection('portal_sessions')
+        .add({
+            return_url: window.location.href, 
+        });
+
+    return new Promise<string>((resolve, reject) => {
+        const unsubscribe = sessionRef.onSnapshot((snap) => {
+            const data = snap.data();
+            if (data?.url) {
+                unsubscribe();
+                resolve(data.url);
+            }
+            if (data?.error) {
+                unsubscribe();
+                reject(new Error(data.error.message));
+            }
+        });
+        // Timeout after 15s
+        setTimeout(() => {
+            unsubscribe();
+            reject(new Error("Timeout waiting for Stripe Portal. Ensure 'Run Payments with Stripe' extension is configured."));
+        }, 15000);
+    });
+}
+
 // Listen for subscription changes in real-time
 export function setupSubscriptionListener(uid: string, onUpdate: (tier: SubscriptionTier) => void) {
     if (!uid) return () => {};
@@ -316,12 +348,7 @@ export async function upgradeUserSubscription(uid: string, tier: SubscriptionTie
 }
 
 export async function downgradeUserSubscription(uid: string): Promise<boolean> {
-    // In a real Stripe app, you'd direct them to the customer portal
-    // For now, we simulate a downgrade by updating the user doc directly if rules allow,
-    // though usually the Extension syncs this.
-    
-    // To properly cancel, we should provide a link to Stripe Customer Portal.
-    // Here we just update local state for the UI.
+    // This handles manual local downgrade if needed, but Portal is preferred.
     const userRef = db.collection('users').doc(uid);
     try {
         await userRef.set({
