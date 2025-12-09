@@ -3,7 +3,7 @@ import { Channel, ViewState, UserProfile, TranscriptItem, SubscriptionTier } fro
 import { 
   Podcast, Mic, Layout, Search, Sparkles, LogOut, 
   Settings, Menu, X, Plus, Github, Database, Cloud, Globe, 
-  Calendar, Briefcase, Users, Disc, FileText, AlertTriangle, List, BookOpen, ChevronDown, Table as TableIcon, LayoutGrid, Rocket, Code, Wand2, PenTool, Rss, Loader2
+  Calendar, Briefcase, Users, Disc, FileText, AlertTriangle, List, BookOpen, ChevronDown, Table as TableIcon, LayoutGrid, Rocket, Code, Wand2, PenTool, Rss, Loader2, MessageSquare
 } from 'lucide-react';
 import { LiveSession } from './components/LiveSession';
 import { PodcastDetail } from './components/PodcastDetail';
@@ -32,6 +32,7 @@ import { MissionManifesto } from './components/MissionManifesto';
 import { CodeStudio } from './components/CodeStudio';
 import { Whiteboard } from './components/Whiteboard';
 import { BlogView } from './components/BlogView';
+import { WorkplaceChat } from './components/WorkplaceChat';
 import { LoginPage } from './components/LoginPage'; // Import Login Page
 import { SettingsModal } from './components/SettingsModal'; // Import Settings Modal
 import { PricingModal } from './components/PricingModal'; // Import Pricing Modal for cross-linking
@@ -73,7 +74,8 @@ const UI_TEXT = {
     mission: "Mission",
     code: "Code Studio",
     whiteboard: "Whiteboard",
-    blog: "Community Blog"
+    blog: "Community Blog",
+    chat: "Team Chat"
   },
   zh: {
     appTitle: "AI 播客",
@@ -97,7 +99,8 @@ const UI_TEXT = {
     mission: "使命",
     code: "代码工作室",
     whiteboard: "白板",
-    blog: "社区博客"
+    blog: "社区博客",
+    chat: "团队聊天"
   }
 };
 
@@ -496,6 +499,7 @@ const App: React.FC = () => {
     <div className="min-h-screen supports-[min-height:100dvh]:min-h-[100dvh] bg-slate-950 text-slate-100 font-sans overflow-x-hidden">
       
       {/* Navbar */}
+      {viewState !== 'chat' && (
       <nav className="sticky top-0 z-30 bg-slate-900/80 backdrop-blur-md border-b border-slate-800">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
@@ -599,6 +603,7 @@ const App: React.FC = () => {
           </div>
         </div>
       </nav>
+      )}
 
       {/* Main Content Switch */}
       <div className="flex-1 overflow-y-auto">
@@ -625,6 +630,8 @@ const App: React.FC = () => {
         
         {viewState === 'blog' && <BlogView onBack={() => setViewState('directory')} currentUser={currentUser} />}
         
+        {viewState === 'chat' && <WorkplaceChat onBack={() => setViewState('directory')} currentUser={currentUser} />}
+        
         {viewState === 'directory' && (
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 animate-fade-in">
             
@@ -633,6 +640,7 @@ const App: React.FC = () => {
                {[
                  { id: 'categories', label: t.podcasts, icon: Layout },
                  { id: 'calendar', label: t.calendar, icon: Calendar },
+                 { id: 'chat', label: t.chat, icon: MessageSquare },
                  { id: 'code', label: t.code, icon: Code },
                  { id: 'blog', label: t.blog, icon: Rss },
                  { id: 'whiteboard', label: t.whiteboard, icon: PenTool },
@@ -647,6 +655,7 @@ const App: React.FC = () => {
                        if (tab.id === 'code') setViewState('code_studio');
                        else if (tab.id === 'whiteboard') setViewState('whiteboard');
                        else if (tab.id === 'blog') setViewState('blog');
+                       else if (tab.id === 'chat') setViewState('chat');
                        else setActiveTab(tab.id);
                    }}
                    className={`flex items-center space-x-2 px-4 py-2 rounded-full text-sm font-bold whitespace-nowrap transition-all ${activeTab === tab.id ? 'bg-white text-slate-900 shadow-md' : 'bg-slate-800/50 text-slate-400 hover:bg-slate-800 hover:text-white'}`}

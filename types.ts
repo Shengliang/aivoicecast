@@ -90,7 +90,7 @@ export interface CommunityDiscussion {
   isManual?: boolean; // Created manually via editor
 }
 
-export type ViewState = 'directory' | 'podcast_detail' | 'live_session' | 'create_channel' | 'debug' | 'cloud_debug' | 'public_debug' | 'mission' | 'code_studio' | 'whiteboard' | 'blog';
+export type ViewState = 'directory' | 'podcast_detail' | 'live_session' | 'create_channel' | 'debug' | 'cloud_debug' | 'public_debug' | 'mission' | 'code_studio' | 'whiteboard' | 'blog' | 'chat';
 
 export interface AudioState {
   isConnected: boolean;
@@ -244,4 +244,27 @@ export interface BlogPost {
   imageUrl?: string;
   comments?: Comment[];
   commentCount?: number;
+}
+
+export interface ChatChannel {
+  id: string;
+  name: string;
+  type: 'public' | 'group' | 'dm';
+  groupId?: string;
+  memberIds?: string[];
+  lastMessage?: {
+    text: string;
+    senderName: string;
+    timestamp: number;
+  };
+  createdAt: number;
+}
+
+export interface RealTimeMessage {
+  id: string;
+  text: string;
+  senderId: string;
+  senderName: string;
+  senderImage?: string;
+  timestamp: any; // Firestore Timestamp or number
 }

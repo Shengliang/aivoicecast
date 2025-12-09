@@ -1,7 +1,7 @@
 // [FORCE-SYNC-v3.44.0] Timestamp: ${new Date().toISOString()}
 import { db, auth, storage } from './firebaseConfig';
 import firebase from 'firebase/compat/app';
-import { Channel, Group, UserProfile, Invitation, GeneratedLecture, CommunityDiscussion, Comment, Booking, RecordingSession, TranscriptItem, CodeProject, Attachment, Blog, BlogPost, SubscriptionTier, CodeFile, CursorPosition } from '../types';
+import { Channel, Group, UserProfile, Invitation, GeneratedLecture, CommunityDiscussion, Comment, Booking, RecordingSession, TranscriptItem, CodeProject, Attachment, Blog, BlogPost, SubscriptionTier, CodeFile, CursorPosition, RealTimeMessage, ChatChannel } from '../types';
 import { HANDCRAFTED_CHANNELS } from '../utils/initialData';
 import { SPOTLIGHT_DATA } from '../utils/spotlightContent';
 import { OFFLINE_LECTURES, OFFLINE_CHANNEL_ID } from '../utils/offlineContent';
@@ -30,6 +30,92 @@ function sanitizeData(data: any): any {
     return clean;
   }
   return data;
+}
+
+// --- WORKPLACE CHAT ---
+
+export async function sendMessage(channelId: string, text: string, collectionPath?: string): Promise<void> {
+    const user = auth.currentUser;
+    if (!user) throw new Error("Must be logged in");
+
+    // Default collection path is 'chat_channels/{id}/messages', but groups use 'groups/{id}/messages'
+    const basePath = collectionPath || `chat_channels/${channelId}/messages`;
+    
+    await db.collection(basePath).add({
+        text,
+        senderId: user.uid,
+        senderName: user.displayName || 'Anonymous',
+        senderImage: user.photoURL || '',
+        timestamp: firebase.firestore.FieldValue.serverTimestamp()
+    });
+
+    // Update last message on the parent doc if it's a chat_channel
+    if (basePath.startsWith('chat_channels')) {
+        db.collection('chat_channels').doc(channelId).set({
+            lastMessage: {
+                text,
+                senderName: user.displayName || 'Anonymous',
+                timestamp: Date.now()
+            }
+        }, { merge: true });
+    }
+}
+
+export function subscribeToMessages(channelId: string, onUpdate: (msgs: RealTimeMessage[]) => void, collectionPath?: string): () => void {
+    const basePath = collectionPath || `chat_channels/${channelId}/messages`;
+    
+    return db.collection(basePath)
+        .orderBy('timestamp', 'desc')
+        .limit(50)
+        .onSnapshot((snapshot) => {
+            const msgs = snapshot.docs.map(doc => ({
+                id: doc.id,
+                ...doc.data()
+            } as RealTimeMessage)).reverse();
+            onUpdate(msgs);
+        });
+}
+
+export async function createOrGetDMChannel(otherUserId: string): Promise<string> {
+    const user = auth.currentUser;
+    if (!user) throw new Error("Must be logged in");
+
+    // Check if DM exists
+    const snap = await db.collection('chat_channels')
+        .where('type', '==', 'dm')
+        .where('memberIds', 'array-contains', user.uid)
+        .get();
+
+    const existing = snap.docs.find(doc => {
+        const data = doc.data();
+        return data.memberIds.includes(otherUserId);
+    });
+
+    if (existing) return existing.id;
+
+    // Create new
+    const otherUser = await getUserProfile(otherUserId);
+    const name = otherUser ? `${user.displayName} & ${otherUser.displayName}` : 'Direct Message';
+
+    const docRef = await db.collection('chat_channels').add({
+        type: 'dm',
+        memberIds: [user.uid, otherUserId],
+        name,
+        createdAt: Date.now()
+    });
+    return docRef.id;
+}
+
+export async function getUserDMChannels(): Promise<ChatChannel[]> {
+    const user = auth.currentUser;
+    if (!user) return [];
+
+    const snap = await db.collection('chat_channels')
+        .where('type', '==', 'dm')
+        .where('memberIds', 'array-contains', user.uid)
+        .get();
+
+    return snap.docs.map(d => ({ id: d.id, ...d.data() } as ChatChannel));
 }
 
 // --- REAL-TIME COLLABORATION LISTENERS ---
