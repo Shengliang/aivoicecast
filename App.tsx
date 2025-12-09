@@ -147,6 +147,9 @@ const App: React.FC = () => {
   const [isCommentsModalOpen, setIsCommentsModalOpen] = useState(false);
   const [commentsChannel, setCommentsChannel] = useState<Channel | null>(null);
 
+  // Collaboration State
+  const [sharedSessionId, setSharedSessionId] = useState<string | undefined>(undefined);
+
   // Live Session Config
   const [liveConfig, setLiveConfig] = useState<{
     context?: string;
@@ -167,6 +170,19 @@ const App: React.FC = () => {
     // Check local storage, private key file, or process env
     const key = localStorage.getItem('gemini_api_key') || GEMINI_API_KEY || process.env.API_KEY;
     setHasApiKey(!!key);
+
+    // CHECK URL FOR SHARED SESSION
+    const params = new URLSearchParams(window.location.search);
+    const codeSession = params.get('code_session');
+    const whiteboardSession = params.get('whiteboard_session');
+
+    if (codeSession) {
+        setSharedSessionId(codeSession);
+        setViewState('code_studio');
+    } else if (whiteboardSession) {
+        setSharedSessionId(whiteboardSession);
+        setViewState('whiteboard');
+    }
 
     let unsubscribeAuth = () => {};
 
@@ -486,7 +502,7 @@ const App: React.FC = () => {
       <nav className="sticky top-0 z-30 bg-slate-900/80 backdrop-blur-md border-b border-slate-800">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
-            <div className="flex items-center cursor-pointer" onClick={() => setViewState('directory')}>
+            <div className="flex items-center cursor-pointer" onClick={() => { setViewState('directory'); setSharedSessionId(undefined); }}>
               <div className="bg-gradient-to-tr from-indigo-600 to-purple-600 p-2 rounded-xl shadow-lg shadow-indigo-500/20">
                 <Podcast className="text-white w-6 h-6" />
               </div>
@@ -524,7 +540,7 @@ const App: React.FC = () => {
               </button>
 
               <button 
-                onClick={() => setViewState('code_studio')} 
+                onClick={() => { setViewState('code_studio'); setSharedSessionId(undefined); }} 
                 className="hidden lg:flex items-center space-x-2 px-3 py-1.5 bg-slate-800/50 hover:bg-emerald-900/30 text-emerald-400 text-xs font-bold rounded-lg transition-colors border border-emerald-500/20"
               >
                 <Code size={14}/>
@@ -532,7 +548,7 @@ const App: React.FC = () => {
               </button>
 
               <button 
-                onClick={() => setViewState('whiteboard')} 
+                onClick={() => { setViewState('whiteboard'); setSharedSessionId(undefined); }} 
                 className="hidden lg:flex items-center space-x-2 px-3 py-1.5 bg-slate-800/50 hover:bg-pink-900/30 text-pink-400 text-xs font-bold rounded-lg transition-colors border border-pink-500/20"
               >
                 <PenTool size={14}/>
@@ -592,8 +608,19 @@ const App: React.FC = () => {
       {/* Main Content Switch */}
       <div className="flex-1 overflow-y-auto">
         {viewState === 'mission' && <MissionManifesto onBack={() => setViewState('directory')} />}
-        {viewState === 'code_studio' && <CodeStudio onBack={() => setViewState('directory')} currentUser={currentUser} />}
-        {viewState === 'whiteboard' && <Whiteboard onBack={() => setViewState('directory')} />}
+        {viewState === 'code_studio' && (
+            <CodeStudio 
+                onBack={() => { setViewState('directory'); setSharedSessionId(undefined); }} 
+                currentUser={currentUser} 
+                sessionId={sharedSessionId}
+            />
+        )}
+        {viewState === 'whiteboard' && (
+            <Whiteboard 
+                onBack={() => { setViewState('directory'); setSharedSessionId(undefined); }}
+                sessionId={sharedSessionId}
+            />
+        )}
         {viewState === 'blog' && <BlogView onBack={() => setViewState('directory')} currentUser={currentUser} />}
         
         {viewState === 'directory' && (

@@ -32,6 +32,33 @@ function sanitizeData(data: any): any {
   return data;
 }
 
+// --- REAL-TIME COLLABORATION LISTENERS ---
+
+export function subscribeToCodeProject(projectId: string, onUpdate: (project: CodeProject) => void): () => void {
+  return db.collection('code_projects').doc(projectId).onSnapshot((doc) => {
+    if (doc.exists) {
+      onUpdate({ ...doc.data(), id: doc.id } as CodeProject);
+    }
+  });
+}
+
+export function subscribeToWhiteboard(boardId: string, onUpdate: (elements: any[]) => void): () => void {
+  return db.collection('whiteboards').doc(boardId).onSnapshot((doc) => {
+    if (doc.exists) {
+      onUpdate(doc.data()?.elements || []);
+    }
+  });
+}
+
+export async function saveWhiteboardSession(boardId: string, elements: any[]): Promise<void> {
+  const user = auth.currentUser;
+  await db.collection('whiteboards').doc(boardId).set({
+    elements: sanitizeData(elements),
+    lastModified: Date.now(),
+    updatedBy: user?.uid || 'anonymous'
+  }, { merge: true });
+}
+
 // --- SAVED WORDS (VOCABULARY) ---
 
 export async function saveSavedWord(userId: string, wordData: any): Promise<void> {

@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { GoogleGenAI, FunctionDeclaration, Type } from '@google/genai';
-import { ArrowLeft, Save, Folder, File, Code, Plus, Trash2, Loader2, ChevronRight, ChevronDown, X, MessageSquare, FileCode, FileJson, FileType, Search, Coffee, Hash, CloudUpload, Edit3, BookOpen, Bot, Send, Maximize2, Minimize2, GripVertical, UserCheck, AlertTriangle, Archive, Sparkles, Video, Mic, CheckCircle, Monitor, FileText, Eye, Github, GitBranch, GitCommit, FolderOpen, RefreshCw, GraduationCap, DownloadCloud, Terminal, Undo2, Check } from 'lucide-react';
+import { ArrowLeft, Save, Folder, File, Code, Plus, Trash2, Loader2, ChevronRight, ChevronDown, X, MessageSquare, FileCode, FileJson, FileType, Search, Coffee, Hash, CloudUpload, Edit3, BookOpen, Bot, Send, Maximize2, Minimize2, GripVertical, UserCheck, AlertTriangle, Archive, Sparkles, Video, Mic, CheckCircle, Monitor, FileText, Eye, Github, GitBranch, GitCommit, FolderOpen, RefreshCw, GraduationCap, DownloadCloud, Terminal, Undo2, Check, Share2, Copy } from 'lucide-react';
 import { GEMINI_API_KEY } from '../services/private_keys';
 import { CodeProject, CodeFile, ChatMessage, Channel, GithubMetadata } from '../types';
 import { MarkdownView } from './MarkdownView';
-import { saveCodeProject } from '../services/firestoreService';
+import { saveCodeProject, subscribeToCodeProject } from '../services/firestoreService';
 import { signInWithGitHub, reauthenticateWithGitHub } from '../services/authService';
 import { fetchUserRepos, fetchRepoContents, commitToRepo, fetchPublicRepoInfo, fetchFileContent, fetchRepoSubTree } from '../services/githubService';
 import { LiveSession } from './LiveSession';
@@ -12,6 +12,7 @@ import { LiveSession } from './LiveSession';
 interface CodeStudioProps {
   onBack: () => void;
   currentUser: any;
+  sessionId?: string; // New prop for shared sessions
 }
 
 const LANGUAGES = [
@@ -627,7 +628,7 @@ const updateFileTool: FunctionDeclaration = {
     }
 };
 
-export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) => {
+export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, sessionId }) => {
   const [project, setProject] = useState<CodeProject>(EXAMPLE_PROJECTS['is_bst']);
   const [activeFileIndex, setActiveFileIndex] = useState(0);
   const [output, setOutput] = useState('');
@@ -685,6 +686,9 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
   const [showCommitModal, setShowCommitModal] = useState(false);
   const [needsGitHubReauth, setNeedsGitHubReauth] = useState(false);
   
+  // Shared Session State
+  const [isSharedSession, setIsSharedSession] = useState(false);
+  
   // Check if user is already linked to GitHub
   const isGithubLinked = currentUser?.providerData?.some((p: any) => p.providerId === 'github.com');
   
@@ -697,6 +701,24 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
 
   // Build Tree
   const fileTree = React.useMemo(() => buildFileTree(project.files, expandedFolders), [project.files, expandedFolders]);
+
+  // Real-time Collaboration Subscription
+  useEffect(() => {
+      if (sessionId) {
+          setIsSharedSession(true);
+          const unsubscribe = subscribeToCodeProject(sessionId, (remoteProject) => {
+              // If we have a pending change (AI suggestion) OR are typing (selection active), 
+              // be careful about overwriting.
+              // For simplicity in this demo, we assume "Last Write Wins" from Firestore
+              // But we only update if the remote timestamp is newer or content differs significantly
+              
+              if (remoteProject.lastModified > project.lastModified) {
+                  setProject(remoteProject);
+              }
+          });
+          return () => unsubscribe();
+      }
+  }, [sessionId]);
 
   // Debounce logic for file content to avoid spamming AI context
   const [debouncedFileContext, setDebouncedFileContext] = useState('');
@@ -966,15 +988,24 @@ If the user asks questions, answer based on this new context. If they ask to cha
   };
 
   const updateFileAtIndex = (index: number, newContent: string) => {
-      setProject(prev => {
-          const updatedFiles = [...prev.files];
-          updatedFiles[index] = {
-              ...updatedFiles[index],
-              content: newContent,
-              loaded: true
-          };
-          return { ...prev, files: updatedFiles };
-      });
+      const updatedProject = { ...project };
+      const updatedFiles = [...updatedProject.files];
+      
+      updatedFiles[index] = {
+          ...updatedFiles[index],
+          content: newContent,
+          loaded: true
+      };
+      updatedProject.files = updatedFiles;
+      
+      // Auto-save if in shared session
+      if (isSharedSession) {
+          updatedProject.lastModified = Date.now();
+          // Debounce this save in production, but for now invoke directly
+          saveCodeProject(updatedProject);
+      }
+      
+      setProject(updatedProject);
   };
 
   const handleCodeChange = (newContent: string) => {
@@ -1005,6 +1036,34 @@ If the user asks questions, answer based on this new context. If they ask to cha
       if (pre) {
           pre.scrollTop = e.currentTarget.scrollTop;
           pre.scrollLeft = e.currentTarget.scrollLeft;
+      }
+  };
+
+  // --- SHARE FUNCTIONALITY ---
+  const handleShare = async () => {
+      if (!currentUser) {
+          alert("Please sign in to share a session.");
+          return;
+      }
+      
+      // 1. Ensure project is saved to Firestore
+      setIsSaving(true);
+      try {
+          await saveCodeProject(project);
+          
+          // 2. Generate Link
+          const url = new URL(window.location.href);
+          url.searchParams.set('code_session', project.id);
+          
+          await navigator.clipboard.writeText(url.toString());
+          alert("Session Link Copied to Clipboard!\n\nSend this to your team members. They can join and edit in real-time.");
+          
+          setIsSharedSession(true);
+      } catch(e) {
+          console.error(e);
+          alert("Failed to create share link.");
+      } finally {
+          setIsSaving(false);
       }
   };
 
@@ -1387,7 +1446,7 @@ ${fileContent}
               config: {
                   systemInstruction: systemInstruction,
                   tools: [{ functionDeclarations: [updateFileTool] }],
-                  toolConfig: { functionCallingConfig: { mode: 'AUTO' } } // Force tool check
+                  toolConfig: { functionCallingConfig: { mode: 'AUTO' as any } } // Force tool check
               }
           });
 
@@ -1541,6 +1600,15 @@ ${fileContent}
                        {(needsGitHubReauth || isGithubLinked) ? <RefreshCw size={16} /> : <Github size={16} />}
                    </button>
                )}
+               
+               <button 
+                   onClick={handleShare} 
+                   className={`p-2 rounded transition-colors ${isSharedSession ? 'bg-indigo-600 text-white animate-pulse' : 'text-indigo-400 hover:text-white hover:bg-slate-700'}`} 
+                   title="Share Live Session"
+               >
+                   <Share2 size={16} />
+               </button>
+
                <button onClick={() => setActiveSideView(activeSideView === 'review' ? 'none' : 'review')} className={`p-2 rounded transition-colors ${activeSideView === 'review' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-700'}`} title="Code Review">
                   <CheckCircle size={16} />
                </button>

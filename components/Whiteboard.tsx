@@ -1,19 +1,21 @@
-
 import React, { useRef, useState, useEffect, useCallback } from 'react';
 import { 
   ArrowLeft, Square, Circle, Minus, Type, Eraser, 
   Undo, Redo, Download, MousePointer, Pencil, Bot, 
   Loader2, X, Palette, Trash2, Maximize, Sparkles, Send, Mic, MicOff, Image as ImageIcon, Zap,
-  ZoomIn, ZoomOut, Move, ArrowRight
+  ZoomIn, ZoomOut, Move, ArrowRight, Share2
 } from 'lucide-react';
-import { GoogleGenAI, FunctionDeclaration, Type as GenAIType, SchemaType } from '@google/genai';
+import { GoogleGenAI, FunctionDeclaration, Type as GenAIType } from '@google/genai';
 import { GEMINI_API_KEY } from '../services/private_keys';
 import { MarkdownView } from './MarkdownView';
 import { ChatMessage } from '../types';
 import { GeminiLiveService } from '../services/geminiLive';
+import { subscribeToWhiteboard, saveWhiteboardSession } from '../services/firestoreService';
+import { auth } from '../services/firebaseConfig';
 
 interface WhiteboardProps {
   onBack: () => void;
+  sessionId?: string;
 }
 
 type ToolType = 'selection' | 'pencil' | 'rectangle' | 'circle' | 'line' | 'arrow' | 'text' | 'eraser' | 'pan';
@@ -289,7 +291,7 @@ const executeDiagramLayout = (args: any, startId: string): DrawingElement[] => {
     return elements;
 };
 
-export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack }) => {
+export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack, sessionId }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null); 
   const inputRef = useRef<HTMLInputElement>(null);
@@ -330,6 +332,40 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack }) => {
   const [liveStatus, setLiveStatus] = useState<'disconnected' | 'connecting' | 'connected' | 'speaking'>('disconnected');
   const liveServiceRef = useRef<GeminiLiveService | null>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
+  
+  // Shared Session State
+  const [isSharedSession, setIsSharedSession] = useState(!!sessionId);
+  const currentSessionIdRef = useRef<string | undefined>(sessionId);
+
+  // Initialize Session ID if not present
+  useEffect(() => {
+      if (!currentSessionIdRef.current && !sessionId) {
+          currentSessionIdRef.current = crypto.randomUUID();
+      } else if (sessionId) {
+          currentSessionIdRef.current = sessionId;
+      }
+  }, [sessionId]);
+
+  // Real-time Subscription
+  useEffect(() => {
+      if (sessionId) {
+          setIsSharedSession(true);
+          const unsubscribe = subscribeToWhiteboard(sessionId, (remoteElements) => {
+              // Simple "Last Write Wins" sync for demo
+              // Only update if we are not actively drawing to prevent jitter
+              if (!isDrawing && !isDragging) {
+                  setElements(remoteElements);
+              }
+          });
+          return () => unsubscribe();
+      }
+  }, [sessionId, isDrawing, isDragging]);
+
+  const pushToCloud = useCallback((newElements: DrawingElement[]) => {
+      if (isSharedSession && currentSessionIdRef.current) {
+          saveWhiteboardSession(currentSessionIdRef.current, newElements);
+      }
+  }, [isSharedSession]);
 
   // Fix: Force focus on input when it appears
   useEffect(() => {
@@ -570,6 +606,7 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack }) => {
       newHistory.push(newElements);
       setHistory(newHistory);
       setHistoryStep(newHistory.length - 1);
+      pushToCloud(newElements);
   };
 
   const undo = () => {
@@ -577,9 +614,11 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack }) => {
           const prev = history[historyStep - 1];
           setElements(prev);
           setHistoryStep(historyStep - 1);
+          pushToCloud(prev);
       } else if (historyStep === 0) {
           setElements([]);
           setHistoryStep(-1);
+          pushToCloud([]);
       }
   };
 
@@ -588,7 +627,28 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack }) => {
           const next = history[historyStep + 1];
           setElements(next);
           setHistoryStep(historyStep + 1);
+          pushToCloud(next);
       }
+  };
+
+  const handleShare = async () => {
+      if (!auth.currentUser) {
+          alert("Please sign in to share.");
+          return;
+      }
+      const boardId = currentSessionIdRef.current;
+      if (!boardId) return;
+      
+      // Save current state first
+      await saveWhiteboardSession(boardId, elements);
+      
+      const url = new URL(window.location.href);
+      url.searchParams.set('whiteboard_session', boardId);
+      
+      await navigator.clipboard.writeText(url.toString());
+      alert("Shared Whiteboard Link Copied!\n\nSend this to friends to collaborate in real-time.");
+      
+      setIsSharedSession(true);
   };
 
   const getPointerPos = (e: React.MouseEvent | React.TouchEvent) => {
@@ -996,7 +1056,9 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack }) => {
                           }
 
                           if (newEls.length > 0) {
-                              setElements(prev => [...prev, ...newEls]);
+                              const updated = [...elements, ...newEls];
+                              setElements(updated);
+                              pushToCloud(updated); // Sync AI changes
                           }
                           
                           liveServiceRef.current?.sendToolResponse({
@@ -1063,7 +1125,7 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack }) => {
               config: {
                   systemInstruction,
                   tools: [{ functionDeclarations: drawTools }],
-                  toolConfig: { functionCallingConfig: { mode: 'AUTO' } }
+                  toolConfig: { functionCallingConfig: { mode: 'AUTO' as any } }
               }
           });
 
@@ -1075,7 +1137,7 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack }) => {
               let shouldClear = false;
 
               for (const fc of response.functionCalls) {
-                  const args = fc.args;
+                  const args = fc.args as any;
                   const id = crypto.randomUUID();
                   
                   if (fc.name === 'generate_diagram') {
@@ -1127,9 +1189,11 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack }) => {
               if (shouldClear) {
                   setElements([]);
                   aiText += "\n\n*(Board cleared)*";
+                  pushToCloud([]);
               } else if (newElements.length > 0) {
-                  setElements(prev => [...prev, ...newElements]);
-                  saveHistory([...elements, ...newElements]);
+                  const updated = [...elements, ...newElements];
+                  setElements(updated);
+                  saveHistory(updated);
                   aiText += `\n\n*(Added elements)*`;
               }
           }
@@ -1235,6 +1299,10 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack }) => {
               <Download size={18} />
           </button>
           
+          <button onClick={handleShare} className={`p-2 rounded-xl flex-shrink-0 transition-colors ${isSharedSession ? 'bg-indigo-600 text-white animate-pulse' : 'text-indigo-400 hover:bg-slate-800'}`} title="Share Whiteboard">
+              <Share2 size={18} />
+          </button>
+
           <button 
               onClick={() => setIsAssistantOpen(!isAssistantOpen)} 
               className={`flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-bold shadow-lg ml-2 flex-shrink-0 transition-colors ${isAssistantOpen ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-indigo-400 hover:bg-slate-700'}`}
