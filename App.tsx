@@ -147,6 +147,7 @@ const App: React.FC = () => {
 
   // Collaboration State
   const [sharedSessionId, setSharedSessionId] = useState<string | undefined>(undefined);
+  const [accessKey, setAccessKey] = useState<string | undefined>(undefined);
 
   // Live Session Config
   const [liveConfig, setLiveConfig] = useState<{
@@ -172,9 +173,12 @@ const App: React.FC = () => {
     // CHECK URL FOR SHARED SESSION (Unified)
     const params = new URLSearchParams(window.location.search);
     const session = params.get('session');
+    const keyParam = params.get('key'); // Secret Token for Write Access
 
     if (session) {
         setSharedSessionId(session);
+        if (keyParam) setAccessKey(keyParam);
+        
         // Default to Code Studio for shared sessions
         setViewState('code_studio');
     }
@@ -375,7 +379,8 @@ const App: React.FC = () => {
   // Called when CodeStudio or Whiteboard creates a shared link
   const handleSessionStart = (id: string) => {
       setSharedSessionId(id);
-      // Update URL without reloading to reflect the new session ID
+      setAccessKey(undefined); // Reset key, owner doesn't need URL key usually
+      
       const url = new URL(window.location.href);
       
       // Clean up all possible params first
@@ -383,8 +388,12 @@ const App: React.FC = () => {
       url.searchParams.delete('code_session');
       url.searchParams.delete('whiteboard_session');
       url.searchParams.delete('view');
+      url.searchParams.delete('key');
+      url.searchParams.delete('mode');
 
       url.searchParams.set('session', id);
+      // We do NOT set 'key' in the URL for the creator, as they are Owner by Auth.
+      // This keeps the URL clean.
       
       window.history.pushState({}, '', url.toString());
   };
@@ -600,6 +609,7 @@ const App: React.FC = () => {
                 onBack={() => { setViewState('directory'); }} 
                 currentUser={currentUser} 
                 sessionId={sharedSessionId}
+                accessKey={accessKey}
                 onSessionStart={handleSessionStart} // Unified Session Handler
             />
         )}
@@ -608,6 +618,7 @@ const App: React.FC = () => {
             <Whiteboard 
                 onBack={() => { setViewState('directory'); }}
                 sessionId={sharedSessionId}
+                accessKey={accessKey}
                 onSessionStart={handleSessionStart} // Unified Session Handler
             />
         )}
@@ -870,7 +881,7 @@ const App: React.FC = () => {
                videoEnabled={liveConfig.video}
                cameraEnabled={liveConfig.camera}
                activeSegment={liveConfig.segment}
-               initialTranscript={liveConfig.transcript}
+               initialTranscript={liveConfig.initialTranscript}
                onEndSession={() => {
                    if (tempChannel) {
                        setTempChannel(null);

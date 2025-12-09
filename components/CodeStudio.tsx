@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { GoogleGenAI, FunctionDeclaration, Type } from '@google/genai';
-import { ArrowLeft, Save, Folder, File, Code, Plus, Trash2, Loader2, ChevronRight, ChevronDown, X, MessageSquare, FileCode, FileJson, FileType, Search, Coffee, Hash, CloudUpload, Edit3, BookOpen, Bot, Send, Maximize2, Minimize2, GripVertical, UserCheck, AlertTriangle, Archive, Sparkles, Video, Mic, CheckCircle, Monitor, FileText, Eye, Github, GitBranch, GitCommit, FolderOpen, RefreshCw, GraduationCap, DownloadCloud, Terminal, Undo2, Check, Share2, Copy } from 'lucide-react';
+import { ArrowLeft, Save, Folder, File, Code, Plus, Trash2, Loader2, ChevronRight, ChevronDown, X, MessageSquare, FileCode, FileJson, FileType, Search, Coffee, Hash, CloudUpload, Edit3, BookOpen, Bot, Send, Maximize2, Minimize2, GripVertical, UserCheck, AlertTriangle, Archive, Sparkles, Video, Mic, CheckCircle, Monitor, FileText, Eye, Github, GitBranch, GitCommit, FolderOpen, RefreshCw, GraduationCap, DownloadCloud, Terminal, Undo2, Check, Share2, Copy, Lock, Link } from 'lucide-react';
 import { GEMINI_API_KEY } from '../services/private_keys';
 import { CodeProject, CodeFile, ChatMessage, Channel, GithubMetadata, CursorPosition } from '../types';
 import { MarkdownView } from './MarkdownView';
@@ -13,6 +13,7 @@ interface CodeStudioProps {
   onBack: () => void;
   currentUser: any;
   sessionId?: string;
+  accessKey?: string; // Secret write token from URL
   onSessionStart?: (id: string) => void;
 }
 
@@ -416,7 +417,7 @@ const CodeCursor: React.FC<{ cursor: CursorPosition; currentLine: number }> = ({
     );
 };
 
-const EnhancedEditor = ({ code, language, onChange, onScroll, onSelect, textAreaRef, lineNumbersRef, isLoadingContent, scrollToLine, cursors }: any) => {
+const EnhancedEditor = ({ code, language, onChange, onScroll, onSelect, textAreaRef, lineNumbersRef, isLoadingContent, scrollToLine, cursors, readOnly }: any) => {
   useEffect(() => {
       if (scrollToLine !== null && textAreaRef.current) {
           const lineHeight = 24; 
@@ -426,7 +427,7 @@ const EnhancedEditor = ({ code, language, onChange, onScroll, onSelect, textArea
   }, [scrollToLine]);
 
   return (
-    <div className="flex-1 relative bg-slate-950 flex overflow-hidden font-mono text-sm">
+    <div className={`flex-1 relative bg-slate-950 flex overflow-hidden font-mono text-sm ${readOnly ? 'cursor-default' : ''}`}>
         <div 
             ref={lineNumbersRef}
             className="w-12 bg-slate-900 border-r border-slate-800 text-right text-slate-600 py-4 pr-3 select-none overflow-hidden flex-shrink-0 leading-6"
@@ -466,11 +467,12 @@ const EnhancedEditor = ({ code, language, onChange, onScroll, onSelect, textArea
                 onSelect={onSelect}
                 onClick={onSelect}
                 onKeyUp={onSelect}
-                className="absolute top-0 left-0 w-full h-full p-4 bg-transparent text-transparent caret-white outline-none resize-none leading-6 whitespace-pre overflow-auto"
+                className={`absolute top-0 left-0 w-full h-full p-4 bg-transparent text-transparent caret-white outline-none resize-none leading-6 whitespace-pre overflow-auto ${readOnly ? 'pointer-events-auto' : ''}`}
                 spellCheck={false}
                 autoCapitalize="off"
                 autoComplete="off"
                 autoCorrect="off"
+                readOnly={readOnly}
                 style={{ fontFamily: 'monospace' }}
             />
         </div>
@@ -490,7 +492,7 @@ const updateFileTool: FunctionDeclaration = {
     }
 };
 
-export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, sessionId, onSessionStart }) => {
+export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, sessionId, accessKey, onSessionStart }) => {
   const [project, setProject] = useState<CodeProject>(EXAMPLE_PROJECTS['is_bst']);
   const [activeFileIndex, setActiveFileIndex] = useState(0);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
@@ -501,6 +503,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
   const [isSaving, setIsSaving] = useState(false);
   const [showLanguageDropdown, setShowLanguageDropdown] = useState(false);
   const [showExamplesDropdown, setShowExamplesDropdown] = useState(false);
+  const [showShareDropdown, setShowShareDropdown] = useState(false);
   const [isPreviewMode, setIsPreviewMode] = useState(false);
   const [isLoadingFile, setIsLoadingFile] = useState(false);
   const [tutorSessionId, setTutorSessionId] = useState<string>(''); 
@@ -526,6 +529,8 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
   const [showCommitModal, setShowCommitModal] = useState(false);
   const [needsGitHubReauth, setNeedsGitHubReauth] = useState(false);
   const [isSharedSession, setIsSharedSession] = useState(false);
+  const [isReadOnly, setIsReadOnly] = useState(false); // Managed internally now
+  
   const [guestId] = useState(() => 'guest_' + Math.floor(Math.random() * 10000));
   
   const [localClientId] = useState(() => crypto.randomUUID());
@@ -549,20 +554,45 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
           setIsSharedSession(true);
           const unsubscribe = subscribeToCodeProject(sessionId, (remoteProject) => {
               if (remoteProject.cursors) {
-                  // FILTER: Hide my own cursors based on User ID (even if from another tab/window)
+                  // FILTER: Hide my own cursors based on User ID
                   const others = Object.values(remoteProject.cursors).filter(c => c.userId !== myUserId);
                   setRemoteCursors(others);
               }
+              
+              // ACCESS CONTROL CHECK
+              // If writeToken is on the doc, check against accessKey prop.
+              // If writeToken is missing on doc AND I am the owner, lazily create one.
+              
+              // @ts-ignore
+              const projectWriteToken = remoteProject.writeToken;
+              const isOwner = currentUser && currentUser.uid === remoteProject.ownerId;
+              
+              if (isOwner && !projectWriteToken) {
+                  // Lazy migration: Add a write token if missing
+                  const newToken = crypto.randomUUID();
+                  const updatedProj = { ...remoteProject, writeToken: newToken };
+                  saveCodeProject(updatedProj).catch(console.error);
+                  // Grant myself access immediately (state update will come via subscription next tick)
+              }
+
+              // Determine permission
+              // 1. Owner always has write access
+              // 2. Guest has write access ONLY if accessKey matches document's writeToken
+              const canEdit = isOwner || (projectWriteToken && accessKey === projectWriteToken);
+              
+              setIsReadOnly(!canEdit);
+
               setProject(prev => {
                   return { ...remoteProject };
               });
           });
           return () => unsubscribe();
       }
-  }, [sessionId, activeFileIndex, myUserId, localClientId]); 
+  }, [sessionId, activeFileIndex, myUserId, localClientId, accessKey, currentUser]); 
 
   const handleCursorUpdate = (e: React.SyntheticEvent<HTMLTextAreaElement>) => {
-      if (!isSharedSession) return;
+      // Don't send cursor updates if in read-only mode
+      if (!isSharedSession || isReadOnly) return;
       
       const target = e.currentTarget;
       const val = target.value;
@@ -691,6 +721,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
   };
 
   const handleAddFile = (langId: string) => {
+      if (isReadOnly) return;
       const langConfig = LANGUAGES.find(l => l.id === langId);
       if (!langConfig) return;
       const baseName = "code";
@@ -719,6 +750,8 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
   };
 
   const updateFileAtIndex = (index: number, newContent: string) => {
+      if (isReadOnly) return;
+      
       const updatedProject = { ...project };
       const updatedFiles = [...updatedProject.files];
       
@@ -752,7 +785,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
       if (pre) { pre.scrollTop = e.currentTarget.scrollTop; pre.scrollLeft = e.currentTarget.scrollLeft; }
   };
 
-  const handleShare = async () => {
+  const handleShare = async (mode: 'read' | 'edit') => {
       if (!currentUser) { alert("Please sign in to share."); return; }
       setIsSaving(true);
       try {
@@ -764,31 +797,49 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
               sessionToUse = crypto.randomUUID();
           }
 
-          let projectToSave = { ...project };
-          
-          // Ensure we save it with the session ID as the doc ID
-          projectToSave = { ...projectToSave, id: sessionToUse, ownerId: currentUser.uid };
-          setProject(projectToSave);
+          // Generate or retrieve Write Token
+          // If the project already has one, reuse it. Else make one.
+          let writeToken = (project as any).writeToken;
+          if (!writeToken) {
+              writeToken = crypto.randomUUID();
+          }
 
-          // Initial Save to unified ID
-          await saveCodeProject(projectToSave);
-          
-          // Notify App to update URL/State
-          if (onSessionStart && !sessionId) {
-              onSessionStart(sessionToUse);
+          // Initial Save to unified ID (if not already saved or if this is the first share)
+          if (!sessionId || !(project as any).writeToken) {
+              let projectToSave = { ...project };
+              // Ensure we save it with the session ID as the doc ID
+              projectToSave = { ...projectToSave, id: sessionToUse, ownerId: currentUser.uid, writeToken } as any;
+              setProject(projectToSave);
+              await saveCodeProject(projectToSave);
+              
+              // Notify App to update URL/State (only if it's new)
+              if (onSessionStart && !sessionId) {
+                  onSessionStart(sessionToUse);
+              }
           }
           
           const url = new URL(window.location.href);
           // Set unified session param
           url.searchParams.set('session', sessionToUse);
+          
+          if (mode === 'edit') {
+              url.searchParams.set('key', writeToken); // Use key instead of mode=edit
+          } else {
+              url.searchParams.delete('key'); 
+          }
+          // Remove insecure mode parameter
+          url.searchParams.delete('mode');
+          
           // Clean up legacy conflicting params
           url.searchParams.delete('code_session');
           url.searchParams.delete('whiteboard_session');
           url.searchParams.delete('view');
           
           await navigator.clipboard.writeText(url.toString());
-          alert(`Session Link Copied!\n\n${url.toString()}`);
+          alert(`${mode === 'edit' ? 'Edit' : 'Read-Only'} Link Copied!\n\n${url.toString()}`);
+          
           setIsSharedSession(true);
+          setShowShareDropdown(false);
       } catch(e: any) { alert(`Failed to share: ${e.message}`); } finally { setIsSaving(false); }
   };
 
@@ -829,6 +880,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
   };
 
   const handleCommit = async () => {
+      if (isReadOnly) return;
       if (!githubToken) return alert("Sign in with GitHub first.");
       if (!commitMessage.trim() || !project.github) return;
       setIsCommitting(true);
@@ -840,6 +892,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
   };
 
   const handleGenerateQuestions = async () => {
+      if (isReadOnly) return;
       setIsGeneratingQuestions(true);
       try {
           const ai = new GoogleGenAI({ apiKey: localStorage.getItem('gemini_api_key') || GEMINI_API_KEY || '' });
@@ -856,6 +909,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
 
   const handleSaveProject = async () => {
       if (!currentUser) return alert("Sign in required.");
+      if (isReadOnly) return alert("Read-only mode.");
       setIsSaving(true);
       try { await saveCodeProject(project); alert("Saved!"); } catch(e) { alert("Failed."); } finally { setIsSaving(false); }
   };
@@ -886,32 +940,56 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
                   <Code size={18} className="text-white" />
                </div>
                
-               <div className="flex flex-col cursor-pointer hover:bg-slate-800 rounded px-2 py-1 transition-colors group" onClick={() => setShowImportModal(true)}>
+               <div className="flex flex-col cursor-pointer hover:bg-slate-800 rounded px-2 py-1 transition-colors group" onClick={() => !isReadOnly && setShowImportModal(true)}>
                    <div className="flex items-center gap-1">
                        <h1 className="font-bold text-white hidden sm:block truncate max-w-[200px] text-sm">{project.name}</h1>
-                       <ChevronDown size={12} className="text-slate-500 group-hover:text-white" />
+                       {!isReadOnly && <ChevronDown size={12} className="text-slate-500 group-hover:text-white" />}
                    </div>
                    {project.github && <span className="text-[10px] text-slate-500 font-mono flex items-center gap-1"><GitBranch size={10}/> {project.github.branch}</span>}
                </div>
+               
+               {isReadOnly && (
+                   <div className="flex items-center gap-1 px-2 py-0.5 bg-amber-900/30 text-amber-400 rounded border border-amber-500/30 text-[10px] font-bold uppercase tracking-wider">
+                       <Lock size={10} /> Read Only
+                   </div>
+               )}
             </div>
             
             <div className="flex items-center space-x-1 bg-slate-800 rounded-lg p-1 border border-slate-700">
+               {!isReadOnly && (
                <button onClick={handleSaveProject} disabled={isSaving} className="p-2 hover:bg-slate-700 rounded text-slate-400 hover:text-white transition-colors">
                   {isSaving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
                </button>
-               {project.github ? (
+               )}
+               
+               {project.github && !isReadOnly ? (
                    <button onClick={() => setShowCommitModal(true)} className="p-2 hover:bg-slate-700 rounded text-emerald-400 hover:text-white transition-colors">
                        <GitCommit size={16} />
                    </button>
-               ) : (
+               ) : !isReadOnly && (
                    <button onClick={() => setShowImportModal(true)} className={`p-2 hover:bg-slate-700 rounded transition-colors ${(needsGitHubReauth || isGithubLinked) ? 'text-amber-400 hover:text-amber-200' : 'text-slate-400 hover:text-white'}`}>
                        {(needsGitHubReauth || isGithubLinked) ? <RefreshCw size={16} /> : <Github size={16} />}
                    </button>
                )}
                
-               <button onClick={handleShare} className={`p-2 rounded transition-colors ${isSharedSession ? 'bg-indigo-600 text-white animate-pulse' : 'text-indigo-400 hover:text-white hover:bg-slate-700'}`}>
-                   <Share2 size={16} />
-               </button>
+               <div className="relative">
+                   <button onClick={() => setShowShareDropdown(!showShareDropdown)} className={`p-2 rounded transition-colors ${isSharedSession ? 'bg-indigo-600 text-white animate-pulse' : 'text-indigo-400 hover:text-white hover:bg-slate-700'}`}>
+                       <Share2 size={16} />
+                   </button>
+                   {showShareDropdown && (
+                       <>
+                       <div className="fixed inset-0 z-30" onClick={() => setShowShareDropdown(false)}></div>
+                       <div className="absolute top-full left-0 mt-2 w-48 bg-slate-900 border border-slate-700 rounded-xl shadow-xl z-40 overflow-hidden py-1">
+                           <button onClick={() => handleShare('read')} className="w-full text-left px-4 py-2 hover:bg-slate-800 text-xs text-slate-300 hover:text-white flex items-center gap-2">
+                               <Eye size={12} /> Copy Read-Only Link
+                           </button>
+                           <button onClick={() => handleShare('edit')} className="w-full text-left px-4 py-2 hover:bg-slate-800 text-xs text-emerald-400 hover:text-emerald-300 flex items-center gap-2">
+                               <Edit3 size={12} /> Copy Edit Link
+                           </button>
+                       </div>
+                       </>
+                   )}
+               </div>
 
                <button onClick={() => setActiveSideView(activeSideView === 'review' ? 'none' : 'review')} className={`p-2 rounded transition-colors ${activeSideView === 'review' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-700'}`}>
                   <CheckCircle size={16} />
@@ -927,6 +1005,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
          </div>
 
          <div className="flex items-center space-x-3">
+            {!isReadOnly && (
             <div className="relative">
                 <button onClick={() => setShowLanguageDropdown(!showLanguageDropdown)} className="flex items-center space-x-2 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg text-xs font-bold transition-colors">
                     <Plus size={14} /> <span>New File</span>
@@ -944,6 +1023,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
                     </>
                 )}
             </div>
+            )}
 
             <div className="relative">
                 <button onClick={() => setShowExamplesDropdown(!showExamplesDropdown)} className="flex items-center space-x-2 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-bold transition-colors shadow-lg shadow-indigo-500/20">
@@ -1031,7 +1111,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
                   <div key={idx} onClick={() => setActiveFileIndex(idx)} className={`flex items-center space-x-2 px-4 py-2.5 border-r border-slate-800 cursor-pointer min-w-[120px] max-w-[200px] ${activeFileIndex === idx ? 'bg-slate-950 text-white border-t-2 border-t-indigo-500' : 'bg-slate-900 text-slate-500 hover:bg-slate-800 hover:text-slate-300'} ${isPending ? 'border-t-2 border-t-emerald-500 bg-emerald-900/10' : ''}`}>
                      <FileIcon filename={file.name} />
                      <span className="text-xs font-medium truncate" title={file.name}>{file.name.split('/').pop()}</span>
-                     {activeFileIndex === idx && (
+                     {activeFileIndex === idx && !isReadOnly && (
                         <button className="ml-auto text-slate-500 hover:text-red-400" onClick={(e) => { e.stopPropagation(); if (isSharedSession) deleteCodeFile(project.id, file.name); setProject(prev => ({ ...prev, files: prev.files.filter((_, i) => i !== idx) })); }}>
                            <X size={12} />
                         </button>
@@ -1068,10 +1148,11 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
                         isLoadingContent={isLoadingFile}
                         scrollToLine={scrollToLine}
                         cursors={remoteCursors.filter(c => c.fileName === activeFile.name)}
+                        readOnly={isReadOnly}
                     />
                 )}
                 
-                {pendingChange && (
+                {pendingChange && !isReadOnly && (
                     <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 p-3 bg-slate-900 border border-emerald-500/50 rounded-xl shadow-2xl animate-fade-in-up">
                         <span className="text-sm font-bold text-emerald-300 mr-2">AI Suggested Changes</span>
                         <button onClick={handleRejectChange} className="px-4 py-2 bg-slate-800 hover:bg-red-900/30 text-slate-300 hover:text-red-300 rounded-lg text-xs font-bold flex items-center gap-2 border border-slate-700 transition-colors"><Undo2 size={14}/> Revert</button>
