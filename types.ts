@@ -193,6 +193,16 @@ export interface GithubMetadata {
   sha: string;
 }
 
+export interface CursorPosition {
+  userId: string;
+  userName: string;
+  fileName: string; // The file they are looking at
+  line: number; // 1-based line number
+  column: number; // 0-based column index
+  color: string;
+  updatedAt: number;
+}
+
 export interface CodeProject {
   id: string;
   name: string;
@@ -204,6 +214,7 @@ export interface CodeProject {
   humanComments?: string;
   interviewFeedback?: string;
   chatHistory?: ChatMessage[];
+  cursors?: Record<string, CursorPosition>; // Map of UserID -> Cursor
 }
 
 export interface Blog {

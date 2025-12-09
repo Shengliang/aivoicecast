@@ -1,7 +1,7 @@
 // [FORCE-SYNC-v3.44.0] Timestamp: ${new Date().toISOString()}
 import { db, auth, storage } from './firebaseConfig';
 import firebase from 'firebase/compat/app';
-import { Channel, Group, UserProfile, Invitation, GeneratedLecture, CommunityDiscussion, Comment, Booking, RecordingSession, TranscriptItem, CodeProject, Attachment, Blog, BlogPost, SubscriptionTier } from '../types';
+import { Channel, Group, UserProfile, Invitation, GeneratedLecture, CommunityDiscussion, Comment, Booking, RecordingSession, TranscriptItem, CodeProject, Attachment, Blog, BlogPost, SubscriptionTier, CodeFile, CursorPosition } from '../types';
 import { HANDCRAFTED_CHANNELS } from '../utils/initialData';
 import { SPOTLIGHT_DATA } from '../utils/spotlightContent';
 import { OFFLINE_LECTURES, OFFLINE_CHANNEL_ID } from '../utils/offlineContent';
@@ -37,9 +37,50 @@ function sanitizeData(data: any): any {
 export function subscribeToCodeProject(projectId: string, onUpdate: (project: CodeProject) => void): () => void {
   return db.collection('code_projects').doc(projectId).onSnapshot((doc) => {
     if (doc.exists) {
-      onUpdate({ ...doc.data(), id: doc.id } as CodeProject);
+      const data = doc.data();
+      let files: CodeFile[] = [];
+      
+      // Handle both legacy Array and new Map structure
+      if (Array.isArray(data?.files)) {
+          files = data.files as CodeFile[];
+      } else if (data?.files && typeof data.files === 'object') {
+          // Sort by name or some other criteria to maintain order stability
+          files = (Object.values(data.files) as CodeFile[]).sort((a: any, b: any) => {
+              if (a.isDirectory !== b.isDirectory) return a.isDirectory ? -1 : 1;
+              return a.name.localeCompare(b.name);
+          });
+      }
+      
+      onUpdate({ ...data, id: doc.id, files } as CodeProject);
     }
   });
+}
+
+// Granular Update for Single File (Supports Concurrent Editing of Different Files)
+export async function updateCodeFile(projectId: string, file: CodeFile): Promise<void> {
+    // Use FieldPath to handle keys with dots or special chars if necessary
+    const safeFile = sanitizeData(file);
+    
+    await db.collection('code_projects').doc(projectId).update({
+        [new firebase.firestore.FieldPath('files', file.name).toString()]: safeFile,
+        lastModified: Date.now()
+    });
+}
+
+export async function deleteCodeFile(projectId: string, fileName: string): Promise<void> {
+    await db.collection('code_projects').doc(projectId).update({
+        [new firebase.firestore.FieldPath('files', fileName).toString()]: firebase.firestore.FieldValue.delete(),
+        lastModified: Date.now()
+    });
+}
+
+// Update User Cursor Position
+export async function updateCursor(projectId: string, cursor: CursorPosition): Promise<void> {
+    if (!cursor.userId) return;
+    const key = `cursors.${cursor.userId}`;
+    await db.collection('code_projects').doc(projectId).update({
+        [key]: sanitizeData(cursor)
+    });
 }
 
 // Updated to handle both Legacy Arrays and New Maps
@@ -493,9 +534,6 @@ export async function logUserActivity(type: string, metadata: any = {}): Promise
     console.warn("Failed to log activity", e);
   }
 }
-
-// ... (Rest of existing functions for Groups, Channels, Bookings, Blog, Code Projects unchanged) ...
-// (Including createGroup, joinGroup, getUserGroups, etc... till end of file)
 
 export async function createGroup(name: string): Promise<string> {
   const user = auth.currentUser;
@@ -1036,8 +1074,20 @@ export async function saveCodeProject(project: CodeProject): Promise<void> {
   const user = auth.currentUser;
   if (!user) throw new Error("Must be logged in to save project");
   
+  // Transform files array to a Map for storage if needed, or stick to array if small.
+  // For granular updates, we want to store it as a Map/Object keyed by filename.
+  const filesMap: Record<string, any> = {};
+  project.files.forEach(f => {
+      // Use filename as key? Firestore keys cannot have dots unless we use FieldPath for updates.
+      // But for the initial set, we can store it as a nested object map if keys are sanitized.
+      // However, sticking to the existing interface, we just save the full object.
+      // To support granular updates via `updateCodeFile`, we rely on `update` with FieldPath.
+      filesMap[f.name] = sanitizeData(f);
+  });
+
   const projectData = {
     ...project,
+    files: filesMap, // Save as Map
     ownerId: user.uid,
     lastModified: Date.now()
   };
@@ -1051,7 +1101,16 @@ export async function getUserCodeProjects(uid: string): Promise<CodeProject[]> {
     const snap = await db.collection('code_projects')
       .where("ownerId", "==", uid)
       .get();
-    return snap.docs.map(d => d.data() as CodeProject).sort((a, b) => b.lastModified - a.lastModified);
+    return snap.docs.map(d => {
+        const data = d.data();
+        let files: CodeFile[] = [];
+        if (Array.isArray(data.files)) {
+            files = data.files;
+        } else if (data.files) {
+            files = Object.values(data.files);
+        }
+        return { ...data, files } as CodeProject;
+    }).sort((a, b) => b.lastModified - a.lastModified);
   } catch(e) {
     console.warn("Failed to get code projects", e);
     return [];
