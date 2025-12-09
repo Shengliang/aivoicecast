@@ -9,7 +9,8 @@ import { OFFLINE_LECTURES, OFFLINE_CHANNEL_ID } from '../utils/offlineContent';
 // --- STRIPE CONFIGURATION ---
 // REPLACE THIS WITH YOUR ACTUAL STRIPE PRICE ID FROM THE DASHBOARD
 // Example: 'price_1P2q3rI4j5k6l7m8n9o0p1'
-export const STRIPE_PRICE_ID = 'price_1ScFfnIVNYhSs7Hca9yHlHwA'; 
+// export const STRIPE_PRICE_ID = 'price_1ScFfnIVNYhSs7Hca9yHlHwA'; 
+export const STRIPE_PRICE_ID = 'price_1ScGG7IVNYhSs7HchATUVYY4'; 
 
 // Helper to remove undefined fields which Firestore rejects
 function sanitizeData(data: any): any {
