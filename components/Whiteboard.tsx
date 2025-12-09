@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { ArrowLeft, Share2, Trash2, Undo, PenTool, Eraser, Download, Square, Circle, Minus, ArrowRight, Type, ZoomIn, ZoomOut, MousePointer2, Move, Highlighter, Brush, BoxSelect } from 'lucide-react';
 import { auth } from '../services/firebaseConfig';
-import { saveWhiteboardSession, subscribeToWhiteboard } from '../services/firestoreService';
+import { saveWhiteboardSession, subscribeToWhiteboard, updateWhiteboardElement, deleteWhiteboardElements } from '../services/firestoreService';
 
 interface WhiteboardProps {
   onBack: () => void;
@@ -75,6 +75,9 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack, sessionId }) => 
         setIsSharedSession(true);
         currentSessionIdRef.current = sessionId;
         const unsubscribe = subscribeToWhiteboard(sessionId, (remoteElements) => {
+            // When remote updates come in, we update state.
+            // Note: If user is actively drawing 'currentElement', it is separate state so won't be overwritten.
+            // If user is dragging existing elements, there might be a conflict/jump, but last-write-wins is acceptable for this MVP.
             if (remoteElements) {
                 setElements(remoteElements);
             }
@@ -83,15 +86,7 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack, sessionId }) => 
     }
   }, [sessionId]);
 
-  useEffect(() => {
-      if (isSharedSession) {
-          const timeout = setTimeout(() => {
-              saveWhiteboardSession(currentSessionIdRef.current, elements);
-          }, 1000);
-          return () => clearTimeout(timeout);
-      }
-  }, [elements, isSharedSession]);
-
+  // Sync color/style changes to selected elements
   useEffect(() => {
       if (selectedIds.length === 1) {
           const el = elements.find(e => e.id === selectedIds[0]);
@@ -110,16 +105,30 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack, sessionId }) => 
               }
           }
       }
-  }, [selectedIds, elements]);
+  }, [selectedIds]);
+
+  const syncUpdate = (el: WhiteboardElement) => {
+      if (isSharedSession) {
+          updateWhiteboardElement(currentSessionIdRef.current, el);
+      }
+  };
 
   const updateSelectedElements = (updates: Partial<WhiteboardElement>) => {
       if (selectedIds.length === 0) return;
+      
+      const updatedElements: WhiteboardElement[] = [];
+      
       setElements(prev => prev.map(el => {
           if (selectedIds.includes(el.id)) {
-              return { ...el, ...updates };
+              const updated = { ...el, ...updates };
+              updatedElements.push(updated);
+              return updated;
           }
           return el;
       }));
+      
+      // Sync changes
+      updatedElements.forEach(el => syncUpdate(el));
   };
 
   const isPointInElement = (x: number, y: number, el: WhiteboardElement): boolean => {
@@ -435,6 +444,12 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack, sessionId }) => 
       }
 
       if (isDraggingSelection) {
+          // Sync changes for all moved elements
+          if (isSharedSession) {
+              const movedElements = elements.filter(el => initialSelectionStates.current.has(el.id));
+              movedElements.forEach(el => syncUpdate(el));
+          }
+          
           setIsDraggingSelection(false);
           dragStartPos.current = null;
           initialSelectionStates.current.clear();
@@ -443,6 +458,9 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack, sessionId }) => 
 
       if (isDrawing && currentElement) {
           setElements(prev => [...prev, currentElement]);
+          // Sync new element
+          syncUpdate(currentElement);
+          
           setCurrentElement(null);
           setIsDrawing(false);
       }
@@ -673,6 +691,7 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack, sessionId }) => 
                   height: textInput.height || (fs * lineCount * 1.2)
               };
               setElements(prev => [...prev, newEl]);
+              syncUpdate(newEl);
           }
           setTextInput(null);
       }
@@ -703,13 +722,23 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack, sessionId }) => 
   };
 
   const handleClear = () => {
-      if(confirm("Clear whiteboard?")) setElements([]);
+      if(confirm("Clear whiteboard?")) {
+          setElements([]);
+          if (isSharedSession) {
+              saveWhiteboardSession(currentSessionIdRef.current, []);
+          }
+      }
   };
 
   const handleDeleteSelected = () => {
       if (selectedIds.length > 0) {
+          const idsToDelete = [...selectedIds];
           setElements(prev => prev.filter(el => !selectedIds.includes(el.id)));
           setSelectedIds([]);
+          
+          if (isSharedSession) {
+              deleteWhiteboardElements(currentSessionIdRef.current, idsToDelete);
+          }
       }
   };
 

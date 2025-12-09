@@ -42,35 +42,68 @@ export function subscribeToCodeProject(projectId: string, onUpdate: (project: Co
   });
 }
 
+// Updated to handle both Legacy Arrays and New Maps
 export function subscribeToWhiteboard(boardId: string, onUpdate: (elements: any[]) => void): () => void {
   return db.collection('whiteboards').doc(boardId).onSnapshot((doc) => {
     if (doc.exists) {
-      onUpdate(doc.data()?.elements || []);
+      const data = doc.data();
+      let elements: any[] = [];
+      if (Array.isArray(data?.elements)) {
+          elements = data.elements; // Support legacy array format
+      } else if (data?.elements && typeof data.elements === 'object') {
+          elements = Object.values(data.elements); // Convert Map to Array for UI
+      }
+      onUpdate(elements);
     }
   });
 }
 
+// Bulk Save / Reset (Overwrites everything with a Map)
 export async function saveWhiteboardSession(boardId: string, elements: any[]): Promise<void> {
   const user = auth.currentUser;
   
+  // Convert Array to Map for granular updates later
+  const elementsMap: Record<string, any> = {};
+  elements.forEach(el => {
+      if(el.id) elementsMap[el.id] = sanitizeData(el);
+  });
+
   // Prepare payload
   const payload: any = {
-    elements: sanitizeData(elements),
+    elements: elementsMap,
     lastModified: Date.now(),
     updatedBy: user?.uid || 'anonymous'
   };
 
-  // Only attempt to set ownerId if user is logged in
   if (user) {
-      // Use merge to update existing fields, but we include ownerId to claim ownership if it's new
-      // Note: If rules prevent updating ownerId on existing docs, this might fail if we are not the owner.
-      // However, for a whiteboard session, we usually want the creator to own it.
-      // If we are just collaborating, we shouldn't change the owner. 
-      // Firestore `set` with merge will trigger an update.
       payload.ownerId = user.uid;
   }
 
+  // Use set with merge to update the map structure
   await db.collection('whiteboards').doc(boardId).set(payload, { merge: true });
+}
+
+// NEW: Update Single Element (Granular Sync)
+export async function updateWhiteboardElement(boardId: string, element: any): Promise<void> {
+    if (!element || !element.id) return;
+    const updateKey = `elements.${element.id}`;
+    
+    await db.collection('whiteboards').doc(boardId).update({
+        [updateKey]: sanitizeData(element),
+        lastModified: Date.now()
+    });
+}
+
+// NEW: Delete Elements (Granular Sync)
+export async function deleteWhiteboardElements(boardId: string, elementIds: string[]): Promise<void> {
+    if (elementIds.length === 0) return;
+    
+    const updateObj: any = { lastModified: Date.now() };
+    elementIds.forEach(id => {
+        updateObj[`elements.${id}`] = firebase.firestore.FieldValue.delete();
+    });
+    
+    await db.collection('whiteboards').doc(boardId).update(updateObj);
 }
 
 // --- SAVED WORDS (VOCABULARY) ---
