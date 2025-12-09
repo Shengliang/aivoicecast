@@ -267,4 +267,9 @@ export interface RealTimeMessage {
   senderName: string;
   senderImage?: string;
   timestamp: any; // Firestore Timestamp or number
+  replyTo?: {
+    id: string;
+    text: string;
+    senderName: string;
+  };
 }

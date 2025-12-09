@@ -34,20 +34,26 @@ function sanitizeData(data: any): any {
 
 // --- WORKPLACE CHAT ---
 
-export async function sendMessage(channelId: string, text: string, collectionPath?: string): Promise<void> {
+export async function sendMessage(channelId: string, text: string, collectionPath?: string, replyTo?: any): Promise<void> {
     const user = auth.currentUser;
     if (!user) throw new Error("Must be logged in");
 
     // Default collection path is 'chat_channels/{id}/messages', but groups use 'groups/{id}/messages'
     const basePath = collectionPath || `chat_channels/${channelId}/messages`;
     
-    await db.collection(basePath).add({
+    const payload: any = {
         text,
         senderId: user.uid,
         senderName: user.displayName || 'Anonymous',
         senderImage: user.photoURL || '',
         timestamp: firebase.firestore.FieldValue.serverTimestamp()
-    });
+    };
+
+    if (replyTo) {
+        payload.replyTo = sanitizeData(replyTo);
+    }
+    
+    await db.collection(basePath).add(payload);
 
     // Update last message on the parent doc if it's a chat_channel
     if (basePath.startsWith('chat_channels')) {
@@ -59,6 +65,15 @@ export async function sendMessage(channelId: string, text: string, collectionPat
             }
         }, { merge: true });
     }
+}
+
+export async function deleteMessage(channelId: string, messageId: string, collectionPath?: string): Promise<void> {
+    const user = auth.currentUser;
+    if (!user) throw new Error("Must be logged in");
+
+    const basePath = collectionPath || `chat_channels/${channelId}/messages`;
+    // Note: Firestore Rules should enforce ownership check
+    await db.collection(basePath).doc(messageId).delete();
 }
 
 export function subscribeToMessages(channelId: string, onUpdate: (msgs: RealTimeMessage[]) => void, collectionPath?: string): () => void {

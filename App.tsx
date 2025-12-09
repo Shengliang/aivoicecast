@@ -1,3 +1,4 @@
+// ... (content of App.tsx but fixing line 893)
 import React, { useState, useEffect, useMemo } from 'react';
 import { Channel, ViewState, UserProfile, TranscriptItem, SubscriptionTier } from './types';
 import { 
@@ -890,7 +891,7 @@ const App: React.FC = () => {
                videoEnabled={liveConfig.video}
                cameraEnabled={liveConfig.camera}
                activeSegment={liveConfig.segment}
-               initialTranscript={liveConfig.initialTranscript}
+               initialTranscript={liveConfig.transcript}
                onEndSession={() => {
                    if (tempChannel) {
                        setTempChannel(null);

@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { ChatChannel, RealTimeMessage, Group, UserProfile } from '../types';
-import { sendMessage, subscribeToMessages, getUserGroups, getAllUsers, createOrGetDMChannel, getUserDMChannels, getUniqueGroupMembers } from '../services/firestoreService';
+import { sendMessage, subscribeToMessages, getUserGroups, getAllUsers, createOrGetDMChannel, getUserDMChannels, getUniqueGroupMembers, deleteMessage } from '../services/firestoreService';
 import { auth } from '../services/firebaseConfig';
-import { Send, Hash, Lock, User, Plus, Search, MessageSquare, MoreVertical, Paperclip, Loader2, ArrowLeft, Menu, Users, Briefcase } from 'lucide-react';
+import { Send, Hash, Lock, User, Plus, Search, MessageSquare, MoreVertical, Paperclip, Loader2, ArrowLeft, Menu, Users, Briefcase, Reply, Trash2, X } from 'lucide-react';
 
 interface WorkplaceChatProps {
   onBack: () => void;
@@ -25,6 +25,8 @@ export const WorkplaceChat: React.FC<WorkplaceChatProps> = ({ onBack, currentUse
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [isSearchingUsers, setIsSearchingUsers] = useState(false);
   const [userSearchQuery, setUserSearchQuery] = useState('');
+  
+  const [replyingTo, setReplyingTo] = useState<RealTimeMessage | null>(null);
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -55,6 +57,11 @@ export const WorkplaceChat: React.FC<WorkplaceChatProps> = ({ onBack, currentUse
     return () => unsubscribe();
   }, [activeChannelId, activeChannelType]);
 
+  // Reset reply state when changing channels
+  useEffect(() => {
+      setReplyingTo(null);
+  }, [activeChannelId]);
+
   const handleSendMessage = async (e?: React.FormEvent) => {
     e?.preventDefault();
     if (!newMessage.trim()) return;
@@ -67,11 +74,39 @@ export const WorkplaceChat: React.FC<WorkplaceChatProps> = ({ onBack, currentUse
     }
 
     try {
-        await sendMessage(activeChannelId, newMessage, collectionPath);
+        let replyData = undefined;
+        if (replyingTo) {
+            replyData = {
+                id: replyingTo.id,
+                text: replyingTo.text,
+                senderName: replyingTo.senderName
+            };
+        }
+
+        await sendMessage(activeChannelId, newMessage, collectionPath, replyData);
         setNewMessage('');
+        setReplyingTo(null);
     } catch (error) {
         console.error("Send failed", error);
     }
+  };
+
+  const handleDeleteMessage = async (msgId: string) => {
+      if (!confirm("Delete this message?")) return;
+      
+      let collectionPath;
+      if (activeChannelType === 'group') {
+          collectionPath = `groups/${activeChannelId}/messages`;
+      } else {
+          collectionPath = `chat_channels/${activeChannelId}/messages`;
+      }
+
+      try {
+          await deleteMessage(activeChannelId, msgId, collectionPath);
+      } catch (error) {
+          console.error("Delete failed", error);
+          alert("Failed to delete message.");
+      }
   };
 
   const handleStartDM = async (otherUserId: string, otherUserName: string) => {
@@ -270,7 +305,20 @@ export const WorkplaceChat: React.FC<WorkplaceChatProps> = ({ onBack, currentUse
                       const showHeader = i === 0 || messages[i-1].senderId !== msg.senderId || (msg.timestamp?.toMillis() - messages[i-1].timestamp?.toMillis() > 300000);
                       
                       return (
-                          <div key={msg.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'} group`}>
+                          <div key={msg.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'} group mb-2 relative`}>
+                              
+                              {/* Actions (Reply, Delete) */}
+                              <div className={`absolute top-0 ${isMe ? 'left-0 -translate-x-full pr-2' : 'right-0 translate-x-full pl-2'} opacity-0 group-hover:opacity-100 flex items-center gap-1 h-full transition-opacity`}>
+                                <button onClick={() => setReplyingTo(msg)} className="p-1.5 rounded-full bg-slate-800 text-slate-400 hover:text-white border border-slate-700 hover:bg-slate-700" title="Reply">
+                                    <Reply size={12}/>
+                                </button>
+                                {isMe && (
+                                    <button onClick={() => handleDeleteMessage(msg.id)} className="p-1.5 rounded-full bg-slate-800 text-slate-400 hover:text-red-400 border border-slate-700 hover:bg-slate-700" title="Delete">
+                                        <Trash2 size={12}/>
+                                    </button>
+                                )}
+                              </div>
+
                               <div className={`flex flex-col max-w-[80%] ${isMe ? 'items-end' : 'items-start'}`}>
                                   {showHeader && (
                                       <div className="flex items-baseline gap-2 mb-1">
@@ -280,7 +328,15 @@ export const WorkplaceChat: React.FC<WorkplaceChatProps> = ({ onBack, currentUse
                                           </span>
                                       </div>
                                   )}
-                                  <div className={`px-4 py-2 rounded-2xl text-sm leading-relaxed ${isMe ? 'bg-indigo-600 text-white rounded-tr-sm' : 'bg-slate-800 text-slate-200 rounded-tl-sm'}`}>
+                                  
+                                  <div className={`px-4 py-2 rounded-2xl text-sm leading-relaxed relative ${isMe ? 'bg-indigo-600 text-white rounded-tr-sm' : 'bg-slate-800 text-slate-200 rounded-tl-sm'}`}>
+                                      {/* Reply Quote Block */}
+                                      {msg.replyTo && (
+                                          <div className="mb-2 pl-2 border-l-2 border-white/30 text-xs opacity-70 bg-black/10 p-1 rounded-r">
+                                              <p className="font-bold mb-0.5">{msg.replyTo.senderName}</p>
+                                              <p className="truncate line-clamp-1">{msg.replyTo.text}</p>
+                                          </div>
+                                      )}
                                       {msg.text}
                                   </div>
                               </div>
@@ -293,7 +349,24 @@ export const WorkplaceChat: React.FC<WorkplaceChatProps> = ({ onBack, currentUse
 
           {/* Input Area */}
           <div className="p-4 bg-slate-900 border-t border-slate-800">
-              <form onSubmit={handleSendMessage} className="bg-slate-800 border border-slate-700 rounded-xl flex items-center p-2 gap-2">
+              
+              {/* Reply Banner */}
+              {replyingTo && (
+                  <div className="flex justify-between items-center bg-slate-800 p-2 rounded-t-lg border-x border-t border-slate-700 text-xs mb-2">
+                      <div className="flex items-center gap-2 overflow-hidden">
+                          <Reply size={14} className="text-indigo-400 shrink-0" />
+                          <div className="truncate">
+                              <span className="font-bold text-indigo-300">Replying to {replyingTo.senderName}: </span>
+                              <span className="text-slate-400">{replyingTo.text}</span>
+                          </div>
+                      </div>
+                      <button onClick={() => setReplyingTo(null)} className="text-slate-400 hover:text-white p-1 rounded hover:bg-slate-700">
+                          <X size={14} />
+                      </button>
+                  </div>
+              )}
+
+              <form onSubmit={handleSendMessage} className="bg-slate-800 border border-slate-700 rounded-xl flex items-center p-2 gap-2 relative z-10">
                   <button type="button" className="p-2 text-slate-400 hover:text-white hover:bg-slate-700 rounded-lg">
                       <Plus size={20} />
                   </button>
