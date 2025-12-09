@@ -468,7 +468,7 @@ const EnhancedEditor = ({ code, language, onChange, onScroll, onSelect, textArea
             
             {/* Render Remote Cursors */}
             {cursors && cursors.map((c: CursorPosition) => (
-                <CodeCursor key={c.userId} cursor={c} currentLine={0} />
+                <CodeCursor key={c.clientId || c.userId} cursor={c} currentLine={0} />
             ))}
 
             <textarea
@@ -541,6 +541,9 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
   const [isSharedSession, setIsSharedSession] = useState(false);
   const [guestId] = useState(() => 'guest_' + Math.floor(Math.random() * 10000));
   
+  // Unique Session ID for this tab (allows multiple tabs of same user)
+  const [localClientId] = useState(() => crypto.randomUUID());
+  
   // Collaborative State
   const [remoteCursors, setRemoteCursors] = useState<CursorPosition[]>([]);
   const cursorUpdateTimerRef = useRef<any>(null);
@@ -563,41 +566,23 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
           const unsubscribe = subscribeToCodeProject(sessionId, (remoteProject) => {
               // 1. Process Remote Cursors
               if (remoteProject.cursors) {
-                  const others = Object.values(remoteProject.cursors).filter(c => c.userId !== myUserId);
+                  // IMPORTANT: Filter by Client ID so we see other tabs from same user
+                  const others = Object.values(remoteProject.cursors).filter(c => c.clientId !== localClientId);
                   setRemoteCursors(others);
               }
 
               // 2. Process Files
-              // MERGE STRATEGY: 
-              // Preserve content of the file currently being edited by local user to prevent jumpiness.
-              // All other files update to remote version immediately.
+              // STRATEGY: Last Write Wins (Simplest viable sync for non-CRDT)
+              // We do NOT block remote updates anymore. This allows merging.
+              // Tradeoff: If typing simultaneously, characters might jump or overwrite.
+              // But if users work on different lines or files, it syncs.
               setProject(prev => {
-                  const activeFileName = prev.files[activeFileIndex]?.name;
-                  
-                  // Map new file list
-                  // If remote files array length or order changed, we respect remote structure
-                  const mergedFiles = remoteProject.files.map(remoteFile => {
-                      if (remoteFile.name === activeFileName) {
-                          // Check if local file exists and differs
-                          const localFile = prev.files.find(f => f.name === remoteFile.name);
-                          if (localFile) {
-                              // If content is same, take remote (to be safe/clean)
-                              // If different, keep local (user is typing)
-                              return localFile.content !== remoteFile.content ? localFile : remoteFile;
-                          }
-                      }
-                      return remoteFile;
-                  });
-                  
-                  return { 
-                      ...remoteProject, 
-                      files: mergedFiles 
-                  };
+                  return { ...remoteProject };
               });
           });
           return () => unsubscribe();
       }
-  }, [sessionId, activeFileIndex, myUserId]); 
+  }, [sessionId, activeFileIndex, myUserId, localClientId]); 
 
   // Cursor Tracking
   const handleCursorUpdate = (e: React.SyntheticEvent<HTMLTextAreaElement>) => {
@@ -614,6 +599,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
       if (cursorUpdateTimerRef.current) clearTimeout(cursorUpdateTimerRef.current);
       cursorUpdateTimerRef.current = setTimeout(() => {
           updateCursor(project.id, {
+              clientId: localClientId,
               userId: myUserId,
               userName: currentUser?.displayName || 'Guest',
               fileName: activeFile.name,

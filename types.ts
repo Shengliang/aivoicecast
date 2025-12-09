@@ -194,6 +194,7 @@ export interface GithubMetadata {
 }
 
 export interface CursorPosition {
+  clientId: string; // Unique per session/tab (allows same user in 2 tabs)
   userId: string;
   userName: string;
   fileName: string; // The file they are looking at
@@ -214,7 +215,7 @@ export interface CodeProject {
   humanComments?: string;
   interviewFeedback?: string;
   chatHistory?: ChatMessage[];
-  cursors?: Record<string, CursorPosition>; // Map of UserID -> Cursor
+  cursors?: Record<string, CursorPosition>; // Map of ClientID -> Cursor
 }
 
 export interface Blog {

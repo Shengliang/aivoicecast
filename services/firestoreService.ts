@@ -79,8 +79,9 @@ export async function deleteCodeFile(projectId: string, fileName: string): Promi
 
 // Update User Cursor Position
 export async function updateCursor(projectId: string, cursor: CursorPosition): Promise<void> {
-    if (!cursor.userId) return;
-    const path = new firebase.firestore.FieldPath('cursors', cursor.userId);
+    if (!cursor.clientId) return;
+    // Use ClientID as key so multiple tabs for same user show up
+    const path = new firebase.firestore.FieldPath('cursors', cursor.clientId);
     await db.collection('code_projects').doc(projectId).update(
         path, sanitizeData(cursor)
     );
