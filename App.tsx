@@ -1,7 +1,6 @@
 
-
 import React, { useState, useEffect, useMemo } from 'react';
-import { Channel, ViewState, UserProfile, TranscriptItem } from './types';
+import { Channel, ViewState, UserProfile, TranscriptItem, SubscriptionTier } from './types';
 import { 
   Podcast, Mic, Layout, Search, Sparkles, LogOut, 
   Settings, Menu, X, Plus, Github, Database, Cloud, Globe, 
@@ -42,14 +41,15 @@ import { auth, isFirebaseConfigured } from './services/firebaseConfig';
 import { 
   voteChannel, publishChannelToFirestore, updateCommentInChannel, 
   deleteCommentFromChannel, addCommentToChannel, getPublicChannels, 
-  subscribeToPublicChannels, getGroupChannels, getUserProfile
+  subscribeToPublicChannels, getGroupChannels, getUserProfile,
+  setupSubscriptionListener
 } from './services/firestoreService';
 import { getUserChannels, saveUserChannel, deleteUserChannel } from './utils/db';
 import { HANDCRAFTED_CHANNELS, CATEGORY_STYLES, TOPIC_CATEGORIES } from './utils/initialData';
 import { OFFLINE_CHANNEL_ID } from './utils/offlineContent';
 import { GEMINI_API_KEY } from './services/private_keys';
 
-const APP_VERSION = "v3.43.0";
+const APP_VERSION = "v3.44.0";
 
 const UI_TEXT = {
   en: {
@@ -194,6 +194,17 @@ const App: React.FC = () => {
 
     return () => unsubscribeAuth();
   }, []);
+
+  // Listen for Subscription Changes (Stripe)
+  useEffect(() => {
+      if (currentUser && isFirebaseConfigured) {
+          const unsub = setupSubscriptionListener(currentUser.uid, (newTier) => {
+              console.log("Subscription status updated:", newTier);
+              setUserProfile(prev => prev ? { ...prev, subscriptionTier: newTier } : prev);
+          });
+          return () => unsub();
+      }
+  }, [currentUser]);
 
   // Load User Channels (Local)
   useEffect(() => {
@@ -434,6 +445,23 @@ const App: React.FC = () => {
 
       return data;
   }, [channels, searchQuery, selectedCategory, sortConfig]);
+
+  const handleUpgradeSuccess = async (newTier: SubscriptionTier) => {
+      // 1. Optimistic Update locally so UI reflects change instantly
+      if (userProfile) {
+          setUserProfile({ ...userProfile, subscriptionTier: newTier });
+      }
+      
+      // 2. Fetch fresh from DB (in case of real latency)
+      if (currentUser) {
+        try {
+            const fresh = await getUserProfile(currentUser.uid);
+            if (fresh) setUserProfile(fresh);
+        } catch(e) {
+            // Ignore fetch error, rely on optimistic update
+        }
+      }
+  };
 
   // --- AUTH GATING LOGIC ---
   if (authLoading) {
@@ -830,7 +858,7 @@ const App: React.FC = () => {
                videoEnabled={liveConfig.video}
                cameraEnabled={liveConfig.camera}
                activeSegment={liveConfig.segment}
-               initialTranscript={liveConfig.transcript}
+               initialTranscript={liveConfig.initialTranscript}
                onEndSession={() => {
                    // If it was a temp/ad-hoc meeting, go to recordings instead of staying in "podcast" view
                    if (tempChannel) {
@@ -926,7 +954,7 @@ const App: React.FC = () => {
              isOpen={true} 
              onClose={() => setIsPricingOpen(false)} 
              user={userProfile} 
-             onSuccess={(newTier) => setUserProfile({...userProfile, subscriptionTier: newTier})}
+             onSuccess={handleUpgradeSuccess}
           />
       )}
 

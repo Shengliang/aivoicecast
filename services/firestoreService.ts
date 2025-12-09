@@ -1,5 +1,5 @@
 
-// [FORCE-SYNC-v3.42.1] Timestamp: ${new Date().toISOString()}
+// [FORCE-SYNC-v3.44.0] Timestamp: ${new Date().toISOString()}
 import { db, auth, storage } from './firebaseConfig';
 import firebase from 'firebase/compat/app';
 import { Channel, Group, UserProfile, Invitation, GeneratedLecture, CommunityDiscussion, Comment, Booking, RecordingSession, TranscriptItem, CodeProject, Attachment, Blog, BlogPost, SubscriptionTier } from '../types';
@@ -7,7 +7,11 @@ import { HANDCRAFTED_CHANNELS } from '../utils/initialData';
 import { SPOTLIGHT_DATA } from '../utils/spotlightContent';
 import { OFFLINE_LECTURES, OFFLINE_CHANNEL_ID } from '../utils/offlineContent';
 
-// ... (Existing sanitizeData, saveSavedWord, etc... Keep everything until line ~220) ...
+// --- STRIPE CONFIGURATION ---
+// REPLACE THIS WITH YOUR ACTUAL STRIPE PRICE ID FROM THE DASHBOARD
+// Example: 'price_1P2q3rI4j5k6l7m8n9o0p1'
+export const STRIPE_PRICE_ID = 'price_1P2q3rI4j5k6l7m8n9o0p1'; 
+
 // Helper to remove undefined fields which Firestore rejects
 function sanitizeData(data: any): any {
   if (Array.isArray(data)) {
@@ -191,8 +195,7 @@ export async function syncUserProfile(user: any): Promise<void> {
       lastLogin: firebase.firestore.FieldValue.serverTimestamp(),
       displayName: user.displayName || 'Anonymous',
       photoURL: user.photoURL || '',
-      subscriptionTier: tier,
-      subscriptionStatus: data?.subscriptionStatus || 'active'
+      // We don't overwrite tier here, it should be managed by the subscription listener
     });
   }
 }
@@ -243,54 +246,99 @@ export async function incrementApiUsage(uid: string): Promise<void> {
   }
 }
 
-// --- SUBSCRIPTIONS (MOCK PAYMENT) ---
+// --- SUBSCRIPTIONS & STRIPE ---
 
-export async function upgradeUserSubscription(uid: string, tier: SubscriptionTier): Promise<boolean> {
-    const userRef = db.collection('users').doc(uid);
-    try {
-        await userRef.set({
-            subscriptionTier: tier,
-            subscriptionStatus: 'active'
-        }, { merge: true });
+export async function createStripeCheckoutSession(uid: string): Promise<string> {
+    if (!uid) throw new Error("User ID missing");
+
+    // 1. Create a document in the checkout_sessions collection
+    // This triggers the "Run Payments with Stripe" extension
+    const sessionRef = await db
+        .collection('customers')
+        .doc(uid)
+        .collection('checkout_sessions')
+        .add({
+            price: STRIPE_PRICE_ID,
+            success_url: window.location.href, // Redirect back to app
+            cancel_url: window.location.href,
+        });
+
+    // 2. Listen for the `url` field to be populated by the extension
+    return new Promise<string>((resolve, reject) => {
+        const unsubscribe = sessionRef.onSnapshot((snap) => {
+            const data = snap.data();
+            if (data?.url) {
+                unsubscribe();
+                resolve(data.url);
+            }
+            if (data?.error) {
+                unsubscribe();
+                reject(new Error(data.error.message));
+            }
+        });
         
-        try {
-            logUserActivity('upgrade_subscription', { tier });
-        } catch(e) {}
-        return true;
-    } catch (e: any) {
-        if (e.code === 'permission-denied') {
-            console.warn("Firestore write denied (Security Rules). Simulating success for Mock Payment demo.");
-            return true; 
-        }
-        console.error("Subscription update failed", e);
-        throw e;
-    }
+        // Timeout after 15s to prevent hanging
+        setTimeout(() => {
+            unsubscribe();
+            reject(new Error("Timeout waiting for Stripe session. Check your Stripe Extension config."));
+        }, 15000);
+    });
+}
+
+// Listen for subscription changes in real-time
+export function setupSubscriptionListener(uid: string, onUpdate: (tier: SubscriptionTier) => void) {
+    if (!uid) return () => {};
+
+    // Watch the `subscriptions` sub-collection for this user
+    return db
+        .collection('customers')
+        .doc(uid)
+        .collection('subscriptions')
+        .where('status', 'in', ['active', 'trialing'])
+        .onSnapshot(async (snapshot) => {
+            // If any active subscription exists, they are PRO
+            const isPro = !snapshot.empty;
+            const newTier: SubscriptionTier = isPro ? 'pro' : 'free';
+            
+            // Sync to User Profile for easier access elsewhere
+            const userRef = db.collection('users').doc(uid);
+            await userRef.set({ subscriptionTier: newTier }, { merge: true });
+            
+            onUpdate(newTier);
+        }, (error) => {
+            console.warn("Subscription listener error:", error);
+        });
+}
+
+// Legacy Mock function - Deprecated, kept for backward compat if needed temporarily
+export async function upgradeUserSubscription(uid: string, tier: SubscriptionTier): Promise<boolean> {
+    return true; // No-op, now handled by Stripe listener
 }
 
 export async function downgradeUserSubscription(uid: string): Promise<boolean> {
+    // In a real Stripe app, you'd direct them to the customer portal
+    // For now, we simulate a downgrade by updating the user doc directly if rules allow,
+    // though usually the Extension syncs this.
+    
+    // To properly cancel, we should provide a link to Stripe Customer Portal.
+    // Here we just update local state for the UI.
     const userRef = db.collection('users').doc(uid);
     try {
         await userRef.set({
-            subscriptionTier: 'free',
-            subscriptionStatus: 'active'
+            subscriptionTier: 'free'
         }, { merge: true });
         
         try { logUserActivity('downgrade_subscription', {}); } catch(e) {}
         return true;
     } catch (e: any) {
-        if (e.code === 'permission-denied') {
-            return true; // Optimistic success for demo
-        }
         throw e;
     }
 }
 
 export async function getBillingHistory(uid: string): Promise<any[]> {
-    // In a real app, this would query a 'payments' subcollection synced by Stripe
-    // Here we return mock data for the demo
+    // In real app, query `customers/{uid}/payments`
     return [
         { date: new Date().toLocaleDateString(), amount: '29.00', status: 'paid' },
-        { date: new Date(Date.now() - 30*24*60*60*1000).toLocaleDateString(), amount: '29.00', status: 'paid' }
     ];
 }
 
