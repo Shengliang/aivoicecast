@@ -17,6 +17,12 @@ export const PricingModal: React.FC<PricingModalProps> = ({ isOpen, onClose, use
   if (!isOpen) return null;
 
   const handleCheckout = async () => {
+    // Guard against missing user info (rare edge case on stale profiles)
+    if (!user || !user.uid) {
+        alert("Error: User profile is incomplete. Please sign out and sign in again.");
+        return;
+    }
+
     setProcessing(true);
     try {
       // Create session via Stripe Extension

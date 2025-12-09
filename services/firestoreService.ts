@@ -1,4 +1,3 @@
-
 // [FORCE-SYNC-v3.44.0] Timestamp: ${new Date().toISOString()}
 import { db, auth, storage } from './firebaseConfig';
 import firebase from 'firebase/compat/app';
@@ -210,7 +209,8 @@ export async function getUserProfile(uid: string): Promise<UserProfile | null> {
   let tier: SubscriptionTier = 'free';
   if (data?.subscriptionTier === 'pro' || data?.subscriptionTier === 'creator') tier = 'pro';
   
-  return { ...data, subscriptionTier: tier } as UserProfile;
+  // Ensure uid is always present by using the argument or doc ID
+  return { ...data, uid: uid, subscriptionTier: tier } as UserProfile;
 }
 
 export async function getUserProfileByEmail(email: string): Promise<UserProfile | null> {
