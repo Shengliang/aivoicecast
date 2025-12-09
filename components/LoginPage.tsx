@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { Podcast, ArrowRight, ShieldCheck, Loader2, AlertCircle } from 'lucide-react';
+import { Podcast, ArrowRight, ShieldCheck, Loader2, AlertCircle, Terminal } from 'lucide-react';
 import { signInWithGoogle } from '../services/authService';
 import { logUserActivity } from '../services/firestoreService';
 
@@ -22,9 +22,17 @@ export const LoginPage: React.FC = () => {
       let msg = "Login failed. Please try again.";
       if (e.code === 'auth/popup-closed-by-user') msg = "Sign-in cancelled.";
       else if (e.code === 'auth/popup-blocked') msg = "Popup blocked. Please allow popups for this site.";
+      else if (e.code === 'auth/operation-not-supported-in-this-environment') {
+          msg = "Environment Error: Firebase Auth does not support this environment (e.g. file:// or restricted iframe).";
+      }
       setError(msg);
       setIsLoading(false);
     }
+  };
+
+  const handleDevBypass = () => {
+      localStorage.setItem('aivoicecast_dev_mode', 'true');
+      window.location.reload();
   };
 
   return (
@@ -60,9 +68,20 @@ export const LoginPage: React.FC = () => {
             </div>
 
             {error && (
-              <div className="bg-red-900/20 border border-red-900/50 rounded-lg p-3 text-red-300 text-xs flex items-center gap-2 text-left">
-                <AlertCircle size={16} className="shrink-0" />
-                {error}
+              <div className="bg-red-900/20 border border-red-900/50 rounded-lg p-3 text-red-300 text-xs flex flex-col gap-2 text-left">
+                <div className="flex items-center gap-2">
+                    <AlertCircle size={16} className="shrink-0" />
+                    <span>{error}</span>
+                </div>
+                {error.includes("Environment Error") && (
+                    <button 
+                        onClick={handleDevBypass}
+                        className="mt-2 w-full py-2 bg-red-800 hover:bg-red-700 text-white rounded font-bold flex items-center justify-center gap-2 transition-colors"
+                    >
+                        <Terminal size={14} />
+                        <span>Enable Dev Mode (Bypass)</span>
+                    </button>
+                )}
               </div>
             )}
 

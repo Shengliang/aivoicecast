@@ -16,6 +16,7 @@ import { auth } from '../services/firebaseConfig';
 interface WhiteboardProps {
   onBack: () => void;
   sessionId?: string;
+  currentUser?: any;
 }
 
 type ToolType = 'selection' | 'pencil' | 'rectangle' | 'circle' | 'line' | 'arrow' | 'text' | 'eraser' | 'pan';
@@ -291,7 +292,7 @@ const executeDiagramLayout = (args: any, startId: string): DrawingElement[] => {
     return elements;
 };
 
-export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack, sessionId }) => {
+export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack, sessionId, currentUser }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null); 
   const inputRef = useRef<HTMLInputElement>(null);
@@ -632,7 +633,8 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack, sessionId }) => 
   };
 
   const handleShare = async () => {
-      if (!auth.currentUser) {
+      const user = currentUser || auth.currentUser;
+      if (!user) {
           alert("Please sign in to share.");
           return;
       }
