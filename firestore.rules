@@ -110,7 +110,7 @@ service cloud.firestore {
     match /discussions/{discussionId} { allow read, write: if isAuthenticated(); }
     match /recordings/{recordingId} { allow read, write: if isAuthenticated(); }
     match /saved_words/{wordId} { allow read, write: if isAuthenticated(); }
-    match /activity_logs/{logId} { allow create: if isAuthenticated(); }
+    match /activity_logs/{logId} { allow read, create: if isAuthenticated(); }
 
     // ----------------------------------------------------------------------
     // COLLABORATION (Code Studio & Whiteboard)
