@@ -75,6 +75,7 @@ export const WorkplaceChat: React.FC<WorkplaceChatProps> = ({ onBack, currentUse
       if (e.target.files && e.target.files.length > 0) {
           setSelectedFiles(prev => [...prev, ...Array.from(e.target.files || [])]);
       }
+      // Reset input value so the same file can be selected again if needed
       e.target.value = '';
   };
 
@@ -124,7 +125,7 @@ export const WorkplaceChat: React.FC<WorkplaceChatProps> = ({ onBack, currentUse
         setSelectedFiles([]);
     } catch (error) {
         console.error("Send failed", error);
-        alert("Failed to send message.");
+        alert("Failed to send message. Please try again.");
     } finally {
         setIsUploading(false);
     }
@@ -460,15 +461,20 @@ export const WorkplaceChat: React.FC<WorkplaceChatProps> = ({ onBack, currentUse
 
               {/* Attachments Preview */}
               {selectedFiles.length > 0 && (
-                  <div className="flex gap-2 overflow-x-auto pb-2 mb-2">
+                  <div className="flex gap-3 overflow-x-auto pb-2 mb-2 px-2">
                       {selectedFiles.map((file, idx) => (
-                          <div key={idx} className="relative group shrink-0 w-16 h-16 bg-slate-800 rounded border border-slate-700 flex items-center justify-center overflow-hidden">
+                          <div key={idx} className="relative group shrink-0 w-20 h-20 bg-slate-800 rounded-lg border border-slate-700 flex items-center justify-center overflow-hidden shadow-sm">
                               {file.type.startsWith('image/') ? (
                                   <img src={URL.createObjectURL(file)} className="w-full h-full object-cover opacity-80" />
                               ) : (
-                                  <FileText size={24} className="text-slate-400"/>
+                                  <div className="flex flex-col items-center">
+                                      <FileText size={24} className="text-slate-400 mb-1"/>
+                                      <span className="text-[9px] text-slate-500 truncate w-16 text-center">{file.name}</span>
+                                  </div>
                               )}
-                              <button onClick={() => removeAttachment(idx)} className="absolute top-0 right-0 bg-red-500 text-white p-0.5 rounded-bl hover:bg-red-600"><X size={10}/></button>
+                              <button onClick={() => removeAttachment(idx)} className="absolute top-0 right-0 bg-slate-900/80 text-white p-1 rounded-bl hover:bg-red-600 hover:text-white transition-colors">
+                                  <X size={12}/>
+                              </button>
                           </div>
                       ))}
                   </div>
@@ -492,8 +498,8 @@ export const WorkplaceChat: React.FC<WorkplaceChatProps> = ({ onBack, currentUse
                       placeholder={`Message #${activeChannelName}`}
                       className="flex-1 bg-transparent text-white outline-none placeholder-slate-500"
                   />
-                  <button type="submit" disabled={(!newMessage.trim() && selectedFiles.length === 0) || isUploading} className="p-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed">
-                      {isUploading ? <Loader2 size={18} className="animate-spin"/> : <Send size={18} />}
+                  <button type="submit" disabled={(!newMessage.trim() && selectedFiles.length === 0) || isUploading} className="p-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2">
+                      {isUploading ? <><Loader2 size={18} className="animate-spin"/><span className="text-xs">Uploading...</span></> : <Send size={18} />}
                   </button>
               </form>
           </div>
