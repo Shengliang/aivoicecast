@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { Channel, Booking, TodoItem } from '../types';
 import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, Clock, Briefcase, Plus, Video, CheckCircle, X, Users, Loader2, Mic, Play, Mail, Sparkles, ArrowLeft, Monitor, Filter, LayoutGrid, List, Languages, CloudSun, Wind, BookOpen, CheckSquare, Square, Trash2, StopCircle, Download, FileText, Check } from 'lucide-react';
@@ -94,6 +95,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
   
   // Rich Context State
   const [weather, setWeather] = useState<WeatherData | null>(null);
+  const [loadingWeather, setLoadingWeather] = useState(false);
   const [dailyWord, setDailyWord] = useState<DailyWord | null>(null);
   const [season, setSeason] = useState('');
   
@@ -124,7 +126,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
   const [bookDate, setBookDate] = useState('');
   const [bookTime, setBookTime] = useState('');
   const [bookTopic, setBookTopic] = useState('');
-  const [inviteEmail, setInviteEmail] = useState('');
+  const [inviteEmail, setInviteEmail] = useState(''); // Used for Guest in AI or Invitee in P2P
   const [isBooking, setIsBooking] = useState(false);
 
   // Recorder Flow State
@@ -159,10 +161,21 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
       }
   }, [todos, currentUser]);
 
-  // Fetch Weather
-  useEffect(() => {
-    fetchLocalWeather().then(setWeather);
-  }, []);
+  const handleFetchWeather = async () => {
+      setLoadingWeather(true);
+      try {
+          const data = await fetchLocalWeather();
+          if (data) {
+              setWeather(data);
+          } else {
+              alert("Could not fetch weather. Please enable location permissions.");
+          }
+      } catch (e) {
+          console.error(e);
+      } finally {
+          setLoadingWeather(false);
+      }
+  };
 
   // Update Daily Word when selected date changes & Check Cached Explanation
   useEffect(() => {
@@ -549,7 +562,21 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
 
   // Weather Icon Helper
   const WeatherDisplay = () => {
-      if (!weather) return <div className="text-slate-500 text-xs flex items-center gap-1"><Loader2 size={12} className="animate-spin"/> Weather</div>;
+      if (loadingWeather) return <div className="text-slate-500 text-xs flex items-center gap-1"><Loader2 size={12} className="animate-spin"/> Loading Weather...</div>;
+      
+      if (!weather) {
+          return (
+              <button 
+                  onClick={handleFetchWeather}
+                  className="text-xs text-indigo-400 hover:text-white flex items-center gap-1 bg-slate-800/50 px-2 py-1 rounded border border-slate-700 hover:border-indigo-500 transition-colors"
+                  title="Use location for local weather"
+              >
+                  <CloudSun size={12} />
+                  <span>Enable Weather</span>
+              </button>
+          );
+      }
+
       const desc = getWeatherDescription(weather.weatherCode);
       return (
           <div className="flex items-center gap-2 bg-blue-900/20 px-3 py-1.5 rounded-lg border border-blue-800/50">

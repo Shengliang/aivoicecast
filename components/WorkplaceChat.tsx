@@ -77,7 +77,7 @@ export const WorkplaceChat: React.FC<WorkplaceChatProps> = ({ onBack, currentUse
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
       if (e.target.files && e.target.files.length > 0) {
-          const newFiles = Array.from(e.target.files);
+          const newFiles: File[] = Array.from(e.target.files);
           setSelectedFiles(prev => [...prev, ...newFiles]);
           
           // Generate previews immediately
