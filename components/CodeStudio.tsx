@@ -395,34 +395,38 @@ const generateHighlightedHTML = (code: string, language: string) => {
   return processed;
 };
 
-const CodeCursor: React.FC<{ cursor: CursorPosition; currentLine: number }> = ({ cursor, currentLine }) => {
-    const top = (cursor.line - 1) * 24;
+const CodeCursor: React.FC<{ cursor: CursorPosition; currentLine: number; isLocal?: boolean }> = ({ cursor, currentLine, isLocal }) => {
+    // Correct calculation accounting for p-4 (1rem = 16px) top padding of container
+    const top = (cursor.line - 1) * 24 + 16;
+    
     return (
         <div 
-            className="absolute z-30 pointer-events-none transition-all duration-100 ease-out"
+            className={`absolute z-30 pointer-events-none transition-all duration-100 ease-out ${isLocal ? 'opacity-50' : 'opacity-100'}`}
             style={{ 
                 top: `${top}px`, 
                 left: `calc(${cursor.column}ch + 1rem)`, 
                 height: `24px`
             }}
         >
-            <div className="w-0.5 h-full absolute top-0 left-0" style={{ backgroundColor: cursor.color }}></div>
+            <div className={`w-0.5 h-full absolute top-0 left-0 ${isLocal ? 'animate-pulse' : ''}`} style={{ backgroundColor: cursor.color }}></div>
             <div 
                 className="absolute -top-5 left-0 px-1.5 py-0.5 rounded text-[10px] font-bold text-white whitespace-nowrap shadow-sm opacity-0 group-hover:opacity-100 transition-opacity"
                 style={{ backgroundColor: cursor.color }}
             >
                 {cursor.userName}
             </div>
-            <div 
-                className="absolute -top-4 -left-1 w-2 h-2 rounded-full"
-                style={{ backgroundColor: cursor.color }}
-                title={`${cursor.userName} (L${cursor.line})`}
-            />
+            {!isLocal && (
+                <div 
+                    className="absolute -top-4 -left-1 w-2 h-2 rounded-full"
+                    style={{ backgroundColor: cursor.color }}
+                    title={`${cursor.userName} (L${cursor.line})`}
+                />
+            )}
         </div>
     );
 };
 
-const EnhancedEditor = ({ code, language, onChange, onScroll, onSelect, textAreaRef, lineNumbersRef, isLoadingContent, scrollToLine, cursors, readOnly }: any) => {
+const EnhancedEditor = ({ code, language, onChange, onScroll, onSelect, textAreaRef, lineNumbersRef, isLoadingContent, scrollToLine, cursors, readOnly, localCursor }: any) => {
   useEffect(() => {
       if (scrollToLine !== null && textAreaRef.current) {
           const lineHeight = 24; 
@@ -463,6 +467,24 @@ const EnhancedEditor = ({ code, language, onChange, onScroll, onSelect, textArea
             {cursors && cursors.map((c: CursorPosition) => (
                 <CodeCursor key={c.clientId || c.userId} cursor={c} currentLine={0} />
             ))}
+
+            {/* Render local cursor for Read-Only users so they see where they are */}
+            {readOnly && localCursor && (
+                <CodeCursor 
+                    cursor={{ 
+                        clientId: 'local-ghost', 
+                        userId: 'me', 
+                        userName: 'You', 
+                        fileName: '', 
+                        line: localCursor.line, 
+                        column: localCursor.column, 
+                        color: '#94a3b8', // Gray
+                        updatedAt: Date.now() 
+                    }} 
+                    currentLine={0}
+                    isLocal={true}
+                />
+            )}
 
             <textarea
                 ref={textAreaRef}
@@ -618,6 +640,9 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
   const [isWaitingForAccess, setIsWaitingForAccess] = useState(false); 
   const [canForceTake, setCanForceTake] = useState(false);
 
+  // Local user's current cursor position (even if read-only)
+  const [localCursor, setLocalCursor] = useState<{ line: number, column: number } | null>(null);
+
   const [guestId] = useState(() => 'guest_' + Math.floor(Math.random() * 10000));
   
   // Use Session Storage for Client ID to persist across refreshes but expire on tab close
@@ -770,6 +795,8 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
       const line = lines.length;
       const column = lines[lines.length - 1].length;
       
+      setLocalCursor({ line, column });
+
       if (cursorUpdateTimerRef.current) clearTimeout(cursorUpdateTimerRef.current);
       cursorUpdateTimerRef.current = setTimeout(() => {
           if (isSharedSession) {
@@ -1355,6 +1382,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
                         scrollToLine={scrollToLine}
                         cursors={remoteCursors.filter(c => c.fileName === activeFile.name)}
                         readOnly={isReadOnly}
+                        localCursor={localCursor}
                     />
                 )}
             </div>
