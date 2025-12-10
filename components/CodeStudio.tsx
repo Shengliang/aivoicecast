@@ -1,5 +1,4 @@
 
-
 import React, { useState, useEffect, useRef } from 'react';
 import { GoogleGenAI, FunctionDeclaration, Type } from '@google/genai';
 import { ArrowLeft, Save, Folder, File, Code, Plus, Trash2, Loader2, ChevronRight, ChevronDown, X, MessageSquare, FileCode, FileJson, FileType, Search, Coffee, Hash, CloudUpload, Edit3, BookOpen, Bot, Send, Maximize2, Minimize2, GripVertical, UserCheck, AlertTriangle, Archive, Sparkles, Video, Mic, CheckCircle, Monitor, FileText, Eye, Github, GitBranch, GitCommit, FolderOpen, RefreshCw, GraduationCap, DownloadCloud, Terminal, Undo2, Check, Share2, Copy, Lock, Link, Image as ImageIcon } from 'lucide-react';
@@ -631,6 +630,10 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const lineNumbersRef = useRef<HTMLDivElement>(null);
 
+  // REFS for state access inside callbacks/closures
+  const activeFileIndexRef = useRef(0);
+  const lastEditTimeRef = useRef(0);
+
   const activeFile = project.files[activeFileIndex] || project.files[0];
   const isMarkdown = activeFile ? activeFile.name.toLowerCase().endsWith('.md') : false;
   const isPlantUML = activeFile ? ['puml', 'plantuml', 'iuml'].includes(activeFile.name.split('.').pop()?.toLowerCase() || '') : false;
@@ -639,46 +642,52 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
 
   const fileTree = React.useMemo(() => buildFileTree(project.files, expandedFolders), [project.files, expandedFolders]);
 
+  // Sync ref
+  useEffect(() => { activeFileIndexRef.current = activeFileIndex; }, [activeFileIndex]);
+
   useEffect(() => {
       if (sessionId) {
           setIsSharedSession(true);
           const unsubscribe = subscribeToCodeProject(sessionId, (remoteProject) => {
               if (remoteProject.cursors) {
-                  // FILTER: Hide my own cursors based on User ID
                   const others = Object.values(remoteProject.cursors).filter(c => c.userId !== myUserId);
                   setRemoteCursors(others);
               }
               
               // ACCESS CONTROL CHECK
-              // If writeToken is on the doc, check against accessKey prop.
-              // If writeToken is missing on doc AND I am the owner, lazily create one.
-              
               // @ts-ignore
               const projectWriteToken = remoteProject.writeToken;
               const isOwner = currentUser && currentUser.uid === remoteProject.ownerId;
               
               if (isOwner && !projectWriteToken) {
-                  // Lazy migration: Add a write token if missing
                   const newToken = crypto.randomUUID();
                   const updatedProj = { ...remoteProject, writeToken: newToken };
                   saveCodeProject(updatedProj).catch(console.error);
-                  // Grant myself access immediately (state update will come via subscription next tick)
               }
 
-              // Determine permission
-              // 1. Owner always has write access
-              // 2. Guest has write access ONLY if accessKey matches document's writeToken
               const canEdit = isOwner || (projectWriteToken && accessKey === projectWriteToken);
-              
               setIsReadOnly(!canEdit);
 
               setProject(prev => {
-                  return { ...remoteProject };
+                  const newFiles = [...remoteProject.files];
+                  const currentIndex = activeFileIndexRef.current;
+                  
+                  // Anti-jitter: If we edited recently (within 2s), don't overwrite the active file content from remote
+                  if (Date.now() - lastEditTimeRef.current < 2000) {
+                       if (prev.files[currentIndex] && newFiles[currentIndex] && prev.files[currentIndex].name === newFiles[currentIndex].name) {
+                           newFiles[currentIndex] = {
+                               ...newFiles[currentIndex],
+                               content: prev.files[currentIndex].content // Keep local content
+                           };
+                       }
+                  }
+                  
+                  return { ...remoteProject, files: newFiles };
               });
           });
           return () => unsubscribe();
       }
-  }, [sessionId, activeFileIndex, myUserId, localClientId, accessKey, currentUser]); 
+  }, [sessionId, myUserId, localClientId, accessKey, currentUser]); 
 
   const handleCursorUpdate = (e: React.SyntheticEvent<HTMLTextAreaElement>) => {
       // Don't send cursor updates if in read-only mode
@@ -863,6 +872,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
   };
 
   const handleCodeChange = (newContent: string) => {
+      lastEditTimeRef.current = Date.now();
       updateFileAtIndex(activeFileIndex, newContent);
   };
 
