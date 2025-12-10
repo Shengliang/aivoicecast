@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { GoogleGenAI, FunctionDeclaration, Type } from '@google/genai';
-import { ArrowLeft, Save, Folder, File, Code, Plus, Trash2, Loader2, ChevronRight, ChevronDown, X, MessageSquare, FileCode, FileJson, FileType, Search, Coffee, Hash, CloudUpload, Edit3, BookOpen, Bot, Send, Maximize2, Minimize2, GripVertical, UserCheck, AlertTriangle, Archive, Sparkles, Video, Mic, CheckCircle, Monitor, FileText, Eye, Github, GitBranch, GitCommit, FolderOpen, RefreshCw, GraduationCap, DownloadCloud, Terminal, Undo2, Check, Share2, Copy, Lock, Link, Image as ImageIcon, Users, UserPlus, ShieldAlert, Crown } from 'lucide-react';
+import { ArrowLeft, Save, Folder, File, Code, Plus, Trash2, Loader2, ChevronRight, ChevronDown, X, MessageSquare, FileCode, FileJson, FileType, Search, Coffee, Hash, CloudUpload, Edit3, BookOpen, Bot, Send, Maximize2, Minimize2, GripVertical, UserCheck, AlertTriangle, Archive, Sparkles, Video, Mic, CheckCircle, Monitor, FileText, Eye, Github, GitBranch, GitCommit, FolderOpen, RefreshCw, GraduationCap, DownloadCloud, Terminal, Undo2, Check, Share2, Copy, Lock, Link, Image as ImageIcon, Users, UserPlus, ShieldAlert, Crown, Bug } from 'lucide-react';
 import { GEMINI_API_KEY } from '../services/private_keys';
 import { CodeProject, CodeFile, ChatMessage, Channel, GithubMetadata, CursorPosition } from '../types';
 import { MarkdownView } from './MarkdownView';
@@ -662,6 +662,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
   const [showCommitModal, setShowCommitModal] = useState(false);
   const [needsGitHubReauth, setNeedsGitHubReauth] = useState(false);
   const [isSharedSession, setIsSharedSession] = useState(false);
+  const [showDebug, setShowDebug] = useState(true); // Toggle for Cursor Debugger
   
   // WRITE ACCESS STATE
   const [isReadOnly, setIsReadOnly] = useState(false); 
@@ -1308,6 +1309,11 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
                     </>
                 )}
             </div>
+            
+            {/* Debug Toggle */}
+            <button onClick={() => setShowDebug(!showDebug)} className={`p-2 rounded hover:bg-slate-800 ${showDebug ? 'text-green-400' : 'text-slate-500'}`} title="Toggle Debug Overlay">
+                <Bug size={16} />
+            </button>
          </div>
       </header>
 
@@ -1413,6 +1419,36 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
                         readOnly={isReadOnly}
                         localCursor={localCursor}
                     />
+                )}
+                
+                {/* Debug Panel */}
+                {showDebug && (
+                    <div className="absolute bottom-4 right-4 bg-black/80 text-green-400 p-4 rounded font-mono text-xs z-50 border border-green-500/30 max-w-sm pointer-events-none select-text">
+                        <h4 className="font-bold border-b border-green-500/30 mb-2 pb-1 text-white flex justify-between items-center">
+                            DEBUG: Cursor Sync
+                            <span className="text-[9px] text-slate-500">Row index (1-based)</span>
+                        </h4>
+                        <div className="mb-3">
+                            <span className="text-white block mb-1">LOCAL (SENDING):</span>
+                            <div className="pl-2 border-l-2 border-green-500">
+                                Line: {localCursor?.line ?? '-'} <span className="text-slate-500">({(localCursor?.line || 1) - 1} * 24px = {((localCursor?.line || 1) - 1) * 24}px)</span><br/>
+                                Col: {localCursor?.column ?? '-'}
+                            </div>
+                        </div>
+                        <div>
+                            <span className="text-white block mb-1">REMOTE (RECEIVING):</span>
+                            {remoteCursors.length === 0 ? (
+                                <div className="text-slate-500 italic pl-2">No remote cursors</div>
+                            ) : (
+                                remoteCursors.map((c, i) => (
+                                    <div key={i} className="pl-2 border-l-2 border-indigo-500 mb-1">
+                                        <span className="font-bold text-indigo-300">{c.userName}</span><br/>
+                                        Line: {c.line} <span className="text-slate-500">-> Top: {(c.line - 1) * 24}px</span>
+                                    </div>
+                                ))
+                            )}
+                        </div>
+                    </div>
                 )}
             </div>
          </div>
