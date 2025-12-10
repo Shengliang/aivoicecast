@@ -312,7 +312,7 @@ export const CareerCenter: React.FC<CareerCenterProps> = ({ onBack, currentUser 
                               </ul>
                               <p className="mt-4 text-sm text-slate-400 flex items-center gap-2">
                                   <Mail size={14} className="text-indigo-400"/> 
-                                  <span>Questions? Contact us at <a href="mailto:jobs@aivoicecast.com" className="text-indigo-400 hover:text-white transition-colors underline">jobs@aivoicecast.com</a></span>
+                                  <span>Questions? Contact us at <a href="mailto:jobs@aivoicecast.com?subject=Mentor%20Role%20Inquiry" className="text-indigo-400 hover:text-white transition-colors underline">jobs@aivoicecast.com</a></span>
                               </p>
                           </section>
                       </div>
@@ -447,7 +447,7 @@ export const CareerCenter: React.FC<CareerCenterProps> = ({ onBack, currentUser 
                           </button>
                           
                           <div className="text-center text-xs text-slate-500 mt-2">
-                              Prefer email? Send your resume to <a href="mailto:jobs@aivoicecast.com" className="text-indigo-400 hover:text-indigo-300 hover:underline">jobs@aivoicecast.com</a>
+                              Prefer email? Send your resume to <a href="mailto:jobs@aivoicecast.com?subject=Resume%20Submission" className="text-indigo-400 hover:text-indigo-300 hover:underline">jobs@aivoicecast.com</a>
                           </div>
                       </form>
                   )}

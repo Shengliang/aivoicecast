@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { UserProfile } from '../types';
-import { X, User, Shield, CreditCard, LogOut, CheckCircle, AlertTriangle, Bell, Lock, Database, Trash2, Edit2, Save, FileText, ExternalLink, Loader2 } from 'lucide-react';
+import { X, User, Shield, CreditCard, LogOut, CheckCircle, AlertTriangle, Bell, Lock, Database, Trash2, Edit2, Save, FileText, ExternalLink, Loader2, DollarSign } from 'lucide-react';
 import { logUserActivity, getBillingHistory, createStripePortalSession } from '../services/firestoreService';
 import { clearAudioCache } from '../services/tts';
 
@@ -182,6 +182,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         </div>
                     )}
 
+                    {/* Subscription Status */}
                     <div className="flex items-center justify-between bg-slate-800/50 p-6 rounded-xl border border-slate-700">
                         <div>
                             <h4 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-1 flex items-center gap-2">
@@ -249,6 +250,35 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                             </div>
                         </div>
                     )}
+
+                    {/* MENTOR PAYOUTS SECTION */}
+                    <div className="mt-8 pt-8 border-t border-slate-800">
+                        <h4 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-4 flex items-center gap-2">
+                            <DollarSign size={16} className="text-emerald-400"/> Mentor Payouts
+                        </h4>
+                        
+                        <div className="bg-slate-800/30 border border-slate-700 rounded-xl p-5">
+                            <div className="flex items-start gap-4">
+                                <div className="p-3 bg-slate-800 rounded-full text-slate-400">
+                                    <CreditCard size={24} />
+                                </div>
+                                <div className="flex-1">
+                                    <h5 className="font-bold text-white text-sm mb-1">Get Paid for Mentorship</h5>
+                                    <p className="text-xs text-slate-400 leading-relaxed mb-4">
+                                        As a community mentor, you can charge for sessions. Connect your Stripe account to receive direct deposits from students.
+                                    </p>
+                                    
+                                    <button 
+                                        onClick={() => alert("Stripe Connect onboarding would launch here. (Placeholder)")}
+                                        className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold rounded-lg border border-slate-600 transition-colors flex items-center gap-2"
+                                    >
+                                        <span>Connect Stripe Account</span>
+                                        <ExternalLink size={12} className="text-slate-500"/>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             )}
         </div>
