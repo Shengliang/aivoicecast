@@ -396,17 +396,20 @@ const generateHighlightedHTML = (code: string, language: string) => {
 };
 
 const CodeCursor: React.FC<{ cursor: CursorPosition; currentLine: number; isLocal?: boolean }> = ({ cursor, currentLine, isLocal }) => {
-    // 24px line height (leading-6 in tailwind). 
-    // Position 0 = first line.
-    // Line index should be 1-based from backend, so subtract 1 to get 0-based Y coordinate.
-    const top = (cursor.line - 1) * 24;
+    // Force 24px line height calculation.
+    // Ensure we are working with numbers.
+    const lineIndex = Math.max(0, cursor.line - 1);
+    const top = lineIndex * 24;
+    
+    // Explicitly convert column to numbers for debug/render safety
+    const colIndex = cursor.column || 0;
     
     return (
         <div 
             className={`absolute z-30 pointer-events-none transition-all duration-100 ease-out ${isLocal ? 'opacity-50' : 'opacity-100'}`}
             style={{ 
                 top: `${top}px`, 
-                left: `calc(${cursor.column}ch)`, 
+                left: `calc(${colIndex}ch)`, 
                 height: `24px`
             }}
         >
@@ -459,11 +462,21 @@ const EnhancedEditor = ({ code, language, onChange, onScroll, onSelect, textArea
       if (onScroll) onScroll(e);
   };
 
+  // We explicitly set lineHeight to 24px via inline styles to avoid browser discrepancies with 'rem' based classes
+  const editorStyle = {
+      lineHeight: '24px',
+      padding: '16px', // Matches top: 16px, left: 16px for cursor layer
+      fontSize: '14px',
+      fontFamily: 'monospace',
+      margin: 0
+  };
+
   return (
     <div className={`flex-1 relative bg-slate-950 flex overflow-hidden font-mono text-sm ${readOnly ? 'cursor-default' : ''}`}>
         <div 
             ref={lineNumbersRef}
-            className="w-12 bg-slate-900 border-r border-slate-800 text-right text-slate-600 py-4 pr-3 select-none overflow-hidden flex-shrink-0 leading-6 font-mono"
+            className="w-12 bg-slate-900 border-r border-slate-800 text-right text-slate-600 select-none overflow-hidden flex-shrink-0 font-mono"
+            style={{ paddingTop: '16px', paddingBottom: '16px', paddingRight: '12px', lineHeight: '24px', fontSize: '14px' }}
         >
             {code.split('\n').map((_: any, i: number) => (
                 <div key={i} className={scrollToLine === (i + 1) ? "text-yellow-400 font-bold bg-yellow-900/20" : ""}>{i + 1}</div>
@@ -479,18 +492,18 @@ const EnhancedEditor = ({ code, language, onChange, onScroll, onSelect, textArea
             )}
 
             <pre
-                className="absolute top-0 left-0 w-full h-full p-4 m-0 pointer-events-none whitespace-pre overflow-hidden leading-6 font-mono border-0"
+                className="absolute top-0 left-0 w-full h-full pointer-events-none whitespace-pre overflow-hidden border-0"
                 aria-hidden="true"
-                style={{ tabSize: 4 }}
+                style={{ ...editorStyle, tabSize: 4 }}
             >
                 <code 
                     dangerouslySetInnerHTML={{ __html: generateHighlightedHTML(code, language) + '<br/>' }} 
                 />
             </pre>
             
-            {/* Cursor Layer - Matches Textarea Padding (p-4 = 16px) using explicit absolute coordinates */}
-            <div className="absolute top-0 left-0 w-full h-full pointer-events-none overflow-hidden font-mono leading-6">
-                <div ref={cursorMoveRef} className="absolute top-4 left-4 w-full">
+            {/* Cursor Layer - Matches Textarea Padding (16px) using explicit absolute coordinates */}
+            <div className="absolute top-0 left-0 w-full h-full pointer-events-none overflow-hidden font-mono" style={{ lineHeight: '24px', fontSize: '14px' }}>
+                <div ref={cursorMoveRef} className="absolute w-full" style={{ top: '16px', left: '16px' }}>
                     {cursors && cursors.map((c: CursorPosition) => (
                         <CodeCursor key={c.clientId || c.userId} cursor={c} currentLine={0} />
                     ))}
@@ -523,13 +536,13 @@ const EnhancedEditor = ({ code, language, onChange, onScroll, onSelect, textArea
                 onSelect={onSelect}
                 onClick={onSelect}
                 onKeyUp={onSelect}
-                className={`absolute top-0 left-0 w-full h-full p-4 m-0 border-0 bg-transparent text-transparent caret-white outline-none resize-none leading-6 whitespace-pre overflow-auto font-mono ${readOnly ? 'pointer-events-auto' : ''}`}
+                className={`absolute top-0 left-0 w-full h-full border-0 bg-transparent text-transparent caret-white outline-none resize-none whitespace-pre overflow-auto ${readOnly ? 'pointer-events-auto' : ''}`}
                 spellCheck={false}
                 autoCapitalize="off"
                 autoComplete="off"
                 autoCorrect="off"
                 readOnly={readOnly}
-                style={{ tabSize: 4 }}
+                style={{ ...editorStyle, tabSize: 4 }}
             />
         </div>
     </div>
@@ -1423,27 +1436,40 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
                 
                 {/* Debug Panel */}
                 {showDebug && (
-                    <div className="absolute bottom-4 right-4 bg-black/80 text-green-400 p-4 rounded font-mono text-xs z-50 border border-green-500/30 max-w-sm pointer-events-none select-text">
+                    <div className="absolute bottom-4 right-4 bg-black/80 text-green-400 p-4 rounded font-mono text-xs z-50 border border-green-500/30 max-w-sm pointer-events-none select-text shadow-2xl">
                         <h4 className="font-bold border-b border-green-500/30 mb-2 pb-1 text-white flex justify-between items-center">
                             DEBUG: Cursor Sync
-                            <span className="text-[9px] text-slate-500">Row index (1-based)</span>
+                            <span className="text-[9px] text-slate-500">Fixed 24px line-height</span>
                         </h4>
                         <div className="mb-3">
-                            <span className="text-white block mb-1">LOCAL (SENDING):</span>
-                            <div className="pl-2 border-l-2 border-green-500">
-                                Line: {localCursor?.line ?? '-'} <span className="text-slate-500">({(localCursor?.line || 1) - 1} * 24px = {((localCursor?.line || 1) - 1) * 24}px)</span><br/>
-                                Col: {localCursor?.column ?? '-'}
+                            <span className="text-white block mb-1 font-bold">LOCAL (SENDING):</span>
+                            <div className="pl-2 border-l-2 border-green-500 text-[10px]">
+                                <div className="grid grid-cols-2 gap-x-4">
+                                    <span>Line: <span className="text-white">{localCursor?.line ?? '-'}</span></span>
+                                    <span>Col: <span className="text-white">{localCursor?.column ?? '-'}</span></span>
+                                </div>
+                                <div className="text-slate-500 mt-1">
+                                    Raw Index: {Math.max(0, (localCursor?.line || 1) - 1)}<br/>
+                                    Top: {(Math.max(0, (localCursor?.line || 1) - 1) * 24)}px
+                                </div>
                             </div>
                         </div>
                         <div>
-                            <span className="text-white block mb-1">REMOTE (RECEIVING):</span>
+                            <span className="text-white block mb-1 font-bold">REMOTE (RECEIVING):</span>
                             {remoteCursors.length === 0 ? (
                                 <div className="text-slate-500 italic pl-2">No remote cursors</div>
                             ) : (
                                 remoteCursors.map((c, i) => (
-                                    <div key={i} className="pl-2 border-l-2 border-indigo-500 mb-1">
-                                        <span className="font-bold text-indigo-300">{c.userName}</span><br/>
-                                        Line: {c.line} <span className="text-slate-500">-> Top: {(c.line - 1) * 24}px</span>
+                                    <div key={i} className="pl-2 border-l-2 border-indigo-500 mb-2 text-[10px]">
+                                        <span className="font-bold text-indigo-300 block mb-0.5">{c.userName}</span>
+                                        <div className="grid grid-cols-2 gap-x-4 text-slate-300">
+                                            <span>Line: {c.line}</span>
+                                            <span>Col: {c.column}</span>
+                                        </div>
+                                        <div className="text-slate-500 mt-0.5">
+                                            Calc: ({c.line} - 1) * 24<br/>
+                                            Top: {((c.line - 1) * 24)}px
+                                        </div>
                                     </div>
                                 ))
                             )}
