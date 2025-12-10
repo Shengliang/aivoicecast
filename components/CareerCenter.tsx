@@ -1,6 +1,6 @@
 
 import React, { useState, useRef, useEffect } from 'react';
-import { ArrowLeft, Briefcase, Upload, Loader2, CheckCircle, Heart, Users, FileText, X, Rocket, Shield, Search, Plus, MapPin, Building, Globe, ExternalLink, RefreshCw, User, Star, ChevronRight } from 'lucide-react';
+import { ArrowLeft, Briefcase, Upload, Loader2, CheckCircle, Heart, Users, FileText, X, Rocket, Shield, Search, Plus, MapPin, Building, Globe, ExternalLink, RefreshCw, User, Star, ChevronRight, Mail } from 'lucide-react';
 import { auth } from '../services/firebaseConfig';
 import { submitCareerApplication, uploadResumeToStorage, createJobPosting, getJobPostings, getAllCareerApplications } from '../services/firestoreService';
 import { CareerApplication, JobPosting } from '../types';
@@ -310,6 +310,10 @@ export const CareerCenter: React.FC<CareerCenterProps> = ({ onBack, currentUser 
                                   <li className="flex gap-2"><CheckCircle size={18} className="text-emerald-500 shrink-0 mt-0.5"/> <span><strong>Flexible Schedule:</strong> You choose when you are available.</span></li>
                                   <li className="flex gap-2"><CheckCircle size={18} className="text-emerald-500 shrink-0 mt-0.5"/> <span><strong>Build Your Brand:</strong> Showcase your expertise to a growing global community.</span></li>
                               </ul>
+                              <p className="mt-4 text-sm text-slate-400 flex items-center gap-2">
+                                  <Mail size={14} className="text-indigo-400"/> 
+                                  <span>Questions? Contact us at <a href="mailto:jobs@aivoicecast.com" className="text-indigo-400 hover:text-white transition-colors underline">jobs@aivoicecast.com</a></span>
+                              </p>
                           </section>
                       </div>
 
@@ -441,6 +445,10 @@ export const CareerCenter: React.FC<CareerCenterProps> = ({ onBack, currentUser 
                               {isLoading ? <Loader2 className="animate-spin"/> : <Shield size={18}/>}
                               <span>Submit Application</span>
                           </button>
+                          
+                          <div className="text-center text-xs text-slate-500 mt-2">
+                              Prefer email? Send your resume to <a href="mailto:jobs@aivoicecast.com" className="text-indigo-400 hover:text-indigo-300 hover:underline">jobs@aivoicecast.com</a>
+                          </div>
                       </form>
                   )}
               </div>
