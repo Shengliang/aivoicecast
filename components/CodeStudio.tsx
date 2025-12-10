@@ -397,19 +397,18 @@ const generateHighlightedHTML = (code: string, language: string) => {
 };
 
 const CodeCursor: React.FC<{ cursor: CursorPosition; currentLine: number }> = ({ cursor, currentLine }) => {
-    const lineHeight = 24;
-    const charWidth = 8.4;
+    // Line height matches leading-6 (1.5rem = 24px)
+    // Left position using 'ch' unit ensures better alignment with monospace font
+    // 16px (1rem) padding from the editor container
+    const top = (cursor.line - 1) * 24;
     
-    const top = (cursor.line - 1) * lineHeight;
-    const left = cursor.column * charWidth + 16; 
-
     return (
         <div 
             className="absolute z-30 pointer-events-none transition-all duration-100 ease-out"
             style={{ 
                 top: `${top}px`, 
-                left: `${left}px`,
-                height: `${lineHeight}px`
+                left: `calc(${cursor.column}ch + 1rem)`, // Dynamic ch width + padding
+                height: `24px`
             }}
         >
             <div className="w-0.5 h-full absolute top-0 left-0" style={{ backgroundColor: cursor.color }}></div>
@@ -441,7 +440,7 @@ const EnhancedEditor = ({ code, language, onChange, onScroll, onSelect, textArea
     <div className={`flex-1 relative bg-slate-950 flex overflow-hidden font-mono text-sm ${readOnly ? 'cursor-default' : ''}`}>
         <div 
             ref={lineNumbersRef}
-            className="w-12 bg-slate-900 border-r border-slate-800 text-right text-slate-600 py-4 pr-3 select-none overflow-hidden flex-shrink-0 leading-6"
+            className="w-12 bg-slate-900 border-r border-slate-800 text-right text-slate-600 py-4 pr-3 select-none overflow-hidden flex-shrink-0 leading-6 font-mono"
         >
             {code.split('\n').map((_: any, i: number) => (
                 <div key={i} className={scrollToLine === (i + 1) ? "text-yellow-400 font-bold bg-yellow-900/20" : ""}>{i + 1}</div>
@@ -457,9 +456,9 @@ const EnhancedEditor = ({ code, language, onChange, onScroll, onSelect, textArea
             )}
 
             <pre
-                className="absolute top-0 left-0 w-full h-full p-4 pointer-events-none margin-0 whitespace-pre overflow-hidden leading-6"
+                className="absolute top-0 left-0 w-full h-full p-4 pointer-events-none margin-0 whitespace-pre overflow-hidden leading-6 font-mono"
                 aria-hidden="true"
-                style={{ fontFamily: 'monospace' }}
+                style={{ tabSize: 4 }}
             >
                 <code 
                     dangerouslySetInnerHTML={{ __html: generateHighlightedHTML(code, language) + '<br/>' }} 
@@ -478,13 +477,13 @@ const EnhancedEditor = ({ code, language, onChange, onScroll, onSelect, textArea
                 onSelect={onSelect}
                 onClick={onSelect}
                 onKeyUp={onSelect}
-                className={`absolute top-0 left-0 w-full h-full p-4 bg-transparent text-transparent caret-white outline-none resize-none leading-6 whitespace-pre overflow-auto ${readOnly ? 'pointer-events-auto' : ''}`}
+                className={`absolute top-0 left-0 w-full h-full p-4 bg-transparent text-transparent caret-white outline-none resize-none leading-6 whitespace-pre overflow-auto font-mono ${readOnly ? 'pointer-events-auto' : ''}`}
                 spellCheck={false}
                 autoCapitalize="off"
                 autoComplete="off"
                 autoCorrect="off"
                 readOnly={readOnly}
-                style={{ fontFamily: 'monospace' }}
+                style={{ tabSize: 4 }}
             />
         </div>
     </div>
@@ -493,11 +492,11 @@ const EnhancedEditor = ({ code, language, onChange, onScroll, onSelect, textArea
 
 const updateFileTool: FunctionDeclaration = {
     name: 'update_file',
-    description: 'Overwrite the current file content with new code.',
+    description: 'Completely overwrite the active file with new code. YOU MUST PROVIDE THE FULL FILE CONTENT, DO NOT PROVIDE SNIPPETS OR PARTIAL UPDATES.',
     parameters: {
         type: Type.OBJECT,
         properties: {
-            code: { type: Type.STRING, description: 'The full new code content for the file.' }
+            code: { type: Type.STRING, description: 'The complete new source code for the file.' }
         },
         required: ['code']
     }
@@ -1241,7 +1240,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
                         isLoadingContent={isLoadingFile}
                         scrollToLine={scrollToLine}
                         cursors={remoteCursors.filter(c => c.fileName === activeFile.name)}
-                        readOnly={isReadOnly}
+                        readOnly={isReadOnly || !!pendingChange}
                     />
                 )}
                 
