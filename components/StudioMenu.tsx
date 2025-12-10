@@ -1,108 +1,146 @@
-import React from 'react';
-import { UserProfile } from '../types';
-import { Sparkles, Plus, Wand2, Key, Database, Settings, HelpCircle, LogOut, User } from 'lucide-react';
-import { signOut } from '../services/authService';
+import React, { useState } from 'react';
+import { UserProfile, SubscriptionTier } from '../types';
+import { getUserProfile } from '../services/firestoreService';
+import { Sparkles, BarChart2, Plus, Wand2, Key, Database, Crown, Settings } from 'lucide-react';
+import { VOICES } from '../utils/initialData';
+import { PricingModal } from './PricingModal';
 
 interface StudioMenuProps {
   isUserMenuOpen: boolean;
-  setIsUserMenuOpen: (isOpen: boolean) => void;
+  setIsUserMenuOpen: (open: boolean) => void;
   userProfile: UserProfile | null;
-  setUserProfile: (profile: UserProfile | null) => void;
+  setUserProfile: (p: UserProfile | null) => void;
   currentUser: any;
   globalVoice: string;
-  setGlobalVoice: (voice: string) => void;
+  setGlobalVoice: (v: string) => void;
   hasApiKey: boolean;
-  setIsCreateModalOpen: (isOpen: boolean) => void;
-  setIsVoiceCreateOpen: (isOpen: boolean) => void;
-  setIsApiKeyModalOpen: (isOpen: boolean) => void;
-  setIsSyncModalOpen: (isOpen: boolean) => void;
-  setIsSettingsModalOpen: (isOpen: boolean) => void;
-  onOpenHelp: () => void;
+  setIsCreateModalOpen: (open: boolean) => void;
+  setIsVoiceCreateOpen: (open: boolean) => void;
+  setIsApiKeyModalOpen: (open: boolean) => void;
+  setIsSyncModalOpen: (open: boolean) => void;
+  setIsSettingsModalOpen: (open: boolean) => void; // Added prop
   t: any;
 }
 
 export const StudioMenu: React.FC<StudioMenuProps> = ({
   isUserMenuOpen, setIsUserMenuOpen, userProfile, setUserProfile, currentUser,
   globalVoice, setGlobalVoice, hasApiKey, 
-  setIsCreateModalOpen, setIsVoiceCreateOpen, setIsApiKeyModalOpen, setIsSyncModalOpen, setIsSettingsModalOpen, onOpenHelp, t
+  setIsCreateModalOpen, setIsVoiceCreateOpen, setIsApiKeyModalOpen, setIsSyncModalOpen, setIsSettingsModalOpen, t
 }) => {
+  const [isPricingOpen, setIsPricingOpen] = useState(false);
   
-  if (!isUserMenuOpen) return null;
+  if (!isUserMenuOpen || !currentUser) return null;
 
-  const handleLogout = async () => {
-      await signOut();
-      setIsUserMenuOpen(false);
-      setUserProfile(null);
+  const handleUpgradeSuccess = async (newTier: SubscriptionTier) => {
+      // 1. Optimistic Update locally so UI reflects change instantly
+      if (userProfile) {
+          setUserProfile({ ...userProfile, subscriptionTier: newTier });
+      }
+      
+      // 2. Fetch fresh from DB (in case of real latency)
+      try {
+          const fresh = await getUserProfile(currentUser.uid);
+          if (fresh) setUserProfile(fresh);
+      } catch(e) {
+          // Ignore fetch error, rely on optimistic update
+      }
   };
+
+  const getTierLabel = () => {
+      const tier = userProfile?.subscriptionTier || 'free';
+      if (tier === 'pro') return { label: 'PRO MEMBER', color: 'text-amber-400 bg-amber-900/50 border border-amber-500/20' };
+      return { label: 'FREE TIER', color: 'text-slate-400 bg-slate-800' };
+  };
+
+  const tierInfo = getTierLabel();
 
   return (
     <>
       <div className="fixed inset-0 z-40" onClick={() => setIsUserMenuOpen(false)}></div>
       <div className="absolute right-0 mt-2 w-72 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl z-50 overflow-hidden animate-fade-in-up">
+         <div className="p-3 border-b border-slate-800 bg-slate-950/50 flex justify-between items-center">
+            <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center space-x-2">
+               <Sparkles size={12} className="text-indigo-400" />
+               <span>Creator Studio</span>
+            </h3>
+            <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${tierInfo.color}`}>
+                {tierInfo.label}
+            </span>
+         </div>
          
-         {currentUser ? (
-             <div className="p-4 border-b border-slate-800 bg-slate-950/50">
-                 <div className="flex items-center space-x-3">
-                     {currentUser.photoURL ? (
-                         <img src={currentUser.photoURL} alt="Profile" className="w-10 h-10 rounded-full border border-slate-700" />
-                     ) : (
-                         <div className="w-10 h-10 rounded-full bg-slate-800 flex items-center justify-center text-slate-400">
-                             <User size={20} />
-                         </div>
-                     )}
-                     <div className="flex-1 min-w-0">
-                         <p className="text-sm font-bold text-white truncate">{currentUser.displayName || 'User'}</p>
-                         <p className="text-xs text-slate-500 truncate">{currentUser.email}</p>
-                         {userProfile?.subscriptionTier === 'pro' && (
-                             <span className="inline-block mt-1 text-[10px] bg-gradient-to-r from-amber-500 to-orange-600 text-white px-1.5 py-0.5 rounded font-bold uppercase tracking-wider">
-                                 Pro Member
-                             </span>
-                         )}
-                     </div>
-                 </div>
-             </div>
-         ) : (
-             <div className="p-4 border-b border-slate-800 bg-slate-950/50 text-center">
-                 <p className="text-sm text-slate-400">Guest Mode</p>
-             </div>
-         )}
+         {/* Stats Banner */}
+         <div className="bg-slate-800/50 p-3 flex items-center justify-between border-b border-slate-800">
+            <div className="flex items-center space-x-2 text-indigo-300">
+               <BarChart2 size={16} />
+               <span className="text-xs font-medium">API Usage</span>
+            </div>
+            <span className="text-sm font-bold text-white bg-indigo-900/50 px-2 py-0.5 rounded-md">
+               {userProfile?.apiUsageCount || 0} calls
+            </span>
+         </div>
 
          <div className="p-2 space-y-1">
             <button 
-               onClick={() => { setIsCreateModalOpen(true); setIsUserMenuOpen(false); }}
-               className="w-full flex items-center space-x-3 px-3 py-2 text-sm text-slate-300 hover:text-white hover:bg-slate-800 rounded-lg transition-colors"
+               onClick={() => { setIsPricingOpen(true); }}
+               className="w-full flex items-center space-x-3 px-3 py-2 text-sm text-white hover:bg-slate-800 rounded-lg transition-colors bg-gradient-to-r from-indigo-900/20 to-purple-900/20 border border-indigo-500/30 mb-2"
             >
-               <Plus size={16} className="text-emerald-400" />
-               <span>New Podcast</span>
+               <div className="p-1.5 bg-amber-500 text-white rounded-md shadow-lg"><Crown size={14} fill="currentColor"/></div>
+               <span className="font-bold text-amber-200">Upgrade Membership</span>
+            </button>
+
+            <button 
+               onClick={() => { setIsCreateModalOpen(true); setIsUserMenuOpen(false); }}
+               className="w-full flex items-center space-x-3 px-3 py-2 text-sm text-white hover:bg-slate-800 rounded-lg transition-colors"
+            >
+               <div className="p-1.5 bg-indigo-900/50 text-indigo-400 rounded-md"><Plus size={16}/></div>
+               <span className="font-medium">Create Podcast</span>
             </button>
             <button 
                onClick={() => { setIsVoiceCreateOpen(true); setIsUserMenuOpen(false); }}
-               className="w-full flex items-center space-x-3 px-3 py-2 text-sm text-slate-300 hover:text-white hover:bg-slate-800 rounded-lg transition-colors"
+               className="w-full flex items-center space-x-3 px-3 py-2 text-sm text-white hover:bg-slate-800 rounded-lg transition-colors"
             >
-               <Wand2 size={16} className="text-pink-400" />
-               <span>Magic Creator</span>
+               <div className="p-1.5 bg-pink-900/50 text-pink-400 rounded-md"><Wand2 size={16}/></div>
+               <span className="font-medium">Magic Voice Create</span>
             </button>
+            
+            <div className="h-px bg-slate-800 my-2 mx-2" />
+            
+            <div className="px-3 py-2">
+               <div className="flex items-center justify-between mb-2">
+                  <label className="text-xs font-bold text-slate-500 uppercase">Live Host Voice</label>
+                  <span className="text-xs text-indigo-400">{globalVoice}</span>
+                </div>
+               <div className="grid grid-cols-3 gap-1">
+                  {['Auto', ...VOICES].map(v => (
+                     <button 
+                        key={v}
+                        onClick={() => setGlobalVoice(v)}
+                        className={`text-[10px] py-1 rounded border ${globalVoice === v ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-white'}`}
+                     >
+                        {v}
+                     </button>
+                  ))}
+                </div>
+            </div>
 
             <div className="h-px bg-slate-800 my-2 mx-2" />
 
             <button 
                onClick={() => { setIsApiKeyModalOpen(true); setIsUserMenuOpen(false); }}
-               className="w-full flex items-center space-x-3 px-3 py-2 text-sm text-slate-300 hover:text-white hover:bg-slate-800 rounded-lg transition-colors"
+               className={`w-full flex items-center space-x-3 px-3 py-2 text-sm rounded-lg transition-colors ${!hasApiKey ? 'text-red-400 hover:bg-red-900/20' : 'text-slate-300 hover:text-white hover:bg-slate-800'}`}
             >
-               <Key size={16} className={hasApiKey ? "text-emerald-400" : "text-slate-500"} />
-               <span>API Key {hasApiKey && "Set"}</span>
+               <Key size={16} />
+               <span>{hasApiKey ? "Change API Key" : "Set API Key (Required)"}</span>
             </button>
-            
             <button 
                onClick={() => { setIsSyncModalOpen(true); setIsUserMenuOpen(false); }}
                className="w-full flex items-center space-x-3 px-3 py-2 text-sm text-slate-300 hover:text-white hover:bg-slate-800 rounded-lg transition-colors"
             >
                <Database size={16} />
-               <span>Backup & Sync</span>
+               <span>Data Sync & Backup</span>
             </button>
-
-            <div className="h-px bg-slate-800 my-2 mx-2" />
             
+            {/* Settings Button */}
             <button 
                onClick={() => { setIsSettingsModalOpen(true); setIsUserMenuOpen(false); }}
                className="w-full flex items-center space-x-3 px-3 py-2 text-sm text-slate-300 hover:text-white hover:bg-slate-800 rounded-lg transition-colors"
@@ -110,29 +148,17 @@ export const StudioMenu: React.FC<StudioMenuProps> = ({
                <Settings size={16} />
                <span>Account Settings</span>
             </button>
-
-            <button 
-               onClick={() => { onOpenHelp(); setIsUserMenuOpen(false); }}
-               className="w-full flex items-center space-x-3 px-3 py-2 text-sm text-slate-300 hover:text-white hover:bg-slate-800 rounded-lg transition-colors"
-            >
-               <HelpCircle size={16} />
-               <span>Help & FAQ</span>
-            </button>
-
-            {currentUser && (
-                <>
-                    <div className="h-px bg-slate-800 my-2 mx-2" />
-                    <button 
-                       onClick={handleLogout}
-                       className="w-full flex items-center space-x-3 px-3 py-2 text-sm text-red-400 hover:text-red-300 hover:bg-slate-800 rounded-lg transition-colors"
-                    >
-                       <LogOut size={16} />
-                       <span>Sign Out</span>
-                    </button>
-                </>
-            )}
          </div>
       </div>
+
+      {isPricingOpen && userProfile && (
+          <PricingModal 
+             isOpen={true} 
+             onClose={() => setIsPricingOpen(false)} 
+             user={userProfile} 
+             onSuccess={handleUpgradeSuccess}
+          />
+      )}
     </>
   );
 };
