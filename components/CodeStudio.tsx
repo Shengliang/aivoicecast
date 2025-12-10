@@ -396,19 +396,19 @@ const generateHighlightedHTML = (code: string, language: string) => {
 };
 
 const CodeCursor: React.FC<{ cursor: CursorPosition; currentLine: number; isLocal?: boolean }> = ({ cursor, currentLine, isLocal }) => {
-    // Correct calculation accounting for p-4 (1rem = 16px) top padding of container
-    const top = (cursor.line - 1) * 24 + 16;
+    // 24px line height. No offset needed as parent container has padding.
+    const top = (cursor.line - 1) * 24;
     
     return (
         <div 
             className={`absolute z-30 pointer-events-none transition-all duration-100 ease-out ${isLocal ? 'opacity-50' : 'opacity-100'}`}
             style={{ 
                 top: `${top}px`, 
-                left: `calc(${cursor.column}ch + 1rem)`, 
+                left: `calc(${cursor.column}ch)`, 
                 height: `24px`
             }}
         >
-            <div className={`w-0.5 h-full absolute top-0 left-0 ${isLocal ? 'animate-pulse' : ''}`} style={{ backgroundColor: cursor.color }}></div>
+            <div className={`w-0.5 h-full absolute top-0 left-0 ${isLocal ? 'animate-pulse' : ''}`} style={{ backgroundColor: cursor.color, boxShadow: `0 0 4px ${cursor.color}` }}></div>
             <div 
                 className="absolute -top-5 left-0 px-1.5 py-0.5 rounded text-[10px] font-bold text-white whitespace-nowrap shadow-sm opacity-0 group-hover:opacity-100 transition-opacity"
                 style={{ backgroundColor: cursor.color }}
@@ -427,6 +427,8 @@ const CodeCursor: React.FC<{ cursor: CursorPosition; currentLine: number; isLoca
 };
 
 const EnhancedEditor = ({ code, language, onChange, onScroll, onSelect, textAreaRef, lineNumbersRef, isLoadingContent, scrollToLine, cursors, readOnly, localCursor }: any) => {
+  const cursorMoveRef = useRef<HTMLDivElement>(null);
+
   useEffect(() => {
       if (scrollToLine !== null && textAreaRef.current) {
           const lineHeight = 24; 
@@ -434,6 +436,26 @@ const EnhancedEditor = ({ code, language, onChange, onScroll, onSelect, textArea
           textAreaRef.current.scrollTo({ top: scrollPos, behavior: 'smooth' });
       }
   }, [scrollToLine]);
+
+  const handleScrollLocal = (e: React.UIEvent<HTMLTextAreaElement>) => {
+      // Sync Line Numbers
+      if (lineNumbersRef.current) lineNumbersRef.current.scrollTop = e.currentTarget.scrollTop;
+      
+      // Sync Pre (Highlighting)
+      const pre = e.currentTarget.previousElementSibling?.previousElementSibling as HTMLPreElement;
+      if (pre && pre.tagName === 'PRE') { 
+          pre.scrollTop = e.currentTarget.scrollTop; 
+          pre.scrollLeft = e.currentTarget.scrollLeft; 
+      }
+
+      // Sync Cursors Layer
+      if (cursorMoveRef.current) {
+          cursorMoveRef.current.style.transform = `translateY(-${e.currentTarget.scrollTop}px)`;
+      }
+
+      // Propagate
+      if (onScroll) onScroll(e);
+  };
 
   return (
     <div className={`flex-1 relative bg-slate-950 flex overflow-hidden font-mono text-sm ${readOnly ? 'cursor-default' : ''}`}>
@@ -464,33 +486,38 @@ const EnhancedEditor = ({ code, language, onChange, onScroll, onSelect, textArea
                 />
             </pre>
             
-            {cursors && cursors.map((c: CursorPosition) => (
-                <CodeCursor key={c.clientId || c.userId} cursor={c} currentLine={0} />
-            ))}
+            {/* Cursor Layer with Padding matching Textarea */}
+            <div className="absolute top-0 left-0 w-full h-full p-4 pointer-events-none overflow-hidden">
+                <div ref={cursorMoveRef} className="w-full relative">
+                    {cursors && cursors.map((c: CursorPosition) => (
+                        <CodeCursor key={c.clientId || c.userId} cursor={c} currentLine={0} />
+                    ))}
 
-            {/* Render local cursor for Read-Only users so they see where they are */}
-            {readOnly && localCursor && (
-                <CodeCursor 
-                    cursor={{ 
-                        clientId: 'local-ghost', 
-                        userId: 'me', 
-                        userName: 'You', 
-                        fileName: '', 
-                        line: localCursor.line, 
-                        column: localCursor.column, 
-                        color: '#94a3b8', // Gray
-                        updatedAt: Date.now() 
-                    }} 
-                    currentLine={0}
-                    isLocal={true}
-                />
-            )}
+                    {/* Render local cursor for Read-Only users so they see where they are */}
+                    {readOnly && localCursor && (
+                        <CodeCursor 
+                            cursor={{ 
+                                clientId: 'local-ghost', 
+                                userId: 'me', 
+                                userName: 'You', 
+                                fileName: '', 
+                                line: localCursor.line, 
+                                column: localCursor.column, 
+                                color: '#94a3b8', // Gray
+                                updatedAt: Date.now() 
+                            }} 
+                            currentLine={0}
+                            isLocal={true}
+                        />
+                    )}
+                </div>
+            </div>
 
             <textarea
                 ref={textAreaRef}
                 value={code}
                 onChange={(e) => onChange(e.target.value)}
-                onScroll={onScroll}
+                onScroll={handleScrollLocal}
                 onSelect={onSelect}
                 onClick={onSelect}
                 onKeyUp={onSelect}
