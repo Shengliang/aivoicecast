@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { UserProfile } from '../types';
-import { X, User, Shield, CreditCard, LogOut, CheckCircle, AlertTriangle, Bell, Lock, Database, Trash2, Edit2, Save, FileText, ExternalLink, Loader2, DollarSign } from 'lucide-react';
+import { X, User, Shield, CreditCard, LogOut, CheckCircle, AlertTriangle, Bell, Lock, Database, Trash2, Edit2, Save, FileText, ExternalLink, Loader2, DollarSign, HelpCircle, ChevronDown, ChevronUp } from 'lucide-react';
 import { logUserActivity, getBillingHistory, createStripePortalSession } from '../services/firestoreService';
 import { clearAudioCache } from '../services/tts';
 
@@ -26,6 +26,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   
   // Billing State
   const [billingHistory, setBillingHistory] = useState<any[]>([]);
+  const [showPolicy, setShowPolicy] = useState(false);
 
   useEffect(() => {
       if (activeTab === 'billing' && user.subscriptionTier === 'pro') {
@@ -108,7 +109,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             
             {activeTab === 'general' && (
                 <div className="space-y-8">
-                    {/* ... (Keep General settings same) ... */}
                     <div className="flex items-start gap-6">
                         <div className="relative group">
                             {user.photoURL ? (
@@ -145,7 +145,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
             {activeTab === 'preferences' && (
                 <div className="space-y-6">
-                    {/* ... (Keep Preferences same) ... */}
                     <div className="space-y-4">
                         <h4 className="text-sm font-bold text-slate-400 uppercase tracking-wider flex items-center gap-2"><Bell size={16}/> Notifications</h4>
                         <div className="bg-slate-800/30 border border-slate-700 rounded-xl p-4 space-y-4">
@@ -251,13 +250,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         </div>
                     )}
 
-                    {/* MENTOR PAYOUTS SECTION */}
+                    {/* MENTOR PAYOUTS SECTION & FEE DISPLAY */}
                     <div className="mt-8 pt-8 border-t border-slate-800">
                         <h4 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-4 flex items-center gap-2">
-                            <DollarSign size={16} className="text-emerald-400"/> Mentor Payouts
+                            <DollarSign size={16} className="text-emerald-400"/> Mentor Revenue & Fees
                         </h4>
                         
-                        <div className="bg-slate-800/30 border border-slate-700 rounded-xl p-5">
+                        <div className="bg-slate-800/30 border border-slate-700 rounded-xl p-5 space-y-4">
                             <div className="flex items-start gap-4">
                                 <div className="p-3 bg-slate-800 rounded-full text-slate-400">
                                     <CreditCard size={24} />
@@ -265,17 +264,68 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                 <div className="flex-1">
                                     <h5 className="font-bold text-white text-sm mb-1">Get Paid for Mentorship</h5>
                                     <p className="text-xs text-slate-400 leading-relaxed mb-4">
-                                        As a community mentor, you can charge for sessions. Connect your Stripe account to receive direct deposits from students.
+                                        Connect your Stripe account to receive direct deposits from students.
                                     </p>
                                     
                                     <button 
-                                        onClick={() => alert("Stripe Connect onboarding would launch here. (Placeholder)")}
+                                        onClick={() => alert("Stripe Connect onboarding would launch here.")}
                                         className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold rounded-lg border border-slate-600 transition-colors flex items-center gap-2"
                                     >
                                         <span>Connect Stripe Account</span>
                                         <ExternalLink size={12} className="text-slate-500"/>
                                     </button>
                                 </div>
+                            </div>
+
+                            {/* FEE BREAKDOWN VISUALIZATION */}
+                            <div className="bg-slate-950/50 rounded-lg p-4 border border-slate-800">
+                                <h5 className="text-xs font-bold text-white mb-3 flex items-center justify-between">
+                                    <span>Payout Calculator (Example)</span>
+                                </h5>
+                                <div className="space-y-2 text-sm">
+                                    <div className="flex justify-between text-slate-300">
+                                        <span>Session Price (1 Hour)</span>
+                                        <span>$50.00</span>
+                                    </div>
+                                    <div className="flex justify-between text-red-300">
+                                        <span className="flex items-center gap-1">Platform Service Fee (10%) <span className="text-xs opacity-70 cursor-help" title="Covers server costs and Stripe processing fees.">*</span></span>
+                                        <span>-$5.00</span>
+                                    </div>
+                                    <div className="h-px bg-slate-700 my-2"></div>
+                                    <div className="flex justify-between text-emerald-400 font-bold">
+                                        <span>Your Net Earnings</span>
+                                        <span>$45.00</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* INLINE POLICY FAQ */}
+                            <div className="border-t border-slate-800 pt-2">
+                                <button 
+                                    onClick={() => setShowPolicy(!showPolicy)}
+                                    className="flex items-center gap-2 text-xs text-indigo-400 hover:text-white transition-colors font-bold w-full"
+                                >
+                                    <HelpCircle size={14}/>
+                                    <span>View Fee Policy & FAQ</span>
+                                    {showPolicy ? <ChevronUp size={14}/> : <ChevronDown size={14}/>}
+                                </button>
+                                
+                                {showPolicy && (
+                                    <div className="mt-3 space-y-3 text-xs text-slate-400 bg-slate-900 p-3 rounded-lg animate-fade-in">
+                                        <div>
+                                            <p className="font-bold text-slate-300 mb-1">Why is there a fee?</p>
+                                            <p>AIVoiceCast charges a flat <strong>10% service fee</strong> on all paid sessions. This covers payment processing fees (Stripe) and infrastructure costs for the Live Audio/Video servers.</p>
+                                        </div>
+                                        <div>
+                                            <p className="font-bold text-slate-300 mb-1">When do I get paid?</p>
+                                            <p>Payouts are processed automatically via Stripe Connect. Funds typically arrive in your connected bank account within 2-5 business days after a session is completed.</p>
+                                        </div>
+                                        <div>
+                                            <p className="font-bold text-slate-300 mb-1">How do I set my rate?</p>
+                                            <p>You can set your hourly rate in your Profile after your Mentor Application is approved. Rates can be between $0 (Free) and $500/hr.</p>
+                                        </div>
+                                    </div>
+                                )}
                             </div>
                         </div>
                     </div>
