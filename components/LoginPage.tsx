@@ -20,8 +20,19 @@ export const LoginPage: React.FC = () => {
     } catch (e: any) {
       console.error("Login Error:", e);
       let msg = "Login failed. Please try again.";
-      if (e.code === 'auth/popup-closed-by-user') msg = "Sign-in cancelled.";
-      else if (e.code === 'auth/popup-blocked') msg = "Popup blocked. Please allow popups for this site.";
+      
+      if (e.code === 'auth/popup-closed-by-user') {
+        msg = "Sign-in cancelled.";
+      } else if (e.code === 'auth/popup-blocked') {
+        msg = "Popup blocked. Please allow popups for this site.";
+      } else if (e.code === 'auth/unauthorized-domain') {
+        const domain = window.location.hostname;
+        msg = `Domain Unauthorized: ${domain}`;
+        alert(`⚠️ FIREBASE CONFIG ERROR ⚠️\n\nThe domain "${domain}" is not authorized for Google Sign-In.\n\nTO FIX:\n1. Go to Firebase Console -> Authentication -> Settings -> Authorized Domains.\n2. Click "Add Domain".\n3. Paste: ${domain}`);
+      } else if (e.code === 'auth/operation-not-supported-in-this-environment') {
+        msg = "Environment not supported (http/https required).";
+      }
+      
       setError(msg);
       setIsLoading(false);
     }
@@ -62,7 +73,7 @@ export const LoginPage: React.FC = () => {
             {error && (
               <div className="bg-red-900/20 border border-red-900/50 rounded-lg p-3 text-red-300 text-xs flex items-center gap-2 text-left">
                 <AlertCircle size={16} className="shrink-0" />
-                {error}
+                <span className="flex-1">{error}</span>
               </div>
             )}
 
