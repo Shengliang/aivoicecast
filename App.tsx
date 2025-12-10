@@ -37,6 +37,7 @@ import { WorkplaceChat } from './components/WorkplaceChat';
 import { LoginPage } from './components/LoginPage'; // Import Login Page
 import { SettingsModal } from './components/SettingsModal'; // Import Settings Modal
 import { PricingModal } from './components/PricingModal'; // Import Pricing Modal for cross-linking
+import { CareerCenter } from './components/CareerCenter'; // Import Career Center
 
 import { auth, isFirebaseConfigured } from './services/firebaseConfig';
 import { 
@@ -76,7 +77,8 @@ const UI_TEXT = {
     code: "Code Studio",
     whiteboard: "Whiteboard",
     blog: "Community Blog",
-    chat: "Team Chat"
+    chat: "Team Chat",
+    careers: "Careers"
   },
   zh: {
     appTitle: "AI 播客",
@@ -101,7 +103,8 @@ const UI_TEXT = {
     code: "代码工作室",
     whiteboard: "白板",
     blog: "社区博客",
-    chat: "团队聊天"
+    chat: "团队聊天",
+    careers: "职业发展"
   }
 };
 
@@ -161,7 +164,7 @@ const App: React.FC = () => {
     video?: boolean;
     camera?: boolean;
     segment?: { index: number, lectureId: string };
-    transcript?: TranscriptItem[];
+    initialTranscript?: TranscriptItem[];
   }>({});
 
   // Ad-hoc Meeting Channel (Ephemeral)
@@ -633,6 +636,8 @@ const App: React.FC = () => {
         
         {viewState === 'chat' && <WorkplaceChat onBack={() => setViewState('directory')} currentUser={currentUser} />}
         
+        {viewState === 'careers' && <CareerCenter onBack={() => setViewState('directory')} currentUser={currentUser} />}
+
         {viewState === 'directory' && (
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 animate-fade-in">
             
@@ -641,11 +646,12 @@ const App: React.FC = () => {
                {[
                  { id: 'categories', label: t.podcasts, icon: Layout },
                  { id: 'calendar', label: t.calendar, icon: Calendar },
+                 { id: 'careers', label: t.careers, icon: Briefcase }, // New Tab
                  { id: 'chat', label: t.chat, icon: MessageSquare },
                  { id: 'code', label: t.code, icon: Code },
                  { id: 'blog', label: t.blog, icon: Rss },
                  { id: 'whiteboard', label: t.whiteboard, icon: PenTool },
-                 { id: 'mentorship', label: t.mentorship, icon: Briefcase },
+                 { id: 'mentorship', label: t.mentorship, icon: Users }, // Changed Icon for Mentorship to avoid duplicate Briefcase
                  { id: 'groups', label: t.groups, icon: Users },
                  { id: 'recordings', label: t.recordings, icon: Disc },
                  { id: 'docs', label: t.docs, icon: FileText },
@@ -657,6 +663,7 @@ const App: React.FC = () => {
                        else if (tab.id === 'whiteboard') setViewState('whiteboard');
                        else if (tab.id === 'blog') setViewState('blog');
                        else if (tab.id === 'chat') setViewState('chat');
+                       else if (tab.id === 'careers') setViewState('careers');
                        else setActiveTab(tab.id);
                    }}
                    className={`flex items-center space-x-2 px-4 py-2 rounded-full text-sm font-bold whitespace-nowrap transition-all ${activeTab === tab.id ? 'bg-white text-slate-900 shadow-md' : 'bg-slate-800/50 text-slate-400 hover:bg-slate-800 hover:text-white'}`}
@@ -891,7 +898,7 @@ const App: React.FC = () => {
                videoEnabled={liveConfig.video}
                cameraEnabled={liveConfig.camera}
                activeSegment={liveConfig.segment}
-               initialTranscript={liveConfig.transcript}
+               initialTranscript={liveConfig.initialTranscript}
                onEndSession={() => {
                    if (tempChannel) {
                        setTempChannel(null);

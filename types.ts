@@ -90,7 +90,7 @@ export interface CommunityDiscussion {
   isManual?: boolean; // Created manually via editor
 }
 
-export type ViewState = 'directory' | 'podcast_detail' | 'live_session' | 'create_channel' | 'debug' | 'cloud_debug' | 'public_debug' | 'mission' | 'code_studio' | 'whiteboard' | 'blog' | 'chat';
+export type ViewState = 'directory' | 'podcast_detail' | 'live_session' | 'create_channel' | 'debug' | 'cloud_debug' | 'public_debug' | 'mission' | 'code_studio' | 'whiteboard' | 'blog' | 'chat' | 'careers';
 
 export interface AudioState {
   isConnected: boolean;
@@ -272,4 +272,16 @@ export interface RealTimeMessage {
     text: string;
     senderName: string;
   };
+}
+
+export interface CareerApplication {
+  userId: string;
+  userName: string;
+  userEmail: string;
+  role: 'mentor' | 'expert' | 'contributor';
+  expertise: string[];
+  bio: string;
+  resumeUrl: string;
+  status: 'pending' | 'approved' | 'rejected';
+  createdAt: number;
 }

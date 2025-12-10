@@ -1,8 +1,7 @@
-
 // [FORCE-SYNC-v3.44.0] Timestamp: ${new Date().toISOString()}
 import { db, auth, storage } from './firebaseConfig';
 import firebase from 'firebase/compat/app';
-import { Channel, Group, UserProfile, Invitation, GeneratedLecture, CommunityDiscussion, Comment, Booking, RecordingSession, TranscriptItem, CodeProject, Attachment, Blog, BlogPost, SubscriptionTier, CodeFile, CursorPosition, RealTimeMessage, ChatChannel } from '../types';
+import { Channel, Group, UserProfile, Invitation, GeneratedLecture, CommunityDiscussion, Comment, Booking, RecordingSession, TranscriptItem, CodeProject, Attachment, Blog, BlogPost, SubscriptionTier, CodeFile, CursorPosition, RealTimeMessage, ChatChannel, CareerApplication } from '../types';
 import { HANDCRAFTED_CHANNELS } from '../utils/initialData';
 import { SPOTLIGHT_DATA } from '../utils/spotlightContent';
 import { OFFLINE_LECTURES, OFFLINE_CHANNEL_ID } from '../utils/offlineContent';
@@ -249,16 +248,6 @@ export async function updateWhiteboardElement(boardId: string, element: any): Pr
 export async function deleteWhiteboardElements(boardId: string, elementIds: string[]): Promise<void> {
     if (elementIds.length === 0) return;
     
-    // We can't use a single map for FieldPath keys easily in update() without varargs
-    // but the SDK supports alternating key/values.
-    // For simplicity, we loop updates or use a batch if strictly typed, 
-    // but standard .update({...}) works if we construct the object carefully,
-    // HOWEVER, FieldPath is best. Since we can't dynamic key FieldPath in object literal easily,
-    // we iterate or use dot notation if we are sure IDs are safe.
-    // UUIDs are safe for dot notation (no dots), so we fall back to dot notation for bulk delete
-    // OR we chain updates. 
-    
-    // Better approach:
     const updateObj: any = { lastModified: Date.now() };
     elementIds.forEach(id => {
         // IDs are UUIDs, safe to use dot notation 'elements.UUID'
@@ -308,6 +297,35 @@ export async function getSavedWordForUser(userId: string, word: string): Promise
     console.warn("Failed to fetch specific saved word", e);
     return null;
   }
+}
+
+// --- CAREER / RESUMES ---
+
+export async function submitCareerApplication(app: CareerApplication): Promise<void> {
+    const user = auth.currentUser;
+    if (!user) throw new Error("Must be logged in");
+    
+    await db.collection('career_applications').add(sanitizeData(app));
+    logUserActivity('career_application', { role: app.role });
+}
+
+export async function uploadResumeToStorage(userId: string, file: File): Promise<string> {
+    // 300KB Check is done in UI, but safe to check here too implicitly if we had strict rules
+    // Using a safe path format
+    const path = `resumes/${userId}_${Date.now()}.pdf`;
+    const ref = storage.ref(path);
+    
+    // Set metadata
+    const metadata = {
+        contentType: 'application/pdf',
+        customMetadata: {
+            userId: userId,
+            originalName: file.name
+        }
+    };
+    
+    await ref.put(file, metadata);
+    return await ref.getDownloadURL();
 }
 
 // --- DEBUG / ADMIN ---
