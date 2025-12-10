@@ -1,3 +1,4 @@
+
 // [FORCE-SYNC-v3.44.0] Timestamp: ${new Date().toISOString()}
 import { db, auth, storage } from './firebaseConfig';
 import firebase from 'firebase/compat/app';
@@ -188,6 +189,14 @@ export async function updateCursor(projectId: string, cursor: CursorPosition): P
     await db.collection('code_projects').doc(projectId).update(
         path, sanitizeData(cursor)
     );
+}
+
+export async function claimCodeProjectLock(projectId: string, clientId: string, writerName: string): Promise<void> {
+    await db.collection('code_projects').doc(projectId).update({
+        activeClientId: clientId,
+        activeWriterName: writerName,
+        lastModified: Date.now()
+    });
 }
 
 export function subscribeToWhiteboard(boardId: string, onUpdate: (elements: any[]) => void): () => void {

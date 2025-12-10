@@ -216,6 +216,8 @@ export interface CodeProject {
   interviewFeedback?: string;
   chatHistory?: ChatMessage[];
   cursors?: Record<string, CursorPosition>; // Map of ClientID -> Cursor
+  activeClientId?: string; // LOCK: The ClientID currently holding write access
+  activeWriterName?: string; // Display name of the active writer
 }
 
 export interface Blog {
