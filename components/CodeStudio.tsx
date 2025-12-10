@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { GoogleGenAI, FunctionDeclaration, Type } from '@google/genai';
-import { ArrowLeft, Save, Folder, File, Code, Plus, Trash2, Loader2, ChevronRight, ChevronDown, X, MessageSquare, FileCode, FileJson, FileType, Search, Coffee, Hash, CloudUpload, Edit3, BookOpen, Bot, Send, Maximize2, Minimize2, GripVertical, UserCheck, AlertTriangle, Archive, Sparkles, Video, Mic, CheckCircle, Monitor, FileText, Eye, Github, GitBranch, GitCommit, FolderOpen, RefreshCw, GraduationCap, DownloadCloud, Terminal, Undo2, Check, Share2, Copy, Lock, Link, Image as ImageIcon, Users, UserPlus } from 'lucide-react';
+import { ArrowLeft, Save, Folder, File, Code, Plus, Trash2, Loader2, ChevronRight, ChevronDown, X, MessageSquare, FileCode, FileJson, FileType, Search, Coffee, Hash, CloudUpload, Edit3, BookOpen, Bot, Send, Maximize2, Minimize2, GripVertical, UserCheck, AlertTriangle, Archive, Sparkles, Video, Mic, CheckCircle, Monitor, FileText, Eye, Github, GitBranch, GitCommit, FolderOpen, RefreshCw, GraduationCap, DownloadCloud, Terminal, Undo2, Check, Share2, Copy, Lock, Link, Image as ImageIcon, Users, UserPlus, ShieldAlert } from 'lucide-react';
 import { GEMINI_API_KEY } from '../services/private_keys';
 import { CodeProject, CodeFile, ChatMessage, Channel, GithubMetadata, CursorPosition } from '../types';
 import { MarkdownView } from './MarkdownView';
@@ -623,7 +623,15 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
   const [isWaitingForAccess, setIsWaitingForAccess] = useState(false); // Is waiting for approval
 
   const [guestId] = useState(() => 'guest_' + Math.floor(Math.random() * 10000));
-  const [localClientId] = useState(() => crypto.randomUUID());
+  
+  // Use Session Storage for Client ID to persist across refreshes but expire on tab close
+  const [localClientId] = useState(() => {
+      const stored = sessionStorage.getItem('code_studio_client_id');
+      if (stored) return stored;
+      const newId = crypto.randomUUID();
+      sessionStorage.setItem('code_studio_client_id', newId);
+      return newId;
+  });
   
   const [remoteCursors, setRemoteCursors] = useState<CursorPosition[]>([]);
   const cursorUpdateTimerRef = useRef<any>(null);
@@ -640,6 +648,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
   const isPlantUML = activeFile ? ['puml', 'plantuml', 'iuml'].includes(activeFile.name.split('.').pop()?.toLowerCase() || '') : false;
   const isGithubLinked = currentUser?.providerData?.some((p: any) => p.providerId === 'github.com');
   const myUserId = currentUser?.uid || guestId;
+  const isOwner = currentUser && (currentUser.uid === project.ownerId || currentUser.email === 'shengliang.song@gmail.com');
 
   const fileTree = React.useMemo(() => buildFileTree(project.files, expandedFolders), [project.files, expandedFolders]);
 
@@ -658,7 +667,6 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
               // ACCESS CONTROL LOGIC
               // @ts-ignore
               const projectWriteToken = remoteProject.writeToken;
-              const isOwner = currentUser && currentUser.uid === remoteProject.ownerId;
               
               // Basic Permission Check
               const canWrite = isOwner || (projectWriteToken && accessKey === projectWriteToken);
@@ -705,6 +713,12 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
       if (!hasWritePermission) return;
       setIsWaitingForAccess(true);
       await requestEditAccess(project.id, localClientId, currentUser?.displayName || 'Guest');
+  };
+
+  const handleTakeControl = async () => {
+      // Owner override: Force take control immediately without waiting
+      if (!isOwner) return;
+      await claimCodeProjectLock(project.id, localClientId, currentUser?.displayName || 'Owner');
   };
 
   const handleAcceptHandover = async () => {
@@ -759,7 +773,6 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
   };
 
   // ... (Keep debounce, loadContent, effects, etc. unchanged)
-  // [Omitted standard hooks for brevity, logic remains identical]
   const [debouncedFileContext, setDebouncedFileContext] = useState('');
   useEffect(() => {
       const handler = setTimeout(() => {
@@ -790,8 +803,6 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
       return () => clearTimeout(timeout);
   }, [activeFileIndex, project.github, githubToken]);
 
-  // ... (Keep existing handlers) ...
-  // [Omitted helper functions toggleFolder, startResizing, etc. logic remains identical]
   const handleSearch = (term: string) => {
       setSearchTerm(term);
       if (!term.trim()) { setSearchResults([]); return; }
@@ -886,10 +897,10 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
       // Send update to Firestore immediately (debounced locally by typing speed, but firestore handles overwrite)
       if (isSharedSession) {
           if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
-          // 500ms debounce to avoid spamming Firestore, but feel responsive
+          // 800ms debounce to avoid spamming Firestore, but feel responsive
           autoSaveTimerRef.current = setTimeout(() => {
               updateCodeFile(project.id, updatedFiles[index]);
-          }, 500); 
+          }, 800); 
       }
       
       setProject(updatedProject);
@@ -1086,10 +1097,19 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
                
                {isReadOnly ? (
                    hasWritePermission ? (
-                       <button onClick={handleRequestAccess} disabled={isWaitingForAccess} className={`flex items-center gap-1 px-3 py-1 rounded text-xs font-bold transition-colors shadow-lg ${isWaitingForAccess ? 'bg-amber-600/50 text-white cursor-wait' : 'bg-indigo-600 hover:bg-indigo-500 text-white animate-pulse'}`}>
-                           {isWaitingForAccess ? <Loader2 size={12} className="animate-spin" /> : <Edit3 size={12} />}
-                           {isWaitingForAccess ? 'Waiting for Approval...' : 'Request Edit Access'}
-                       </button>
+                       project.editRequest?.clientId === localClientId ? (
+                           <button disabled className="flex items-center gap-1 px-3 py-1 bg-amber-600/50 text-white rounded text-xs font-bold cursor-wait opacity-80">
+                               <Loader2 size={12} className="animate-spin" /> Waiting for Approval...
+                           </button>
+                       ) : isOwner ? (
+                           <button onClick={handleTakeControl} className="flex items-center gap-1 px-3 py-1 bg-red-600 hover:bg-red-500 text-white rounded text-xs font-bold transition-colors shadow-lg">
+                               <ShieldAlert size={12} /> Force Edit (Owner)
+                           </button>
+                       ) : (
+                           <button onClick={handleRequestAccess} className="flex items-center gap-1 px-3 py-1 bg-indigo-600 hover:bg-indigo-500 text-white rounded text-xs font-bold transition-colors animate-pulse shadow-lg">
+                               <Edit3 size={12} /> Request Edit Access
+                           </button>
+                       )
                    ) : (
                        <div className="flex items-center gap-1 px-2 py-0.5 bg-amber-900/30 text-amber-400 rounded border border-amber-500/30 text-[10px] font-bold uppercase tracking-wider">
                            <Lock size={10} /> Read Only
