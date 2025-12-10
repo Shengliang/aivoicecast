@@ -199,6 +199,28 @@ export async function claimCodeProjectLock(projectId: string, clientId: string, 
     });
 }
 
+// Handover Workflow
+export async function requestEditAccess(projectId: string, clientId: string, userName: string): Promise<void> {
+    await db.collection('code_projects').doc(projectId).update({
+        editRequest: { clientId, userName, timestamp: Date.now() }
+    });
+}
+
+export async function grantEditAccess(projectId: string, requesterClientId: string, requesterName: string): Promise<void> {
+    await db.collection('code_projects').doc(projectId).update({
+        activeClientId: requesterClientId,
+        activeWriterName: requesterName,
+        editRequest: firebase.firestore.FieldValue.delete(), // Clear request
+        lastModified: Date.now()
+    });
+}
+
+export async function denyEditAccess(projectId: string): Promise<void> {
+    await db.collection('code_projects').doc(projectId).update({
+        editRequest: firebase.firestore.FieldValue.delete()
+    });
+}
+
 export function subscribeToWhiteboard(boardId: string, onUpdate: (elements: any[]) => void): () => void {
   return db.collection('whiteboards').doc(boardId).onSnapshot((doc) => {
     if (doc.exists) {

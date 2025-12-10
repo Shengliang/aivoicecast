@@ -1,11 +1,11 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { GoogleGenAI, FunctionDeclaration, Type } from '@google/genai';
-import { ArrowLeft, Save, Folder, File, Code, Plus, Trash2, Loader2, ChevronRight, ChevronDown, X, MessageSquare, FileCode, FileJson, FileType, Search, Coffee, Hash, CloudUpload, Edit3, BookOpen, Bot, Send, Maximize2, Minimize2, GripVertical, UserCheck, AlertTriangle, Archive, Sparkles, Video, Mic, CheckCircle, Monitor, FileText, Eye, Github, GitBranch, GitCommit, FolderOpen, RefreshCw, GraduationCap, DownloadCloud, Terminal, Undo2, Check, Share2, Copy, Lock, Link, Image as ImageIcon, Users } from 'lucide-react';
+import { ArrowLeft, Save, Folder, File, Code, Plus, Trash2, Loader2, ChevronRight, ChevronDown, X, MessageSquare, FileCode, FileJson, FileType, Search, Coffee, Hash, CloudUpload, Edit3, BookOpen, Bot, Send, Maximize2, Minimize2, GripVertical, UserCheck, AlertTriangle, Archive, Sparkles, Video, Mic, CheckCircle, Monitor, FileText, Eye, Github, GitBranch, GitCommit, FolderOpen, RefreshCw, GraduationCap, DownloadCloud, Terminal, Undo2, Check, Share2, Copy, Lock, Link, Image as ImageIcon, Users, UserPlus } from 'lucide-react';
 import { GEMINI_API_KEY } from '../services/private_keys';
 import { CodeProject, CodeFile, ChatMessage, Channel, GithubMetadata, CursorPosition } from '../types';
 import { MarkdownView } from './MarkdownView';
-import { saveCodeProject, subscribeToCodeProject, updateCodeFile, deleteCodeFile, updateCursor, claimCodeProjectLock } from '../services/firestoreService';
+import { saveCodeProject, subscribeToCodeProject, updateCodeFile, deleteCodeFile, updateCursor, claimCodeProjectLock, requestEditAccess, grantEditAccess, denyEditAccess } from '../services/firestoreService';
 import { signInWithGitHub, reauthenticateWithGitHub } from '../services/authService';
 import { fetchUserRepos, fetchRepoContents, commitToRepo, fetchPublicRepoInfo, fetchFileContent, fetchRepoSubTree } from '../services/githubService';
 import { LiveSession } from './LiveSession';
@@ -620,7 +620,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
   // WRITE ACCESS STATE
   const [isReadOnly, setIsReadOnly] = useState(false); 
   const [hasWritePermission, setHasWritePermission] = useState(false); // Can user potentially write? (Owner/Key)
-  const [showPassControl, setShowPassControl] = useState(false); // Dropdown to pass control
+  const [isWaitingForAccess, setIsWaitingForAccess] = useState(false); // Is waiting for approval
 
   const [guestId] = useState(() => 'guest_' + Math.floor(Math.random() * 10000));
   const [localClientId] = useState(() => crypto.randomUUID());
@@ -670,39 +670,62 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
               const isMyLock = remoteProject.activeClientId === localClientId;
               const amIWriter = canWrite && isMyLock;
               
-              setIsReadOnly(!amIWriter);
-
-              // CONTENT SYNC STRATEGY:
-              // If I am the writer, IGNORE remote file updates (to avoid overwriting my own typing with laggy echo).
-              // If I am a reader, ACCEPT all remote file updates immediately.
+              // Transition Logic: If I just became writer, accept new state
               setProject(prev => {
-                  if (amIWriter) {
-                      // Keep my local files, update metadata/cursors only
-                      return { 
-                          ...remoteProject, 
-                          files: prev.files // Preserve local state
-                      };
-                  } else {
-                      // Full sync
+                  const wasWriter = prev.activeClientId === localClientId;
+                  
+                  if (amIWriter && !wasWriter) {
+                      // I just became the writer! Load the latest from remote to ensure I have previous edits.
+                      setIsReadOnly(false);
+                      setIsWaitingForAccess(false);
                       return remoteProject;
                   }
+                  
+                  if (amIWriter) {
+                      // I am actively writing. Keep my local changes (don't overwrite with echoed remote state)
+                      setIsReadOnly(false);
+                      return { ...remoteProject, files: prev.files }; 
+                  }
+                  
+                  // I am a reader. Always take remote state.
+                  setIsReadOnly(true);
+                  if (remoteProject.activeClientId !== localClientId) {
+                      setIsWaitingForAccess(false); // If lock moved to someone else, stop waiting
+                  }
+                  return remoteProject;
               });
           });
           return () => unsubscribe();
       }
   }, [sessionId, myUserId, localClientId, accessKey, currentUser]); 
 
-  const handleTakeControl = () => {
+  // --- Handover Logic ---
+
+  const handleRequestAccess = async () => {
       if (!hasWritePermission) return;
-      // Claim lock
-      claimCodeProjectLock(project.id, localClientId, currentUser?.displayName || 'Guest');
+      setIsWaitingForAccess(true);
+      await requestEditAccess(project.id, localClientId, currentUser?.displayName || 'Guest');
   };
 
-  const handlePassControl = (targetClientId: string, targetName: string) => {
-      if (!hasWritePermission) return;
-      // Pass lock
-      claimCodeProjectLock(project.id, targetClientId, targetName);
-      setShowPassControl(false);
+  const handleAcceptHandover = async () => {
+      if (!project.editRequest) return;
+      
+      // 1. Force Save current state (flush unsaved chars)
+      setIsSaving(true);
+      try {
+          await saveCodeProject(project);
+          // 2. Grant Access
+          await grantEditAccess(project.id, project.editRequest.clientId, project.editRequest.userName);
+      } catch(e) {
+          alert("Handover failed during save.");
+      } finally {
+          setIsSaving(false);
+      }
+  };
+
+  const handleDenyHandover = async () => {
+      if (!project.editRequest) return;
+      await denyEditAccess(project.id);
   };
 
   const handleCursorUpdate = (e: React.SyntheticEvent<HTMLTextAreaElement>) => {
@@ -863,9 +886,10 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
       // Send update to Firestore immediately (debounced locally by typing speed, but firestore handles overwrite)
       if (isSharedSession) {
           if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+          // 500ms debounce to avoid spamming Firestore, but feel responsive
           autoSaveTimerRef.current = setTimeout(() => {
               updateCodeFile(project.id, updatedFiles[index]);
-          }, 800); 
+          }, 500); 
       }
       
       setProject(updatedProject);
@@ -1022,8 +1046,25 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
   };
 
   return (
-    <div className="flex flex-col h-screen bg-slate-950 text-slate-100 overflow-hidden">
+    <div className="flex flex-col h-screen bg-slate-950 text-slate-100 overflow-hidden relative">
       
+      {/* Handover Notification */}
+      {!isReadOnly && project.editRequest && (
+          <div className="absolute top-16 left-1/2 -translate-x-1/2 z-50 bg-slate-800 border border-indigo-500 rounded-lg p-3 shadow-xl flex items-center gap-3 animate-fade-in-up">
+              <div className="flex items-center gap-2 text-sm text-white">
+                  <UserPlus size={16} className="text-indigo-400" />
+                  <span className="font-bold">{project.editRequest.userName}</span> wants to edit.
+              </div>
+              <div className="flex gap-2">
+                  <button onClick={handleDenyHandover} className="px-3 py-1 bg-slate-700 hover:bg-slate-600 text-xs font-bold rounded">Deny</button>
+                  <button onClick={handleAcceptHandover} disabled={isSaving} className="px-3 py-1 bg-emerald-600 hover:bg-emerald-500 text-xs font-bold rounded flex items-center gap-1">
+                      {isSaving ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />}
+                      Grant Access
+                  </button>
+              </div>
+          </div>
+      )}
+
       {/* Header */}
       <header className="h-14 bg-slate-900 border-b border-slate-800 flex items-center justify-between px-4 shrink-0 z-20">
          <div className="flex items-center space-x-4">
@@ -1045,8 +1086,9 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
                
                {isReadOnly ? (
                    hasWritePermission ? (
-                       <button onClick={handleTakeControl} className="flex items-center gap-1 px-3 py-1 bg-indigo-600 hover:bg-indigo-500 text-white rounded text-xs font-bold transition-colors animate-pulse shadow-lg">
-                           <Edit3 size={12} /> Take Edit Access
+                       <button onClick={handleRequestAccess} disabled={isWaitingForAccess} className={`flex items-center gap-1 px-3 py-1 rounded text-xs font-bold transition-colors shadow-lg ${isWaitingForAccess ? 'bg-amber-600/50 text-white cursor-wait' : 'bg-indigo-600 hover:bg-indigo-500 text-white animate-pulse'}`}>
+                           {isWaitingForAccess ? <Loader2 size={12} className="animate-spin" /> : <Edit3 size={12} />}
+                           {isWaitingForAccess ? 'Waiting for Approval...' : 'Request Edit Access'}
                        </button>
                    ) : (
                        <div className="flex items-center gap-1 px-2 py-0.5 bg-amber-900/30 text-amber-400 rounded border border-amber-500/30 text-[10px] font-bold uppercase tracking-wider">
@@ -1055,28 +1097,10 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
                    )
                ) : (
                    <div className="relative">
-                       <button onClick={() => setShowPassControl(!showPassControl)} className="flex items-center gap-2 px-3 py-1 bg-emerald-900/30 text-emerald-400 border border-emerald-500/30 rounded text-xs font-bold uppercase tracking-wider hover:bg-emerald-900/50 transition-colors">
+                       <div className="flex items-center gap-2 px-3 py-1 bg-emerald-900/30 text-emerald-400 border border-emerald-500/30 rounded text-xs font-bold uppercase tracking-wider">
                            <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></span>
                            Editing ({project.activeWriterName || 'You'})
-                           <ChevronDown size={10} />
-                       </button>
-                       {showPassControl && (
-                           <div className="absolute top-full left-0 mt-2 w-48 bg-slate-900 border border-slate-700 rounded-xl shadow-xl z-50 overflow-hidden py-1">
-                               <div className="px-3 py-1.5 text-[10px] font-bold text-slate-500 uppercase">Pass Control To</div>
-                               {remoteCursors.length > 0 ? remoteCursors.map(cursor => (
-                                   <button 
-                                       key={cursor.clientId} 
-                                       onClick={() => handlePassControl(cursor.clientId, cursor.userName)}
-                                       className="w-full text-left px-3 py-2 hover:bg-slate-800 text-xs text-white flex items-center gap-2"
-                                   >
-                                       <div className="w-2 h-2 rounded-full" style={{ background: cursor.color }}></div>
-                                       {cursor.userName}
-                                   </button>
-                               )) : (
-                                   <div className="px-3 py-2 text-xs text-slate-500 italic">No other active users.</div>
-                               )}
-                           </div>
-                       )}
+                       </div>
                    </div>
                )}
             </div>

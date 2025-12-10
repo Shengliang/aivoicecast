@@ -218,6 +218,11 @@ export interface CodeProject {
   cursors?: Record<string, CursorPosition>; // Map of ClientID -> Cursor
   activeClientId?: string; // LOCK: The ClientID currently holding write access
   activeWriterName?: string; // Display name of the active writer
+  editRequest?: { // Pending request for control
+    clientId: string;
+    userName: string;
+    timestamp: number;
+  };
 }
 
 export interface Blog {
