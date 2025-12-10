@@ -487,9 +487,9 @@ const EnhancedEditor = ({ code, language, onChange, onScroll, onSelect, textArea
                 />
             </pre>
             
-            {/* Cursor Layer - Explicit positioning to match textarea p-4 (16px) */}
-            <div className="absolute top-0 left-0 w-full h-full pointer-events-none overflow-hidden">
-                <div ref={cursorMoveRef} className="absolute top-4 left-4 w-full">
+            {/* Cursor Layer - Matches Textarea Padding (p-4 = 16px) */}
+            <div className="absolute top-0 left-0 w-full h-full p-4 pointer-events-none overflow-hidden">
+                <div ref={cursorMoveRef} className="relative w-full h-full">
                     {cursors && cursors.map((c: CursorPosition) => (
                         <CodeCursor key={c.clientId || c.userId} cursor={c} currentLine={0} />
                     ))}
