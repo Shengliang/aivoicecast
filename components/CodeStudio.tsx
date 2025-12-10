@@ -396,7 +396,8 @@ const generateHighlightedHTML = (code: string, language: string) => {
 };
 
 const CodeCursor: React.FC<{ cursor: CursorPosition; currentLine: number; isLocal?: boolean }> = ({ cursor, currentLine, isLocal }) => {
-    // 24px line height. No offset needed as parent container has padding.
+    // 24px line height (leading-6 in tailwind). 
+    // Position 0 = first line.
     const top = (cursor.line - 1) * 24;
     
     return (
@@ -477,7 +478,7 @@ const EnhancedEditor = ({ code, language, onChange, onScroll, onSelect, textArea
             )}
 
             <pre
-                className="absolute top-0 left-0 w-full h-full p-4 pointer-events-none margin-0 whitespace-pre overflow-hidden leading-6 font-mono"
+                className="absolute top-0 left-0 w-full h-full p-4 m-0 pointer-events-none whitespace-pre overflow-hidden leading-6 font-mono border-0"
                 aria-hidden="true"
                 style={{ tabSize: 4 }}
             >
@@ -486,9 +487,9 @@ const EnhancedEditor = ({ code, language, onChange, onScroll, onSelect, textArea
                 />
             </pre>
             
-            {/* Cursor Layer with Padding matching Textarea */}
-            <div className="absolute top-0 left-0 w-full h-full p-4 pointer-events-none overflow-hidden">
-                <div ref={cursorMoveRef} className="w-full relative">
+            {/* Cursor Layer - Explicit positioning to match textarea p-4 (16px) */}
+            <div className="absolute top-0 left-0 w-full h-full pointer-events-none overflow-hidden">
+                <div ref={cursorMoveRef} className="absolute top-4 left-4 w-full">
                     {cursors && cursors.map((c: CursorPosition) => (
                         <CodeCursor key={c.clientId || c.userId} cursor={c} currentLine={0} />
                     ))}
@@ -521,7 +522,7 @@ const EnhancedEditor = ({ code, language, onChange, onScroll, onSelect, textArea
                 onSelect={onSelect}
                 onClick={onSelect}
                 onKeyUp={onSelect}
-                className={`absolute top-0 left-0 w-full h-full p-4 bg-transparent text-transparent caret-white outline-none resize-none leading-6 whitespace-pre overflow-auto font-mono ${readOnly ? 'pointer-events-auto' : ''}`}
+                className={`absolute top-0 left-0 w-full h-full p-4 m-0 border-0 bg-transparent text-transparent caret-white outline-none resize-none leading-6 whitespace-pre overflow-auto font-mono ${readOnly ? 'pointer-events-auto' : ''}`}
                 spellCheck={false}
                 autoCapitalize="off"
                 autoComplete="off"
