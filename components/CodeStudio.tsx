@@ -398,6 +398,7 @@ const generateHighlightedHTML = (code: string, language: string) => {
 const CodeCursor: React.FC<{ cursor: CursorPosition; currentLine: number; isLocal?: boolean }> = ({ cursor, currentLine, isLocal }) => {
     // 24px line height (leading-6 in tailwind). 
     // Position 0 = first line.
+    // Line index should be 1-based from backend, so subtract 1 to get 0-based Y coordinate.
     const top = (cursor.line - 1) * 24;
     
     return (
@@ -487,9 +488,9 @@ const EnhancedEditor = ({ code, language, onChange, onScroll, onSelect, textArea
                 />
             </pre>
             
-            {/* Cursor Layer - Matches Textarea Padding (p-4 = 16px) */}
-            <div className="absolute top-0 left-0 w-full h-full p-4 pointer-events-none overflow-hidden">
-                <div ref={cursorMoveRef} className="relative w-full h-full">
+            {/* Cursor Layer - Matches Textarea Padding (p-4 = 16px) using explicit absolute coordinates */}
+            <div className="absolute top-0 left-0 w-full h-full pointer-events-none overflow-hidden font-mono leading-6">
+                <div ref={cursorMoveRef} className="absolute top-4 left-4 w-full">
                     {cursors && cursors.map((c: CursorPosition) => (
                         <CodeCursor key={c.clientId || c.userId} cursor={c} currentLine={0} />
                     ))}
