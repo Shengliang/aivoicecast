@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { GoogleGenAI, FunctionDeclaration, Type } from '@google/genai';
-import { ArrowLeft, Save, Folder, File, Code, Plus, Trash2, Loader2, ChevronRight, ChevronDown, X, MessageSquare, FileCode, FileJson, FileType, Search, Coffee, Hash, CloudUpload, Edit3, BookOpen, Bot, Send, Maximize2, Minimize2, GripVertical, UserCheck, AlertTriangle, Archive, Sparkles, Video, Mic, CheckCircle, Monitor, FileText, Eye, Github, GitBranch, GitCommit, FolderOpen, RefreshCw, GraduationCap, DownloadCloud, Terminal, Undo2, Check, Share2, Copy, Lock, Link, Image as ImageIcon, Users, UserPlus, ShieldAlert } from 'lucide-react';
+import { ArrowLeft, Save, Folder, File, Code, Plus, Trash2, Loader2, ChevronRight, ChevronDown, X, MessageSquare, FileCode, FileJson, FileType, Search, Coffee, Hash, CloudUpload, Edit3, BookOpen, Bot, Send, Maximize2, Minimize2, GripVertical, UserCheck, AlertTriangle, Archive, Sparkles, Video, Mic, CheckCircle, Monitor, FileText, Eye, Github, GitBranch, GitCommit, FolderOpen, RefreshCw, GraduationCap, DownloadCloud, Terminal, Undo2, Check, Share2, Copy, Lock, Link, Image as ImageIcon, Users, UserPlus, ShieldAlert, Crown } from 'lucide-react';
 import { GEMINI_API_KEY } from '../services/private_keys';
 import { CodeProject, CodeFile, ChatMessage, Channel, GithubMetadata, CursorPosition } from '../types';
 import { MarkdownView } from './MarkdownView';
@@ -396,17 +396,13 @@ const generateHighlightedHTML = (code: string, language: string) => {
 };
 
 const CodeCursor: React.FC<{ cursor: CursorPosition; currentLine: number }> = ({ cursor, currentLine }) => {
-    // Line height matches leading-6 (1.5rem = 24px)
-    // Left position using 'ch' unit ensures better alignment with monospace font
-    // 16px (1rem) padding from the editor container
     const top = (cursor.line - 1) * 24;
-    
     return (
         <div 
             className="absolute z-30 pointer-events-none transition-all duration-100 ease-out"
             style={{ 
                 top: `${top}px`, 
-                left: `calc(${cursor.column}ch + 1rem)`, // Dynamic ch width + padding
+                left: `calc(${cursor.column}ch + 1rem)`, 
                 height: `24px`
             }}
         >
@@ -528,7 +524,6 @@ const PlantUMLPreview = ({ code }: { code: string }) => {
         if (!encodedCode) return;
         const url = `https://www.plantuml.com/plantuml/${format}/${encodedCode}`;
         
-        // For PDF, we just open in new tab as it might be a binary stream that browser handles or downloads
         if (format === 'pdf') {
              window.open(url, '_blank');
              return;
@@ -547,7 +542,6 @@ const PlantUMLPreview = ({ code }: { code: string }) => {
             document.body.removeChild(a);
             URL.revokeObjectURL(localUrl);
         } catch(e) {
-            // Fallback
             window.open(url, '_blank');
         }
     };
@@ -592,6 +586,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
   const [showLanguageDropdown, setShowLanguageDropdown] = useState(false);
   const [showExamplesDropdown, setShowExamplesDropdown] = useState(false);
   const [showShareDropdown, setShowShareDropdown] = useState(false);
+  const [showPassControl, setShowPassControl] = useState(false);
   const [isPreviewMode, setIsPreviewMode] = useState(false);
   const [isLoadingFile, setIsLoadingFile] = useState(false);
   const [tutorSessionId, setTutorSessionId] = useState<string>(''); 
@@ -619,8 +614,9 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
   
   // WRITE ACCESS STATE
   const [isReadOnly, setIsReadOnly] = useState(false); 
-  const [hasWritePermission, setHasWritePermission] = useState(false); // Can user potentially write? (Owner/Key)
-  const [isWaitingForAccess, setIsWaitingForAccess] = useState(false); // Is waiting for approval
+  const [hasWritePermission, setHasWritePermission] = useState(false); 
+  const [isWaitingForAccess, setIsWaitingForAccess] = useState(false); 
+  const [canForceTake, setCanForceTake] = useState(false);
 
   const [guestId] = useState(() => 'guest_' + Math.floor(Math.random() * 10000));
   
@@ -659,24 +655,40 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
       if (sessionId) {
           setIsSharedSession(true);
           const unsubscribe = subscribeToCodeProject(sessionId, (remoteProject) => {
-              if (remoteProject.cursors) {
-                  const others = Object.values(remoteProject.cursors).filter(c => c.userId !== myUserId);
-                  setRemoteCursors(others);
+              // Extract all cursors for leader election
+              const allCursors = Object.values(remoteProject.cursors || {});
+              const otherCursors = allCursors.filter(c => c.userId !== myUserId);
+              setRemoteCursors(otherCursors);
+
+              // Leader Election: Smallest ClientID wins (handles deadlocks if owner leaves)
+              const allClientIds = allCursors.map(c => c.clientId);
+              if (!allClientIds.includes(localClientId)) {
+                  // If we are not in the cursor list yet (just joined), assume we might be leader if list is empty
+                  if (allClientIds.length === 0) allClientIds.push(localClientId);
+              } else {
+                  // We are already in the list
               }
+              allClientIds.sort();
+              const leaderClientId = allClientIds[0];
+              const isSessionLeader = localClientId === leaderClientId;
               
               // ACCESS CONTROL LOGIC
               // @ts-ignore
               const projectWriteToken = remoteProject.writeToken;
               
-              // Basic Permission Check
-              const canWrite = isOwner || (projectWriteToken && accessKey === projectWriteToken);
-              setHasWritePermission(canWrite);
+              // Base permission: Owner of Project OR has Token OR is Session Leader (can force take)
+              const isProjectOwner = currentUser && (currentUser.uid === remoteProject.ownerId);
+              const hasToken = projectWriteToken && accessKey === projectWriteToken;
+              const effectiveAdmin = isProjectOwner || hasToken || isSessionLeader;
+              
+              setHasWritePermission(effectiveAdmin);
+              setCanForceTake(effectiveAdmin);
 
               // Single Writer Lock Check
               // If I am the active writer, I have edit access.
               // Otherwise, I am Read Only.
               const isMyLock = remoteProject.activeClientId === localClientId;
-              const amIWriter = canWrite && isMyLock;
+              const amIWriter = effectiveAdmin && isMyLock;
               
               // Transition Logic: If I just became writer, accept new state
               setProject(prev => {
@@ -716,25 +728,30 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
   };
 
   const handleTakeControl = async () => {
-      // Owner override: Force take control immediately without waiting
-      if (!isOwner) return;
+      // Owner/Leader override: Force take control immediately without waiting
+      if (!canForceTake) return;
       await claimCodeProjectLock(project.id, localClientId, currentUser?.displayName || 'Owner');
   };
 
-  const handleAcceptHandover = async () => {
-      if (!project.editRequest) return;
-      
+  const handlePassControl = async (targetClientId: string, targetName: string) => {
+      if (!canForceTake) return;
       // 1. Force Save current state (flush unsaved chars)
       setIsSaving(true);
       try {
           await saveCodeProject(project);
           // 2. Grant Access
-          await grantEditAccess(project.id, project.editRequest.clientId, project.editRequest.userName);
+          await grantEditAccess(project.id, targetClientId, targetName);
+          setShowPassControl(false);
       } catch(e) {
           alert("Handover failed during save.");
       } finally {
           setIsSaving(false);
       }
+  };
+
+  const handleAcceptHandover = async () => {
+      if (!project.editRequest) return;
+      handlePassControl(project.editRequest.clientId, project.editRequest.userName);
   };
 
   const handleDenyHandover = async () => {
@@ -1096,14 +1113,14 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
                </div>
                
                {isReadOnly ? (
-                   hasWritePermission ? (
+                   canForceTake ? (
+                       <button onClick={handleTakeControl} className="flex items-center gap-1 px-3 py-1 bg-red-600 hover:bg-red-500 text-white rounded text-xs font-bold transition-colors shadow-lg">
+                           <ShieldAlert size={12} /> Force Edit (Admin)
+                       </button>
+                   ) : hasWritePermission ? (
                        project.editRequest?.clientId === localClientId ? (
                            <button disabled className="flex items-center gap-1 px-3 py-1 bg-amber-600/50 text-white rounded text-xs font-bold cursor-wait opacity-80">
                                <Loader2 size={12} className="animate-spin" /> Waiting for Approval...
-                           </button>
-                       ) : isOwner ? (
-                           <button onClick={handleTakeControl} className="flex items-center gap-1 px-3 py-1 bg-red-600 hover:bg-red-500 text-white rounded text-xs font-bold transition-colors shadow-lg">
-                               <ShieldAlert size={12} /> Force Edit (Owner)
                            </button>
                        ) : (
                            <button onClick={handleRequestAccess} className="flex items-center gap-1 px-3 py-1 bg-indigo-600 hover:bg-indigo-500 text-white rounded text-xs font-bold transition-colors animate-pulse shadow-lg">
@@ -1117,10 +1134,28 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
                    )
                ) : (
                    <div className="relative">
-                       <div className="flex items-center gap-2 px-3 py-1 bg-emerald-900/30 text-emerald-400 border border-emerald-500/30 rounded text-xs font-bold uppercase tracking-wider">
+                       <button onClick={() => setShowPassControl(!showPassControl)} className="flex items-center gap-2 px-3 py-1 bg-emerald-900/30 text-emerald-400 border border-emerald-500/30 rounded text-xs font-bold uppercase tracking-wider hover:bg-emerald-900/50 transition-colors">
                            <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></span>
                            Editing ({project.activeWriterName || 'You'})
-                       </div>
+                           <ChevronDown size={10} />
+                       </button>
+                       {showPassControl && (
+                           <div className="absolute top-full left-0 mt-2 w-48 bg-slate-900 border border-slate-700 rounded-xl shadow-xl z-50 overflow-hidden py-1">
+                               <div className="px-3 py-1.5 text-[10px] font-bold text-slate-500 uppercase">Pass Control To</div>
+                               {remoteCursors.length > 0 ? remoteCursors.map(cursor => (
+                                   <button 
+                                       key={cursor.clientId} 
+                                       onClick={() => handlePassControl(cursor.clientId, cursor.userName)}
+                                       className="w-full text-left px-3 py-2 hover:bg-slate-800 text-xs text-white flex items-center gap-2"
+                                   >
+                                       <div className="w-2 h-2 rounded-full" style={{ background: cursor.color }}></div>
+                                       {cursor.userName}
+                                   </button>
+                               )) : (
+                                   <div className="px-3 py-2 text-xs text-slate-500 italic">No other active users.</div>
+                               )}
+                           </div>
+                       )}
                    </div>
                )}
             </div>
