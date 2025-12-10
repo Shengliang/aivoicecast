@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { UserProfile } from '../types';
-import { X, User, Shield, CreditCard, LogOut, CheckCircle, AlertTriangle, Bell, Lock, Database, Trash2, Edit2, Save, FileText, ExternalLink, Loader2, DollarSign } from 'lucide-react';
+import { X, User, Shield, CreditCard, LogOut, CheckCircle, AlertTriangle, Bell, Lock, Database, Trash2, Edit2, Save, FileText, ExternalLink, Loader2, DollarSign, HelpCircle, PieChart } from 'lucide-react';
 import { logUserActivity, getBillingHistory, createStripePortalSession } from '../services/firestoreService';
 import { clearAudioCache } from '../services/tts';
 
@@ -11,10 +11,11 @@ interface SettingsModalProps {
   user: UserProfile;
   onUpdateProfile?: (updated: UserProfile) => void;
   onUpgradeClick?: () => void;
+  onOpenHelp?: () => void; // Added help handler
 }
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({ 
-  isOpen, onClose, user, onUpdateProfile, onUpgradeClick 
+  isOpen, onClose, user, onUpdateProfile, onUpgradeClick, onOpenHelp 
 }) => {
   const [activeTab, setActiveTab] = useState<'general' | 'preferences' | 'billing'>('general');
   const [isProcessingPortal, setIsProcessingPortal] = useState(false);
@@ -253,28 +254,48 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
                     {/* MENTOR PAYOUTS SECTION */}
                     <div className="mt-8 pt-8 border-t border-slate-800">
-                        <h4 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-4 flex items-center gap-2">
-                            <DollarSign size={16} className="text-emerald-400"/> Mentor Payouts
-                        </h4>
+                        <div className="flex items-center justify-between mb-4">
+                            <h4 className="text-sm font-bold text-slate-400 uppercase tracking-wider flex items-center gap-2">
+                                <DollarSign size={16} className="text-emerald-400"/> Mentor Payouts
+                            </h4>
+                            {onOpenHelp && (
+                                <button onClick={() => { onClose(); onOpenHelp(); }} className="text-[10px] text-indigo-400 hover:text-white flex items-center gap-1">
+                                    <HelpCircle size={10} /> View Fees & Policies
+                                </button>
+                            )}
+                        </div>
                         
                         <div className="bg-slate-800/30 border border-slate-700 rounded-xl p-5">
-                            <div className="flex items-start gap-4">
-                                <div className="p-3 bg-slate-800 rounded-full text-slate-400">
-                                    <CreditCard size={24} />
+                            <div className="flex flex-col gap-4">
+                                <div className="flex items-center justify-between bg-slate-900/50 p-3 rounded-lg border border-slate-800">
+                                    <div className="flex items-center gap-2">
+                                        <div className="bg-emerald-900/30 p-1.5 rounded text-emerald-400"><PieChart size={16} /></div>
+                                        <span className="text-sm font-bold text-slate-300">Revenue Share</span>
+                                    </div>
+                                    <div className="text-right">
+                                        <span className="block text-sm font-bold text-white">90% You / 10% Platform</span>
+                                        <span className="text-[10px] text-slate-500">Applied per booking</span>
+                                    </div>
                                 </div>
-                                <div className="flex-1">
-                                    <h5 className="font-bold text-white text-sm mb-1">Get Paid for Mentorship</h5>
-                                    <p className="text-xs text-slate-400 leading-relaxed mb-4">
-                                        As a community mentor, you can charge for sessions. Connect your Stripe account to receive direct deposits from students.
-                                    </p>
-                                    
-                                    <button 
-                                        onClick={() => alert("Stripe Connect onboarding would launch here. (Placeholder)")}
-                                        className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold rounded-lg border border-slate-600 transition-colors flex items-center gap-2"
-                                    >
-                                        <span>Connect Stripe Account</span>
-                                        <ExternalLink size={12} className="text-slate-500"/>
-                                    </button>
+
+                                <div className="flex items-start gap-4">
+                                    <div className="p-3 bg-slate-800 rounded-full text-slate-400">
+                                        <CreditCard size={24} />
+                                    </div>
+                                    <div className="flex-1">
+                                        <h5 className="font-bold text-white text-sm mb-1">Connect Payout Method</h5>
+                                        <p className="text-xs text-slate-400 leading-relaxed mb-4">
+                                            Link your bank account via Stripe Connect to receive earnings. Payments are processed weekly.
+                                        </p>
+                                        
+                                        <button 
+                                            onClick={() => alert("Stripe Connect onboarding would launch here. (Placeholder)")}
+                                            className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold rounded-lg border border-slate-600 transition-colors flex items-center gap-2"
+                                        >
+                                            <span>Connect Stripe Account</span>
+                                            <ExternalLink size={12} className="text-slate-500"/>
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
                         </div>
