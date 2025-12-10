@@ -279,6 +279,7 @@ export interface CareerApplication {
   userId: string;
   userName: string;
   userEmail: string;
+  userPhotoURL?: string; // Added for displaying profile photo
   role: 'mentor' | 'expert' | 'contributor';
   expertise: string[];
   bio: string;

@@ -1,5 +1,6 @@
+
 import React, { useState, useRef, useEffect } from 'react';
-import { ArrowLeft, Briefcase, Upload, Loader2, CheckCircle, Heart, Users, FileText, X, Rocket, Shield, Search, Plus, MapPin, Building, Globe, ExternalLink, RefreshCw } from 'lucide-react';
+import { ArrowLeft, Briefcase, Upload, Loader2, CheckCircle, Heart, Users, FileText, X, Rocket, Shield, Search, Plus, MapPin, Building, Globe, ExternalLink, RefreshCw, User } from 'lucide-react';
 import { auth } from '../services/firebaseConfig';
 import { submitCareerApplication, uploadResumeToStorage, createJobPosting, getJobPostings, getAllCareerApplications } from '../services/firestoreService';
 import { CareerApplication, JobPosting } from '../types';
@@ -72,6 +73,7 @@ export const CareerCenter: React.FC<CareerCenterProps> = ({ onBack, currentUser 
         userId: currentUser.uid,
         userName: currentUser.displayName || 'Anonymous',
         userEmail: currentUser.email,
+        userPhotoURL: currentUser.photoURL,
         role: activeTab as 'mentor' | 'expert',
         expertise: expertise.split(',').map(s => s.trim()).filter(Boolean),
         bio,
@@ -234,9 +236,18 @@ export const CareerCenter: React.FC<CareerCenterProps> = ({ onBack, currentUser 
                                   <div className="absolute top-0 right-0 p-16 bg-emerald-500/5 blur-3xl rounded-full group-hover:bg-emerald-500/10 transition-colors"></div>
                                   <div className="relative z-10">
                                       <div className="flex justify-between items-start">
-                                          <div>
-                                              <h3 className="font-bold text-white text-lg">{app.userName}</h3>
-                                              <p className="text-xs text-emerald-400 font-bold uppercase tracking-wider mt-1">{app.role}</p>
+                                          <div className="flex items-center gap-3">
+                                              {app.userPhotoURL ? (
+                                                  <img src={app.userPhotoURL} alt={app.userName} className="w-12 h-12 rounded-full object-cover border-2 border-slate-700" />
+                                              ) : (
+                                                  <div className="w-12 h-12 rounded-full bg-slate-800 flex items-center justify-center text-slate-400 border-2 border-slate-700">
+                                                      <User size={24} />
+                                                  </div>
+                                              )}
+                                              <div>
+                                                  <h3 className="font-bold text-white text-lg">{app.userName}</h3>
+                                                  <p className="text-xs text-emerald-400 font-bold uppercase tracking-wider mt-1">{app.role}</p>
+                                              </div>
                                           </div>
                                           {app.resumeUrl && (
                                               <a href={app.resumeUrl} target="_blank" rel="noopener noreferrer" className="p-2 bg-slate-800 hover:bg-emerald-600 hover:text-white text-slate-400 rounded-lg transition-colors" title="View Resume">
