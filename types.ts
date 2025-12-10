@@ -275,6 +275,7 @@ export interface RealTimeMessage {
 }
 
 export interface CareerApplication {
+  id?: string;
   userId: string;
   userName: string;
   userEmail: string;
@@ -284,4 +285,17 @@ export interface CareerApplication {
   resumeUrl: string;
   status: 'pending' | 'approved' | 'rejected';
   createdAt: number;
+}
+
+export interface JobPosting {
+  id?: string;
+  title: string;
+  company: string;
+  location: string;
+  type: 'full-time' | 'part-time' | 'contract' | 'freelance';
+  description: string;
+  requirements?: string;
+  contactEmail: string;
+  postedBy: string; // userId
+  postedAt: number;
 }
