@@ -590,17 +590,16 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
               }
           });
           
-          // Use setTimeout to allow state to settle before setting index, or rely on calculated index
-          // Since we know the index synchronously:
-          // If updated, it's existingIdx. If new, it's length (before update) + 1 - 1 = length.
-          const idx = project.files.findIndex(f => f.name === newFile.name);
-          setActiveFileIndex(idx >= 0 ? idx : project.files.length);
+          // Calculate correct index after state update might be tricky due to closure, 
+          // but relying on effect or simple index search is safe here.
+          // We know if it existed or appended.
+          const existingIdx = project.files.findIndex(f => f.name === newFile.name);
+          setActiveFileIndex(existingIdx >= 0 ? existingIdx : project.files.length);
           
           showNotification(`Loaded ${item.name}`, "success");
-          setIsCloudLoading(false);
-
       } catch(e: any) {
           showNotification("Failed to load file", "error");
+      } finally {
           setIsCloudLoading(false);
       }
   };
@@ -704,31 +703,54 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
       }
   };
 
-  const handleSaveToCloud = async (silent = false) => {
-      if (!currentUser) return;
-      if (!silent) setIsCloudLoading(true);
+  const performCloudSave = async (name: string, currentProject: CodeProject) => {
+      setIsCloudLoading(true);
       try {
           const path = currentCloudPath || `codestudio/${currentUser.uid}`;
-          const json = JSON.stringify(project);
-          // Use stable filename to prevent duplicate spam
-          const sanitizedName = project.name.replace(/[^a-zA-Z0-9-_]/g, '_');
+          const json = JSON.stringify({ ...currentProject, name }); 
+          
+          const sanitizedName = name.replace(/[^a-zA-Z0-9-_]/g, '_');
           const filename = `${sanitizedName}.json`;
           
-          await saveProjectToCloud(path, filename, json, project.name);
+          await saveProjectToCloud(path, filename, json, name);
           await fetchCloudFiles(path);
           
-          // Clear modified flags
           setProject(prev => ({
               ...prev,
+              name: name,
               files: prev.files.map(f => ({ ...f, isModified: false }))
           }));
           
-          if(!silent) showNotification("Saved to Cloud Storage!", "success");
+          showNotification("Saved to Cloud Storage!", "success");
       } catch(e: any) {
           showNotification("Save failed: " + e.message, "error");
       } finally {
-          if (!silent) setIsCloudLoading(false);
+          setIsCloudLoading(false);
       }
+  };
+
+  const handleSaveToCloud = async (silent = false) => {
+      if (!currentUser) return;
+      
+      // PREVENT SAVING "New Project" - FORCE RENAME
+      if (project.name === 'New Project') {
+          if (silent) return; // Auto-save silently ignores default projects
+          
+          setModal({
+              isOpen: true,
+              title: "Name Your Project",
+              hasInput: true,
+              inputValue: "",
+              inputPlaceholder: "My Awesome Project",
+              onConfirm: () => {} 
+          });
+          return;
+      }
+
+      if (!silent) setIsCloudLoading(true);
+      
+      // Use helper
+      await performCloudSave(project.name, project);
   };
 
   const saveFilesToDrive = async (filesToSave: CodeFile[], silent = false) => {
@@ -923,6 +945,11 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
           submitDriveFolderCreate(input);
       } else if (modal.title === 'New Cloud File') {
           submitCloudFileCreate(input);
+      } else if (modal.title === 'Name Your Project' || modal.title === 'Save Project') {
+          setModal(null);
+          if (input && input.trim() !== "") {
+              performCloudSave(input, project);
+          }
       }
   };
 
