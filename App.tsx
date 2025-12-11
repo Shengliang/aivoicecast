@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo } from 'react';
 import { Channel, ViewState, UserProfile, TranscriptItem, SubscriptionTier } from './types';
 import { 
@@ -38,7 +37,7 @@ import { LoginPage } from './components/LoginPage';
 import { SettingsModal } from './components/SettingsModal'; 
 import { PricingModal } from './components/PricingModal'; 
 import { CareerCenter } from './components/CareerCenter';
-import { UserManual } from './components/UserManual'; // Import UserManual
+import { UserManual } from './components/UserManual'; 
 
 import { auth, isFirebaseConfigured } from './services/firebaseConfig';
 import { 
