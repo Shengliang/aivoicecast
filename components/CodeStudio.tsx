@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { GoogleGenAI, FunctionDeclaration, Type } from '@google/genai';
-import { ArrowLeft, Save, Folder, File, Code, Plus, Trash2, Loader2, ChevronRight, ChevronDown, X, MessageSquare, FileCode, FileJson, FileType, Search, Coffee, Hash, CloudUpload, Edit3, BookOpen, Bot, Send, Maximize2, Minimize2, GripVertical, UserCheck, AlertTriangle, Archive, Sparkles, Video, Mic, CheckCircle, Monitor, FileText, Eye, Github, GitBranch, GitCommit, FolderOpen, RefreshCw, GraduationCap, DownloadCloud, Terminal, Undo2, Check, Share2, Copy, Lock, Link, Image as ImageIcon, Users, UserPlus, ShieldAlert, Crown, Bug } from 'lucide-react';
+import { ArrowLeft, Save, Folder, File, Code, Plus, Trash2, Loader2, ChevronRight, ChevronDown, X, MessageSquare, FileCode, FileJson, FileType, Search, Coffee, Hash, CloudUpload, Edit3, BookOpen, Bot, Send, Maximize2, Minimize2, GripVertical, UserCheck, AlertTriangle, Archive, Sparkles, Video, Mic, CheckCircle, Monitor, FileText, Eye, Github, GitBranch, GitCommit, FolderOpen, RefreshCw, GraduationCap, DownloadCloud, Terminal, Undo2, Check, Share2, Copy, Lock, Link, Image as ImageIcon, Users, UserPlus, ShieldAlert, Crown, Bug, ChevronUp } from 'lucide-react';
 import { GEMINI_API_KEY } from '../services/private_keys';
 import { CodeProject, CodeFile, ChatMessage, Channel, GithubMetadata, CursorPosition } from '../types';
 import { MarkdownView } from './MarkdownView';
@@ -676,6 +676,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
   const [needsGitHubReauth, setNeedsGitHubReauth] = useState(false);
   const [isSharedSession, setIsSharedSession] = useState(false);
   const [showDebug, setShowDebug] = useState(true); // Toggle for Cursor Debugger
+  const [debugExpanded, setDebugExpanded] = useState(false);
   
   // WRITE ACCESS STATE
   const [isReadOnly, setIsReadOnly] = useState(false); 
@@ -1436,45 +1437,62 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
                 
                 {/* Debug Panel */}
                 {showDebug && (
-                    <div className="absolute bottom-4 right-4 bg-black/80 text-green-400 p-4 rounded font-mono text-xs z-50 border border-green-500/30 max-w-sm pointer-events-none select-text shadow-2xl">
-                        <h4 className="font-bold border-b border-green-500/30 mb-2 pb-1 text-white flex justify-between items-center">
-                            DEBUG: Cursor Sync
-                            <span className="text-[9px] text-slate-500">Fixed 24px line-height</span>
-                        </h4>
-                        <div className="mb-3">
-                            <span className="text-white block mb-1 font-bold">LOCAL (SENDING):</span>
-                            <div className="pl-2 border-l-2 border-green-500 text-[10px]">
-                                <div className="grid grid-cols-2 gap-x-4">
-                                    <span>Line: <span className="text-white">{localCursor?.line ?? '-'}</span></span>
-                                    <span>Col: <span className="text-white">{localCursor?.column ?? '-'}</span></span>
+                    debugExpanded ? (
+                        <div className="absolute bottom-4 right-4 bg-black/80 text-green-400 p-4 rounded font-mono text-xs z-50 border border-green-500/30 max-w-sm pointer-events-none select-text shadow-2xl animate-fade-in-up">
+                            <h4 className="font-bold border-b border-green-500/30 mb-2 pb-1 text-white flex justify-between items-center pointer-events-auto cursor-pointer" onClick={() => setDebugExpanded(false)}>
+                                <span>DEBUG: Cursor Sync</span>
+                                <div className="flex items-center gap-2 text-slate-500">
+                                    <span className="text-[9px]">Fixed 24px line-height</span>
+                                    <ChevronDown size={14} className="hover:text-white"/>
                                 </div>
-                                <div className="text-slate-500 mt-1">
-                                    Raw Index: {Math.max(0, (localCursor?.line || 1) - 1)}<br/>
-                                    Top: {(Math.max(0, (localCursor?.line || 1) - 1) * 24)}px
+                            </h4>
+                            <div className="mb-3">
+                                <span className="text-white block mb-1 font-bold">LOCAL (SENDING):</span>
+                                <div className="pl-2 border-l-2 border-green-500 text-[10px]">
+                                    <div className="grid grid-cols-2 gap-x-4">
+                                        <span>Line: <span className="text-white">{localCursor?.line ?? '-'}</span></span>
+                                        <span>Col: <span className="text-white">{localCursor?.column ?? '-'}</span></span>
+                                    </div>
+                                    <div className="text-slate-500 mt-1">
+                                        Raw Index: {Math.max(0, (localCursor?.line || 1) - 1)}<br/>
+                                        Top: {(Math.max(0, (localCursor?.line || 1) - 1) * 24)}px
+                                    </div>
                                 </div>
                             </div>
-                        </div>
-                        <div>
-                            <span className="text-white block mb-1 font-bold">REMOTE (RECEIVING):</span>
-                            {remoteCursors.length === 0 ? (
-                                <div className="text-slate-500 italic pl-2">No remote cursors</div>
-                            ) : (
-                                remoteCursors.map((c, i) => (
-                                    <div key={i} className="pl-2 border-l-2 border-indigo-500 mb-2 text-[10px]">
-                                        <span className="font-bold text-indigo-300 block mb-0.5">{c.userName}</span>
-                                        <div className="grid grid-cols-2 gap-x-4 text-slate-300">
-                                            <span>Line: {c.line}</span>
-                                            <span>Col: {c.column}</span>
+                            <div>
+                                <span className="text-white block mb-1 font-bold">REMOTE (RECEIVING):</span>
+                                {remoteCursors.length === 0 ? (
+                                    <div className="text-slate-500 italic pl-2">No remote cursors</div>
+                                ) : (
+                                    remoteCursors.map((c, i) => (
+                                        <div key={i} className="pl-2 border-l-2 border-indigo-500 mb-2 text-[10px]">
+                                            <span className="font-bold text-indigo-300 block mb-0.5">{c.userName}</span>
+                                            <div className="grid grid-cols-2 gap-x-4 text-slate-300">
+                                                <span>Line: {c.line}</span>
+                                                <span>Col: {c.column}</span>
+                                            </div>
+                                            <div className="text-slate-500 mt-0.5">
+                                                Calc: ({c.line} - 1) * 24<br/>
+                                                Top: {((c.line - 1) * 24)}px
+                                            </div>
                                         </div>
-                                        <div className="text-slate-500 mt-0.5">
-                                            Calc: ({c.line} - 1) * 24<br/>
-                                            Top: {((c.line - 1) * 24)}px
-                                        </div>
-                                    </div>
-                                ))
-                            )}
+                                    ))
+                                )}
+                            </div>
                         </div>
-                    </div>
+                    ) : (
+                        <button 
+                            onClick={() => setDebugExpanded(true)}
+                            className="absolute bottom-4 right-4 bg-black/80 text-green-400 p-2 rounded-lg border border-green-500/30 text-[10px] font-mono hover:bg-slate-900 transition-all shadow-lg flex items-center gap-2 z-50 animate-fade-in"
+                        >
+                            <Bug size={12} />
+                            <span>
+                                Local: L{localCursor?.line || 1} C{localCursor?.column || 0}
+                                {remoteCursors.length > 0 && ` | Remote: ${remoteCursors.length}`}
+                            </span>
+                            <ChevronUp size={12} className="text-slate-500"/>
+                        </button>
+                    )
                 )}
             </div>
          </div>
