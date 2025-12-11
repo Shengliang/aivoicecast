@@ -1,13 +1,13 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { GoogleGenAI, FunctionDeclaration, Type } from '@google/genai';
-import { ArrowLeft, Save, Folder, File, Code, Plus, Trash2, Loader2, ChevronRight, ChevronDown, X, MessageSquare, FileCode, FileJson, FileType, Search, Coffee, Hash, CloudUpload, Edit3, BookOpen, Bot, Send, Maximize2, Minimize2, GripVertical, UserCheck, AlertTriangle, Archive, Sparkles, Video, Mic, CheckCircle, Monitor, FileText, Eye, Github, GitBranch, GitCommit, FolderOpen, RefreshCw, GraduationCap, DownloadCloud, Terminal, Undo2, Check, Share2, Copy, Lock, Link, Image as ImageIcon, Users, UserPlus, ShieldAlert, Crown, Bug, ChevronUp, Zap, Expand, Shrink, Edit2 } from 'lucide-react';
+import { ArrowLeft, Save, Folder, File, Code, Plus, Trash2, Loader2, ChevronRight, ChevronDown, X, MessageSquare, FileCode, FileJson, FileType, Search, Coffee, Hash, CloudUpload, Edit3, BookOpen, Bot, Send, Maximize2, Minimize2, GripVertical, UserCheck, AlertTriangle, Archive, Sparkles, Video, Mic, CheckCircle, Monitor, FileText, Eye, Github, GitBranch, GitCommit, FolderOpen, RefreshCw, GraduationCap, DownloadCloud, Terminal, Undo2, Check, Share2, Copy, Lock, Link, Image as ImageIcon, Users, UserPlus, ShieldAlert, Crown, Bug, ChevronUp, Zap, Expand, Shrink, Edit2, History } from 'lucide-react';
 import { GEMINI_API_KEY } from '../services/private_keys';
 import { CodeProject, CodeFile, ChatMessage, Channel, GithubMetadata, CursorPosition } from '../types';
 import { MarkdownView } from './MarkdownView';
 import { saveCodeProject, subscribeToCodeProject, updateCodeFile, deleteCodeFile, updateCursor, claimCodeProjectLock, requestEditAccess, grantEditAccess, denyEditAccess } from '../services/firestoreService';
 import { signInWithGitHub, reauthenticateWithGitHub } from '../services/authService';
-import { fetchUserRepos, fetchRepoContents, commitToRepo, fetchPublicRepoInfo, fetchFileContent, fetchRepoSubTree } from '../services/githubService';
+import { fetchUserRepos, fetchRepoContents, commitToRepo, fetchPublicRepoInfo, fetchFileContent, fetchRepoSubTree, fetchRepoCommits } from '../services/githubService';
 import { LiveSession } from './LiveSession';
 import { encodePlantUML } from '../utils/plantuml';
 
@@ -222,6 +222,7 @@ interface FileNode {
   children: FileNode[];
   index?: number; 
   isLoading?: boolean; 
+  isModified?: boolean;
 }
 
 const buildFileTree = (files: CodeFile[], expandedFolders: Record<string, boolean>): FileNode[] => {
@@ -257,6 +258,7 @@ const buildFileTree = (files: CodeFile[], expandedFolders: Record<string, boolea
       
       if (isLast) {
           node.index = originalIndex;
+          node.isModified = file.isModified;
           if (file.isDirectory) {
               node.type = 'folder';
           } else {
@@ -336,7 +338,8 @@ const FileTreeNode: React.FC<{
       style={{ paddingLeft: `${depth * 12 + 12}px` }}
     >
       <FileIcon filename={node.name} />
-      <span className="truncate">{node.name}</span>
+      <span className="truncate flex-1">{node.name}</span>
+      {node.isModified && <span className="w-1.5 h-1.5 rounded-full bg-yellow-400 ml-2" title="Modified"></span>}
     </button>
   );
 };
@@ -643,6 +646,68 @@ const PlantUMLPreview = ({ code }: { code: string }) => {
     );
 };
 
+const GitHistoryView = ({ owner, repo, branch, token }: { owner: string, repo: string, branch: string, token: string | null }) => {
+    const [commits, setCommits] = useState<any[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
+
+    useEffect(() => {
+        const load = async () => {
+            setLoading(true);
+            setError(null);
+            try {
+                const data = await fetchRepoCommits(token, owner, repo, branch);
+                setCommits(data);
+            } catch(e: any) {
+                setError(e.message);
+            } finally {
+                setLoading(false);
+            }
+        };
+        if (owner && repo && branch) load();
+    }, [owner, repo, branch, token]);
+
+    if (!owner) return <div className="p-4 text-xs text-slate-500 text-center">No repository loaded.</div>;
+    if (loading) return <div className="p-8 text-center text-indigo-400"><Loader2 className="animate-spin mx-auto mb-2"/> Loading history...</div>;
+    if (error) return <div className="p-4 text-xs text-red-400 bg-red-900/20 rounded m-2 border border-red-900/50">{error}</div>;
+
+    return (
+        <div className="flex flex-col h-full overflow-hidden bg-slate-900">
+            <div className="p-3 border-b border-slate-800 bg-slate-900 sticky top-0 z-10 shadow-sm">
+                <h3 className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-2">
+                    <History size={14} className="text-indigo-400"/> Commit History
+                </h3>
+            </div>
+            <div className="flex-1 overflow-y-auto p-4 space-y-0">
+                {commits.map((commit, i) => (
+                    <div key={commit.sha} className="relative pl-6 pb-6 border-l border-slate-700 last:border-0 last:pb-0 group">
+                        {/* Dot */}
+                        <div className="absolute -left-[5px] top-1 w-2.5 h-2.5 rounded-full bg-slate-600 border-2 border-slate-900 group-hover:bg-indigo-500 transition-colors"></div>
+                        
+                        <div className="text-xs">
+                            <p className="text-slate-200 font-medium mb-1 line-clamp-2 hover:text-white transition-colors cursor-default" title={commit.commit.message}>
+                                {commit.commit.message}
+                            </p>
+                            <div className="flex items-center gap-2 mb-1">
+                                {commit.author?.avatar_url ? (
+                                    <img src={commit.author.avatar_url} className="w-4 h-4 rounded-full" alt="" />
+                                ) : (
+                                    <div className="w-4 h-4 rounded-full bg-slate-700"></div>
+                                )}
+                                <span className="text-slate-400 text-[10px]">{commit.commit.author.name}</span>
+                            </div>
+                            <div className="flex items-center justify-between text-[9px] text-slate-500 font-mono">
+                                <span>{commit.sha.substring(0, 7)}</span>
+                                <span>{new Date(commit.commit.author.date).toLocaleDateString()}</span>
+                            </div>
+                        </div>
+                    </div>
+                ))}
+            </div>
+        </div>
+    );
+};
+
 export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, sessionId, accessKey, onSessionStart }) => {
   const [project, setProject] = useState<CodeProject>(EXAMPLE_PROJECTS['is_bst']);
   const [activeFileIndex, setActiveFileIndex] = useState(0);
@@ -650,7 +715,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
   const [expandedFolders, setExpandedFolders] = useState<Record<string, boolean>>({});
   const [loadingFolders, setLoadingFolders] = useState<Record<string, boolean>>({}); 
   const [activeSideView, setActiveSideView] = useState<'none' | 'chat' | 'tutor' | 'review'>('chat');
-  const [sidebarTab, setSidebarTab] = useState<'explorer' | 'search'>('explorer');
+  const [sidebarTab, setSidebarTab] = useState<'explorer' | 'search' | 'git'>('explorer');
   const [isSaving, setIsSaving] = useState(false);
   const [showLanguageDropdown, setShowLanguageDropdown] = useState(false);
   const [showExamplesDropdown, setShowExamplesDropdown] = useState(false);
@@ -718,7 +783,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
   // REFS for state access inside callbacks/closures
   const activeFileIndexRef = useRef(0);
 
-  const activeFile = project.files[activeFileIndex] || project.files[0];
+  const activeFile = project.files[activeFileIndex] || null;
   const isMarkdown = activeFile ? activeFile.name.toLowerCase().endsWith('.md') : false;
   const isPlantUML = activeFile ? ['puml', 'plantuml', 'iuml'].includes(activeFile.name.split('.').pop()?.toLowerCase() || '') : false;
   const isGithubLinked = currentUser?.providerData?.some((p: any) => p.providerId === 'github.com');
@@ -802,6 +867,8 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
       const val = target.value;
       const selStart = target.selectionStart;
       
+      if (!activeFile) return;
+
       const lines = val.substring(0, selStart).split("\n");
       const line = lines.length;
       const column = lines[lines.length - 1].length;
@@ -848,7 +915,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
                   const content = await fetchFileContent(githubToken, project.github?.owner || '', project.github?.repo || '', activeFile.path || activeFile.name, project.github?.branch);
                   setProject(prev => {
                       const newFiles = [...prev.files];
-                      newFiles[activeFileIndex] = { ...activeFile, content, loaded: true };
+                      newFiles[activeFileIndex] = { ...activeFile, content, loaded: true, isModified: false };
                       return { ...prev, files: newFiles };
                   });
               } catch(e) { console.error(e); } finally { setIsLoadingFile(false); }
@@ -915,7 +982,9 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
       let fileName = `${baseName}.${langConfig.ext}`;
       let counter = 1;
       while (project.files.some(f => f.name === fileName)) { fileName = `${baseName}_${counter}.${langConfig.ext}`; counter++; }
-      const newFile: CodeFile = { name: fileName, language: langConfig.id as any, content: langConfig.defaultCode, loaded: true };
+      
+      // New file is inherently modified (Untracked)
+      const newFile: CodeFile = { name: fileName, language: langConfig.id as any, content: langConfig.defaultCode, loaded: true, isModified: true };
       
       if (isSharedSession) {
           updateCodeFile(project.id, newFile);
@@ -945,7 +1014,8 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
       updatedFiles[index] = {
           ...updatedFiles[index],
           content: newContent,
-          loaded: true
+          loaded: true,
+          isModified: true // Mark as modified
       };
       updatedProject.files = updatedFiles;
       
@@ -984,7 +1054,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
       }
       
       const updatedFiles = [...project.files];
-      updatedFiles[renamingFileIndex] = { ...updatedFiles[renamingFileIndex], name: newName };
+      updatedFiles[renamingFileIndex] = { ...updatedFiles[renamingFileIndex], name: newName, isModified: true };
       
       if (isSharedSession) {
           // Delete old entry and add new entry
@@ -1124,7 +1194,12 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
       setIsCommitting(true);
       try {
           const newSha = await commitToRepo(token, project, commitMessage); // Use local 'token' var
-          setProject(prev => ({ ...prev, github: prev.github ? { ...prev.github, sha: newSha } : undefined }));
+          setProject(prev => ({ 
+              ...prev, 
+              // Clear modified status on successful commit
+              files: prev.files.map(f => ({ ...f, isModified: false })),
+              github: prev.github ? { ...prev.github, sha: newSha } : undefined 
+          }));
           alert("Pushed successfully!"); setShowCommitModal(false); setCommitMessage('');
       } catch(e: any) { alert("Commit failed: " + e.message); } finally { setIsCommitting(false); }
   };
@@ -1136,8 +1211,8 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
           const ai = new GoogleGenAI({ apiKey: localStorage.getItem('gemini_api_key') || GEMINI_API_KEY || '' });
           const response = await ai.models.generateContent({ model: 'gemini-3-pro-preview', contents: "Generate 2 coding interview questions..." });
           const content = response.text || "Failed.";
-          const qFile: CodeFile = { name: `interview_q_${Date.now()}.md`, language: 'markdown', content, loaded: true };
-          const sFile: CodeFile = { name: `solution_${Date.now()}.cpp`, language: 'c++', content: '', loaded: true };
+          const qFile: CodeFile = { name: `interview_q_${Date.now()}.md`, language: 'markdown', content, loaded: true, isModified: true };
+          const sFile: CodeFile = { name: `solution_${Date.now()}.cpp`, language: 'c++', content: '', loaded: true, isModified: true };
           
           if (isSharedSession) { updateCodeFile(project.id, qFile); updateCodeFile(project.id, sFile); }
           setProject(prev => ({ ...prev, files: [...prev.files, qFile, sFile] }));
@@ -1402,6 +1477,11 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
                <button onClick={() => setSidebarTab('search')} className={`flex-1 py-2 text-xs font-bold flex justify-center items-center gap-1 ${sidebarTab === 'search' ? 'bg-slate-800 text-white border-b-2 border-indigo-500' : 'text-slate-500 hover:text-white'}`}>
                   <Search size={14}/> Search
                </button>
+               {project.github && (
+                   <button onClick={() => setSidebarTab('git')} className={`flex-1 py-2 text-xs font-bold flex justify-center items-center gap-1 ${sidebarTab === 'git' ? 'bg-slate-800 text-white border-b-2 border-indigo-500' : 'text-slate-500 hover:text-white'}`}>
+                      <History size={14}/> Git
+                   </button>
+               )}
             </div>
 
             <div className="flex-1 overflow-y-auto">
@@ -1420,6 +1500,13 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
                        />
                      ))}
                   </div>
+               ) : sidebarTab === 'git' ? (
+                   <GitHistoryView 
+                        owner={project.github?.owner || ''}
+                        repo={project.github?.repo || ''}
+                        branch={project.github?.branch || ''}
+                        token={githubToken}
+                   />
                ) : (
                   <div className="p-4 flex flex-col h-full">
                      <div className="relative mb-4">
@@ -1468,6 +1555,8 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
                      ) : (
                          <span className="text-xs font-medium truncate flex-1" title={file.name}>{file.name.split('/').pop()}</span>
                      )}
+                     
+                     {file.isModified && <span className="w-1.5 h-1.5 rounded-full bg-yellow-400 mr-1" title="Modified"></span>}
 
                      {!isReadOnly && renamingFileIndex !== idx && (
                         <div className="flex items-center opacity-0 group-hover:opacity-100 transition-opacity ml-2">
@@ -1490,18 +1579,34 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
                     </button>
                 )}
 
-                {activeFile && activeFile.isDirectory ? (
+                {project.files.length === 0 ? (
+                    <div className="flex-1 flex flex-col items-center justify-center bg-slate-950 text-slate-500 p-8 text-center">
+                        <FolderOpen size={48} className="opacity-20 mb-4" />
+                        <h3 className="text-lg font-bold text-slate-400 mb-2">Empty Workspace</h3>
+                        <p className="text-sm mb-6 max-w-sm">No files open. Create a new file or import a project to get started.</p>
+                        <div className="flex gap-4">
+                            {!isReadOnly && (
+                                <button onClick={() => setShowLanguageDropdown(true)} className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-bold shadow-lg hover:bg-indigo-500 transition-colors">
+                                    Create File
+                                </button>
+                            )}
+                            <button onClick={() => setShowExamplesDropdown(true)} className="px-4 py-2 bg-slate-800 text-white rounded-lg text-sm font-bold shadow-lg hover:bg-slate-700 transition-colors">
+                                Load Example
+                            </button>
+                        </div>
+                    </div>
+                ) : activeFile && activeFile.isDirectory ? (
                     <div className="flex-1 flex flex-col items-center justify-center bg-slate-950 text-slate-500">
                         <FolderOpen size={48} className="opacity-20 mb-4" />
                         <p>Select a file to edit.</p>
                     </div>
-                ) : isMarkdown && isPreviewMode ? (
+                ) : activeFile && isMarkdown && isPreviewMode ? (
                     <div className="flex-1 overflow-y-auto p-8 bg-slate-950">
                         <div className="max-w-3xl mx-auto pb-20"><MarkdownView content={activeFile.content} /></div>
                     </div>
-                ) : isPlantUML && isPreviewMode ? (
+                ) : activeFile && isPlantUML && isPreviewMode ? (
                     <PlantUMLPreview code={activeFile.content} />
-                ) : (
+                ) : activeFile ? (
                     <EnhancedEditor 
                         code={activeFile.content}
                         language={getLanguageFromFilename(activeFile.name)}
@@ -1516,6 +1621,10 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
                         readOnly={isReadOnly}
                         localCursor={localCursor}
                     />
+                ) : (
+                    <div className="flex-1 flex items-center justify-center text-slate-500">
+                        <Loader2 className="animate-spin" />
+                    </div>
                 )}
                 
                 {/* Debug Panel */}

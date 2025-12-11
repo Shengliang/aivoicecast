@@ -178,6 +178,7 @@ export interface CodeFile {
   isDirectory?: boolean; // Is this a folder?
   treeSha?: string; // If folder, the SHA of the tree
   childrenFetched?: boolean; // Have we fetched this folder's contents?
+  isModified?: boolean; // Has the file been edited locally?
 }
 
 export interface ChatMessage {

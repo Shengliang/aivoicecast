@@ -1,3 +1,4 @@
+
 import { CodeFile, CodeProject } from '../types';
 
 const GITHUB_API_BASE = 'https://api.github.com';
@@ -87,7 +88,8 @@ export async function fetchFileContent(token: string | null, owner: string, repo
     // Use Raw CDN for public/anonymous access to avoid API limits on content
     if (!token) {
         const encodedPath = path.split('/').map(encodeURIComponent).join('/');
-        const rawUrl = `https://raw.githubusercontent.com/${owner}/${repo}/${branch}/${encodedPath}`;
+        // Append a timestamp to bust cache for latest version
+        const rawUrl = `https://raw.githubusercontent.com/${owner}/${repo}/${branch}/${encodedPath}?t=${Date.now()}`;
         try {
             const res = await fetch(rawUrl);
             if (!res.ok) throw new Error("Failed to fetch raw content");
@@ -98,7 +100,8 @@ export async function fetchFileContent(token: string | null, owner: string, repo
     }
 
     // API Fallback (or primary for private repos)
-    const url = `${GITHUB_API_BASE}/repos/${owner}/${repo}/contents/${path}?ref=${branch}`;
+    // Also use timestamp for API to avoid caching stale content
+    const url = `${GITHUB_API_BASE}/repos/${owner}/${repo}/contents/${path}?ref=${branch}&t=${Date.now()}`;
     const res = await fetch(url, { headers });
     if (!res.ok) throw new Error(`Failed to fetch file content: ${res.status}`);
     
@@ -158,6 +161,19 @@ export async function fetchRepoSubTree(token: string | null, owner: string, repo
     const files: CodeFile[] = treeData.tree.map((item: any) => transformTreeItem(item, prefix));
     
     return files;
+}
+
+// Fetch Commit History
+export async function fetchRepoCommits(token: string | null, owner: string, repo: string, branch: string, limit = 20): Promise<any[]> {
+    const headers: Record<string, string> = {};
+    if (token) {
+        headers.Authorization = `token ${token}`;
+    }
+    
+    const url = `${GITHUB_API_BASE}/repos/${owner}/${repo}/commits?sha=${branch}&per_page=${limit}`;
+    const res = await fetch(url, { headers });
+    if (!res.ok) throw new Error("Failed to fetch commits");
+    return await res.json();
 }
 
 // Commit and Push changes
