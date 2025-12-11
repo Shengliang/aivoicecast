@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { GoogleGenAI, FunctionDeclaration, Type } from '@google/genai';
-import { ArrowLeft, Save, Folder, File, Code, Plus, Trash2, Loader2, ChevronRight, ChevronDown, X, MessageSquare, FileCode, FileJson, FileType, Search, Coffee, Hash, CloudUpload, Edit3, BookOpen, Bot, Send, Maximize2, Minimize2, GripVertical, UserCheck, AlertTriangle, Archive, Sparkles, Video, Mic, CheckCircle, Monitor, FileText, Eye, Github, GitBranch, GitCommit, FolderOpen, RefreshCw, GraduationCap, DownloadCloud, Terminal, Undo2, Check, Share2, Copy, Lock, Link, Image as ImageIcon, Users, UserPlus, ShieldAlert, Crown, Bug, ChevronUp, Zap, Expand, Shrink, Edit2, History, Cloud, HardDrive, LogIn } from 'lucide-react';
+import { ArrowLeft, Save, Folder, File, Code, Plus, Trash2, Loader2, ChevronRight, ChevronDown, X, MessageSquare, FileCode, FileJson, FileType, Search, Coffee, Hash, CloudUpload, Edit3, BookOpen, Bot, Send, Maximize2, Minimize2, GripVertical, UserCheck, AlertTriangle, Archive, Sparkles, Video, Mic, CheckCircle, Monitor, FileText, Eye, Github, GitBranch, GitCommit, FolderOpen, RefreshCw, GraduationCap, DownloadCloud, Terminal, Undo2, Check, Share2, Copy, Lock, Link, Image as ImageIcon, Users, UserPlus, ShieldAlert, Crown, Bug, ChevronUp, Zap, Expand, Shrink, Edit2, History, Cloud, HardDrive, LogIn, ArrowUp, FolderPlus } from 'lucide-react';
 import { GEMINI_API_KEY } from '../services/private_keys';
 import { CodeProject, CodeFile, ChatMessage, Channel, GithubMetadata, CursorPosition } from '../types';
 import { MarkdownView } from './MarkdownView';
@@ -10,7 +10,7 @@ import { signInWithGitHub, reauthenticateWithGitHub, connectGoogleDrive } from '
 import { fetchUserRepos, fetchRepoContents, commitToRepo, fetchPublicRepoInfo, fetchFileContent, fetchRepoSubTree, fetchRepoCommits } from '../services/githubService';
 import { LiveSession } from './LiveSession';
 import { encodePlantUML } from '../utils/plantuml';
-import { ensureCodeStudioFolder, listDriveFiles, readDriveFile, saveToDrive, deleteDriveFile, DriveFile } from '../services/googleDriveService';
+import { ensureCodeStudioFolder, listDriveFiles, readDriveFile, saveToDrive, deleteDriveFile, createDriveFolder, DriveFile } from '../services/googleDriveService';
 
 interface CodeStudioProps {
   onBack: () => void;
@@ -288,7 +288,10 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
   const [driveFiles, setDriveFiles] = useState<DriveFile[]>([]);
   const [isDriveLoading, setIsDriveLoading] = useState(false);
   const [driveToken, setDriveToken] = useState<string | null>(null);
-  const [driveFolderId, setDriveFolderId] = useState<string | null>(null);
+  
+  // Navigation State for Drive
+  const [currentDriveFolderId, setCurrentDriveFolderId] = useState<string | null>(null);
+  const [driveBreadcrumbs, setDriveBreadcrumbs] = useState<{id: string, name: string}[]>([]);
 
   // Modals & UI
   const [showLanguageDropdown, setShowLanguageDropdown] = useState(false);
@@ -306,10 +309,15 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
       if (activeTab === 'cloud' && currentUser) {
           fetchCloudFiles();
       }
-      if (activeTab === 'drive' && driveToken && !driveFiles.length) {
-          refreshDrive();
+      if (activeTab === 'drive' && driveToken) {
+          if (!currentDriveFolderId) {
+              // Initial load
+              initDrive(driveToken);
+          } else if (driveFiles.length === 0) {
+              refreshDrive();
+          }
       }
-  }, [activeTab, currentUser]);
+  }, [activeTab, currentUser, driveToken]);
 
   const fetchCloudFiles = async () => {
       setIsCloudLoading(true);
@@ -337,9 +345,11 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
   const initDrive = async (token: string) => {
       setIsDriveLoading(true);
       try {
-          const folderId = await ensureCodeStudioFolder(token);
-          setDriveFolderId(folderId);
-          const files = await listDriveFiles(token, folderId);
+          const rootId = await ensureCodeStudioFolder(token);
+          setCurrentDriveFolderId(rootId);
+          setDriveBreadcrumbs([{ id: rootId, name: 'codestudio' }]);
+          
+          const files = await listDriveFiles(token, rootId);
           setDriveFiles(files);
       } catch(e: any) {
           console.error("Drive Init Failed:", e);
@@ -350,10 +360,10 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
   };
 
   const refreshDrive = async () => {
-      if (!driveToken || !driveFolderId) return;
+      if (!driveToken || !currentDriveFolderId) return;
       setIsDriveLoading(true);
       try {
-          const files = await listDriveFiles(driveToken, driveFolderId);
+          const files = await listDriveFiles(driveToken, currentDriveFolderId);
           setDriveFiles(files);
       } catch(e) { console.error(e); } finally { setIsDriveLoading(false); }
   };
@@ -410,6 +420,56 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
           alert("Failed to load file. (CORS might be blocking direct download). " + e.message);
       } finally {
           setIsCloudLoading(false);
+      }
+  };
+
+  const handleDriveFolderClick = async (fileId: string, fileName: string) => {
+      if (!driveToken) return;
+      setIsDriveLoading(true);
+      try {
+          const files = await listDriveFiles(driveToken, fileId);
+          setDriveFiles(files);
+          setCurrentDriveFolderId(fileId);
+          setDriveBreadcrumbs(prev => [...prev, { id: fileId, name: fileName }]);
+      } catch (e: any) {
+          console.error("Navigate Drive Failed:", e);
+      } finally {
+          setIsDriveLoading(false);
+      }
+  };
+
+  const handleDriveBack = async () => {
+      if (!driveToken || driveBreadcrumbs.length <= 1) return;
+      const newPath = [...driveBreadcrumbs];
+      newPath.pop();
+      const parent = newPath[newPath.length - 1];
+      
+      setIsDriveLoading(true);
+      try {
+          const files = await listDriveFiles(driveToken, parent.id);
+          setDriveFiles(files);
+          setCurrentDriveFolderId(parent.id);
+          setDriveBreadcrumbs(newPath);
+      } catch (e) {
+          console.error(e);
+      } finally {
+          setIsDriveLoading(false);
+      }
+  };
+
+  const handleCreateDriveFolder = async () => {
+      if (!driveToken || !currentDriveFolderId) return;
+      const name = prompt("Enter folder name:");
+      if (!name) return;
+      
+      setIsDriveLoading(true);
+      try {
+          await createDriveFolder(driveToken, currentDriveFolderId, name);
+          await refreshDrive();
+      } catch (e: any) {
+          alert("Failed to create folder: " + e.message);
+      } finally {
+          setIsDriveLoading(false);
       }
   };
 
@@ -483,7 +543,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
 
   // Helper to save a list of files to drive
   const saveFilesToDrive = async (filesToSave: CodeFile[]) => {
-      if (!driveToken || !driveFolderId) {
+      if (!driveToken || !currentDriveFolderId) {
           alert("Please connect to Google Drive first.");
           return;
       }
@@ -496,7 +556,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
               if (file.isDirectory) continue;
               
               const mimeType = getMimeTypeFromFilename(file.name);
-              await saveToDrive(driveToken, driveFolderId, file.name, file.content, mimeType);
+              await saveToDrive(driveToken, currentDriveFolderId, file.name, file.content, mimeType);
               savedNames.push(file.name);
           }
           
@@ -523,9 +583,14 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
       await saveFilesToDrive(modifiedFiles);
   };
 
+  const handleSaveActiveFileToDrive = async () => {
+      if (!activeFile) return;
+      await saveFilesToDrive([activeFile]);
+  };
+
   const handleDeleteDriveFile = async (fileId: string) => {
       if (!driveToken) return;
-      if (!confirm("Are you sure you want to delete this file from Google Drive?")) return;
+      if (!confirm("Are you sure you want to delete this item from Google Drive?")) return;
       
       setIsDriveLoading(true);
       try {
@@ -664,6 +729,11 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
             </div>
             
             <div className="flex items-center space-x-2">
+               {activeTab === 'drive' && (
+                   <button onClick={handleSaveActiveFileToDrive} disabled={!activeFile} className="flex items-center space-x-2 px-3 py-1.5 bg-slate-800 hover:bg-indigo-600 text-slate-300 hover:text-white rounded-lg text-xs font-bold transition-colors border border-slate-700">
+                       <CloudUpload size={14} /> <span>Save Active File</span>
+                   </button>
+               )}
                <button onClick={handleGeneralSave} className="flex items-center space-x-2 px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold transition-colors shadow-md">
                    {isDriveLoading ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} <span>Save Project</span>
                </button>
@@ -789,27 +859,51 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
                               </div>
                           ) : (
                               <>
-                                  <div className="px-2 mb-2 flex justify-between items-center">
-                                      <span className="text-xs font-bold text-slate-500 uppercase">Drive Files</span>
-                                      <button onClick={refreshDrive} className="p-1 hover:bg-slate-700 rounded text-slate-400"><RefreshCw size={12}/></button>
+                                  <div className="px-2 mb-2 flex flex-col space-y-2">
+                                      <div className="flex justify-between items-center">
+                                          <span className="text-xs font-bold text-slate-500 uppercase">Explorer</span>
+                                          <div className="flex gap-1">
+                                              <button onClick={handleCreateDriveFolder} className="p-1 hover:bg-slate-700 rounded text-slate-400" title="New Folder"><FolderPlus size={12}/></button>
+                                              <button onClick={refreshDrive} className="p-1 hover:bg-slate-700 rounded text-slate-400"><RefreshCw size={12}/></button>
+                                          </div>
+                                      </div>
+                                      {/* Breadcrumbs */}
+                                      <div className="flex items-center text-[10px] text-slate-400 bg-slate-800 rounded px-2 py-1 overflow-x-auto whitespace-nowrap">
+                                          {driveBreadcrumbs.length > 1 && (
+                                              <button onClick={handleDriveBack} className="hover:text-white mr-1"><ArrowUp size={10}/></button>
+                                          )}
+                                          {driveBreadcrumbs.map((crumb, i) => (
+                                              <span key={crumb.id} className="flex items-center">
+                                                  {i > 0 && <span className="mx-1">/</span>}
+                                                  <span className={i === driveBreadcrumbs.length - 1 ? 'text-white font-bold' : ''}>{crumb.name}</span>
+                                              </span>
+                                          ))}
+                                      </div>
                                   </div>
+
                                   {isDriveLoading ? (
                                       <div className="py-8 text-center text-indigo-400"><Loader2 className="animate-spin mx-auto"/></div>
                                   ) : driveFiles.length === 0 ? (
-                                      <div className="p-4 text-center text-slate-500 text-xs italic">Folder 'codestudio' is empty.</div>
+                                      <div className="p-4 text-center text-slate-500 text-xs italic">Folder is empty.</div>
                                   ) : (
-                                      driveFiles.map((file) => (
-                                          <div key={file.id} className="flex items-center justify-between p-2 hover:bg-slate-800 rounded group">
-                                              <div className="flex items-center gap-2 overflow-hidden">
-                                                  <FileCode size={14} className="text-green-400 shrink-0"/>
-                                                  <span className="text-xs text-slate-300 truncate" title={file.name}>{file.name}</span>
+                                      driveFiles.map((file) => {
+                                          const isFolder = file.mimeType === 'application/vnd.google-apps.folder';
+                                          return (
+                                              <div key={file.id} 
+                                                   onClick={() => isFolder && handleDriveFolderClick(file.id, file.name)}
+                                                   className={`flex items-center justify-between p-2 hover:bg-slate-800 rounded group ${isFolder ? 'cursor-pointer' : ''}`}
+                                              >
+                                                  <div className="flex items-center gap-2 overflow-hidden">
+                                                      {isFolder ? <Folder size={14} className="text-yellow-500 shrink-0"/> : <FileCode size={14} className="text-green-400 shrink-0"/>}
+                                                      <span className={`text-xs truncate ${isFolder ? 'text-white font-medium' : 'text-slate-300'}`} title={file.name}>{file.name}</span>
+                                                  </div>
+                                                  <div className="flex gap-1 opacity-0 group-hover:opacity-100">
+                                                      {!isFolder && <button onClick={(e) => { e.stopPropagation(); handleLoadDriveFile(file.id, file.name); }} className="p-1 hover:bg-indigo-600 rounded text-slate-400 hover:text-white" title="Import"><DownloadCloud size={12}/></button>}
+                                                      <button onClick={(e) => { e.stopPropagation(); handleDeleteDriveFile(file.id); }} className="p-1 hover:bg-red-600 rounded text-slate-400 hover:text-white" title="Delete"><Trash2 size={12}/></button>
+                                                  </div>
                                               </div>
-                                              <div className="flex gap-1 opacity-0 group-hover:opacity-100">
-                                                  <button onClick={() => handleLoadDriveFile(file.id, file.name)} className="p-1 hover:bg-indigo-600 rounded text-slate-400 hover:text-white" title="Import"><DownloadCloud size={12}/></button>
-                                                  <button onClick={() => handleDeleteDriveFile(file.id)} className="p-1 hover:bg-red-600 rounded text-slate-400 hover:text-white" title="Delete"><Trash2 size={12}/></button>
-                                              </div>
-                                          </div>
-                                      ))
+                                          );
+                                      })
                                   )}
                               </>
                           )}

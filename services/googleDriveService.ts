@@ -51,6 +51,30 @@ export async function ensureCodeStudioFolder(accessToken: string): Promise<strin
   return folder.id;
 }
 
+export async function createDriveFolder(accessToken: string, parentId: string, folderName: string): Promise<DriveFile> {
+  const metadata = {
+    name: folderName,
+    mimeType: 'application/vnd.google-apps.folder',
+    parents: [parentId]
+  };
+  
+  const res = await fetch('https://www.googleapis.com/drive/v3/files', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(metadata)
+  });
+  
+  if (!res.ok) {
+      throw new Error(`Create Folder Failed (${res.status})`);
+  }
+  
+  const data = await res.json();
+  return { id: data.id, name: data.name, mimeType: data.mimeType };
+}
+
 export async function listDriveFiles(accessToken: string, folderId: string): Promise<DriveFile[]> {
   const query = `'${folderId}' in parents and trashed=false`;
   const res = await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}&fields=files(id,name,mimeType)`, {
