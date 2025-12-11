@@ -10,7 +10,7 @@ import { signInWithGitHub, reauthenticateWithGitHub, connectGoogleDrive } from '
 import { fetchUserRepos, fetchRepoContents, commitToRepo, fetchPublicRepoInfo, fetchFileContent, fetchRepoSubTree, fetchRepoCommits } from '../services/githubService';
 import { LiveSession } from './LiveSession';
 import { encodePlantUML } from '../utils/plantuml';
-import { ensureCodeStudioFolder, listDriveFiles, readDriveFile, saveToDrive, DriveFile } from '../services/googleDriveService';
+import { ensureCodeStudioFolder, listDriveFiles, readDriveFile, saveToDrive, deleteDriveFile, DriveFile } from '../services/googleDriveService';
 
 interface CodeStudioProps {
   onBack: () => void;
@@ -53,6 +53,22 @@ const getLanguageFromFilename = (filename: string): string => {
         case 'md': return 'markdown';
         case 'puml': return 'plantuml';
         default: return 'text';
+    }
+};
+
+// Helper: Get MimeType for Drive Upload
+const getMimeTypeFromFilename = (filename: string): string => {
+    const ext = filename.split('.').pop()?.toLowerCase();
+    switch(ext) {
+        case 'js': return 'application/javascript';
+        case 'json': return 'application/json';
+        case 'html': return 'text/html';
+        case 'css': return 'text/css';
+        case 'py': return 'text/x-python';
+        case 'cpp': case 'c': case 'h': return 'text/x-c++src';
+        case 'java': return 'text/x-java-source';
+        case 'md': return 'text/markdown';
+        default: return 'text/plain';
     }
 };
 
@@ -365,16 +381,16 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
 
   const handleLoadDriveFile = async (fileId: string, filename: string) => {
       if (!driveToken) return;
-      // For Drive, we likely saved a text/json dump. 
-      // If it's a full project JSON, we replace project. If it's a single file, we add it.
-      if (!confirm("Load from Drive? Current session will be overwritten if this is a project file.")) return;
+      if (!confirm(`Load "${filename}" from Google Drive? This will add it to your current project.`)) return;
       
       setIsDriveLoading(true);
       try {
           const text = await readDriveFile(driveToken, fileId);
+          
+          // Check if it's a project json just in case, though we prefer raw files now
           try {
               const data = JSON.parse(text);
-              if (data.files && Array.isArray(data.files)) {
+              if (data.files && Array.isArray(data.files) && confirm("This looks like a full CodeProject JSON. Replace entire session?")) {
                   setProject(data);
                   setActiveFileIndex(0);
                   setExpandedFolders({});
@@ -382,10 +398,10 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
                   return;
               }
           } catch (e) {
-              // Not a project JSON, maybe raw text?
+              // Not a project JSON, treat as raw file
           }
           
-          // Fallback: Add as new file
+          // Add as new file
           const newFile: CodeFile = {
               name: filename,
               language: getLanguageFromFilename(filename) as any,
@@ -393,8 +409,19 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
               loaded: true,
               isModified: true
           };
-          setProject(prev => ({ ...prev, files: [...prev.files, newFile] }));
-          setActiveFileIndex(project.files.length);
+          
+          // Check if file already exists in project, if so, update content
+          const existingIdx = project.files.findIndex(f => f.name === filename);
+          if (existingIdx >= 0) {
+              const updatedFiles = [...project.files];
+              updatedFiles[existingIdx] = newFile;
+              setProject(prev => ({ ...prev, files: updatedFiles }));
+              setActiveFileIndex(existingIdx);
+          } else {
+              setProject(prev => ({ ...prev, files: [...prev.files, newFile] }));
+              setActiveFileIndex(project.files.length);
+          }
+          
           setActiveTab('session');
 
       } catch(e: any) {
@@ -427,14 +454,38 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
       }
       setIsDriveLoading(true);
       try {
-          const content = JSON.stringify(project);
-          const filename = `${project.name}_${Date.now()}.json`;
-          await saveToDrive(driveToken, driveFolderId, filename, content);
+          // Iterate over all files in the project and save each as a raw file
+          let savedCount = 0;
+          for (const file of project.files) {
+              // Skip directories or lazy-loaded files that haven't been fetched
+              if (file.isDirectory || (file.loaded === false)) continue;
+              
+              const mimeType = getMimeTypeFromFilename(file.name);
+              await saveToDrive(driveToken, driveFolderId, file.name, file.content, mimeType);
+              savedCount++;
+          }
+          
           await refreshDrive();
-          alert("Saved to Google Drive!");
+          alert(`Saved ${savedCount} files to Google Drive!`);
       } catch(e: any) {
           console.error("Drive Save Error:", e);
           alert("Drive save failed: " + e.message);
+      } finally {
+          setIsDriveLoading(false);
+      }
+  };
+
+  const handleDeleteDriveFile = async (fileId: string) => {
+      if (!driveToken) return;
+      if (!confirm("Are you sure you want to delete this file from Google Drive?")) return;
+      
+      setIsDriveLoading(true);
+      try {
+          await deleteDriveFile(driveToken, fileId);
+          await refreshDrive();
+      } catch(e: any) {
+          console.error("Drive Delete Failed:", e);
+          alert("Failed to delete: " + e.message);
       } finally {
           setIsDriveLoading(false);
       }
@@ -536,7 +587,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
             
             <div className="flex items-center space-x-2">
                <button onClick={handleGeneralSave} className="flex items-center space-x-2 px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold transition-colors shadow-md">
-                   <Save size={14} /> <span>Save Project</span>
+                   <Save size={14} /> <span>Save All Files</span>
                </button>
 
                <div className="relative">
@@ -673,8 +724,9 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
                                                   <FileCode size={14} className="text-green-400 shrink-0"/>
                                                   <span className="text-xs text-slate-300 truncate" title={file.name}>{file.name}</span>
                                               </div>
-                                              <div className="opacity-0 group-hover:opacity-100">
+                                              <div className="flex gap-1 opacity-0 group-hover:opacity-100">
                                                   <button onClick={() => handleLoadDriveFile(file.id, file.name)} className="p-1 hover:bg-indigo-600 rounded text-slate-400 hover:text-white" title="Import"><DownloadCloud size={12}/></button>
+                                                  <button onClick={() => handleDeleteDriveFile(file.id)} className="p-1 hover:bg-red-600 rounded text-slate-400 hover:text-white" title="Delete"><Trash2 size={12}/></button>
                                               </div>
                                           </div>
                                       ))

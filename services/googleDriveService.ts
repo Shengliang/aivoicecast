@@ -65,20 +65,46 @@ export async function listDriveFiles(accessToken: string, folderId: string): Pro
   return data.files || [];
 }
 
-export async function saveToDrive(accessToken: string, folderId: string, filename: string, content: string): Promise<void> {
-  // Simple upload (multipart not implemented for brevity, using simple text upload)
-  const metadata = {
+async function searchFileByName(accessToken: string, folderId: string, filename: string): Promise<string | null> {
+  const query = `'${folderId}' in parents and name='${filename}' and trashed=false`;
+  const res = await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}&fields=files(id)`, {
+    headers: { Authorization: `Bearer ${accessToken}` }
+  });
+  
+  if (res.ok) {
+    const data = await res.json();
+    if (data.files && data.files.length > 0) {
+      return data.files[0].id;
+    }
+  }
+  return null;
+}
+
+export async function saveToDrive(accessToken: string, folderId: string, filename: string, content: string, mimeType: string = 'text/plain'): Promise<void> {
+  // 1. Check if file exists to decide between POST (create) or PATCH (update)
+  const existingFileId = await searchFileByName(accessToken, folderId, filename);
+  
+  const metadata: any = {
     name: filename,
-    parents: [folderId],
-    mimeType: 'application/json'
+    mimeType: mimeType
   };
+
+  // Only add parent if creating new file
+  if (!existingFileId) {
+    metadata.parents = [folderId];
+  }
   
   const form = new FormData();
   form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
-  form.append('file', new Blob([content], { type: 'application/json' }));
+  form.append('file', new Blob([content], { type: mimeType }));
 
-  const res = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
-    method: 'POST',
+  const method = existingFileId ? 'PATCH' : 'POST';
+  const url = existingFileId 
+    ? `https://www.googleapis.com/upload/drive/v3/files/${existingFileId}?uploadType=multipart`
+    : `https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart`;
+
+  const res = await fetch(url, {
+    method: method,
     headers: { Authorization: `Bearer ${accessToken}` },
     body: form
   });
@@ -98,4 +124,14 @@ export async function readDriveFile(accessToken: string, fileId: string): Promis
       throw new Error(`Drive Read Failed (${res.status}): ${errText}`);
   }
   return await res.text();
+}
+
+export async function deleteDriveFile(accessToken: string, fileId: string): Promise<void> {
+  const res = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${accessToken}` }
+  });
+  if (!res.ok) {
+      throw new Error(`Drive Delete Failed (${res.status})`);
+  }
 }
