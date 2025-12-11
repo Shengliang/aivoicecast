@@ -1065,11 +1065,11 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
                   setIsLoadingRepos(true);
                   setRepos(await fetchUserRepos(res.token));
                   setIsLoadingRepos(false);
-              } else {
-                  alert("GitHub Connected Successfully!");
               }
+              return res.token; // RETURN TOKEN
           }
       } catch(e: any) { alert("GitHub Login Failed: " + e.message); }
+      return null;
   };
 
   const handleLoadPublicRepo = async (overridePath?: string) => {
@@ -1097,15 +1097,28 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
 
   const handleCommit = async () => {
       if (isReadOnly) return;
-      if (!githubToken) {
-          alert("Please connect your GitHub account to commit changes.");
-          setShowImportModal(true);
+      
+      let token = githubToken;
+      if (!token) {
+          // Soft prompt to inform user, then trigger auth
+          // Using window.confirm is simple and effective for "Do you want to login?"
+          if (window.confirm("You must be signed in to GitHub to commit. Sign in now?")) {
+              token = await handleGitHubConnect();
+          }
+      }
+
+      if (!token) {
+          // If still no token (cancelled or failed), stop.
+          // We don't need to alert again if handleGitHubConnect alerted on error.
+          // If user cancelled confirm, just return.
           return;
       }
+
       if (!commitMessage.trim() || !project.github) return;
+      
       setIsCommitting(true);
       try {
-          const newSha = await commitToRepo(githubToken, project, commitMessage);
+          const newSha = await commitToRepo(token, project, commitMessage); // Use local 'token' var
           setProject(prev => ({ ...prev, github: prev.github ? { ...prev.github, sha: newSha } : undefined }));
           alert("Pushed successfully!"); setShowCommitModal(false); setCommitMessage('');
       } catch(e: any) { alert("Commit failed: " + e.message); } finally { setIsCommitting(false); }
