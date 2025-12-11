@@ -543,53 +543,66 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
   const handleLoadCloudFile = async (item: CloudItem) => {
       if (!item.url) return;
       
-      setModal({
-          isOpen: true,
-          title: "Import File",
-          message: `Load "${item.name}" into workspace?`,
-          onConfirm: async () => {
-              setModal(null);
-              setIsCloudLoading(true);
-              try {
-                  const res = await fetch(item.url!);
-                  if (!res.ok) throw new Error(`Fetch failed: ${res.status}`);
+      setIsCloudLoading(true);
+      try {
+          const res = await fetch(item.url!);
+          if (!res.ok) throw new Error(`Fetch failed: ${res.status}`);
+          
+          const text = await res.text();
+          
+          try {
+              const data = JSON.parse(text);
+              if (data.files && (Array.isArray(data.files) || typeof data.files === 'object')) {
+                  // Project backup
+                  let files: CodeFile[] = [];
+                  if (Array.isArray(data.files)) files = data.files;
+                  else if (data.files) files = Object.values(data.files);
                   
-                  const text = await res.text();
-                  
-                  try {
-                      const data = JSON.parse(text);
-                      if (data.files && (Array.isArray(data.files) || typeof data.files === 'object')) {
-                          // Project backup
-                          let files: CodeFile[] = [];
-                          if (Array.isArray(data.files)) files = data.files;
-                          else if (data.files) files = Object.values(data.files);
-                          
-                          setProject({ ...data, files });
-                          setActiveFileIndex(0);
-                          showNotification("Project loaded", "success");
-                          setIsCloudLoading(false);
-                          return;
-                      }
-                  } catch(e) {}
-
-                  // Load as single file
-                  const newFile: CodeFile = {
-                      name: item.name,
-                      language: getLanguageFromFilename(item.name) as any,
-                      content: text,
-                      loaded: true,
-                      isModified: true
-                  };
-                  setProject(prev => ({ ...prev, files: [...prev.files, newFile] }));
-                  setActiveFileIndex(project.files.length);
+                  setProject({ ...data, files });
+                  setActiveFileIndex(0);
+                  showNotification("Project loaded", "success");
                   setIsCloudLoading(false);
-
-              } catch(e: any) {
-                  showNotification("Failed to load file", "error");
-                  setIsCloudLoading(false);
+                  return;
               }
-          }
-      });
+          } catch(e) {}
+
+          // Load as single file
+          const newFile: CodeFile = {
+              name: item.name,
+              language: getLanguageFromFilename(item.name) as any,
+              content: text,
+              loaded: true,
+              isModified: true
+          };
+          
+          let newIndex = project.files.length;
+          
+          setProject(prev => {
+              // Check if file already exists (by name)
+              const existingIdx = prev.files.findIndex(f => f.name === newFile.name);
+              if (existingIdx >= 0) {
+                  newIndex = existingIdx;
+                  const updatedFiles = [...prev.files];
+                  updatedFiles[existingIdx] = newFile;
+                  return { ...prev, files: updatedFiles };
+              } else {
+                  return { ...prev, files: [...prev.files, newFile] };
+              }
+          });
+          
+          // Use setTimeout to allow state to settle before setting index, or rely on calculated index
+          // Since we know the index synchronously:
+          // If updated, it's existingIdx. If new, it's length (before update) + 1 - 1 = length.
+          const idx = project.files.findIndex(f => f.name === newFile.name);
+          setActiveFileIndex(idx >= 0 ? idx : project.files.length);
+          
+          showNotification(`Loaded ${item.name}`, "success");
+          setIsCloudLoading(false);
+
+      } catch(e: any) {
+          showNotification("Failed to load file", "error");
+          setIsCloudLoading(false);
+      }
   };
 
   const handleDriveFolderClick = async (fileId: string, fileName: string) => {
