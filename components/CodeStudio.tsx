@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { ArrowLeft, Save, Folder, File, Code, Plus, Trash2, Loader2, ChevronRight, ChevronDown, X, FileCode, FileType, Coffee, CloudUpload, Github, DownloadCloud, RefreshCw, HardDrive, LogIn, ArrowUp, FolderPlus, Cloud, FolderOpen, CheckCircle, AlertTriangle, Info } from 'lucide-react';
+import { ArrowLeft, Save, Folder, File, Code, Plus, Trash2, Loader2, ChevronRight, ChevronDown, X, FileCode, FileType, Coffee, CloudUpload, Github, DownloadCloud, RefreshCw, HardDrive, LogIn, ArrowUp, FolderPlus, Cloud, FolderOpen, CheckCircle, AlertTriangle, Info, Edit2 } from 'lucide-react';
 import { CodeProject, CodeFile } from '../types';
 import { listCloudDirectory, CloudItem, createCloudFolder, deleteCloudItem, saveProjectToCloud } from '../services/firestoreService';
 import { connectGoogleDrive } from '../services/authService';
@@ -267,6 +267,19 @@ interface NotificationState {
     type: 'success' | 'error' | 'info';
 }
 
+interface ModalState {
+    isOpen: boolean;
+    title: string;
+    message?: string;
+    confirmText?: string;
+    isDestructive?: boolean;
+    onConfirm: () => void;
+    // Input fields
+    hasInput?: boolean;
+    inputValue?: string;
+    inputPlaceholder?: string;
+}
+
 export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) => {
   const [project, setProject] = useState<CodeProject>({ id: 'init', name: 'New Project', files: [], lastModified: Date.now() });
   const [activeFileIndex, setActiveFileIndex] = useState(-1);
@@ -277,7 +290,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
 
   // Notifications & Modals
   const [notifications, setNotifications] = useState<NotificationState[]>([]);
-  const [itemToDelete, setItemToDelete] = useState<any | null>(null); // For custom confirm modal
+  const [modal, setModal] = useState<ModalState | null>(null);
   const [saveStatus, setSaveStatus] = useState<'saved' | 'saving' | 'modified'>('saved');
 
   // STORAGE TABS
@@ -384,9 +397,20 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
 
   const handleCreateCloudFolder = async () => {
       if (!currentCloudPath) return;
-      const name = prompt("Enter folder name:");
-      if (!name) return;
       
+      setModal({
+          isOpen: true,
+          title: "New Folder",
+          hasInput: true,
+          inputPlaceholder: "Folder Name",
+          onConfirm: async () => {
+              // Handled by inline submit logic
+          }
+      });
+  };
+  
+  const submitCloudFolderCreate = async (name: string) => {
+      setModal(null);
       setIsCloudLoading(true);
       try {
           await createCloudFolder(currentCloudPath, name);
@@ -400,50 +424,25 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
   };
 
   const handleDeleteCloudItem = async (item: CloudItem) => {
-      // Direct delete, or use itemToDelete state if we want custom modal.
-      // User requested NO pop-ups. We will use the custom modal pattern.
-      setItemToDelete({ type: 'cloud', item });
-  };
-
-  const confirmDelete = async () => {
-      if (!itemToDelete) return;
-      
-      if (itemToDelete.type === 'cloud') {
-          setIsCloudLoading(true);
-          try {
-              await deleteCloudItem(itemToDelete.item);
-              await fetchCloudFiles(currentCloudPath);
-              showNotification("Item deleted", "success");
-          } catch(e: any) {
-              showNotification("Delete failed", "error");
-          } finally {
-              setIsCloudLoading(false);
+      setModal({
+          isOpen: true,
+          title: "Delete Item",
+          message: `Are you sure you want to delete "${item.name}"?`,
+          isDestructive: true,
+          onConfirm: async () => {
+              setModal(null);
+              setIsCloudLoading(true);
+              try {
+                  await deleteCloudItem(item);
+                  await fetchCloudFiles(currentCloudPath);
+                  showNotification("Item deleted", "success");
+              } catch(e: any) {
+                  showNotification("Delete failed", "error");
+              } finally {
+                  setIsCloudLoading(false);
+              }
           }
-      } else if (itemToDelete.type === 'drive') {
-          setIsDriveLoading(true);
-          try {
-              await deleteDriveFile(driveToken!, itemToDelete.id);
-              await refreshDrive();
-              showNotification("File deleted", "success");
-          } catch(e: any) {
-              showNotification("Failed to delete", "error");
-          } finally {
-              setIsDriveLoading(false);
-          }
-      } else if (itemToDelete.type === 'node') {
-          // File Explorer Node Delete
-          let newFiles: CodeFile[] = [];
-          if (itemToDelete.node.type === 'folder') {
-              newFiles = project.files.filter(f => !f.name.startsWith(itemToDelete.node.path + '/'));
-          } else {
-              newFiles = project.files.filter((_, i) => i !== itemToDelete.node.index);
-          }
-          setProject(prev => ({ ...prev, files: newFiles }));
-          if (activeFileIndex >= newFiles.length) setActiveFileIndex(Math.max(0, newFiles.length - 1));
-          showNotification("File removed from workspace", "success");
-      }
-      
-      setItemToDelete(null);
+      });
   };
 
   const handleConnectDrive = async () => {
@@ -511,46 +510,53 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
   const handleLoadCloudFile = async (item: CloudItem) => {
       if (!item.url) return;
       
-      setIsCloudLoading(true);
-      try {
-          const res = await fetch(item.url);
-          if (!res.ok) throw new Error(`Fetch failed: ${res.status}`);
-          
-          const text = await res.text();
-          
-          // Try parse as project
-          try {
-              const data = JSON.parse(text);
-              if (data.files && (Array.isArray(data.files) || typeof data.files === 'object')) {
-                  // If it looks like a project backup, we might prompt user or just load it
-                  // For "no pop-up" rule, we'll just load it as a new project
-                  let files: CodeFile[] = [];
-                  if (Array.isArray(data.files)) files = data.files;
-                  else if (data.files) files = Object.values(data.files);
+      setModal({
+          isOpen: true,
+          title: "Import File",
+          message: `Load "${item.name}" into workspace?`,
+          onConfirm: async () => {
+              setModal(null);
+              setIsCloudLoading(true);
+              try {
+                  const res = await fetch(item.url!);
+                  if (!res.ok) throw new Error(`Fetch failed: ${res.status}`);
                   
-                  setProject({ ...data, files });
-                  setActiveFileIndex(0);
-                  showNotification("Project loaded", "success");
-                  return;
+                  const text = await res.text();
+                  
+                  try {
+                      const data = JSON.parse(text);
+                      if (data.files && (Array.isArray(data.files) || typeof data.files === 'object')) {
+                          // Project backup
+                          let files: CodeFile[] = [];
+                          if (Array.isArray(data.files)) files = data.files;
+                          else if (data.files) files = Object.values(data.files);
+                          
+                          setProject({ ...data, files });
+                          setActiveFileIndex(0);
+                          showNotification("Project loaded", "success");
+                          setIsCloudLoading(false);
+                          return;
+                      }
+                  } catch(e) {}
+
+                  // Load as single file
+                  const newFile: CodeFile = {
+                      name: item.name,
+                      language: getLanguageFromFilename(item.name) as any,
+                      content: text,
+                      loaded: true,
+                      isModified: true
+                  };
+                  setProject(prev => ({ ...prev, files: [...prev.files, newFile] }));
+                  setActiveFileIndex(project.files.length);
+                  setIsCloudLoading(false);
+
+              } catch(e: any) {
+                  showNotification("Failed to load file", "error");
+                  setIsCloudLoading(false);
               }
-          } catch(e) {}
-
-          // Load as single file
-          const newFile: CodeFile = {
-              name: item.name,
-              language: getLanguageFromFilename(item.name) as any,
-              content: text,
-              loaded: true,
-              isModified: true
-          };
-          setProject(prev => ({ ...prev, files: [...prev.files, newFile] }));
-          setActiveFileIndex(project.files.length); // Should point to new file index (length before add + 1 - 1)
-
-      } catch(e: any) {
-          showNotification("Failed to load file", "error");
-      } finally {
-          setIsCloudLoading(false);
-      }
+          }
+      });
   };
 
   const handleDriveFolderClick = async (fileId: string, fileName: string) => {
@@ -589,15 +595,26 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
 
   const handleCreateDriveFolder = async () => {
       if (!driveToken || !currentDriveFolderId) return;
-      const name = prompt("Enter folder name:");
-      if (!name) return;
-      
+      setModal({
+          isOpen: true,
+          title: "New Drive Folder",
+          hasInput: true,
+          inputPlaceholder: "Folder Name",
+          onConfirm: async () => {
+              // handled inline
+          }
+      });
+  };
+  
+  const submitDriveFolderCreate = async (name: string) => {
+      setModal(null);
+      if (!driveToken || !currentDriveFolderId) return;
       setIsDriveLoading(true);
       try {
           await createDriveFolder(driveToken, currentDriveFolderId, name);
           await refreshDrive();
           showNotification("Folder created", "success");
-      } catch (e: any) {
+      } catch(e: any) {
           showNotification("Failed to create folder", "error");
       } finally {
           setIsDriveLoading(false);
@@ -647,8 +664,9 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
       try {
           const path = currentCloudPath || `codestudio/${currentUser.uid}`;
           const json = JSON.stringify(project);
+          // Use stable filename to prevent duplicate spam
           const sanitizedName = project.name.replace(/[^a-zA-Z0-9-_]/g, '_');
-          const filename = `${sanitizedName}_${Date.now()}.json`;
+          const filename = `${sanitizedName}.json`;
           
           await saveProjectToCloud(path, filename, json, project.name);
           await fetchCloudFiles(path);
@@ -707,7 +725,25 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
 
   const handleDeleteDriveFile = async (fileId: string) => {
       if (!driveToken) return;
-      setItemToDelete({ type: 'drive', id: fileId });
+      setModal({
+          isOpen: true,
+          title: "Delete Drive File",
+          message: "Are you sure you want to delete this file?",
+          isDestructive: true,
+          onConfirm: async () => {
+              setModal(null);
+              setIsDriveLoading(true);
+              try {
+                  await deleteDriveFile(driveToken!, fileId);
+                  await refreshDrive();
+                  showNotification("File deleted", "success");
+              } catch(e: any) {
+                  showNotification("Delete failed", "error");
+              } finally {
+                  setIsDriveLoading(false);
+              }
+          }
+      });
   };
 
   const handleGeneralSave = () => {
@@ -719,7 +755,15 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
           if (driveToken) {
               handleSaveToDrive(); 
           } else if (currentUser) {
-              handleSaveToCloud();
+              setModal({
+                  isOpen: true,
+                  title: "Save Project",
+                  message: "Save project snapshot to Cloud Storage?",
+                  onConfirm: () => {
+                      setModal(null);
+                      handleSaveToCloud();
+                  }
+              });
           } else {
               showNotification("Sign in or Connect Drive to save.", "info");
           }
@@ -740,7 +784,24 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
   };
 
   const handleDeleteNode = async (node: FileNode) => {
-      setItemToDelete({ type: 'node', node });
+      setModal({
+          isOpen: true,
+          title: "Remove from Workspace",
+          message: `Remove ${node.type} "${node.name}" from local workspace? (File remains in remote storage)`,
+          isDestructive: true,
+          onConfirm: () => {
+              setModal(null);
+              let newFiles: CodeFile[] = [];
+              if (node.type === 'folder') {
+                  newFiles = project.files.filter(f => !f.name.startsWith(node.path + '/'));
+              } else {
+                  newFiles = project.files.filter((_, i) => i !== node.index);
+              }
+              setProject(prev => ({ ...prev, files: newFiles }));
+              if (activeFileIndex >= newFiles.length) setActiveFileIndex(Math.max(0, newFiles.length - 1));
+              showNotification("Removed from workspace", "success");
+          }
+      });
   };
 
   const handleAddFile = (langId: string) => {
@@ -805,6 +866,18 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
       }
   };
 
+  // Generic Input Submit Handler for Modals
+  const handleModalSubmit = (e: React.FormEvent) => {
+      e.preventDefault();
+      if (!modal) return;
+      const input = (e.target as any).inputVal.value;
+      if (modal.title === 'New Folder') {
+          submitCloudFolderCreate(input);
+      } else if (modal.title === 'New Drive Folder') {
+          submitDriveFolderCreate(input);
+      }
+  };
+
   return (
     <div className="flex flex-col h-screen bg-slate-950 text-slate-100 overflow-hidden relative">
       
@@ -818,18 +891,29 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
           ))}
       </div>
 
-      {/* Confirmation Modal */}
-      {itemToDelete && (
+      {/* General Modal */}
+      {modal && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
               <div className="bg-slate-900 border border-slate-700 rounded-xl p-6 max-w-sm w-full shadow-2xl animate-fade-in-up">
-                  <h3 className="text-lg font-bold text-white mb-2">Confirm Delete</h3>
-                  <p className="text-slate-400 text-sm mb-6">Are you sure you want to delete this item? This action cannot be undone.</p>
-                  <div className="flex justify-end gap-3">
-                      <button onClick={() => setItemToDelete(null)} className="px-4 py-2 text-slate-300 hover:text-white hover:bg-slate-800 rounded-lg text-sm font-bold">Cancel</button>
-                      <button onClick={confirmDelete} className="px-4 py-2 bg-red-600 hover:bg-red-500 text-white rounded-lg text-sm font-bold flex items-center gap-2">
-                          <Trash2 size={14}/> Delete
-                      </button>
-                  </div>
+                  <h3 className="text-lg font-bold text-white mb-2">{modal.title}</h3>
+                  {modal.message && <p className="text-slate-400 text-sm mb-6">{modal.message}</p>}
+                  
+                  {modal.hasInput ? (
+                      <form onSubmit={handleModalSubmit}>
+                          <input name="inputVal" autoFocus placeholder={modal.inputPlaceholder} className="w-full bg-slate-800 border border-slate-700 rounded p-2 text-white mb-4 outline-none focus:border-indigo-500" defaultValue={modal.inputValue} />
+                          <div className="flex justify-end gap-3">
+                              <button type="button" onClick={() => setModal(null)} className="px-4 py-2 text-slate-300 hover:text-white hover:bg-slate-800 rounded-lg text-sm font-bold">Cancel</button>
+                              <button type="submit" className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-sm font-bold">Confirm</button>
+                          </div>
+                      </form>
+                  ) : (
+                      <div className="flex justify-end gap-3">
+                          <button onClick={() => setModal(null)} className="px-4 py-2 text-slate-300 hover:text-white hover:bg-slate-800 rounded-lg text-sm font-bold">Cancel</button>
+                          <button onClick={modal.onConfirm} className={`px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 ${modal.isDestructive ? 'bg-red-600 hover:bg-red-500 text-white' : 'bg-indigo-600 hover:bg-indigo-500 text-white'}`}>
+                              {modal.isDestructive && <Trash2 size={14}/>} Confirm
+                          </button>
+                      </div>
+                  )}
               </div>
           </div>
       )}
