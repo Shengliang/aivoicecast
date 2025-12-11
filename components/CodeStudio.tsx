@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { CodeProject, CodeFile } from '../types';
 import { ArrowLeft, Save, Plus, Github, Cloud, HardDrive, Code, X, ChevronRight, ChevronDown, File, Folder, DownloadCloud, Loader2, CheckCircle, AlertTriangle, Info, FolderPlus, FileCode, RefreshCw, LogIn, CloudUpload, Trash2, ArrowUp, Edit2 } from 'lucide-react';
 import { connectGoogleDrive } from '../services/authService';
-import { fetchPublicRepoInfo, fetchRepoContents, fetchFileContent } from '../services/githubService';
+import { fetchPublicRepoInfo, fetchRepoContents, fetchFileContent, commitToRepo } from '../services/githubService';
 import { listCloudDirectory, saveProjectToCloud, deleteCloudItem, createCloudFolder, CloudItem } from '../services/firestoreService';
 import { ensureCodeStudioFolder, listDriveFiles, readDriveFile, saveToDrive, deleteDriveFile, createDriveFolder, DriveFile } from '../services/googleDriveService';
 
@@ -393,15 +393,6 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
       } catch(e) { showNotification("Failed to delete", "error"); }
   };
 
-  const handleSaveActiveFileToDrive = async () => {
-      if (!activeFile || !driveToken) return;
-      try {
-          await saveToDrive(driveToken, currentDriveFolderId, activeFile.name, activeFile.content);
-          refreshDrive();
-          showNotification("Saved to Drive", "success");
-      } catch(e) { showNotification("Save failed", "error"); }
-  };
-
   // --- Editor Logic ---
 
   const handleCodeChange = (val: string) => {
@@ -412,12 +403,43 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
       setSaveStatus('modified');
   };
 
-  const handleGeneralSave = () => {
-      // If connected to Cloud or Drive, we could sync. 
-      // For GitHub, we can't easily push without more complex auth flows (PAT usually).
-      // So "Save Project" here acts as a local acknowledgement or could trigger cloud sync if configured.
-      setSaveStatus('saved');
-      showNotification("Project saved locally", "success");
+  const handleSmartSave = async () => {
+      setSaveStatus('saving');
+      try {
+          if (activeTab === 'github') {
+              // Try to find a stored token or warn
+              const ghToken = localStorage.getItem('github_token'); 
+              if (project.github && ghToken) {
+                  await commitToRepo(ghToken, project, "Update from Code Studio");
+                  showNotification("Synced changes to GitHub", "success");
+              } else {
+                  showNotification("Saved locally (Connect GitHub account to sync)", "info");
+              }
+          } else if (activeTab === 'drive') {
+              if (activeFile && driveToken) {
+                  await saveToDrive(driveToken, currentDriveFolderId, activeFile.name, activeFile.content);
+                  refreshDrive();
+                  showNotification("Saved active file to Google Drive", "success");
+              } else {
+                  showNotification("Saved locally (Connect Drive to sync)", "info");
+              }
+          } else if (activeTab === 'cloud') {
+              if (activeFile) {
+                  await saveProjectToCloud(currentCloudPath, activeFile.name, activeFile.content);
+                  fetchCloudFiles(currentCloudPath);
+                  showNotification("Saved to Cloud Storage", "success");
+              } else {
+                  showNotification("Saved locally", "success");
+              }
+          } else {
+              showNotification("Project saved locally", "success");
+          }
+          setSaveStatus('saved');
+      } catch (e: any) {
+          console.error(e);
+          showNotification("Save failed: " + e.message, "error");
+          setSaveStatus('modified');
+      }
   };
 
   const handleAddFile = (langId: string) => {
@@ -502,13 +524,9 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
             </div>
             
             <div className="flex items-center space-x-2">
-               {activeTab === 'drive' && (
-                   <button onClick={handleSaveActiveFileToDrive} disabled={!activeFile} className="flex items-center space-x-2 px-3 py-1.5 bg-slate-800 hover:bg-indigo-600 text-slate-300 hover:text-white rounded-lg text-xs font-bold transition-colors border border-slate-700">
-                       <CloudUpload size={14} /> <span>Save Active File</span>
-                   </button>
-               )}
-               <button onClick={handleGeneralSave} className="flex items-center space-x-2 px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold transition-colors shadow-md">
-                   <Save size={14} /> <span>Save Project</span>
+               <button onClick={handleSmartSave} className="flex items-center space-x-2 px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold transition-colors shadow-md">
+                   {saveStatus === 'saving' ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} 
+                   <span>{activeTab === 'github' ? 'Save & Sync' : 'Save'}</span>
                </button>
 
                <div className="relative">
