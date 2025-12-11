@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { GoogleGenAI, FunctionDeclaration, Type } from '@google/genai';
 import { ArrowLeft, Save, Folder, File, Code, Plus, Trash2, Loader2, ChevronRight, ChevronDown, X, MessageSquare, FileCode, FileJson, FileType, Search, Coffee, Hash, CloudUpload, Edit3, BookOpen, Bot, Send, Maximize2, Minimize2, GripVertical, UserCheck, AlertTriangle, Archive, Sparkles, Video, Mic, CheckCircle, Monitor, FileText, Eye, Github, GitBranch, GitCommit, FolderOpen, RefreshCw, GraduationCap, DownloadCloud, Terminal, Undo2, Check, Share2, Copy, Lock, Link, Image as ImageIcon, Users, UserPlus, ShieldAlert, Crown, Bug, ChevronUp, Zap, Expand, Shrink, Edit2, History } from 'lucide-react';
@@ -490,7 +491,9 @@ const updateFileTool: FunctionDeclaration = {
     }
 };
 
+// ... (PlantUMLPreview and GitHistoryView) ...
 const PlantUMLPreview = ({ code }: { code: string }) => {
+    // ... same content ...
     const [encodedCode, setEncodedCode] = useState<string | null>(null);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -630,7 +633,6 @@ const GitHistoryView = ({ owner, repo, branch, token }: { owner: string, repo: s
 };
 
 export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, sessionId, accessKey, onSessionStart }) => {
-  // Start with empty project (will load default immediately in useEffect)
   const [project, setProject] = useState<CodeProject>({ id: 'init', name: 'Loading...', files: [], lastModified: Date.now() });
   const [activeFileIndex, setActiveFileIndex] = useState(0);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
@@ -760,7 +762,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
               setHasWritePermission(effectiveAdmin);
 
               // Multi-write strategy:
-              // If effectiveAdmin, we are allowed to write.
+              // If effectiveAdmin, we are allowed to write to Firestore.
               // We accept remote updates, BUT we preserve our local active file IF we are actively typing.
               
               setProject(prev => {
@@ -1108,7 +1110,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
       if (!currentUser) return alert("Sign in required.");
       if (isReadOnly) return alert("Read-only mode.");
       setIsSaving(true);
-      try { await saveCodeProject(project); alert("Saved!"); } catch(e) { alert("Failed."); } finally { setIsSaving(false); }
+      try { await saveCodeProject(project); alert("Saved to Session!"); } catch(e) { alert("Failed."); } finally { setIsSaving(false); }
   };
 
   const handleSendChatMessage = async () => {
@@ -1338,11 +1340,9 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
             </div>
             
             <div className="flex items-center space-x-1 bg-slate-800 rounded-lg p-1 border border-slate-700">
-               {!isReadOnly && (
-               <button onClick={handleSaveProject} disabled={isSaving} className="p-2 hover:bg-slate-700 rounded text-slate-400 hover:text-white transition-colors">
+               <button onClick={handleSaveProject} disabled={isSaving} className="p-2 hover:bg-slate-700 rounded text-slate-400 hover:text-white transition-colors" title="Save to Session">
                   {isSaving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
                </button>
-               )}
                
                {!isReadOnly && (
                    <button onClick={() => setShowImportModal(true)} className={`p-2 hover:bg-slate-700 rounded transition-colors ${(needsGitHubReauth || isGithubLinked || githubToken) ? 'text-amber-400 hover:text-amber-200' : 'text-slate-400 hover:text-white'}`} title="Manage Repository / Connect GitHub">
@@ -1351,7 +1351,11 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
                )}
 
                {project.github && !isReadOnly && (
-                   <button onClick={() => setShowCommitModal(true)} className="p-2 hover:bg-slate-700 rounded text-emerald-400 hover:text-white transition-colors" title="Commit Changes">
+                   <button 
+                     onClick={() => isOwner ? setShowCommitModal(true) : alert("Only the project owner can push to GitHub. Your changes have been saved to the live session.")} 
+                     className={`p-2 rounded transition-colors ${isOwner ? 'hover:bg-slate-700 text-emerald-400 hover:text-white' : 'hover:bg-slate-800 text-slate-600 cursor-not-allowed'}`} 
+                     title={isOwner ? "Commit Changes" : "Only owner can push to GitHub"}
+                   >
                        <GitCommit size={16} />
                    </button>
                )}
