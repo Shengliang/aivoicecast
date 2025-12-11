@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { GoogleGenAI, FunctionDeclaration, Type } from '@google/genai';
-import { ArrowLeft, Save, Folder, File, Code, Plus, Trash2, Loader2, ChevronRight, ChevronDown, X, MessageSquare, FileCode, FileJson, FileType, Search, Coffee, Hash, CloudUpload, Edit3, BookOpen, Bot, Send, Maximize2, Minimize2, GripVertical, UserCheck, AlertTriangle, Archive, Sparkles, Video, Mic, CheckCircle, Monitor, FileText, Eye, Github, GitBranch, GitCommit, FolderOpen, RefreshCw, GraduationCap, DownloadCloud, Terminal, Undo2, Check, Share2, Copy, Lock, Link, Image as ImageIcon, Users, UserPlus, ShieldAlert, Crown, Bug, ChevronUp, Zap } from 'lucide-react';
+import { ArrowLeft, Save, Folder, File, Code, Plus, Trash2, Loader2, ChevronRight, ChevronDown, X, MessageSquare, FileCode, FileJson, FileType, Search, Coffee, Hash, CloudUpload, Edit3, BookOpen, Bot, Send, Maximize2, Minimize2, GripVertical, UserCheck, AlertTriangle, Archive, Sparkles, Video, Mic, CheckCircle, Monitor, FileText, Eye, Github, GitBranch, GitCommit, FolderOpen, RefreshCw, GraduationCap, DownloadCloud, Terminal, Undo2, Check, Share2, Copy, Lock, Link, Image as ImageIcon, Users, UserPlus, ShieldAlert, Crown, Bug, ChevronUp, Zap, Expand, Shrink } from 'lucide-react';
 import { GEMINI_API_KEY } from '../services/private_keys';
 import { CodeProject, CodeFile, ChatMessage, Channel, GithubMetadata, CursorPosition } from '../types';
 import { MarkdownView } from './MarkdownView';
@@ -676,6 +676,10 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
   const [isSharedSession, setIsSharedSession] = useState(false);
   const [showDebug, setShowDebug] = useState(true); // Toggle for Cursor Debugger
   const [debugExpanded, setDebugExpanded] = useState(false);
+  const [chatInput, setChatInput] = useState('');
+  const [isChatLoading, setIsChatLoading] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
   
   // WRITE ACCESS STATE
   const [isReadOnly, setIsReadOnly] = useState(false); 
@@ -1096,8 +1100,71 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
       return "Unknown tool";
   };
 
+  const handleSendChatMessage = async () => {
+      if (!chatInput.trim()) return;
+      const userMsg: ChatMessage = { role: 'user', text: chatInput };
+      setChatMessages(prev => [...prev, userMsg]);
+      setChatInput('');
+      setIsChatLoading(true);
+
+      try {
+          const apiKey = localStorage.getItem('gemini_api_key') || GEMINI_API_KEY || process.env.API_KEY || '';
+          if (!apiKey) {
+              throw new Error("API Key is missing.");
+          }
+          const ai = new GoogleGenAI({ apiKey });
+          
+          // Contextualize
+          const context = activeFile ? `Current File: ${activeFile.name}\n\`\`\`${activeFile.language}\n${activeFile.content}\n\`\`\`\n` : '';
+          const systemPrompt = "You are an expert coding assistant. Answer the user's question based on the provided code context. Be concise and helpful.";
+          
+          // Flatten history for simple generation (avoids strict chat history validation issues)
+          let conversationText = `System: ${systemPrompt}\n\n`;
+          if (context) conversationText += `Context:\n${context}\n\n`;
+          
+          chatMessages.forEach(m => {
+              conversationText += `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.text}\n`;
+          });
+          conversationText += `User: ${userMsg.text}\nAssistant:`;
+
+          const response = await ai.models.generateContent({
+              model: 'gemini-2.5-flash',
+              contents: conversationText
+          });
+
+          const responseText = response.text || "No response.";
+          setChatMessages(prev => [...prev, { role: 'ai', text: responseText }]);
+      } catch(e: any) {
+          setChatMessages(prev => [...prev, { role: 'ai', text: `Error: ${e.message}` }]);
+      } finally {
+          setIsChatLoading(false);
+          // Scroll to bottom
+          setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
+      }
+  };
+
+  const toggleFullScreen = () => {
+    if (!document.fullscreenElement) {
+        containerRef.current?.requestFullscreen().catch(err => {
+            alert(`Error attempting to enable full-screen mode: ${err.message} (${err.name})`);
+        });
+        setIsFullscreen(true);
+    } else {
+        document.exitFullscreen();
+        setIsFullscreen(false);
+    }
+  };
+
+  useEffect(() => {
+      const handleFsChange = () => {
+          setIsFullscreen(!!document.fullscreenElement);
+      };
+      document.addEventListener('fullscreenchange', handleFsChange);
+      return () => document.removeEventListener('fullscreenchange', handleFsChange);
+  }, []);
+
   return (
-    <div className="flex flex-col h-screen bg-slate-950 text-slate-100 overflow-hidden relative">
+    <div ref={containerRef} className="flex flex-col h-screen bg-slate-950 text-slate-100 overflow-hidden relative">
       
       {/* Header */}
       <header className="h-14 bg-slate-900 border-b border-slate-800 flex items-center justify-between px-4 shrink-0 z-20">
@@ -1180,6 +1247,10 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
          </div>
 
          <div className="flex items-center space-x-3">
+            <button onClick={toggleFullScreen} className="p-2 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white transition-colors" title="Toggle Full Screen">
+                {isFullscreen ? <Shrink size={16} /> : <Expand size={16} />}
+            </button>
+
             {!isReadOnly && (
             <div className="relative">
                 <button onClick={() => setShowLanguageDropdown(!showLanguageDropdown)} className="flex items-center space-x-2 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg text-xs font-bold transition-colors">
@@ -1399,8 +1470,8 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
          {activeSideView !== 'none' && (
              <>
                 <div className="w-1 bg-slate-800 hover:bg-indigo-500 cursor-col-resize z-30 transition-colors" onMouseDown={startResizing} />
-                <div style={{ width: chatWidth }} className="bg-slate-900 border-l border-slate-800 flex flex-col flex-shrink-0 relative">
-                    <div className="p-3 border-b border-slate-800 flex justify-between items-center bg-slate-950/50">
+                <div style={{ width: chatWidth }} className="bg-slate-900 border-l border-slate-800 flex flex-col flex-shrink-0 relative h-full">
+                    <div className="p-3 border-b border-slate-800 flex justify-between items-center bg-slate-950/50 shrink-0">
                         <h3 className="text-sm font-bold text-white flex items-center gap-2">
                             {activeSideView === 'tutor' && <><GraduationCap size={16} className="text-emerald-400"/> Code Tutor</>}
                             {activeSideView === 'chat' && <><Bot size={16} className="text-indigo-400"/> AI Assistant</>}
@@ -1411,7 +1482,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
                         </div>
                     </div>
                     
-                    <div className="flex-1 overflow-y-auto relative scrollbar-thin scrollbar-thumb-slate-700">
+                    <div className="flex-1 overflow-y-auto relative scrollbar-thin scrollbar-thumb-slate-700 min-h-0">
                         {activeSideView === 'tutor' ? (
                             <LiveSession 
                                 channel={{ id: `code-tutor-${tutorSessionId}`, title: 'Code Tutor', description: 'Interactive Code Explanation', author: 'AI', voiceName: 'Puck', systemInstruction: 'You are a patient Senior Engineer acting as a Code Tutor. Monitor user activity. If the user asks you to change code, use the `update_file` tool to rewrite it in-place.', likes: 0, dislikes: 0, comments: [], tags: ['Tutor', 'Education'], imageUrl: 'https://images.unsplash.com/photo-1516321318423-f06f85e504b3?w=600&q=80', createdAt: Date.now() }}
@@ -1428,16 +1499,47 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
                                 {project.review ? <MarkdownView content={project.review} /> : <p className="text-slate-500 text-center text-sm">No review generated yet.</p>}
                             </div>
                         ) : (
-                            <div className="p-4 space-y-4 min-h-full">
+                            <div className="p-4 space-y-4">
                                 {chatMessages.map((msg, idx) => (
                                     <div key={idx} className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
                                         <div className={`max-w-[90%] p-3 rounded-xl text-sm ${msg.role === 'user' ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-300'}`}><MarkdownView content={msg.text} /></div>
                                     </div>
                                 ))}
+                                {isChatLoading && (
+                                    <div className="flex justify-start">
+                                        <div className="bg-slate-800 text-slate-400 p-3 rounded-xl text-sm flex items-center gap-2">
+                                            <Loader2 size={14} className="animate-spin" /> Thinking...
+                                        </div>
+                                    </div>
+                                )}
                                 <div ref={chatEndRef} />
                             </div>
                         )}
                     </div>
+
+                    {/* Chat Input Footer - Always visible for 'chat' mode */}
+                    {activeSideView === 'chat' && (
+                        <div className="p-3 border-t border-slate-800 bg-slate-900 shrink-0">
+                            <div className="flex gap-2 relative bg-slate-800 rounded-lg p-1 border border-slate-700">
+                                <textarea
+                                    value={chatInput}
+                                    onChange={(e) => setChatInput(e.target.value)}
+                                    onKeyDown={(e) => { if(e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendChatMessage(); } }}
+                                    placeholder="Ask about this code..."
+                                    rows={1}
+                                    className="flex-1 bg-transparent text-sm text-white px-2 py-1.5 outline-none resize-none max-h-32 scrollbar-hide"
+                                    style={{ minHeight: '36px' }}
+                                />
+                                <button 
+                                    onClick={handleSendChatMessage} 
+                                    disabled={!chatInput.trim() || isChatLoading}
+                                    className="p-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed self-end"
+                                >
+                                    <Send size={16} />
+                                </button>
+                            </div>
+                        </div>
+                    )}
                 </div>
              </>
          )}
