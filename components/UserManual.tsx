@@ -1,13 +1,21 @@
 
-# 🎙️ AIVoiceCast Platform
+import React from 'react';
+import { ArrowLeft, Book } from 'lucide-react';
+import { MarkdownView } from './MarkdownView';
+
+interface UserManualProps {
+  onBack: () => void;
+}
+
+// Content extracted from README.md
+const MANUAL_CONTENT = `
+# 🎙️ AIVoiceCast User Guide
 
 **The world's first decentralized, AI-native interactive knowledge community.**
 
 AIVoiceCast is not just a podcast player. It is a **Generative Knowledge Engine**. Unlike Spotify or Apple Podcasts where you consume static audio, AIVoiceCast generates custom curriculums, synthesizes lectures on-demand, and allows you to **talk back** to the host in real-time.
 
 ---
-
-## 📚 User Guide & Feature Manual
 
 ### 1. Getting Started
 *   **Sign In**: Click the **User Icon** in the top right to sign in with your Google Account. This enables cloud sync, profile creation, and social features.
@@ -73,46 +81,28 @@ A collaborative infinite canvas for systems design.
 *   **Career Center**:
     *   **Job Board**: Post or find jobs.
     *   **Talent Pool**: Upload your resume to be discovered by others.
+`;
 
----
+export const UserManual: React.FC<UserManualProps> = ({ onBack }) => {
+  return (
+    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col">
+      {/* Header */}
+      <div className="p-6 border-b border-slate-900 flex items-center gap-4 sticky top-0 bg-slate-950/90 backdrop-blur-md z-20">
+        <button onClick={onBack} className="p-2 hover:bg-slate-800 rounded-full transition-colors">
+          <ArrowLeft size={24} />
+        </button>
+        <h1 className="text-xl font-bold tracking-widest uppercase text-slate-400 flex items-center gap-2">
+            <Book size={20} className="text-indigo-400"/> User Guide
+        </h1>
+      </div>
 
-## ⚙️ Technical Setup (For Developers)
-
-If you are forking or running this code locally, follow these steps to configure the environment.
-
-### 1. Private Keys
-The file `services/private_keys.ts` is ignored by Git for security. You must create it manually.
-
-1.  Go to `services/` folder.
-2.  Create `private_keys.ts`.
-3.  Paste the following:
-
-```typescript
-// services/private_keys.ts
-export const firebaseKeys = {
-  apiKey: "YOUR_FIREBASE_API_KEY",
-  authDomain: "your-app.firebaseapp.com",
-  projectId: "your-project-id",
-  storageBucket: "your-app.appspot.com",
-  messagingSenderId: "123",
-  appId: "1:123:web:abc",
-  measurementId: "G-XYZ"
+      <div className="flex-1 overflow-y-auto">
+        <div className="max-w-4xl mx-auto px-6 py-12">
+            <div className="prose prose-invert prose-lg max-w-none">
+                <MarkdownView content={MANUAL_CONTENT} />
+            </div>
+        </div>
+      </div>
+    </div>
+  );
 };
-
-// Optional: Default Gemini Key for all users (Not recommended for public deployment)
-export const GEMINI_API_KEY = ""; 
-```
-
-### 2. Installation
-```bash
-npm install
-npm start
-```
-
-### 3. Architecture Notes
-*   **Frontend**: React 19, Tailwind CSS.
-*   **State**: LocalStorage + Context + Refs (No Redux).
-*   **Database**:
-    *   **Firestore**: Public channels, User profiles, Social graph.
-    *   **IndexedDB**: Local cache for Audio Blobs and Lecture Scripts (Offline-first).
-*   **AI**: Google Gemini Pro (Logic) + Gemini Flash (Speed) + Gemini Live (Voice).

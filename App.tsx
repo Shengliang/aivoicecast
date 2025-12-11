@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useMemo } from 'react';
 import { Channel, ViewState, UserProfile, TranscriptItem, SubscriptionTier } from './types';
 import { 
@@ -33,10 +34,11 @@ import { CodeStudio } from './components/CodeStudio';
 import { Whiteboard } from './components/Whiteboard';
 import { BlogView } from './components/BlogView';
 import { WorkplaceChat } from './components/WorkplaceChat';
-import { LoginPage } from './components/LoginPage'; // Import Login Page
-import { SettingsModal } from './components/SettingsModal'; // Import Settings Modal
-import { PricingModal } from './components/PricingModal'; // Import Pricing Modal for cross-linking
-import { CareerCenter } from './components/CareerCenter'; // Import Career Center
+import { LoginPage } from './components/LoginPage'; 
+import { SettingsModal } from './components/SettingsModal'; 
+import { PricingModal } from './components/PricingModal'; 
+import { CareerCenter } from './components/CareerCenter';
+import { UserManual } from './components/UserManual'; // Import UserManual
 
 import { auth, isFirebaseConfigured } from './services/firebaseConfig';
 import { 
@@ -50,7 +52,7 @@ import { HANDCRAFTED_CHANNELS, CATEGORY_STYLES, TOPIC_CATEGORIES } from './utils
 import { OFFLINE_CHANNEL_ID } from './utils/offlineContent';
 import { GEMINI_API_KEY } from './services/private_keys';
 
-const APP_VERSION = "v3.45.0";
+const APP_VERSION = "v3.46.0";
 
 const UI_TEXT = {
   en: {
@@ -599,6 +601,7 @@ const App: React.FC = () => {
                    setIsApiKeyModalOpen={setIsApiKeyModalOpen}
                    setIsSyncModalOpen={setIsSyncModalOpen}
                    setIsSettingsModalOpen={setIsAccountSettingsOpen}
+                   onOpenUserGuide={() => setViewState('user_guide')}
                    t={t}
                 />
               </div>
@@ -611,6 +614,9 @@ const App: React.FC = () => {
       {/* Main Content Switch */}
       <div className="flex-1 overflow-y-auto">
         {viewState === 'mission' && <MissionManifesto onBack={() => setViewState('directory')} />}
+        
+        {/* Render User Manual when viewState is 'user_guide' */}
+        {viewState === 'user_guide' && <UserManual onBack={() => setViewState('directory')} />}
         
         {viewState === 'code_studio' && (
             <CodeStudio 

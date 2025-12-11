@@ -1,7 +1,8 @@
+
 import React, { useState } from 'react';
 import { UserProfile, SubscriptionTier } from '../types';
 import { getUserProfile } from '../services/firestoreService';
-import { Sparkles, BarChart2, Plus, Wand2, Key, Database, Crown, Settings } from 'lucide-react';
+import { Sparkles, BarChart2, Plus, Wand2, Key, Database, Crown, Settings, Book } from 'lucide-react';
 import { VOICES } from '../utils/initialData';
 import { PricingModal } from './PricingModal';
 
@@ -18,14 +19,15 @@ interface StudioMenuProps {
   setIsVoiceCreateOpen: (open: boolean) => void;
   setIsApiKeyModalOpen: (open: boolean) => void;
   setIsSyncModalOpen: (open: boolean) => void;
-  setIsSettingsModalOpen: (open: boolean) => void; // Added prop
+  setIsSettingsModalOpen: (open: boolean) => void;
+  onOpenUserGuide: () => void; // New prop for navigating to guide
   t: any;
 }
 
 export const StudioMenu: React.FC<StudioMenuProps> = ({
   isUserMenuOpen, setIsUserMenuOpen, userProfile, setUserProfile, currentUser,
   globalVoice, setGlobalVoice, hasApiKey, 
-  setIsCreateModalOpen, setIsVoiceCreateOpen, setIsApiKeyModalOpen, setIsSyncModalOpen, setIsSettingsModalOpen, t
+  setIsCreateModalOpen, setIsVoiceCreateOpen, setIsApiKeyModalOpen, setIsSyncModalOpen, setIsSettingsModalOpen, onOpenUserGuide, t
 }) => {
   const [isPricingOpen, setIsPricingOpen] = useState(false);
   
@@ -138,6 +140,15 @@ export const StudioMenu: React.FC<StudioMenuProps> = ({
             >
                <Database size={16} />
                <span>Data Sync & Backup</span>
+            </button>
+            
+            {/* User Guide Button */}
+            <button 
+               onClick={() => { onOpenUserGuide(); setIsUserMenuOpen(false); }}
+               className="w-full flex items-center space-x-3 px-3 py-2 text-sm text-slate-300 hover:text-white hover:bg-slate-800 rounded-lg transition-colors"
+            >
+               <Book size={16} />
+               <span>User Guide / Manual</span>
             </button>
             
             {/* Settings Button */}

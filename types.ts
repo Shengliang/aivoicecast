@@ -1,5 +1,4 @@
 
-
 export type AttachmentType = 'image' | 'audio' | 'video' | 'file';
 
 export interface Attachment {
@@ -90,7 +89,7 @@ export interface CommunityDiscussion {
   isManual?: boolean; // Created manually via editor
 }
 
-export type ViewState = 'directory' | 'podcast_detail' | 'live_session' | 'create_channel' | 'debug' | 'cloud_debug' | 'public_debug' | 'mission' | 'code_studio' | 'whiteboard' | 'blog' | 'chat' | 'careers';
+export type ViewState = 'directory' | 'podcast_detail' | 'live_session' | 'create_channel' | 'debug' | 'cloud_debug' | 'public_debug' | 'mission' | 'code_studio' | 'whiteboard' | 'blog' | 'chat' | 'careers' | 'user_guide';
 
 export interface AudioState {
   isConnected: boolean;
