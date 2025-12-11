@@ -310,17 +310,51 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
 
   // --- FILE OPERATIONS ---
 
-  const handleLoadCloudFile = async (url: string) => {
-      if (!confirm("Load project? Unsaved changes in current session will be lost.")) return;
+  const handleLoadCloudFile = async (file: any) => {
+      // 1. Handle Placeholder
+      if (file.name === 'README_EMPTY.md' || file.fileName === 'README_EMPTY.md') {
+          alert("This is a placeholder file indicating the folder is empty. Create and save a new project to overwrite it.");
+          return;
+      }
+
+      if (!confirm("Load this file? If it is a project, current session will be replaced.")) return;
+      
       setIsCloudLoading(true);
       try {
-          const res = await fetch(url);
+          const res = await fetch(file.url);
           if (!res.ok) throw new Error(`Fetch failed: ${res.status}`);
-          const data = await res.json();
-          setProject(data);
-          setActiveFileIndex(0);
-          setExpandedFolders({});
-          setActiveTab('session'); // Switch back to session view
+          
+          const text = await res.text();
+          let isProject = false;
+
+          try {
+              const data = JSON.parse(text);
+              // Basic check if it follows CodeProject shape
+              if (data.files && Array.isArray(data.files)) {
+                  setProject(data);
+                  setActiveFileIndex(0);
+                  setExpandedFolders({});
+                  setActiveTab('session'); // Switch back to session view
+                  isProject = true;
+              }
+          } catch(e) {
+              // Parse error means it's likely raw code/text
+          }
+
+          if (!isProject) {
+              // Treat as importing a single file source code
+              const newFile: CodeFile = {
+                  name: file.name, // Use original name from metadata
+                  language: getLanguageFromFilename(file.name) as any,
+                  content: text,
+                  loaded: true,
+                  isModified: true
+              };
+              setProject(prev => ({ ...prev, files: [...prev.files, newFile] }));
+              setActiveFileIndex(project.files.length);
+              setActiveTab('session');
+          }
+
       } catch(e: any) {
           console.error("Cloud Load Error:", e);
           alert("Failed to load file. (CORS might be blocking direct download). " + e.message);
@@ -598,7 +632,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
                                           <span className="text-xs text-slate-300 truncate" title={file.name}>{file.name}</span>
                                       </div>
                                       <div className="flex gap-1 opacity-0 group-hover:opacity-100">
-                                          <button onClick={() => handleLoadCloudFile(file.url)} className="p-1 hover:bg-indigo-600 rounded text-slate-400 hover:text-white" title="Import"><DownloadCloud size={12}/></button>
+                                          <button onClick={() => handleLoadCloudFile(file)} className="p-1 hover:bg-indigo-600 rounded text-slate-400 hover:text-white" title="Import"><DownloadCloud size={12}/></button>
                                           <button onClick={async () => {
                                               if(!confirm("Delete?")) return;
                                               setIsCloudLoading(true);
