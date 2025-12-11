@@ -352,8 +352,9 @@ const generateHighlightedHTML = (code: string, language: string) => {
   const placeholders: string[] = [];
   const addPlaceholder = (htmlFragment: string) => {
     placeholders.push(htmlFragment);
-    // Use a complex token start '@PH' to prevent it being matched as a variable identifier by subsequent regexes
-    return `«@PH-${placeholders.length - 1}»`;
+    // Use underscore instead of dash to ensure PH_0 is a single 'word' token.
+    // This prevents \b(\d+)\b regex from matching the digit inside the placeholder.
+    return `«PH_${placeholders.length - 1}»`;
   };
 
   let processed = escapeHtml(code);
@@ -393,7 +394,7 @@ const generateHighlightedHTML = (code: string, language: string) => {
 
   // Restore placeholders in REVERSE order to handle nesting (e.g. string inside comment)
   for (let i = placeholders.length - 1; i >= 0; i--) {
-    processed = processed.split(`«@PH-${i}»`).join(placeholders[i]);
+    processed = processed.split(`«PH_${i}»`).join(placeholders[i]);
   }
 
   return processed;
@@ -496,7 +497,7 @@ const EnhancedEditor = ({ code, language, onChange, onScroll, onSelect, textArea
             )}
 
             <pre
-                className="absolute top-0 left-0 w-full h-full pointer-events-none whitespace-pre overflow-hidden border-0"
+                className="absolute top-0 left-0 w-full h-full pointer-events-none whitespace-pre overflow-hidden border-0 text-slate-200"
                 aria-hidden="true"
                 style={{ ...editorStyle, tabSize: 4 }}
             >
