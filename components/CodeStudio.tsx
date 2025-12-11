@@ -278,7 +278,6 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
   const [selectedFolder, setSelectedFolder] = useState<string | null>(null);
 
   // STORAGE TABS
-  // Removed 'session', defaulting to 'github' or 'drive' based on connection
   const [activeTab, setActiveTab] = useState<'github' | 'cloud' | 'drive'>('github');
   
   // Cloud (Firebase) State
@@ -371,6 +370,32 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
   };
 
   // --- FILE OPERATIONS ---
+
+  const handleGitHubFileSelect = async (index: number) => {
+      setActiveFileIndex(index);
+      const file = project.files[index];
+      
+      // Lazy load content if it's a GitHub file and not loaded yet
+      if (!file.loaded && !file.isDirectory && project.github) {
+          const newFiles = [...project.files];
+          newFiles[index] = { ...file, content: 'Loading...' }; // Optimistic
+          setProject(prev => ({ ...prev, files: newFiles }));
+          
+          try {
+              const content = await fetchFileContent(null, project.github.owner, project.github.repo, file.path!, project.github.branch);
+              setProject(prev => {
+                  const updated = [...prev.files];
+                  updated[index] = { ...file, content, loaded: true };
+                  return { ...prev, files: updated };
+              });
+          } catch(e) {
+              console.error(e);
+              const errFiles = [...project.files];
+              errFiles[index] = { ...file, content: '// Failed to load content' };
+              setProject(prev => ({ ...prev, files: errFiles }));
+          }
+      }
+  };
 
   const handleLoadCloudFile = async (file: any) => {
       if (file.name === 'README_EMPTY.md' || file.fileName === 'README_EMPTY.md') {
@@ -470,6 +495,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
 
   const handleLoadDriveFile = async (fileId: string, filename: string) => {
       if (!driveToken) return;
+      if (!confirm(`Import "${filename}"?`)) return;
       
       setIsDriveLoading(true);
       try {
@@ -790,7 +816,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
                                           node={node}
                                           depth={0}
                                           activeFileIndex={activeFileIndex}
-                                          onSelect={setActiveFileIndex}
+                                          onSelect={(idx) => handleGitHubFileSelect(idx)}
                                           onFolderSelect={setSelectedFolder}
                                           expandedFolders={expandedFolders}
                                           toggleFolder={toggleFolder}
@@ -836,14 +862,15 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
                               <div className="p-4 text-center text-slate-500 text-xs italic">No cloud files found.</div>
                           ) : (
                               cloudFiles.map((file) => (
-                                  <div key={file.fullPath} className="flex items-center justify-between p-2 hover:bg-slate-800 rounded group">
+                                  <div key={file.fullPath} className="flex items-center justify-between p-2 hover:bg-slate-800 rounded group cursor-pointer" onClick={() => handleLoadCloudFile(file)}>
                                       <div className="flex items-center gap-2 overflow-hidden">
                                           <FileCode size={14} className="text-indigo-400 shrink-0"/>
                                           <span className="text-xs text-slate-300 truncate" title={file.name}>{file.name}</span>
                                       </div>
                                       <div className="flex gap-1 opacity-0 group-hover:opacity-100">
-                                          <button onClick={() => handleLoadCloudFile(file)} className="p-1 hover:bg-indigo-600 rounded text-slate-400 hover:text-white" title="Import"><DownloadCloud size={12}/></button>
-                                          <button onClick={async () => {
+                                          <button onClick={(e) => { e.stopPropagation(); handleLoadCloudFile(file); }} className="p-1 hover:bg-indigo-600 rounded text-slate-400 hover:text-white" title="Import"><DownloadCloud size={12}/></button>
+                                          <button onClick={async (e) => {
+                                              e.stopPropagation();
                                               if(!confirm("Delete?")) return;
                                               setIsCloudLoading(true);
                                               await deleteProjectFromStorage(file.fullPath);
@@ -899,8 +926,8 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
                                           const isFolder = file.mimeType === 'application/vnd.google-apps.folder';
                                           return (
                                               <div key={file.id} 
-                                                   onClick={() => isFolder && handleDriveFolderClick(file.id, file.name)}
-                                                   className={`flex items-center justify-between p-2 hover:bg-slate-800 rounded group ${isFolder ? 'cursor-pointer' : ''}`}
+                                                   onClick={() => isFolder ? handleDriveFolderClick(file.id, file.name) : handleLoadDriveFile(file.id, file.name)}
+                                                   className={`flex items-center justify-between p-2 hover:bg-slate-800 rounded group cursor-pointer`}
                                               >
                                                   <div className="flex items-center gap-2 overflow-hidden">
                                                       {isFolder ? <Folder size={14} className="text-yellow-500 shrink-0"/> : <FileCode size={14} className="text-green-400 shrink-0"/>}
