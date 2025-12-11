@@ -1,11 +1,11 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { GoogleGenAI, FunctionDeclaration, Type } from '@google/genai';
-import { ArrowLeft, Save, Folder, File, Code, Plus, Trash2, Loader2, ChevronRight, ChevronDown, X, MessageSquare, FileCode, FileJson, FileType, Search, Coffee, Hash, CloudUpload, Edit3, BookOpen, Bot, Send, Maximize2, Minimize2, GripVertical, UserCheck, AlertTriangle, Archive, Sparkles, Video, Mic, CheckCircle, Monitor, FileText, Eye, Github, GitBranch, GitCommit, FolderOpen, RefreshCw, GraduationCap, DownloadCloud, Terminal, Undo2, Check, Share2, Copy, Lock, Link, Image as ImageIcon, Users, UserPlus, ShieldAlert, Crown, Bug, ChevronUp, Zap, Expand, Shrink, Edit2, History } from 'lucide-react';
+import { ArrowLeft, Save, Folder, File, Code, Plus, Trash2, Loader2, ChevronRight, ChevronDown, X, MessageSquare, FileCode, FileJson, FileType, Search, Coffee, Hash, CloudUpload, Edit3, BookOpen, Bot, Send, Maximize2, Minimize2, GripVertical, UserCheck, AlertTriangle, Archive, Sparkles, Video, Mic, CheckCircle, Monitor, FileText, Eye, Github, GitBranch, GitCommit, FolderOpen, RefreshCw, GraduationCap, DownloadCloud, Terminal, Undo2, Check, Share2, Copy, Lock, Link, Image as ImageIcon, Users, UserPlus, ShieldAlert, Crown, Bug, ChevronUp, Zap, Expand, Shrink, Edit2, History, Cloud } from 'lucide-react';
 import { GEMINI_API_KEY } from '../services/private_keys';
 import { CodeProject, CodeFile, ChatMessage, Channel, GithubMetadata, CursorPosition } from '../types';
 import { MarkdownView } from './MarkdownView';
-import { saveCodeProject, subscribeToCodeProject, updateCodeFile, deleteCodeFile, updateCursor, claimCodeProjectLock, requestEditAccess, grantEditAccess, denyEditAccess } from '../services/firestoreService';
+import { saveCodeProject, subscribeToCodeProject, updateCodeFile, deleteCodeFile, updateCursor, claimCodeProjectLock, requestEditAccess, grantEditAccess, denyEditAccess, saveProjectToStorage, getProjectsFromStorage, deleteProjectFromStorage } from '../services/firestoreService';
 import { signInWithGitHub, reauthenticateWithGitHub } from '../services/authService';
 import { fetchUserRepos, fetchRepoContents, commitToRepo, fetchPublicRepoInfo, fetchFileContent, fetchRepoSubTree, fetchRepoCommits } from '../services/githubService';
 import { LiveSession } from './LiveSession';
@@ -491,9 +491,7 @@ const updateFileTool: FunctionDeclaration = {
     }
 };
 
-// ... (PlantUMLPreview and GitHistoryView) ...
 const PlantUMLPreview = ({ code }: { code: string }) => {
-    // ... same content ...
     const [encodedCode, setEncodedCode] = useState<string | null>(null);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -675,6 +673,11 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
   const [isFullscreen, setIsFullscreen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   
+  // Storage Modal
+  const [showStorageModal, setShowStorageModal] = useState(false);
+  const [cloudFiles, setCloudFiles] = useState<any[]>([]);
+  const [isCloudLoading, setIsCloudLoading] = useState(false);
+
   // File Rename State
   const [renamingFileIndex, setRenamingFileIndex] = useState<number | null>(null);
   const [renameValue, setRenameValue] = useState('');
@@ -1305,6 +1308,71 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
       document.body.style.userSelect = 'none';
   };
 
+  const handleOpenCloud = async () => {
+    if (!currentUser) {
+        alert("Sign in to access cloud storage.");
+        return;
+    }
+    setShowStorageModal(true);
+    loadCloudFiles();
+  };
+
+  const loadCloudFiles = async () => {
+    if (!currentUser) return;
+    setIsCloudLoading(true);
+    try {
+        const files = await getProjectsFromStorage(currentUser.uid);
+        setCloudFiles(files);
+    } catch (e) {
+        console.error(e);
+        alert("Failed to load cloud files.");
+    } finally {
+        setIsCloudLoading(false);
+    }
+  }
+
+  const handleCloudSave = async () => {
+    if (!currentUser) return;
+    setIsCloudLoading(true);
+    try {
+        await saveProjectToStorage(currentUser.uid, project);
+        await loadCloudFiles(); // Refresh list
+    } catch (e) {
+        alert("Save failed.");
+    } finally {
+        setIsCloudLoading(false);
+    }
+  };
+
+  const handleCloudLoad = async (url: string) => {
+    if (!confirm("Load this project? Current unsaved changes will be lost.")) return;
+    setIsCloudLoading(true);
+    try {
+        const res = await fetch(url);
+        const data = await res.json();
+        setProject(data);
+        setActiveFileIndex(0);
+        setShowStorageModal(false);
+    } catch(e) {
+        alert("Failed to load project file.");
+    } finally {
+        setIsCloudLoading(false);
+    }
+  };
+
+  const handleCloudDelete = async (fullPath: string) => {
+    if(!confirm("Delete this backup?")) return;
+    setIsCloudLoading(true);
+    try {
+        await deleteProjectFromStorage(fullPath);
+        await loadCloudFiles();
+    } catch(e) {
+        alert("Delete failed.");
+    } finally {
+        setIsCloudLoading(false);
+    }
+  };
+
   return (
     <div ref={containerRef} className="flex flex-col h-screen bg-slate-950 text-slate-100 overflow-hidden relative">
       
@@ -1342,6 +1410,10 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
             <div className="flex items-center space-x-1 bg-slate-800 rounded-lg p-1 border border-slate-700">
                <button onClick={handleSaveProject} disabled={isSaving} className="p-2 hover:bg-slate-700 rounded text-slate-400 hover:text-white transition-colors" title="Save to Session">
                   {isSaving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
+               </button>
+               
+               <button onClick={handleOpenCloud} className="p-2 hover:bg-slate-700 rounded text-slate-400 hover:text-white transition-colors" title="Cloud Storage (Firebase)">
+                  <Cloud size={16} />
                </button>
                
                {!isReadOnly && (
@@ -1812,6 +1884,65 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
                                       <div><div className="font-bold text-white text-sm">{repo.full_name}</div><div className="text-xs text-slate-400 flex items-center gap-2"><span>{repo.private ? "Private" : "Public"}</span><span>•</span><span>{repo.default_branch}</span></div></div>
                                       <ChevronRight size={16} className="text-slate-500 group-hover:text-white"/>
                                   </button>
+                              ))}
+                          </div>
+                      )}
+                  </div>
+              </div>
+          </div>
+      )}
+
+      {/* STORAGE MODAL */}
+      {showStorageModal && (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
+              <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-xl shadow-2xl p-6 flex flex-col max-h-[80vh] animate-fade-in-up">
+                  <div className="flex justify-between items-center mb-6">
+                      <h3 className="text-xl font-bold text-white flex items-center gap-2"><Cloud size={24} className="text-indigo-400"/> Cloud Projects</h3>
+                      <button onClick={() => setShowStorageModal(false)} className="text-slate-400 hover:text-white"><X size={20}/></button>
+                  </div>
+                  
+                  <button 
+                      onClick={handleCloudSave} 
+                      disabled={isCloudLoading}
+                      className="w-full mb-4 py-3 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white font-bold rounded-xl flex items-center justify-center gap-2 shadow-lg"
+                  >
+                      {isCloudLoading ? <Loader2 size={18} className="animate-spin"/> : <Save size={18}/>}
+                      <span>Save Current Workspace to Cloud</span>
+                  </button>
+                  
+                  <div className="flex-1 overflow-y-auto pr-1">
+                      {isCloudLoading && cloudFiles.length === 0 ? (
+                          <div className="py-10 text-center"><Loader2 className="animate-spin mx-auto text-indigo-400"/></div>
+                      ) : cloudFiles.length === 0 ? (
+                          <div className="py-10 text-center text-slate-500 border border-dashed border-slate-800 rounded-xl">No saved projects found.</div>
+                      ) : (
+                          <div className="space-y-2">
+                              {cloudFiles.map((file) => (
+                                  <div key={file.fullPath} className="bg-slate-800 border border-slate-700 rounded-lg p-3 flex items-center justify-between group hover:border-indigo-500/50 transition-colors">
+                                      <div className="flex-1 min-w-0 mr-3">
+                                          <div className="flex items-center gap-2 mb-1">
+                                              <FileCode size={16} className="text-indigo-400 shrink-0"/>
+                                              <p className="font-bold text-white text-sm truncate">{file.name}</p>
+                                          </div>
+                                          <p className="text-xs text-slate-500 font-mono">{new Date(file.timeCreated).toLocaleString()}</p>
+                                      </div>
+                                      <div className="flex items-center gap-2">
+                                          <button 
+                                              onClick={() => handleCloudLoad(file.url)}
+                                              className="p-1.5 bg-slate-700 hover:bg-indigo-600 text-white rounded transition-colors"
+                                              title="Load Project"
+                                          >
+                                              <DownloadCloud size={14}/>
+                                          </button>
+                                          <button 
+                                              onClick={() => handleCloudDelete(file.fullPath)}
+                                              className="p-1.5 bg-slate-700 hover:bg-red-600 text-slate-300 hover:text-white rounded transition-colors"
+                                              title="Delete Backup"
+                                          >
+                                              <Trash2 size={14}/>
+                                          </button>
+                                      </div>
+                                  </div>
                               ))}
                           </div>
                       )}

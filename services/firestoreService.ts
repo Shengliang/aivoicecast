@@ -221,6 +221,49 @@ export async function denyEditAccess(projectId: string): Promise<void> {
     });
 }
 
+// --- CLOUD STORAGE CODE STUDIO ---
+
+export async function saveProjectToStorage(userId: string, project: CodeProject): Promise<void> {
+  const json = JSON.stringify(project);
+  const blob = new Blob([json], { type: 'application/json' });
+  const sanitizedName = project.name.replace(/[^a-zA-Z0-9-_]/g, '_');
+  const filename = `${sanitizedName}_${Date.now()}.json`;
+  const ref = storage.ref(`codestudio/${userId}/${filename}`);
+  
+  await ref.put(blob, {
+    contentType: 'application/json',
+    customMetadata: {
+      originalName: project.name,
+      timestamp: String(Date.now())
+    }
+  });
+}
+
+export async function getProjectsFromStorage(userId: string): Promise<any[]> {
+  const listRef = storage.ref(`codestudio/${userId}`);
+  const res = await listRef.listAll();
+  
+  const files = await Promise.all(res.items.map(async (itemRef) => {
+    const url = await itemRef.getDownloadURL();
+    const meta = await itemRef.getMetadata();
+    return {
+      name: meta.customMetadata?.originalName || itemRef.name,
+      fileName: itemRef.name,
+      fullPath: itemRef.fullPath,
+      url,
+      timeCreated: meta.timeCreated,
+      size: meta.size
+    };
+  }));
+  
+  return files.sort((a, b) => new Date(b.timeCreated).getTime() - new Date(a.timeCreated).getTime());
+}
+
+export async function deleteProjectFromStorage(fullPath: string): Promise<void> {
+  const ref = storage.ref(fullPath);
+  await ref.delete();
+}
+
 export function subscribeToWhiteboard(boardId: string, onUpdate: (elements: any[]) => void): () => void {
   return db.collection('whiteboards').doc(boardId).onSnapshot((doc) => {
     if (doc.exists) {
