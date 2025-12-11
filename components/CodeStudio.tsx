@@ -33,7 +33,9 @@ const LANGUAGES = [
 
 const PRESET_REPOS = [
     { label: 'Default: Code Studio', path: 'Shengliang/codestudio' },
-    { label: 'Linux Kernel', path: 'torvalds/linux' }
+    { label: 'Linux Kernel', path: 'torvalds/linux' },
+    { label: 'React', path: 'facebook/react' },
+    { label: 'TensorFlow', path: 'tensorflow/tensorflow' }
 ];
 
 // Helper: Get Language
@@ -230,17 +232,16 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
   // Modals & UI
   const [showLanguageDropdown, setShowLanguageDropdown] = useState(false);
   const [showExamplesDropdown, setShowExamplesDropdown] = useState(false);
+  const [showImportModal, setShowImportModal] = useState(false);
+  const [publicRepoPath, setPublicRepoPath] = useState('');
+  const [isLoadingPublic, setIsLoadingPublic] = useState(false);
+  const [githubToken, setGithubToken] = useState<string | null>(null);
   
   const activeFile = project.files[activeFileIndex];
-  
-  const fileTree = React.useMemo(() => buildFileTree(project.files, expandedFolders), [project.files, expandedFolders]);
+  const isOwner = currentUser && (currentUser.uid === project.ownerId || currentUser.email === 'shengliang.song@gmail.com');
+  const isReadOnly = false; // Simplified
 
-  useEffect(() => {
-      // Auto-create "Cloud Files" root folder structure if empty to guide user
-      if (project.files.length === 0) {
-          // Optional: Initialize with README or just leave empty
-      }
-  }, []);
+  const fileTree = React.useMemo(() => buildFileTree(project.files, expandedFolders), [project.files, expandedFolders]);
 
   const handleOpenCloud = async () => {
       if (!currentUser) return alert("Sign in required.");
@@ -263,10 +264,6 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
       try {
           const res = await fetch(url);
           const data = await res.json();
-          // Ensure structure
-          // If this was a git project, it might already have structure. 
-          // If flat, maybe we want to put it in "Cloud Files/"?
-          // For now, load as is.
           setProject(data);
           setActiveFileIndex(0);
           setShowStorageModal(false);
@@ -283,7 +280,6 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
       setIsCloudLoading(true);
       try {
           await saveProjectToStorage(currentUser.uid, project);
-          // Refresh list
           const files = await getProjectsFromStorage(currentUser.uid);
           setCloudFiles(files);
       } catch(e) {
@@ -300,23 +296,9 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
       const timestamp = Date.now();
       const filename = `untitled_${timestamp}.${lang.ext}`;
       
-      // Use selected folder or default to 'Cloud Files' if we want to enforce structure
-      // or just root if selectedFolder is null.
-      // Request: "create a new file within the dir that I selected"
-      
-      let fullPath = filename;
-      if (selectedFolder) {
-          fullPath = `${selectedFolder}/${filename}`;
-      } else {
-          // If no folder selected, default to 'Cloud Files' root if we want "two levels"
-          // Check if we have a GitHub repo loaded
-          if (project.github) {
-              // If github loaded, and we are adding a file, maybe put it in "Cloud Files"
-              // to separate it? Or just root.
-              // Let's create a "Cloud Files" folder for new files if no folder selected
-              fullPath = `Cloud Files/${filename}`;
-          }
-      }
+      // If a folder is selected, create file inside it.
+      // Otherwise, create in root.
+      const fullPath = selectedFolder ? `${selectedFolder}/${filename}` : filename;
 
       const newFile: CodeFile = {
           name: fullPath,
@@ -326,15 +308,12 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
           isModified: true
       };
       
-      // Auto-expand the folder we just added to
       if (selectedFolder) {
           setExpandedFolders(prev => ({ ...prev, [selectedFolder]: true }));
-      } else if (project.github) {
-          setExpandedFolders(prev => ({ ...prev, "Cloud Files": true }));
       }
 
       setProject(prev => ({ ...prev, files: [...prev.files, newFile] }));
-      setActiveFileIndex(project.files.length); // Index of the new file (last)
+      setActiveFileIndex(project.files.length);
       setShowLanguageDropdown(false);
   };
 
@@ -346,6 +325,34 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
       const newFiles = [...project.files];
       newFiles[activeFileIndex] = { ...newFiles[activeFileIndex], content: val, isModified: true };
       setProject({ ...project, files: newFiles });
+  };
+
+  const handleLoadPublicRepo = async (path?: string) => {
+      const targetPath = path || publicRepoPath;
+      if (!targetPath.trim()) return;
+      
+      setIsLoadingPublic(true);
+      try {
+          const [owner, repo] = targetPath.split('/');
+          const info = await fetchPublicRepoInfo(owner, repo);
+          const { files, latestSha } = await fetchRepoContents(null, owner, repo, info.default_branch);
+          setProject({ 
+              id: `gh-${info.id}`, 
+              name: info.full_name, 
+              files, 
+              lastModified: Date.now(), 
+              github: { owner, repo, branch: info.default_branch, sha: latestSha } 
+          });
+          setActiveFileIndex(0);
+          setShowImportModal(false);
+          setShowExamplesDropdown(false);
+          setPublicRepoPath('');
+          setExpandedFolders({});
+      } catch (e: any) { 
+          alert("Failed: " + e.message); 
+      } finally { 
+          setIsLoadingPublic(false); 
+      }
   };
 
   return (
@@ -388,6 +395,29 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
                 >
                      <Cloud size={14} /> <span>Cloud Files</span>
                 </button>
+
+                <div className="relative">
+                    <button onClick={() => setShowExamplesDropdown(!showExamplesDropdown)} className="flex items-center space-x-2 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg text-xs font-bold transition-colors text-slate-300 hover:text-white">
+                        <BookOpen size={14} /> <span>Repositories</span>
+                    </button>
+                    {showExamplesDropdown && (
+                        <>
+                        <div className="fixed inset-0 z-30" onClick={() => setShowExamplesDropdown(false)}></div>
+                        <div className="absolute top-full right-0 mt-2 w-64 bg-slate-900 border border-slate-700 rounded-xl shadow-xl z-40 overflow-hidden py-1">
+                            <div className="px-4 py-2 text-[10px] font-bold text-slate-500 uppercase">Presets</div>
+                            {PRESET_REPOS.map(repo => (
+                                <button key={repo.path} onClick={() => handleLoadPublicRepo(repo.path)} className="w-full text-left px-4 py-2 hover:bg-slate-800 text-xs text-slate-300 hover:text-white flex items-center gap-2">
+                                    <Github size={12} /> {repo.label}
+                                </button>
+                            ))}
+                            <div className="border-t border-slate-800 my-1"></div>
+                            <button onClick={() => { setShowExamplesDropdown(false); setShowImportModal(true); }} className="w-full text-left px-4 py-2 hover:bg-slate-800 text-xs text-slate-300 hover:text-white flex items-center gap-2">
+                                <CloudUpload size={12} /> Clone Repository...
+                            </button>
+                        </div>
+                        </>
+                    )}
+                </div>
             </div>
          </div>
       </header>
@@ -508,6 +538,27 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
                               ))}
                           </div>
                       )}
+                  </div>
+              </div>
+          </div>
+      )}
+
+      {/* Git Import Modal */}
+      {showImportModal && (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
+              <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-lg shadow-2xl p-6">
+                  <div className="flex justify-between items-center mb-6">
+                      <h3 className="text-xl font-bold text-white flex items-center gap-2"><Github size={24} className="text-white"/> Clone Repository</h3>
+                      <button onClick={() => setShowImportModal(false)} className="text-slate-400 hover:text-white"><X size={20}/></button>
+                  </div>
+                  <div className="space-y-6">
+                      <div className="space-y-2">
+                          <label className="text-xs font-bold text-slate-500 uppercase">Public Repository</label>
+                          <div className="flex gap-2">
+                              <input type="text" placeholder="owner/repo" value={publicRepoPath} onChange={e => setPublicRepoPath(e.target.value)} className="flex-1 bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500"/>
+                              <button onClick={() => handleLoadPublicRepo()} disabled={isLoadingPublic || !publicRepoPath.trim()} className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white font-bold rounded-lg text-xs transition-colors border border-slate-700">{isLoadingPublic ? <Loader2 size={14} className="animate-spin"/> : 'Load'}</button>
+                          </div>
+                      </div>
                   </div>
               </div>
           </div>
