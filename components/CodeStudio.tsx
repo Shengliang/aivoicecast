@@ -1,6 +1,6 @@
 
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { ArrowLeft, Save, Folder, File, Code, Plus, Trash2, Loader2, ChevronRight, ChevronDown, X, FileCode, FileType, Coffee, CloudUpload, Github, DownloadCloud, RefreshCw, HardDrive, LogIn, ArrowUp, FolderPlus, Cloud, FolderOpen } from 'lucide-react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { ArrowLeft, Save, Folder, File, Code, Plus, Trash2, Loader2, ChevronRight, ChevronDown, X, FileCode, FileType, Coffee, CloudUpload, Github, DownloadCloud, RefreshCw, HardDrive, LogIn, ArrowUp, FolderPlus, Cloud, FolderOpen, CheckCircle, AlertTriangle, Info } from 'lucide-react';
 import { CodeProject, CodeFile } from '../types';
 import { listCloudDirectory, CloudItem, createCloudFolder, deleteCloudItem, saveProjectToCloud } from '../services/firestoreService';
 import { connectGoogleDrive } from '../services/authService';
@@ -261,6 +261,12 @@ const SimpleEditor = ({ code, onChange }: any) => (
     />
 );
 
+interface NotificationState {
+    id: number;
+    message: string;
+    type: 'success' | 'error' | 'info';
+}
+
 export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) => {
   const [project, setProject] = useState<CodeProject>({ id: 'init', name: 'New Project', files: [], lastModified: Date.now() });
   const [activeFileIndex, setActiveFileIndex] = useState(-1);
@@ -268,6 +274,11 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
   const [expandedFolders, setExpandedFolders] = useState<Record<string, boolean>>({});
   const [loadingFolders, setLoadingFolders] = useState<Record<string, boolean>>({});
   const [selectedFolder, setSelectedFolder] = useState<string | null>(null);
+
+  // Notifications & Modals
+  const [notifications, setNotifications] = useState<NotificationState[]>([]);
+  const [itemToDelete, setItemToDelete] = useState<any | null>(null); // For custom confirm modal
+  const [saveStatus, setSaveStatus] = useState<'saved' | 'saving' | 'modified'>('saved');
 
   // STORAGE TABS
   const [activeTab, setActiveTab] = useState<'github' | 'cloud' | 'drive'>('github');
@@ -295,6 +306,35 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
   
   const activeFile = activeFileIndex >= 0 ? project.files[activeFileIndex] : null;
   const fileTree = useMemo(() => project.github ? buildFileTree(project.files, expandedFolders) : [], [project.files, expandedFolders, project.github]);
+
+  // Helper: Show Notification
+  const showNotification = (message: string, type: 'success' | 'error' | 'info' = 'info') => {
+      const id = Date.now();
+      setNotifications(prev => [...prev, { id, message, type }]);
+      setTimeout(() => setNotifications(prev => prev.filter(n => n.id !== id)), 3000);
+  };
+
+  // --- AUTO-SAVE LOGIC ---
+  useEffect(() => {
+      if (!activeFile || !activeFile.isModified) return;
+
+      setSaveStatus('modified');
+      const timer = setTimeout(async () => {
+          setSaveStatus('saving');
+          try {
+              if (activeTab === 'drive' && driveToken && currentDriveFolderId) {
+                   await saveFilesToDrive([activeFile], true);
+              } else if (activeTab === 'cloud' && currentUser) {
+                   await handleSaveToCloud(true);
+              }
+              setSaveStatus('saved');
+          } catch (e) {
+              setSaveStatus('modified'); // Retry later manually or auto
+          }
+      }, 3000); // 3-second debounce
+
+      return () => clearTimeout(timer);
+  }, [project, activeFile, activeTab]); // Dependencies ensure we catch content changes
 
   // --- TAB HANDLERS ---
 
@@ -351,24 +391,59 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
       try {
           await createCloudFolder(currentCloudPath, name);
           await fetchCloudFiles(currentCloudPath);
+          showNotification("Folder created", "success");
       } catch(e: any) {
-          alert("Failed to create folder: " + e.message);
+          showNotification("Failed to create folder", "error");
       } finally {
           setIsCloudLoading(false);
       }
   };
 
   const handleDeleteCloudItem = async (item: CloudItem) => {
-      if (!confirm(`Delete ${item.isFolder ? 'folder' : 'file'} "${item.name}"?`)) return;
-      setIsCloudLoading(true);
-      try {
-          await deleteCloudItem(item);
-          await fetchCloudFiles(currentCloudPath);
-      } catch(e: any) {
-          alert("Delete failed: " + e.message);
-      } finally {
-          setIsCloudLoading(false);
+      // Direct delete, or use itemToDelete state if we want custom modal.
+      // User requested NO pop-ups. We will use the custom modal pattern.
+      setItemToDelete({ type: 'cloud', item });
+  };
+
+  const confirmDelete = async () => {
+      if (!itemToDelete) return;
+      
+      if (itemToDelete.type === 'cloud') {
+          setIsCloudLoading(true);
+          try {
+              await deleteCloudItem(itemToDelete.item);
+              await fetchCloudFiles(currentCloudPath);
+              showNotification("Item deleted", "success");
+          } catch(e: any) {
+              showNotification("Delete failed", "error");
+          } finally {
+              setIsCloudLoading(false);
+          }
+      } else if (itemToDelete.type === 'drive') {
+          setIsDriveLoading(true);
+          try {
+              await deleteDriveFile(driveToken!, itemToDelete.id);
+              await refreshDrive();
+              showNotification("File deleted", "success");
+          } catch(e: any) {
+              showNotification("Failed to delete", "error");
+          } finally {
+              setIsDriveLoading(false);
+          }
+      } else if (itemToDelete.type === 'node') {
+          // File Explorer Node Delete
+          let newFiles: CodeFile[] = [];
+          if (itemToDelete.node.type === 'folder') {
+              newFiles = project.files.filter(f => !f.name.startsWith(itemToDelete.node.path + '/'));
+          } else {
+              newFiles = project.files.filter((_, i) => i !== itemToDelete.node.index);
+          }
+          setProject(prev => ({ ...prev, files: newFiles }));
+          if (activeFileIndex >= newFiles.length) setActiveFileIndex(Math.max(0, newFiles.length - 1));
+          showNotification("File removed from workspace", "success");
       }
+      
+      setItemToDelete(null);
   };
 
   const handleConnectDrive = async () => {
@@ -377,8 +452,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
           setDriveToken(token);
           await initDrive(token);
       } catch (e: any) {
-          console.error("Drive Auth Failed:", e);
-          alert("Failed to connect Drive: " + e.message);
+          showNotification("Failed to connect Drive", "error");
       }
   };
 
@@ -392,8 +466,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
           const files = await listDriveFiles(token, rootId);
           setDriveFiles(files);
       } catch(e: any) {
-          console.error("Drive Init Failed:", e);
-          alert("Drive Error: " + e.message);
+          showNotification("Drive Error: " + e.message, "error");
       } finally {
           setIsDriveLoading(false);
       }
@@ -427,18 +500,16 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
                   return { ...prev, files: updated };
               });
           } catch(e) {
-              console.error(e);
               const errFiles = [...project.files];
               errFiles[index] = { ...file, content: '// Failed to load content' };
               setProject(prev => ({ ...prev, files: errFiles }));
+              showNotification("Failed to load content", "error");
           }
       }
   };
 
   const handleLoadCloudFile = async (item: CloudItem) => {
       if (!item.url) return;
-      
-      if (!confirm(`Import "${item.name}"?`)) return;
       
       setIsCloudLoading(true);
       try {
@@ -447,21 +518,24 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
           
           const text = await res.text();
           
+          // Try parse as project
           try {
               const data = JSON.parse(text);
               if (data.files && (Array.isArray(data.files) || typeof data.files === 'object')) {
-                  if(confirm("This is a full Project Backup. Replace current workspace?")) {
-                      let files: CodeFile[] = [];
-                      if (Array.isArray(data.files)) files = data.files;
-                      else if (data.files) files = Object.values(data.files);
-                      
-                      setProject({ ...data, files });
-                      setActiveFileIndex(0);
-                      return;
-                  }
+                  // If it looks like a project backup, we might prompt user or just load it
+                  // For "no pop-up" rule, we'll just load it as a new project
+                  let files: CodeFile[] = [];
+                  if (Array.isArray(data.files)) files = data.files;
+                  else if (data.files) files = Object.values(data.files);
+                  
+                  setProject({ ...data, files });
+                  setActiveFileIndex(0);
+                  showNotification("Project loaded", "success");
+                  return;
               }
           } catch(e) {}
 
+          // Load as single file
           const newFile: CodeFile = {
               name: item.name,
               language: getLanguageFromFilename(item.name) as any,
@@ -470,11 +544,10 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
               isModified: true
           };
           setProject(prev => ({ ...prev, files: [...prev.files, newFile] }));
-          setActiveFileIndex(project.files.length);
+          setActiveFileIndex(project.files.length); // Should point to new file index (length before add + 1 - 1)
 
       } catch(e: any) {
-          console.error("Cloud Load Error:", e);
-          alert("Failed to load file: " + e.message);
+          showNotification("Failed to load file", "error");
       } finally {
           setIsCloudLoading(false);
       }
@@ -523,8 +596,9 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
       try {
           await createDriveFolder(driveToken, currentDriveFolderId, name);
           await refreshDrive();
+          showNotification("Folder created", "success");
       } catch (e: any) {
-          alert("Failed to create folder: " + e.message);
+          showNotification("Failed to create folder", "error");
       } finally {
           setIsDriveLoading(false);
       }
@@ -532,24 +606,22 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
 
   const handleLoadDriveFile = async (fileId: string, filename: string) => {
       if (!driveToken) return;
-      if (!confirm(`Import "${filename}"?`)) return;
       
       setIsDriveLoading(true);
       try {
           const text = await readDriveFile(driveToken, fileId);
           const existingIdx = project.files.findIndex(f => f.name === filename);
           if (existingIdx >= 0) {
-              if (confirm(`File "${filename}" is already open. Overwrite with Drive version?`)) {
-                  const updatedFiles = [...project.files];
-                  updatedFiles[existingIdx] = {
-                      ...updatedFiles[existingIdx],
-                      content: text,
-                      loaded: true,
-                      isModified: false
-                  };
-                  setProject(prev => ({ ...prev, files: updatedFiles }));
-                  setActiveFileIndex(existingIdx);
-              }
+              const updatedFiles = [...project.files];
+              updatedFiles[existingIdx] = {
+                  ...updatedFiles[existingIdx],
+                  content: text,
+                  loaded: true,
+                  isModified: false
+              };
+              setProject(prev => ({ ...prev, files: updatedFiles }));
+              setActiveFileIndex(existingIdx);
+              showNotification("File reloaded", "success");
           } else {
               const newFile: CodeFile = {
                   name: filename,
@@ -560,18 +632,18 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
               };
               setProject(prev => ({ ...prev, files: [...prev.files, newFile] }));
               setActiveFileIndex(project.files.length);
+              showNotification("File opened", "success");
           }
       } catch(e: any) {
-          console.error("Drive Load Error:", e);
-          alert("Failed to read Drive file: " + e.message);
+          showNotification("Failed to read Drive file", "error");
       } finally {
           setIsDriveLoading(false);
       }
   };
 
-  const handleSaveToCloud = async () => {
+  const handleSaveToCloud = async (silent = false) => {
       if (!currentUser) return;
-      setIsCloudLoading(true);
+      if (!silent) setIsCloudLoading(true);
       try {
           const path = currentCloudPath || `codestudio/${currentUser.uid}`;
           const json = JSON.stringify(project);
@@ -580,21 +652,27 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
           
           await saveProjectToCloud(path, filename, json, project.name);
           await fetchCloudFiles(path);
-          alert("Saved to Cloud Storage!");
+          
+          // Clear modified flags
+          setProject(prev => ({
+              ...prev,
+              files: prev.files.map(f => ({ ...f, isModified: false }))
+          }));
+          
+          if(!silent) showNotification("Saved to Cloud Storage!", "success");
       } catch(e: any) {
-          console.error("Cloud Save Error:", e);
-          alert("Save failed: " + e.message);
+          showNotification("Save failed: " + e.message, "error");
       } finally {
-          setIsCloudLoading(false);
+          if (!silent) setIsCloudLoading(false);
       }
   };
 
-  const saveFilesToDrive = async (filesToSave: CodeFile[]) => {
+  const saveFilesToDrive = async (filesToSave: CodeFile[], silent = false) => {
       if (!driveToken || !currentDriveFolderId) {
-          alert("Please connect to Google Drive first.");
+          showNotification("Please connect to Google Drive first.", "error");
           return;
       }
-      setIsDriveLoading(true);
+      if (!silent) setIsDriveLoading(true);
       try {
           const savedNames: string[] = [];
           for (const file of filesToSave) {
@@ -608,11 +686,11 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
               files: prev.files.map(f => savedNames.includes(f.name) ? { ...f, isModified: false } : f)
           }));
           await refreshDrive();
+          if(!silent) showNotification("Saved to Drive", "success");
       } catch(e: any) {
-          console.error("Drive Save Error:", e);
-          alert("Drive save failed: " + e.message);
+          showNotification("Drive save failed", "error");
       } finally {
-          setIsDriveLoading(false);
+          if (!silent) setIsDriveLoading(false);
       }
   };
 
@@ -629,17 +707,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
 
   const handleDeleteDriveFile = async (fileId: string) => {
       if (!driveToken) return;
-      if (!confirm("Are you sure you want to delete this item from Google Drive?")) return;
-      setIsDriveLoading(true);
-      try {
-          await deleteDriveFile(driveToken, fileId);
-          await refreshDrive();
-      } catch(e: any) {
-          console.error("Drive Delete Failed:", e);
-          alert("Failed to delete: " + e.message);
-      } finally {
-          setIsDriveLoading(false);
-      }
+      setItemToDelete({ type: 'drive', id: fileId });
   };
 
   const handleGeneralSave = () => {
@@ -651,9 +719,9 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
           if (driveToken) {
               handleSaveToDrive(); 
           } else if (currentUser) {
-              if (confirm("Save to Cloud Storage?")) handleSaveToCloud();
+              handleSaveToCloud();
           } else {
-              alert("Sign in or Connect Drive to save your project.");
+              showNotification("Sign in or Connect Drive to save.", "info");
           }
       }
   };
@@ -672,15 +740,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
   };
 
   const handleDeleteNode = async (node: FileNode) => {
-      if (!confirm(`Delete ${node.type === 'folder' ? 'folder and its contents' : 'file'} "${node.name}" from workspace?`)) return;
-      let newFiles: CodeFile[] = [];
-      if (node.type === 'folder') {
-          newFiles = project.files.filter(f => !f.name.startsWith(node.path + '/'));
-      } else {
-          newFiles = project.files.filter((_, i) => i !== node.index);
-      }
-      setProject(prev => ({ ...prev, files: newFiles }));
-      if (activeFileIndex >= newFiles.length) setActiveFileIndex(Math.max(0, newFiles.length - 1));
+      setItemToDelete({ type: 'node', node });
   };
 
   const handleAddFile = (langId: string) => {
@@ -737,30 +797,43 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
           setPublicRepoPath('');
           setExpandedFolders({});
           setActiveTab('github'); 
+          showNotification("Repository cloned", "success");
       } catch (e: any) { 
-          alert("Failed: " + e.message); 
+          showNotification("Failed: " + e.message, "error");
       } finally { 
           setIsLoadingPublic(false); 
       }
   };
 
-  const handleCloseFile = (index: number, e: React.MouseEvent) => {
-      e.stopPropagation();
-      const file = project.files[index];
-      if (file.isModified) {
-          if (!confirm(`Close ${file.name} without saving changes?`)) return;
-      }
-      const newFiles = project.files.filter((_, i) => i !== index);
-      setProject(prev => ({ ...prev, files: newFiles }));
-      if (activeFileIndex === index) {
-          setActiveFileIndex(newFiles.length > 0 ? Math.max(0, index - 1) : -1);
-      } else if (activeFileIndex > index) {
-          setActiveFileIndex(activeFileIndex - 1);
-      }
-  };
-
   return (
-    <div className="flex flex-col h-screen bg-slate-950 text-slate-100 overflow-hidden">
+    <div className="flex flex-col h-screen bg-slate-950 text-slate-100 overflow-hidden relative">
+      
+      {/* Toast Notifications */}
+      <div className="absolute top-4 left-1/2 transform -translate-x-1/2 z-50 flex flex-col gap-2 pointer-events-none">
+          {notifications.map(n => (
+              <div key={n.id} className={`flex items-center gap-2 px-4 py-2 rounded-full shadow-xl text-sm font-bold animate-fade-in-up ${n.type === 'error' ? 'bg-red-600 text-white' : n.type === 'success' ? 'bg-emerald-600 text-white' : 'bg-slate-800 text-slate-200 border border-slate-700'}`}>
+                  {n.type === 'success' ? <CheckCircle size={14}/> : n.type === 'error' ? <AlertTriangle size={14}/> : <Info size={14}/>}
+                  <span>{n.message}</span>
+              </div>
+          ))}
+      </div>
+
+      {/* Confirmation Modal */}
+      {itemToDelete && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+              <div className="bg-slate-900 border border-slate-700 rounded-xl p-6 max-w-sm w-full shadow-2xl animate-fade-in-up">
+                  <h3 className="text-lg font-bold text-white mb-2">Confirm Delete</h3>
+                  <p className="text-slate-400 text-sm mb-6">Are you sure you want to delete this item? This action cannot be undone.</p>
+                  <div className="flex justify-end gap-3">
+                      <button onClick={() => setItemToDelete(null)} className="px-4 py-2 text-slate-300 hover:text-white hover:bg-slate-800 rounded-lg text-sm font-bold">Cancel</button>
+                      <button onClick={confirmDelete} className="px-4 py-2 bg-red-600 hover:bg-red-500 text-white rounded-lg text-sm font-bold flex items-center gap-2">
+                          <Trash2 size={14}/> Delete
+                      </button>
+                  </div>
+              </div>
+          </div>
+      )}
+
       <header className="h-14 bg-slate-900 border-b border-slate-800 flex items-center justify-between px-4 shrink-0 z-20">
          <div className="flex items-center space-x-4">
             <button onClick={onBack} className="p-2 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white transition-colors">
@@ -975,31 +1048,23 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
           </div>
 
           <div className="flex-1 bg-slate-950 flex flex-col min-w-0 border-l border-slate-800">
-              <div className="flex bg-slate-900 border-b border-slate-800 overflow-x-auto scrollbar-hide">
-                  {project.files.map((file, idx) => {
-                      if(file.isDirectory) return null;
-                      const isActive = idx === activeFileIndex;
-                      return (
-                          <div 
-                              key={idx}
-                              onClick={() => setActiveFileIndex(idx)}
-                              className={`flex items-center gap-2 px-3 py-2 text-xs cursor-pointer border-r border-slate-800 min-w-[120px] max-w-[200px] group ${isActive ? 'bg-slate-800 text-white border-t-2 border-t-indigo-500' : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'}`}
-                          >
-                              <FileIcon filename={file.name} />
-                              <span className="truncate flex-1" title={file.name}>{file.name.split('/').pop()}</span>
-                              {file.isModified && <div className="w-2 h-2 rounded-full bg-yellow-500"></div>}
-                              <button onClick={(e) => handleCloseFile(idx, e)} className="opacity-0 group-hover:opacity-100 hover:bg-slate-700 rounded p-0.5">
-                                  <X size={12} />
-                              </button>
-                          </div>
-                      );
-                  })}
-              </div>
-
-              {activeFile && (
-                  <div className="bg-slate-900 border-b border-slate-800 px-4 py-1 flex items-center gap-2 text-xs text-slate-500">
-                      <span>{activeFile.name}</span>
-                      {activeFile.isModified && <span className="text-yellow-500">(Unsaved)</span>}
+              {/* Single File Header */}
+              {activeFile ? (
+                  <div className="bg-slate-900 border-b border-slate-800 px-4 py-2 flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                          <FileIcon filename={activeFile.name} />
+                          <span className="text-sm font-bold text-white">{activeFile.name}</span>
+                          {activeFile.isModified && <span className="w-2 h-2 rounded-full bg-yellow-500" title="Unsaved changes"></span>}
+                      </div>
+                      <div className="flex items-center gap-3">
+                          <span className={`text-xs font-mono ${saveStatus === 'saved' ? 'text-emerald-400' : saveStatus === 'saving' ? 'text-indigo-400 animate-pulse' : 'text-slate-500'}`}>
+                              {saveStatus === 'saved' ? 'Saved' : saveStatus === 'saving' ? 'Auto-saving...' : 'Modified'}
+                          </span>
+                      </div>
+                  </div>
+              ) : (
+                  <div className="bg-slate-900 border-b border-slate-800 px-4 py-2 text-xs text-slate-500">
+                      No file selected
                   </div>
               )}
               
