@@ -118,6 +118,7 @@ export interface UserProfile {
   lastLogin?: any;
   subscriptionTier?: SubscriptionTier;
   subscriptionStatus?: 'active' | 'past_due' | 'canceled';
+  defaultRepoUrl?: string; // User preferred git repo
 }
 
 export interface Invitation {

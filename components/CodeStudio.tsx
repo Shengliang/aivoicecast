@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { GoogleGenAI, FunctionDeclaration, Type } from '@google/genai';
 import { ArrowLeft, Save, Folder, File, Code, Plus, Trash2, Loader2, ChevronRight, ChevronDown, X, MessageSquare, FileCode, FileJson, FileType, Search, Coffee, Hash, CloudUpload, Edit3, BookOpen, Bot, Send, Maximize2, Minimize2, GripVertical, UserCheck, AlertTriangle, Archive, Sparkles, Video, Mic, CheckCircle, Monitor, FileText, Eye, Github, GitBranch, GitCommit, FolderOpen, RefreshCw, GraduationCap, DownloadCloud, Terminal, Undo2, Check, Share2, Copy, Lock, Link, Image as ImageIcon, Users, UserPlus, ShieldAlert, Crown, Bug, ChevronUp, Zap, Expand, Shrink, Edit2, History } from 'lucide-react';
@@ -62,89 +61,11 @@ const LANGUAGES = [
     }
 ];
 
-const EXAMPLE_PROJECTS: Record<string, CodeProject> = {
-  is_bst: {
-    id: 'proj-is-bst',
-    name: 'Example: Validate BST (C++23 Template)',
-    lastModified: Date.now(),
-    files: [
-      {
-        name: 'validate_bst.cpp',
-        language: 'c++',
-        content: `#include <iostream>
-#include <memory>
-#include <stack>
-#include <limits>
-#include <concepts>
-
-// C++20 Concept to ensure value type is ordered
-template<typename T>
-concept Ordered = requires(T a, T b) {
-    { a < b } -> std::convertible_to<bool>;
-    { a > b } -> std::convertible_to<bool>;
-};
-
-// C++23 Style Template Node with Smart Pointers
-template<Ordered T>
-struct TreeNode {
-    T val;
-    // Using std::unique_ptr for automatic memory management (RAII)
-    // No manual delete needed. Prevents memory leaks.
-    std::unique_ptr<TreeNode<T>> left;
-    std::unique_ptr<TreeNode<T>> right;
-
-    TreeNode(T x) : val(x), left(nullptr), right(nullptr) {}
-};
-
-class Solution {
-public:
-    // Validate if the tree is a Binary Search Tree
-    // Uses raw pointer for traversal to avoid ownership transfer issues
-    template<Ordered T>
-    bool isValidBST(const std::unique_ptr<TreeNode<T>>& root) {
-        std::stack<TreeNode<T>*> stack;
-        TreeNode<T>* curr = root.get();
-        TreeNode<T>* prev = nullptr;
-        
-        while (curr != nullptr || !stack.empty()) {
-            while (curr != nullptr) {
-                stack.push(curr);
-                curr = curr->left.get();
-            }
-            
-            curr = stack.top();
-            stack.pop();
-            
-            // Validation logic: In-order traversal must be strictly increasing
-            if (prev != nullptr && curr->val <= prev->val) {
-                return false;
-            }
-            
-            prev = curr;
-            curr = curr->right.get();
-        }
-        return true;
-    }
-};
-
-int main() {
-    // Modern C++: Use std::make_unique to prevent memory leaks automatically
-    auto root = std::make_unique<TreeNode<int>>(2);
-    root->left = std::make_unique<TreeNode<int>>(1);
-    root->right = std::make_unique<TreeNode<int>>(3);
-
-    Solution s;
-    bool result = s.isValidBST(root);
-    
-    std::cout << "Is Valid BST: " << (result ? "Yes" : "No") << std::endl;
-    
-    // root is automatically destroyed here. No leak.
-    return 0;
-}`
-      }
-    ]
-  },
-};
+const PRESET_REPOS = [
+    { label: 'Default: Code Studio', path: 'Shengliang/codestudio' },
+    { label: 'Linux Kernel', path: 'torvalds/linux' },
+    { label: 'PostgreSQL', path: 'postgres/postgres' }
+];
 
 const getLanguageFromFilename = (filename: string): string => {
     const ext = filename.split('.').pop()?.toLowerCase();
@@ -569,9 +490,7 @@ const updateFileTool: FunctionDeclaration = {
     }
 };
 
-// ... (PlantUMLPreview and GitHistoryView) ...
 const PlantUMLPreview = ({ code }: { code: string }) => {
-    // ... same content ...
     const [encodedCode, setEncodedCode] = useState<string | null>(null);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -711,7 +630,8 @@ const GitHistoryView = ({ owner, repo, branch, token }: { owner: string, repo: s
 };
 
 export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, sessionId, accessKey, onSessionStart }) => {
-  const [project, setProject] = useState<CodeProject>(EXAMPLE_PROJECTS['is_bst']);
+  // Start with empty project (will load default immediately in useEffect)
+  const [project, setProject] = useState<CodeProject>({ id: 'init', name: 'Loading...', files: [], lastModified: Date.now() });
   const [activeFileIndex, setActiveFileIndex] = useState(0);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [expandedFolders, setExpandedFolders] = useState<Record<string, boolean>>({});
@@ -800,6 +720,15 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
   useEffect(() => { activeFileIndexRef.current = activeFileIndex; }, [activeFileIndex]);
   useEffect(() => { projectRef.current = project; }, [project]);
   useEffect(() => { isReadOnlyRef.current = isReadOnly; }, [isReadOnly]);
+
+  // INITIAL LOAD LOGIC
+  useEffect(() => {
+      if (!sessionId) {
+          // If no shared session, load default or custom repo
+          const defaultRepo = currentUser?.defaultRepoUrl || 'Shengliang/codestudio';
+          handleLoadPublicRepo(defaultRepo);
+      }
+  }, [sessionId, currentUser]); // Depends on currentUser to check for custom default
 
   useEffect(() => {
       if (sessionId) {
@@ -1111,6 +1040,10 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
           const [owner, repo] = path.split('/');
           const info = await fetchPublicRepoInfo(owner, repo);
           const { files, latestSha } = await fetchRepoContents(githubToken, owner, repo, info.default_branch);
+          
+          // Defaults to Read Only unless authorized later
+          setIsReadOnly(true); 
+          
           setProject({ id: `gh-${info.id}`, name: info.full_name, files, lastModified: Date.now(), github: { owner, repo, branch: info.default_branch, sha: latestSha } });
           setActiveFileIndex(0); setShowImportModal(false); setPublicRepoPath(''); setExpandedFolders({});
       } catch (e: any) { alert("Failed: " + e.message); } finally { setIsLoadingPublic(false); setIsLoadingFile(false); }
@@ -1121,6 +1054,8 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
       try {
           if (!githubToken) throw new Error("No token");
           const { files, latestSha } = await fetchRepoContents(githubToken, repo.owner.login, repo.name, repo.default_branch);
+          // When selecting own repo via token, default to Write access
+          setIsReadOnly(false); 
           setProject({ id: `gh-${repo.id}`, name: repo.full_name, files, lastModified: Date.now(), github: { owner: repo.owner.login, repo: repo.name, branch: repo.default_branch, sha: latestSha } });
           setActiveFileIndex(0); setShowGithubModal(false); setExpandedFolders({});
       } catch(e: any) { alert("Failed: " + e.message); } finally { setIsLoadingRepos(false); }
@@ -1279,14 +1214,6 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
       
       setActiveFileIndex(updatedFiles.length - 1);
       setShowLanguageDropdown(false);
-  };
-
-  const handleExampleSwitch = (key: string) => {
-      if (EXAMPLE_PROJECTS[key]) {
-          setProject(EXAMPLE_PROJECTS[key]);
-          setActiveFileIndex(0);
-          setShowExamplesDropdown(false);
-      }
   };
 
   const toggleFolder = async (path: string) => {
@@ -1488,21 +1415,29 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
 
             <div className="relative">
                 <button onClick={() => setShowExamplesDropdown(!showExamplesDropdown)} className="flex items-center space-x-2 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-bold transition-colors shadow-lg shadow-indigo-500/20">
-                    <BookOpen size={14} /> <span>Examples</span>
+                    <BookOpen size={14} /> <span>Repositories</span>
                 </button>
                 {showExamplesDropdown && (
                     <>
                     <div className="fixed inset-0 z-30" onClick={() => setShowExamplesDropdown(false)}></div>
                     <div className="absolute top-full right-0 mt-2 w-64 bg-slate-900 border border-slate-700 rounded-xl shadow-xl z-40 overflow-hidden py-1">
-                        <div className="px-4 py-2 text-[10px] font-bold text-slate-500 uppercase">Offline Templates</div>
-                        {Object.keys(EXAMPLE_PROJECTS).map(key => (
-                            <button key={key} onClick={() => handleExampleSwitch(key)} className="w-full text-left px-4 py-2 hover:bg-slate-800 text-xs text-slate-300 hover:text-white">
-                                {EXAMPLE_PROJECTS[key].name}
+                        <div className="px-4 py-2 text-[10px] font-bold text-slate-500 uppercase">Presets</div>
+                        {PRESET_REPOS.map(repo => (
+                            <button key={repo.path} onClick={() => { setShowExamplesDropdown(false); handleLoadPublicRepo(repo.path); }} className="w-full text-left px-4 py-2 hover:bg-slate-800 text-xs text-slate-300 hover:text-white flex items-center gap-2">
+                                <Github size={12} /> {repo.label}
                             </button>
                         ))}
+                        {currentUser?.defaultRepoUrl && (
+                            <>
+                                <div className="border-t border-slate-800 my-1"></div>
+                                <button onClick={() => { setShowExamplesDropdown(false); handleLoadPublicRepo(currentUser.defaultRepoUrl); }} className="w-full text-left px-4 py-2 hover:bg-slate-800 text-xs text-indigo-300 hover:text-white flex items-center gap-2">
+                                    <Github size={12} /> Your Default Repo
+                                </button>
+                            </>
+                        )}
                         <div className="border-t border-slate-800 my-1"></div>
-                        <button onClick={() => { setShowExamplesDropdown(false); handleLoadPublicRepo("Shengliang/codestudio"); }} className="w-full text-left px-4 py-2 hover:bg-slate-800 text-xs text-indigo-300 hover:text-white flex items-center gap-2">
-                            <Github size={12} /> Load Shengliang/codestudio
+                        <button onClick={() => { setShowExamplesDropdown(false); setShowImportModal(true); }} className="w-full text-left px-4 py-2 hover:bg-slate-800 text-xs text-slate-300 hover:text-white flex items-center gap-2">
+                            <CloudUpload size={12} /> Load Custom...
                         </button>
                     </div>
                     </>

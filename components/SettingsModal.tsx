@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { UserProfile } from '../types';
-import { X, User, Shield, CreditCard, LogOut, CheckCircle, AlertTriangle, Bell, Lock, Database, Trash2, Edit2, Save, FileText, ExternalLink, Loader2, DollarSign, HelpCircle, ChevronDown, ChevronUp } from 'lucide-react';
+import { X, User, Shield, CreditCard, LogOut, CheckCircle, AlertTriangle, Bell, Lock, Database, Trash2, Edit2, Save, FileText, ExternalLink, Loader2, DollarSign, HelpCircle, ChevronDown, ChevronUp, Github } from 'lucide-react';
 import { logUserActivity, getBillingHistory, createStripePortalSession } from '../services/firestoreService';
 import { clearAudioCache } from '../services/tts';
 
@@ -19,6 +19,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [activeTab, setActiveTab] = useState<'general' | 'preferences' | 'billing'>('general');
   const [isProcessingPortal, setIsProcessingPortal] = useState(false);
   const [displayName, setDisplayName] = useState(user.displayName);
+  const [defaultRepo, setDefaultRepo] = useState(user.defaultRepoUrl || '');
   const [isEditingName, setIsEditingName] = useState(false);
   const [emailNotifs, setEmailNotifs] = useState(true);
   const [publicProfile, setPublicProfile] = useState(true);
@@ -59,10 +60,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
   const handleSaveProfile = () => {
       if (onUpdateProfile) {
-          onUpdateProfile({ ...user, displayName });
+          onUpdateProfile({ ...user, displayName, defaultRepoUrl: defaultRepo });
       }
       setIsEditingName(false);
-      logUserActivity('update_profile', { displayName });
+      logUserActivity('update_profile', { displayName, defaultRepo });
   };
 
   const handleClearCache = () => {
@@ -129,6 +130,22 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                             <div>
                                 <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Email Address</label>
                                 <div className="bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-slate-400 text-sm flex justify-between items-center"><span>{user.email}</span><span className="text-[10px] bg-slate-800 px-2 py-0.5 rounded text-slate-500">Google Linked</span></div>
+                            </div>
+                            
+                            {/* Default Repo Setting */}
+                            <div>
+                                <label className="block text-xs font-bold text-slate-500 uppercase mb-1 flex items-center gap-1"><Github size={12}/> Default Git Repository</label>
+                                <div className="flex gap-2">
+                                    <input 
+                                        type="text" 
+                                        value={defaultRepo} 
+                                        onChange={(e) => setDefaultRepo(e.target.value)} 
+                                        disabled={!isEditingName} 
+                                        placeholder="Shengliang/codestudio"
+                                        className={`flex-1 bg-slate-950 border ${isEditingName ? 'border-indigo-500' : 'border-slate-800'} rounded-lg px-3 py-2 text-white text-sm focus:outline-none`} 
+                                    />
+                                </div>
+                                <p className="text-[10px] text-slate-500 mt-1">This repository will open automatically when you launch Code Studio.</p>
                             </div>
                         </div>
                     </div>
