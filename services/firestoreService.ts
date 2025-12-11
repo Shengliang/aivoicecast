@@ -7,7 +7,7 @@ import { HANDCRAFTED_CHANNELS } from '../utils/initialData';
 import { SPOTLIGHT_DATA } from '../utils/spotlightContent';
 import { OFFLINE_LECTURES, OFFLINE_CHANNEL_ID } from '../utils/offlineContent';
 
-// ... (keep all existing constants and helper functions) ...
+// ... (Keep existing constants and helper functions) ...
 // --- STRIPE CONFIGURATION ---
 export const STRIPE_PRICE_ID_PROMO = 'price_1ScFfnIVNYhSs7Hca9yHlHwA'; 
 export const STRIPE_PRICE_ID_REGULAR = 'price_1ScGG7IVNYhSs7HchATUVYY4'; 
@@ -29,7 +29,7 @@ function sanitizeData(data: any): any {
   return data;
 }
 
-// ... (keep existing Workplace Chat functions) ...
+// ... (Keep Workplace Chat functions) ...
 export async function sendMessage(channelId: string, text: string, collectionPath?: string, replyTo?: any, attachments?: any[]): Promise<void> {
     const user = auth.currentUser;
     if (!user) throw new Error("Must be logged in");
@@ -109,7 +109,7 @@ export async function getUserDMChannels(): Promise<ChatChannel[]> {
     return snap.docs.map(d => ({ id: d.id, ...d.data() } as ChatChannel));
 }
 
-// ... (keep CodeProject listeners) ...
+// ... (Keep CodeProject listeners) ...
 export function subscribeToCodeProject(projectId: string, onUpdate: (project: CodeProject) => void): () => void {
   return db.collection('code_projects').doc(projectId).onSnapshot((doc) => {
     if (doc.exists) {
@@ -176,70 +176,88 @@ export async function denyEditAccess(projectId: string): Promise<void> {
 
 // --- CLOUD STORAGE CODE STUDIO ---
 
-export async function saveProjectToStorage(userId: string, project: CodeProject): Promise<void> {
-  const json = JSON.stringify(project);
-  const blob = new Blob([json], { type: 'application/json' });
-  const sanitizedName = project.name.replace(/[^a-zA-Z0-9-_]/g, '_');
-  const filename = `${sanitizedName}_${Date.now()}.json`;
-  const ref = storage.ref(`codestudio/${userId}/${filename}`);
-  
-  await ref.put(blob, {
-    contentType: 'application/json',
-    customMetadata: {
-      originalName: project.name,
-      timestamp: String(Date.now())
-    }
-  });
+export interface CloudItem {
+  name: string;
+  fullPath: string;
+  isFolder: boolean;
+  url?: string;
+  size?: number;
+  timeCreated?: string;
 }
 
-export async function getProjectsFromStorage(userId: string): Promise<any[]> {
-  const rootRef = storage.ref(`codestudio/${userId}`);
-  
+export async function listCloudDirectory(path: string): Promise<CloudItem[]> {
+  const ref = storage.ref(path);
   try {
-      const res = await rootRef.listAll();
+      const res = await ref.listAll();
       
-      // If empty, create a default file so the folder exists in listing
-      if (res.items.length === 0) {
-          const dummyRef = rootRef.child('README_EMPTY.md');
-          const dummyContent = new Blob(["# Cloud Storage\nThis folder is empty. Save a project here."], {type: 'text/markdown'});
-          await dummyRef.put(dummyContent);
-          
-          return [{
-              name: 'README_EMPTY.md',
-              fileName: 'README_EMPTY.md',
-              fullPath: dummyRef.fullPath,
-              url: await dummyRef.getDownloadURL(),
-              timeCreated: new Date().toISOString(),
-              size: dummyContent.size
-          }];
-      }
-
-      const files = await Promise.all(res.items.map(async (itemRef) => {
+      const folders: CloudItem[] = res.prefixes.map(p => ({
+        name: p.name,
+        fullPath: p.fullPath,
+        isFolder: true
+      }));
+      
+      const files: CloudItem[] = await Promise.all(res.items.map(async (itemRef) => {
+        if (itemRef.name === '.keep') return null; // Hide placeholder files
+        
         const url = await itemRef.getDownloadURL();
-        const meta = await itemRef.getMetadata();
+        let meta: any = {};
+        try { meta = await itemRef.getMetadata(); } catch(e) {}
+        
         return {
           name: meta.customMetadata?.originalName || itemRef.name,
-          fileName: itemRef.name,
           fullPath: itemRef.fullPath,
+          isFolder: false,
           url,
-          timeCreated: meta.timeCreated,
-          size: meta.size
+          size: meta.size,
+          timeCreated: meta.timeCreated
         };
       }));
       
-      return files.sort((a, b) => new Date(b.timeCreated).getTime() - new Date(a.timeCreated).getTime());
+      return [...folders, ...files.filter(f => f !== null) as CloudItem[]];
   } catch (e) {
       console.error("Storage list failed", e);
       return [];
   }
 }
 
-export async function deleteProjectFromStorage(fullPath: string): Promise<void> {
-  const ref = storage.ref(fullPath);
-  await ref.delete();
+export async function createCloudFolder(path: string, folderName: string): Promise<void> {
+    const ref = storage.ref(`${path}/${folderName}/.keep`);
+    await ref.put(new Blob(["folder placeholder"], {type: 'text/plain'}));
 }
 
-// ... (keep the rest of the file exactly as is: whiteboards, jobs, profiles, etc.)
+export async function deleteCloudItem(item: CloudItem): Promise<void> {
+    if (item.isFolder) {
+        // Recursive delete simulation (client side)
+        const ref = storage.ref(item.fullPath);
+        const res = await ref.listAll();
+        // Delete all files in folder
+        await Promise.all(res.items.map(i => i.delete()));
+        // Recurse for subfolders
+        await Promise.all(res.prefixes.map(p => deleteCloudItem({ name: p.name, fullPath: p.fullPath, isFolder: true })));
+    } else {
+        await storage.ref(item.fullPath).delete();
+    }
+}
+
+export async function saveProjectToCloud(path: string, filename: string, content: string | Blob, originalName?: string): Promise<void> {
+    const ref = storage.ref(`${path}/${filename}`);
+    const metadata = {
+        contentType: typeof content === 'string' ? 'application/json' : undefined,
+        customMetadata: {
+            originalName: originalName || filename,
+            timestamp: String(Date.now())
+        }
+    };
+    
+    if (typeof content === 'string') {
+        const blob = new Blob([content], { type: 'application/json' });
+        await ref.put(blob, metadata);
+    } else {
+        await ref.put(content, metadata);
+    }
+}
+
+// ... (keep whiteboards, jobs, profiles, etc. - rest of file unchanged) ...
 export function subscribeToWhiteboard(boardId: string, onUpdate: (elements: any[]) => void): () => void {
   return db.collection('whiteboards').doc(boardId).onSnapshot((doc) => {
     if (doc.exists) {
