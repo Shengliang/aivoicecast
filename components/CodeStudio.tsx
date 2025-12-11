@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { GoogleGenAI, FunctionDeclaration, Type } from '@google/genai';
-import { ArrowLeft, Save, Folder, File, Code, Plus, Trash2, Loader2, ChevronRight, ChevronDown, X, MessageSquare, FileCode, FileJson, FileType, Search, Coffee, Hash, CloudUpload, Edit3, BookOpen, Bot, Send, Maximize2, Minimize2, GripVertical, UserCheck, AlertTriangle, Archive, Sparkles, Video, Mic, CheckCircle, Monitor, FileText, Eye, Github, GitBranch, GitCommit, FolderOpen, RefreshCw, GraduationCap, DownloadCloud, Terminal, Undo2, Check, Share2, Copy, Lock, Link, Image as ImageIcon, Users, UserPlus, ShieldAlert, Crown, Bug, ChevronUp, Zap, Expand, Shrink } from 'lucide-react';
+import { ArrowLeft, Save, Folder, File, Code, Plus, Trash2, Loader2, ChevronRight, ChevronDown, X, MessageSquare, FileCode, FileJson, FileType, Search, Coffee, Hash, CloudUpload, Edit3, BookOpen, Bot, Send, Maximize2, Minimize2, GripVertical, UserCheck, AlertTriangle, Archive, Sparkles, Video, Mic, CheckCircle, Monitor, FileText, Eye, Github, GitBranch, GitCommit, FolderOpen, RefreshCw, GraduationCap, DownloadCloud, Terminal, Undo2, Check, Share2, Copy, Lock, Link, Image as ImageIcon, Users, UserPlus, ShieldAlert, Crown, Bug, ChevronUp, Zap, Expand, Shrink, Edit2 } from 'lucide-react';
 import { GEMINI_API_KEY } from '../services/private_keys';
 import { CodeProject, CodeFile, ChatMessage, Channel, GithubMetadata, CursorPosition } from '../types';
 import { MarkdownView } from './MarkdownView';
@@ -681,6 +681,10 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
   const [isFullscreen, setIsFullscreen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   
+  // File Rename State
+  const [renamingFileIndex, setRenamingFileIndex] = useState<number | null>(null);
+  const [renameValue, setRenameValue] = useState('');
+  
   // WRITE ACCESS STATE
   const [isReadOnly, setIsReadOnly] = useState(false); 
   const [hasWritePermission, setHasWritePermission] = useState(false); 
@@ -957,6 +961,36 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
       updateFileAtIndex(activeFileIndex, newContent);
   };
 
+  const startRenaming = (index: number, currentName: string) => {
+      if (isReadOnly) return;
+      setRenamingFileIndex(index);
+      setRenameValue(currentName);
+  };
+
+  const confirmRename = () => {
+      if (renamingFileIndex === null) return;
+      
+      const newName = renameValue.trim();
+      const oldName = project.files[renamingFileIndex].name;
+      
+      if (!newName || newName === oldName) {
+          setRenamingFileIndex(null);
+          return;
+      }
+      
+      const updatedFiles = [...project.files];
+      updatedFiles[renamingFileIndex] = { ...updatedFiles[renamingFileIndex], name: newName };
+      
+      if (isSharedSession) {
+          // Delete old entry and add new entry
+          deleteCodeFile(project.id, oldName);
+          updateCodeFile(project.id, updatedFiles[renamingFileIndex]);
+      }
+      
+      setProject({ ...project, files: updatedFiles });
+      setRenamingFileIndex(null);
+  };
+
   const handleScroll = (e: React.UIEvent<HTMLTextAreaElement>) => {
       if (lineNumbersRef.current) lineNumbersRef.current.scrollTop = e.currentTarget.scrollTop;
       const pre = e.currentTarget.previousElementSibling as HTMLPreElement;
@@ -1129,11 +1163,33 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
 
           const response = await ai.models.generateContent({
               model: 'gemini-2.5-flash',
-              contents: conversationText
+              contents: conversationText,
+              config: {
+                  // Enable tools for the chat model
+                  tools: [{ functionDeclarations: [updateFileTool] }]
+              }
           });
 
-          const responseText = response.text || "No response.";
-          setChatMessages(prev => [...prev, { role: 'ai', text: responseText }]);
+          // Check for tool calls first
+          if (response.functionCalls && response.functionCalls.length > 0) {
+              const fc = response.functionCalls[0];
+              if (fc.name === 'update_file') {
+                  const newCode = fc.args.code;
+                  if (typeof newCode === 'string') {
+                      if (isReadOnly) {
+                          setChatMessages(prev => [...prev, { role: 'ai', text: "I cannot edit the file because you are in Read-Only mode." }]);
+                      } else {
+                          updateFileAtIndex(activeFileIndex, newCode);
+                          setChatMessages(prev => [...prev, { role: 'ai', text: `*I have updated the file ${activeFile.name} with the requested changes.*` }]);
+                      }
+                  } else {
+                      setChatMessages(prev => [...prev, { role: 'ai', text: "Error: Invalid code format received from tool." }]);
+                  }
+              }
+          } else {
+              const responseText = response.text || "No response.";
+              setChatMessages(prev => [...prev, { role: 'ai', text: responseText }]);
+          }
       } catch(e: any) {
           setChatMessages(prev => [...prev, { role: 'ai', text: `Error: ${e.message}` }]);
       } finally {
@@ -1358,13 +1414,35 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
                </button>
                {project.files.map((file, idx) => {
                   return (
-                  <div key={idx} onClick={() => setActiveFileIndex(idx)} className={`flex items-center space-x-2 px-4 py-2.5 border-r border-slate-800 cursor-pointer min-w-[120px] max-w-[200px] ${activeFileIndex === idx ? 'bg-slate-950 text-white border-t-2 border-t-indigo-500' : 'bg-slate-900 text-slate-500 hover:bg-slate-800 hover:text-slate-300'}`}>
+                  <div key={idx} onClick={() => setActiveFileIndex(idx)} className={`group relative flex items-center space-x-2 px-4 py-2.5 border-r border-slate-800 cursor-pointer min-w-[140px] max-w-[220px] ${activeFileIndex === idx ? 'bg-slate-950 text-white border-t-2 border-t-indigo-500' : 'bg-slate-900 text-slate-500 hover:bg-slate-800 hover:text-slate-300'}`}>
                      <FileIcon filename={file.name} />
-                     <span className="text-xs font-medium truncate" title={file.name}>{file.name.split('/').pop()}</span>
-                     {activeFileIndex === idx && !isReadOnly && (
-                        <button className="ml-auto text-slate-500 hover:text-red-400" onClick={(e) => { e.stopPropagation(); if (isSharedSession) deleteCodeFile(project.id, file.name); setProject(prev => ({ ...prev, files: prev.files.filter((_, i) => i !== idx) })); }}>
-                           <X size={12} />
-                        </button>
+                     
+                     {renamingFileIndex === idx ? (
+                         <input 
+                            autoFocus
+                            type="text" 
+                            value={renameValue} 
+                            onChange={(e) => setRenameValue(e.target.value)}
+                            onKeyDown={(e) => {
+                                if (e.key === 'Enter') confirmRename();
+                                if (e.key === 'Escape') setRenamingFileIndex(null);
+                            }}
+                            onBlur={confirmRename}
+                            className="bg-slate-800 text-xs text-white outline-none w-full border border-indigo-500 rounded px-1"
+                         />
+                     ) : (
+                         <span className="text-xs font-medium truncate flex-1" title={file.name}>{file.name.split('/').pop()}</span>
+                     )}
+
+                     {!isReadOnly && renamingFileIndex !== idx && (
+                        <div className="flex items-center opacity-0 group-hover:opacity-100 transition-opacity ml-2">
+                            <button className="text-slate-500 hover:text-indigo-400 mr-1" onClick={(e) => { e.stopPropagation(); startRenaming(idx, file.name); }}>
+                               <Edit2 size={10} />
+                            </button>
+                            <button className="text-slate-500 hover:text-red-400" onClick={(e) => { e.stopPropagation(); if (isSharedSession) deleteCodeFile(project.id, file.name); setProject(prev => ({ ...prev, files: prev.files.filter((_, i) => i !== idx) })); }}>
+                               <X size={12} />
+                            </button>
+                        </div>
                      )}
                   </div>
                )})}
