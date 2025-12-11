@@ -572,7 +572,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
               language: getLanguageFromFilename(item.name) as any,
               content: text,
               loaded: true,
-              isModified: true
+              isModified: false
           };
           
           let newIndex = project.files.length;
@@ -590,9 +590,6 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
               }
           });
           
-          // Calculate correct index after state update might be tricky due to closure, 
-          // but relying on effect or simple index search is safe here.
-          // We know if it existed or appended.
           const existingIdx = project.files.findIndex(f => f.name === newFile.name);
           setActiveFileIndex(existingIdx >= 0 ? existingIdx : project.files.length);
           
@@ -706,26 +703,31 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
   const handleSaveToCloud = async (silent = false) => {
       if (!currentUser) return;
       
-      // Avoid auto-saving "New Project" if silent (auto-save loop) to prevent spamming cloud with empty/default projects
-      if (silent && project.name === 'New Project') return;
+      const modifiedFiles = project.files.filter(f => f.isModified);
+      if (modifiedFiles.length === 0) {
+          if (!silent) showNotification("No changes to save.", "info");
+          return;
+      }
 
       if (!silent) setIsCloudLoading(true);
+      
       try {
           const path = currentCloudPath || `codestudio/${currentUser.uid}`;
-          const json = JSON.stringify(project);
           
-          const sanitizedName = project.name.replace(/[^a-zA-Z0-9-_]/g, '_');
-          const filename = `${sanitizedName}.json`;
-          
-          await saveProjectToCloud(path, filename, json, project.name);
-          await fetchCloudFiles(path);
+          await Promise.all(modifiedFiles.map(async (file) => {
+              const mimeType = getMimeTypeFromFilename(file.name);
+              const blob = new Blob([file.content], { type: mimeType });
+              await uploadFileToStorage(`${path}/${file.name}`, blob, { type: 'file' });
+          }));
           
           setProject(prev => ({
               ...prev,
               files: prev.files.map(f => ({ ...f, isModified: false }))
           }));
           
-          if (!silent) showNotification("Saved to Cloud Storage!", "success");
+          await fetchCloudFiles(path);
+          
+          if (!silent) showNotification("Files saved to Cloud Storage!", "success");
       } catch(e: any) {
           showNotification("Save failed: " + e.message, "error");
       } finally {
@@ -803,15 +805,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
           if (driveToken) {
               handleSaveToDrive(); 
           } else if (currentUser) {
-              setModal({
-                  isOpen: true,
-                  title: "Save Project",
-                  message: "Save project snapshot to Cloud Storage?",
-                  onConfirm: () => {
-                      setModal(null);
-                      handleSaveToCloud();
-                  }
-              });
+              handleSaveToCloud();
           } else {
               showNotification("Sign in or Connect Drive to save.", "info");
           }
