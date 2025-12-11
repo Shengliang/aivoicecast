@@ -352,7 +352,8 @@ const generateHighlightedHTML = (code: string, language: string) => {
   const placeholders: string[] = [];
   const addPlaceholder = (htmlFragment: string) => {
     placeholders.push(htmlFragment);
-    return `«PH${placeholders.length - 1}»`;
+    // Use a complex token start '@PH' to prevent it being matched as a variable identifier by subsequent regexes
+    return `«@PH-${placeholders.length - 1}»`;
   };
 
   let processed = escapeHtml(code);
@@ -364,6 +365,8 @@ const generateHighlightedHTML = (code: string, language: string) => {
         return addPlaceholder(`<span class="text-pink-400">${p1}</span>`) + p2 + addPlaceholder(`<span class="text-emerald-300">${p3}</span>`);
     });
     processed = processed.replace(/(#define|#ifdef|#ifndef|#endif|#pragma|#include)/g, match => addPlaceholder(`<span class="text-pink-400">${match}</span>`));
+    
+    // Comments
     processed = processed.replace(/(\/\/.*)/g, match => addPlaceholder(`<span class="text-slate-500 italic">${match}</span>`));
     processed = processed.replace(/(\/\*[\s\S]*?\*\/)/g, match => addPlaceholder(`<span class="text-slate-500 italic">${match}</span>`));
 
@@ -388,9 +391,10 @@ const generateHighlightedHTML = (code: string, language: string) => {
       processed = processed.replace(/\b([a-zA-Z_]\w*)(?=\()/g, match => addPlaceholder(`<span class="text-yellow-200">${match}</span>`));
   }
 
-  placeholders.forEach((ph, i) => {
-    processed = processed.split(`«PH${i}»`).join(ph);
-  });
+  // Restore placeholders in REVERSE order to handle nesting (e.g. string inside comment)
+  for (let i = placeholders.length - 1; i >= 0; i--) {
+    processed = processed.split(`«@PH-${i}»`).join(placeholders[i]);
+  }
 
   return processed;
 };
