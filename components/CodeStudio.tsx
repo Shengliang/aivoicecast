@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { CodeProject, CodeFile } from '../types';
+import { CodeProject, CodeFile, UserProfile } from '../types';
 import { ArrowLeft, Save, Plus, Github, Cloud, HardDrive, Code, X, ChevronRight, ChevronDown, File, Folder, DownloadCloud, Loader2, CheckCircle, AlertTriangle, Info, FolderPlus, FileCode, RefreshCw, LogIn, CloudUpload, Trash2, ArrowUp, Edit2 } from 'lucide-react';
 import { connectGoogleDrive } from '../services/authService';
 import { fetchPublicRepoInfo, fetchRepoContents, fetchFileContent, commitToRepo } from '../services/githubService';
@@ -9,6 +9,7 @@ import { ensureCodeStudioFolder, listDriveFiles, readDriveFile, saveToDrive, del
 interface CodeStudioProps {
   onBack: () => void;
   currentUser: any;
+  userProfile?: UserProfile | null;
   sessionId?: string;
   accessKey?: string;
   onSessionStart?: (id: string) => void;
@@ -101,7 +102,7 @@ const SimpleEditor: React.FC<{ code: string; onChange: (val: string) => void }> 
     );
 };
 
-export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) => {
+export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, userProfile, sessionId, accessKey, onSessionStart }) => {
   const [project, setProject] = useState<CodeProject>({ id: 'init', name: 'New Project', files: [], lastModified: Date.now() });
   const [activeFileIndex, setActiveFileIndex] = useState<number>(-1);
   const [activeTab, setActiveTab] = useState<'github' | 'cloud' | 'drive'>('github');
@@ -144,6 +145,28 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
 
   const [showLanguageDropdown, setShowLanguageDropdown] = useState(false);
   const [saveStatus, setSaveStatus] = useState<'saved' | 'modified' | 'saving'>('saved');
+
+  // Auto-load default repo logic
+  const hasAttemptedAutoLoad = useRef(false);
+
+  useEffect(() => {
+      // Prevent multiple attempts or re-running on every profile update if already handled
+      if (hasAttemptedAutoLoad.current) return;
+      
+      // If user is joining a shared session, do NOT auto-load their personal default repo
+      if (sessionId) {
+          hasAttemptedAutoLoad.current = true;
+          return;
+      }
+
+      // If profile is loaded
+      if (userProfile) {
+          hasAttemptedAutoLoad.current = true;
+          if (userProfile.defaultRepoUrl) {
+              handleLoadPublicRepo(userProfile.defaultRepoUrl);
+          }
+      }
+  }, [userProfile, sessionId]);
 
   // --- Helper Functions ---
 

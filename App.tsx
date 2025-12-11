@@ -621,6 +621,7 @@ const App: React.FC = () => {
             <CodeStudio 
                 onBack={() => { setViewState('directory'); }} 
                 currentUser={currentUser} 
+                userProfile={userProfile}
                 sessionId={sharedSessionId}
                 accessKey={accessKey}
                 onSessionStart={handleSessionStart} // Unified Session Handler
