@@ -141,7 +141,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                         value={defaultRepo} 
                                         onChange={(e) => setDefaultRepo(e.target.value)} 
                                         disabled={!isEditingName} 
-                                        placeholder="Shengliang/codestudio"
+                                        placeholder="owner/repo (e.g. facebook/react)"
                                         className={`flex-1 bg-slate-950 border ${isEditingName ? 'border-indigo-500' : 'border-slate-800'} rounded-lg px-3 py-2 text-white text-sm focus:outline-none`} 
                                     />
                                 </div>
