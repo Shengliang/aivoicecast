@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { CodeProject, CodeFile, UserProfile } from '../types';
 import { ArrowLeft, Save, Plus, Github, Cloud, HardDrive, Code, X, ChevronRight, ChevronDown, File, Folder, DownloadCloud, Loader2, CheckCircle, AlertTriangle, Info, FolderPlus, FileCode, RefreshCw, LogIn, CloudUpload, Trash2, ArrowUp, Edit2 } from 'lucide-react';
 import { connectGoogleDrive } from '../services/authService';
@@ -27,6 +27,11 @@ const LANGUAGES = [
 ];
 
 const PRESET_REPOS = [
+  { label: 'CodeStudio (Demo)', path: 'Shengliang/codestudio' },
+  { label: 'Linux Kernel', path: 'torvalds/linux' },
+  { label: 'PostgreSQL', path: 'postgres/postgres' },
+  { label: 'MySQL Server', path: 'mysql/mysql-server' },
+  { label: 'Redis', path: 'redis/redis' },
   { label: 'React', path: 'facebook/react' },
   { label: 'Vue', path: 'vuejs/core' },
   { label: 'Node.js', path: 'nodejs/node' }
@@ -168,6 +173,18 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
           }
       }
   }, [userProfile, sessionId]);
+
+  // Merge user default with presets
+  const availablePresets = useMemo(() => {
+      const list = [...PRESET_REPOS];
+      if (userProfile?.defaultRepoUrl) {
+          // Check if already in list to avoid duplicates
+          if (!list.some(p => p.path.toLowerCase() === userProfile.defaultRepoUrl?.toLowerCase())) {
+              list.unshift({ label: 'My Default Repo', path: userProfile.defaultRepoUrl });
+          }
+      }
+      return list;
+  }, [userProfile]);
 
   // --- Helper Functions ---
 
@@ -619,16 +636,17 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
                                       No repository loaded.
                                   </div>
                                   <button onClick={() => setShowImportModal(true)} className="w-full py-2 bg-slate-800 border border-slate-700 rounded-lg text-xs font-bold hover:bg-slate-700 text-white flex items-center justify-center gap-2">
-                                      <DownloadCloud size={14} /> Clone Repo
+                                      <DownloadCloud size={14} /> Open Repo
                                   </button>
                                   
                                   <div className="border-t border-slate-800 pt-2">
                                       <p className="text-[10px] text-slate-500 uppercase font-bold mb-2">Presets</p>
-                                      {PRESET_REPOS.map(repo => (
+                                      {availablePresets.slice(0, 5).map(repo => (
                                         <button key={repo.path} onClick={() => handleLoadPublicRepo(repo.path)} className="w-full text-left px-3 py-2 bg-slate-800/50 hover:bg-slate-800 rounded-lg text-xs text-slate-300 mb-1 flex items-center gap-2">
                                             <Github size={12} /> {repo.label}
                                         </button>
                                       ))}
+                                      <button onClick={() => setShowImportModal(true)} className="w-full text-center text-[10px] text-indigo-400 hover:underline mt-2">View All Presets</button>
                                   </div>
                               </div>
                           )}
@@ -788,15 +806,32 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
           <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
               <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-lg shadow-2xl p-6">
                   <div className="flex justify-between items-center mb-6">
-                      <h3 className="text-xl font-bold text-white flex items-center gap-2"><Github size={24} className="text-white"/> Clone Repository</h3>
+                      <h3 className="text-xl font-bold text-white flex items-center gap-2"><Github size={24} className="text-white"/> Open Repository</h3>
                       <button onClick={() => setShowImportModal(false)} className="text-slate-400 hover:text-white"><X size={20}/></button>
                   </div>
                   <div className="space-y-6">
                       <div className="space-y-2">
-                          <label className="text-xs font-bold text-slate-500 uppercase">Public Repository</label>
+                          <label className="text-xs font-bold text-slate-500 uppercase">Select Repository</label>
+                          <select 
+                              onChange={(e) => setPublicRepoPath(e.target.value)}
+                              className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500 mb-2"
+                              value={publicRepoPath}
+                          >
+                              <option value="">-- Choose a Preset --</option>
+                              {availablePresets.map(repo => (
+                                  <option key={repo.path} value={repo.path}>{repo.label} ({repo.path})</option>
+                              ))}
+                          </select>
+
+                          <div className="relative flex items-center py-2">
+                              <div className="flex-grow border-t border-slate-800"></div>
+                              <span className="flex-shrink-0 mx-4 text-slate-500 text-[10px] uppercase font-bold">OR Enter Manually</span>
+                              <div className="flex-grow border-t border-slate-800"></div>
+                          </div>
+
                           <div className="flex gap-2">
                               <input type="text" placeholder="owner/repo" value={publicRepoPath} onChange={e => setPublicRepoPath(e.target.value)} className="flex-1 bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500"/>
-                              <button onClick={() => handleLoadPublicRepo()} disabled={isLoadingPublic || !publicRepoPath.trim()} className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white font-bold rounded-lg text-xs transition-colors border border-slate-700">{isLoadingPublic ? <Loader2 size={14} className="animate-spin"/> : 'Load'}</button>
+                              <button onClick={() => handleLoadPublicRepo()} disabled={isLoadingPublic || !publicRepoPath.trim()} className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-lg text-xs transition-colors shadow-lg disabled:opacity-50">{isLoadingPublic ? <Loader2 size={14} className="animate-spin"/> : 'Load'}</button>
                           </div>
                       </div>
                   </div>
