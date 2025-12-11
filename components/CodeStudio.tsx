@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { ArrowLeft, Save, Folder, File, Code, Plus, Trash2, Loader2, ChevronRight, ChevronDown, X, FileCode, FileType, Coffee, CloudUpload, Github, DownloadCloud, RefreshCw, HardDrive, LogIn, ArrowUp, FolderPlus, Cloud, FolderOpen, CheckCircle, AlertTriangle, Info, Edit2 } from 'lucide-react';
 import { CodeProject, CodeFile } from '../types';
-import { listCloudDirectory, CloudItem, createCloudFolder, deleteCloudItem, saveProjectToCloud } from '../services/firestoreService';
+import { listCloudDirectory, CloudItem, createCloudFolder, deleteCloudItem, saveProjectToCloud, uploadFileToStorage } from '../services/firestoreService';
 import { connectGoogleDrive } from '../services/authService';
 import { fetchRepoContents, fetchPublicRepoInfo, fetchFileContent } from '../services/githubService';
 import { ensureCodeStudioFolder, listDriveFiles, readDriveFile, saveToDrive, deleteDriveFile, createDriveFolder, DriveFile } from '../services/googleDriveService';
@@ -331,6 +331,9 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
   useEffect(() => {
       if (!activeFile || !activeFile.isModified) return;
 
+      // Don't auto-save "New Project" to cloud, prevents duplicate dummy files
+      if (activeTab === 'cloud' && project.name === 'New Project') return;
+
       setSaveStatus('modified');
       const timer = setTimeout(async () => {
           setSaveStatus('saving');
@@ -347,7 +350,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
       }, 3000); // 3-second debounce
 
       return () => clearTimeout(timer);
-  }, [project, activeFile, activeTab]); // Dependencies ensure we catch content changes
+  }, [project, activeFile, activeTab]); 
 
   // --- TAB HANDLERS ---
 
@@ -422,6 +425,36 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
           setIsCloudLoading(false);
       }
   };
+
+  const handleCreateCloudFileClick = () => {
+      setModal({
+          isOpen: true,
+          title: "New Cloud File",
+          hasInput: true,
+          inputPlaceholder: "filename.js",
+          inputValue: "",
+          onConfirm: () => {} 
+      });
+  };
+
+  const submitCloudFileCreate = async (filename: string) => {
+      setModal(null);
+      if (!filename) return;
+      
+      setIsCloudLoading(true);
+      try {
+          const fullPath = `${currentCloudPath}/${filename}`;
+          // Create empty file
+          const blob = new Blob([""], { type: 'text/plain' });
+          await uploadFileToStorage(fullPath, blob, { type: 'file' });
+          await fetchCloudFiles(currentCloudPath);
+          showNotification("File created", "success");
+      } catch (e: any) {
+          showNotification("Failed to create file: " + e.message, "error");
+      } finally {
+          setIsCloudLoading(false);
+      }
+  }
 
   const handleDeleteCloudItem = async (item: CloudItem) => {
       setModal({
@@ -875,6 +908,8 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
           submitCloudFolderCreate(input);
       } else if (modal.title === 'New Drive Folder') {
           submitDriveFolderCreate(input);
+      } else if (modal.title === 'New Cloud File') {
+          submitCloudFileCreate(input);
       }
   };
 
@@ -941,10 +976,10 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
                </button>
 
                <div className="relative">
-                    <button onClick={() => setShowLanguageDropdown(!showLanguageDropdown)} className="flex items-center space-x-2 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-white rounded-lg text-xs font-bold transition-colors border border-slate-700">
+                    <button onClick={() => activeTab === 'cloud' ? handleCreateCloudFileClick() : setShowLanguageDropdown(!showLanguageDropdown)} className="flex items-center space-x-2 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-white rounded-lg text-xs font-bold transition-colors border border-slate-700">
                         <Plus size={14} /> <span>New File</span>
                     </button>
-                    {showLanguageDropdown && (
+                    {showLanguageDropdown && activeTab !== 'cloud' && (
                         <>
                         <div className="fixed inset-0 z-30" onClick={() => setShowLanguageDropdown(false)}></div>
                         <div className="absolute top-full left-0 mt-2 w-40 bg-slate-900 border border-slate-700 rounded-xl shadow-xl z-40 overflow-hidden py-1">
