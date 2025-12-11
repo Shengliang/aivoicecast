@@ -1055,10 +1055,19 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
           const res = (needsGitHubReauth || isGithubLinked) ? await reauthenticateWithGitHub() : await signInWithGitHub();
           if (res.token) {
               setGithubToken(res.token);
-              setShowImportModal(false); setShowGithubModal(true);
-              setIsLoadingRepos(true);
-              setRepos(await fetchUserRepos(res.token));
-              setIsLoadingRepos(false);
+              setShowImportModal(false); 
+              
+              // Only open repo selector if we don't have a project loaded, 
+              // implies we are connecting to load something.
+              // If project is already loaded, assume user just wanted to auth for commit.
+              if (!project.github) {
+                  setShowGithubModal(true);
+                  setIsLoadingRepos(true);
+                  setRepos(await fetchUserRepos(res.token));
+                  setIsLoadingRepos(false);
+              } else {
+                  alert("GitHub Connected Successfully!");
+              }
           }
       } catch(e: any) { alert("GitHub Login Failed: " + e.message); }
   };
@@ -1088,7 +1097,11 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
 
   const handleCommit = async () => {
       if (isReadOnly) return;
-      if (!githubToken) return alert("Sign in with GitHub first.");
+      if (!githubToken) {
+          alert("Please connect your GitHub account to commit changes.");
+          setShowImportModal(true);
+          return;
+      }
       if (!commitMessage.trim() || !project.github) return;
       setIsCommitting(true);
       try {
@@ -1260,13 +1273,17 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
                </button>
                )}
                
-               {project.github && !isReadOnly ? (
-                   <button onClick={() => setShowCommitModal(true)} className="p-2 hover:bg-slate-700 rounded text-emerald-400 hover:text-white transition-colors">
-                       <GitCommit size={16} />
+               {/* ALWAYS Show Import/Connect Button (So users can authenticate) */}
+               {!isReadOnly && (
+                   <button onClick={() => setShowImportModal(true)} className={`p-2 hover:bg-slate-700 rounded transition-colors ${(needsGitHubReauth || isGithubLinked || githubToken) ? 'text-amber-400 hover:text-amber-200' : 'text-slate-400 hover:text-white'}`} title="Manage Repository / Connect GitHub">
+                       {(needsGitHubReauth || isGithubLinked || githubToken) ? <RefreshCw size={16} /> : <Github size={16} />}
                    </button>
-               ) : !isReadOnly && (
-                   <button onClick={() => setShowImportModal(true)} className={`p-2 hover:bg-slate-700 rounded transition-colors ${(needsGitHubReauth || isGithubLinked) ? 'text-amber-400 hover:text-amber-200' : 'text-slate-400 hover:text-white'}`}>
-                       {(needsGitHubReauth || isGithubLinked) ? <RefreshCw size={16} /> : <Github size={16} />}
+               )}
+
+               {/* Commit Button (Only if Repo is loaded) */}
+               {project.github && !isReadOnly && (
+                   <button onClick={() => setShowCommitModal(true)} className="p-2 hover:bg-slate-700 rounded text-emerald-400 hover:text-white transition-colors" title="Commit Changes">
+                       <GitCommit size={16} />
                    </button>
                )}
                
