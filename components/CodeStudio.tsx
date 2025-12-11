@@ -227,12 +227,19 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
       }
   };
 
-  const handleCloseRepo = () => {
-      if (confirm("Close repository? Unsaved changes in the workspace will be lost.")) {
-          setProject({ id: 'init', name: 'New Project', files: [], lastModified: Date.now() });
-          setActiveFileIndex(-1);
-          setExpandedFolders({});
+  // Replaced manual close with Switch & Sync Logic
+  const handleSwitchRepo = async () => {
+      // Check if anything needs saving (GitHub projects or dirty files)
+      if (saveStatus === 'modified' || project.files.some(f => f.isModified)) {
+          showNotification("Syncing changes before switching...", "info");
+          await handleSmartSave();
       }
+      
+      // Reset state to show presets / empty state
+      setProject({ id: 'init', name: 'New Project', files: [], lastModified: Date.now() });
+      setActiveFileIndex(-1);
+      setExpandedFolders({});
+      setPublicRepoPath(''); // Clear any entered path
   };
 
   const handleGitHubFileSelect = async (index: number) => {
@@ -613,11 +620,11 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
                                           </span>
                                       </div>
                                       <button 
-                                          onClick={handleCloseRepo}
-                                          className="p-1.5 hover:bg-red-900/30 text-slate-500 hover:text-red-400 rounded transition-colors"
-                                          title="Close Repository / Change Repo"
+                                          onClick={handleSwitchRepo}
+                                          className="p-1.5 hover:bg-slate-800 text-slate-500 hover:text-white rounded transition-colors"
+                                          title="Switch Repository (Auto-Syncs)"
                                       >
-                                          <X size={14} />
+                                          <ArrowLeft size={14} />
                                       </button>
                                   </div>
                                   {fileTree.map((node, i) => (
