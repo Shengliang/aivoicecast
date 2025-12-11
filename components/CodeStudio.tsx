@@ -703,54 +703,34 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
       }
   };
 
-  const performCloudSave = async (name: string, currentProject: CodeProject) => {
-      setIsCloudLoading(true);
+  const handleSaveToCloud = async (silent = false) => {
+      if (!currentUser) return;
+      
+      // Avoid auto-saving "New Project" if silent (auto-save loop) to prevent spamming cloud with empty/default projects
+      if (silent && project.name === 'New Project') return;
+
+      if (!silent) setIsCloudLoading(true);
       try {
           const path = currentCloudPath || `codestudio/${currentUser.uid}`;
-          const json = JSON.stringify({ ...currentProject, name }); 
+          const json = JSON.stringify(project);
           
-          const sanitizedName = name.replace(/[^a-zA-Z0-9-_]/g, '_');
+          const sanitizedName = project.name.replace(/[^a-zA-Z0-9-_]/g, '_');
           const filename = `${sanitizedName}.json`;
           
-          await saveProjectToCloud(path, filename, json, name);
+          await saveProjectToCloud(path, filename, json, project.name);
           await fetchCloudFiles(path);
           
           setProject(prev => ({
               ...prev,
-              name: name,
               files: prev.files.map(f => ({ ...f, isModified: false }))
           }));
           
-          showNotification("Saved to Cloud Storage!", "success");
+          if (!silent) showNotification("Saved to Cloud Storage!", "success");
       } catch(e: any) {
           showNotification("Save failed: " + e.message, "error");
       } finally {
-          setIsCloudLoading(false);
+          if (!silent) setIsCloudLoading(false);
       }
-  };
-
-  const handleSaveToCloud = async (silent = false) => {
-      if (!currentUser) return;
-      
-      // PREVENT SAVING "New Project" - FORCE RENAME
-      if (project.name === 'New Project') {
-          if (silent) return; // Auto-save silently ignores default projects
-          
-          setModal({
-              isOpen: true,
-              title: "Name Your Project",
-              hasInput: true,
-              inputValue: "",
-              inputPlaceholder: "My Awesome Project",
-              onConfirm: () => {} 
-          });
-          return;
-      }
-
-      if (!silent) setIsCloudLoading(true);
-      
-      // Use helper
-      await performCloudSave(project.name, project);
   };
 
   const saveFilesToDrive = async (filesToSave: CodeFile[], silent = false) => {
@@ -945,11 +925,6 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser }) =
           submitDriveFolderCreate(input);
       } else if (modal.title === 'New Cloud File') {
           submitCloudFileCreate(input);
-      } else if (modal.title === 'Name Your Project' || modal.title === 'Save Project') {
-          setModal(null);
-          if (input && input.trim() !== "") {
-              performCloudSave(input, project);
-          }
       }
   };
 
