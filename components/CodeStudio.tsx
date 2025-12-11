@@ -1,15 +1,16 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { GoogleGenAI, FunctionDeclaration, Type } from '@google/genai';
-import { ArrowLeft, Save, Folder, File, Code, Plus, Trash2, Loader2, ChevronRight, ChevronDown, X, MessageSquare, FileCode, FileJson, FileType, Search, Coffee, Hash, CloudUpload, Edit3, BookOpen, Bot, Send, Maximize2, Minimize2, GripVertical, UserCheck, AlertTriangle, Archive, Sparkles, Video, Mic, CheckCircle, Monitor, FileText, Eye, Github, GitBranch, GitCommit, FolderOpen, RefreshCw, GraduationCap, DownloadCloud, Terminal, Undo2, Check, Share2, Copy, Lock, Link, Image as ImageIcon, Users, UserPlus, ShieldAlert, Crown, Bug, ChevronUp, Zap, Expand, Shrink, Edit2, History, Cloud } from 'lucide-react';
+import { ArrowLeft, Save, Folder, File, Code, Plus, Trash2, Loader2, ChevronRight, ChevronDown, X, MessageSquare, FileCode, FileJson, FileType, Search, Coffee, Hash, CloudUpload, Edit3, BookOpen, Bot, Send, Maximize2, Minimize2, GripVertical, UserCheck, AlertTriangle, Archive, Sparkles, Video, Mic, CheckCircle, Monitor, FileText, Eye, Github, GitBranch, GitCommit, FolderOpen, RefreshCw, GraduationCap, DownloadCloud, Terminal, Undo2, Check, Share2, Copy, Lock, Link, Image as ImageIcon, Users, UserPlus, ShieldAlert, Crown, Bug, ChevronUp, Zap, Expand, Shrink, Edit2, History, Cloud, HardDrive, LogIn } from 'lucide-react';
 import { GEMINI_API_KEY } from '../services/private_keys';
 import { CodeProject, CodeFile, ChatMessage, Channel, GithubMetadata, CursorPosition } from '../types';
 import { MarkdownView } from './MarkdownView';
 import { saveCodeProject, subscribeToCodeProject, updateCodeFile, deleteCodeFile, updateCursor, claimCodeProjectLock, requestEditAccess, grantEditAccess, denyEditAccess, saveProjectToStorage, getProjectsFromStorage, deleteProjectFromStorage } from '../services/firestoreService';
-import { signInWithGitHub, reauthenticateWithGitHub } from '../services/authService';
+import { signInWithGitHub, reauthenticateWithGitHub, connectGoogleDrive } from '../services/authService';
 import { fetchUserRepos, fetchRepoContents, commitToRepo, fetchPublicRepoInfo, fetchFileContent, fetchRepoSubTree, fetchRepoCommits } from '../services/githubService';
 import { LiveSession } from './LiveSession';
 import { encodePlantUML } from '../utils/plantuml';
+import { ensureCodeStudioFolder, listDriveFiles, readDriveFile, saveToDrive, DriveFile } from '../services/googleDriveService';
 
 interface CodeStudioProps {
   onBack: () => void;
@@ -206,7 +207,7 @@ const FileTreeNode: React.FC<{
   );
 };
 
-// Simplified editor for brevity in this response, ideally would be the Full EnhancedEditor
+// Simplified editor
 const SimpleEditor = ({ code, onChange }: any) => (
     <textarea 
         className="w-full h-full bg-slate-950 text-slate-300 font-mono p-4 outline-none resize-none"
@@ -223,51 +224,101 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
   const [expandedFolders, setExpandedFolders] = useState<Record<string, boolean>>({});
   const [loadingFolders, setLoadingFolders] = useState<Record<string, boolean>>({});
   
-  // Selection & Cloud State
+  // Selection
   const [selectedFolder, setSelectedFolder] = useState<string | null>(null);
-  const [showStorageModal, setShowStorageModal] = useState(false);
+
+  // STORAGE TABS
+  const [activeTab, setActiveTab] = useState<'session' | 'github' | 'cloud' | 'drive'>('session');
+  
+  // Cloud (Firebase) State
   const [cloudFiles, setCloudFiles] = useState<any[]>([]);
   const [isCloudLoading, setIsCloudLoading] = useState(false);
 
+  // Drive State
+  const [driveFiles, setDriveFiles] = useState<DriveFile[]>([]);
+  const [isDriveLoading, setIsDriveLoading] = useState(false);
+  const [driveToken, setDriveToken] = useState<string | null>(null);
+  const [driveFolderId, setDriveFolderId] = useState<string | null>(null);
+
   // Modals & UI
   const [showLanguageDropdown, setShowLanguageDropdown] = useState(false);
-  const [showExamplesDropdown, setShowExamplesDropdown] = useState(false);
-  const [showImportModal, setShowImportModal] = useState(false);
+  const [showImportModal, setShowImportModal] = useState(false); // For Github Clone
   const [publicRepoPath, setPublicRepoPath] = useState('');
   const [isLoadingPublic, setIsLoadingPublic] = useState(false);
-  const [githubToken, setGithubToken] = useState<string | null>(null);
   
   const activeFile = project.files[activeFileIndex];
-  const isOwner = currentUser && (currentUser.uid === project.ownerId || currentUser.email === 'shengliang.song@gmail.com');
-  const isReadOnly = false; // Simplified
-
+  
   const fileTree = React.useMemo(() => buildFileTree(project.files, expandedFolders), [project.files, expandedFolders]);
 
-  const handleOpenCloud = async () => {
-      if (!currentUser) return alert("Sign in required.");
-      setShowStorageModal(true);
+  // --- TAB HANDLERS ---
+
+  useEffect(() => {
+      if (activeTab === 'cloud' && currentUser) {
+          fetchCloudFiles();
+      }
+      if (activeTab === 'drive' && driveToken && !driveFiles.length) {
+          refreshDrive();
+      }
+  }, [activeTab, currentUser]);
+
+  const fetchCloudFiles = async () => {
       setIsCloudLoading(true);
       try {
           const files = await getProjectsFromStorage(currentUser.uid);
           setCloudFiles(files);
       } catch(e) {
           console.error(e);
-          alert("Failed to load cloud files.");
       } finally {
           setIsCloudLoading(false);
       }
   };
 
-  const handleCloudLoad = async (url: string) => {
-      if (!confirm("Load project? Unsaved changes will be lost.")) return;
+  const handleConnectDrive = async () => {
+      try {
+          const token = await connectGoogleDrive();
+          setDriveToken(token);
+          await initDrive(token);
+      } catch (e: any) {
+          alert("Failed to connect Drive: " + e.message);
+      }
+  };
+
+  const initDrive = async (token: string) => {
+      setIsDriveLoading(true);
+      try {
+          const folderId = await ensureCodeStudioFolder(token);
+          setDriveFolderId(folderId);
+          const files = await listDriveFiles(token, folderId);
+          setDriveFiles(files);
+      } catch(e) {
+          console.error(e);
+          alert("Drive Error");
+      } finally {
+          setIsDriveLoading(false);
+      }
+  };
+
+  const refreshDrive = async () => {
+      if (!driveToken || !driveFolderId) return;
+      setIsDriveLoading(true);
+      try {
+          const files = await listDriveFiles(driveToken, driveFolderId);
+          setDriveFiles(files);
+      } catch(e) { console.error(e); } finally { setIsDriveLoading(false); }
+  };
+
+  // --- FILE OPERATIONS ---
+
+  const handleLoadCloudFile = async (url: string) => {
+      if (!confirm("Load project? Unsaved changes in current session will be lost.")) return;
       setIsCloudLoading(true);
       try {
           const res = await fetch(url);
           const data = await res.json();
           setProject(data);
           setActiveFileIndex(0);
-          setShowStorageModal(false);
           setExpandedFolders({});
+          setActiveTab('session'); // Switch back to session view
       } catch(e) {
           alert("Failed to load.");
       } finally {
@@ -275,17 +326,78 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
       }
   };
 
-  const handleCloudSave = async () => {
+  const handleLoadDriveFile = async (fileId: string, filename: string) => {
+      if (!driveToken) return;
+      // For Drive, we likely saved a text/json dump. 
+      // If it's a full project JSON, we replace project. If it's a single file, we add it.
+      // Assuming JSON project for simplicity here as per 'saveToDrive' logic implied later.
+      if (!confirm("Load from Drive? Current session will be overwritten if this is a project file.")) return;
+      
+      setIsDriveLoading(true);
+      try {
+          const text = await readDriveFile(driveToken, fileId);
+          try {
+              const data = JSON.parse(text);
+              if (data.files && Array.isArray(data.files)) {
+                  setProject(data);
+                  setActiveFileIndex(0);
+                  setExpandedFolders({});
+                  setActiveTab('session');
+                  return;
+              }
+          } catch (e) {
+              // Not a project JSON, maybe raw text?
+          }
+          
+          // Fallback: Add as new file
+          const newFile: CodeFile = {
+              name: filename,
+              language: getLanguageFromFilename(filename) as any,
+              content: text,
+              loaded: true,
+              isModified: true
+          };
+          setProject(prev => ({ ...prev, files: [...prev.files, newFile] }));
+          setActiveFileIndex(project.files.length);
+          setActiveTab('session');
+
+      } catch(e) {
+          alert("Failed to read Drive file.");
+      } finally {
+          setIsDriveLoading(false);
+      }
+  };
+
+  const handleSaveToCloud = async () => {
       if (!currentUser) return;
       setIsCloudLoading(true);
       try {
           await saveProjectToStorage(currentUser.uid, project);
-          const files = await getProjectsFromStorage(currentUser.uid);
-          setCloudFiles(files);
+          await fetchCloudFiles(); // Refresh list
+          alert("Saved to Firebase Cloud Storage!");
       } catch(e) {
           alert("Save failed.");
       } finally {
           setIsCloudLoading(false);
+      }
+  };
+
+  const handleSaveToDrive = async () => {
+      if (!driveToken || !driveFolderId) {
+          alert("Connect Drive first.");
+          return;
+      }
+      setIsDriveLoading(true);
+      try {
+          const content = JSON.stringify(project);
+          const filename = `${project.name}_${Date.now()}.json`;
+          await saveToDrive(driveToken, driveFolderId, filename, content);
+          await refreshDrive();
+          alert("Saved to Google Drive!");
+      } catch(e) {
+          alert("Drive save failed.");
+      } finally {
+          setIsDriveLoading(false);
       }
   };
 
@@ -295,9 +407,6 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
       
       const timestamp = Date.now();
       const filename = `untitled_${timestamp}.${lang.ext}`;
-      
-      // If a folder is selected, create file inside it.
-      // Otherwise, create in root.
       const fullPath = selectedFolder ? `${selectedFolder}/${filename}` : filename;
 
       const newFile: CodeFile = {
@@ -308,9 +417,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
           isModified: true
       };
       
-      if (selectedFolder) {
-          setExpandedFolders(prev => ({ ...prev, [selectedFolder]: true }));
-      }
+      if (selectedFolder) setExpandedFolders(prev => ({ ...prev, [selectedFolder]: true }));
 
       setProject(prev => ({ ...prev, files: [...prev.files, newFile] }));
       setActiveFileIndex(project.files.length);
@@ -345,9 +452,9 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
           });
           setActiveFileIndex(0);
           setShowImportModal(false);
-          setShowExamplesDropdown(false);
           setPublicRepoPath('');
           setExpandedFolders({});
+          setActiveTab('session');
       } catch (e: any) { 
           alert("Failed: " + e.message); 
       } finally { 
@@ -389,74 +496,135 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
                     )}
                 </div>
                 
-                <button 
-                     onClick={handleOpenCloud} 
-                     className="flex items-center space-x-2 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg text-xs font-bold transition-colors text-slate-300 hover:text-white"
-                >
-                     <Cloud size={14} /> <span>Cloud Files</span>
-                </button>
-
-                <div className="relative">
-                    <button onClick={() => setShowExamplesDropdown(!showExamplesDropdown)} className="flex items-center space-x-2 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg text-xs font-bold transition-colors text-slate-300 hover:text-white">
-                        <BookOpen size={14} /> <span>Repositories</span>
+                {/* Save Options */}
+                <div className="flex bg-slate-800 rounded-lg p-0.5 border border-slate-700">
+                    <button onClick={handleSaveToCloud} disabled={isCloudLoading} className="px-2 py-1 hover:bg-slate-700 rounded text-slate-400 hover:text-white" title="Save to Firebase Cloud">
+                        <CloudUpload size={16} />
                     </button>
-                    {showExamplesDropdown && (
-                        <>
-                        <div className="fixed inset-0 z-30" onClick={() => setShowExamplesDropdown(false)}></div>
-                        <div className="absolute top-full right-0 mt-2 w-64 bg-slate-900 border border-slate-700 rounded-xl shadow-xl z-40 overflow-hidden py-1">
-                            <div className="px-4 py-2 text-[10px] font-bold text-slate-500 uppercase">Presets</div>
-                            {PRESET_REPOS.map(repo => (
-                                <button key={repo.path} onClick={() => handleLoadPublicRepo(repo.path)} className="w-full text-left px-4 py-2 hover:bg-slate-800 text-xs text-slate-300 hover:text-white flex items-center gap-2">
-                                    <Github size={12} /> {repo.label}
-                                </button>
-                            ))}
-                            <div className="border-t border-slate-800 my-1"></div>
-                            <button onClick={() => { setShowExamplesDropdown(false); setShowImportModal(true); }} className="w-full text-left px-4 py-2 hover:bg-slate-800 text-xs text-slate-300 hover:text-white flex items-center gap-2">
-                                <CloudUpload size={12} /> Clone Repository...
-                            </button>
-                        </div>
-                        </>
-                    )}
+                    <button onClick={handleSaveToDrive} disabled={isDriveLoading || !driveToken} className={`px-2 py-1 hover:bg-slate-700 rounded transition-colors ${driveToken ? 'text-slate-400 hover:text-white' : 'text-slate-600'}`} title="Save to Google Drive">
+                        <HardDrive size={16} />
+                    </button>
                 </div>
             </div>
          </div>
       </header>
 
       <div className="flex-1 flex overflow-hidden">
-          {/* File Explorer Sidebar */}
-          <div className={`${isSidebarOpen ? 'w-64' : 'w-0'} bg-slate-900 border-r border-slate-800 flex flex-col transition-all duration-300`}>
-              <div className="p-3 border-b border-slate-800 text-xs font-bold text-slate-400 uppercase tracking-wider flex justify-between items-center">
-                  <span>Explorer</span>
-                  <div className="flex gap-1">
-                      {selectedFolder && (
-                          <span className="text-[9px] bg-indigo-900 text-indigo-300 px-1 rounded truncate max-w-[80px]" title={selectedFolder}>
-                              {selectedFolder.split('/').pop()}
-                          </span>
-                      )}
-                      <button onClick={() => setSelectedFolder(null)} className="hover:text-white" title="Unselect Folder"><X size={12}/></button>
-                  </div>
+          {/* Sidebar */}
+          <div className={`${isSidebarOpen ? 'w-72' : 'w-0'} bg-slate-900 border-r border-slate-800 flex flex-col transition-all duration-300`}>
+              
+              {/* Sidebar Tabs */}
+              <div className="flex border-b border-slate-800 bg-slate-950/50">
+                  <button onClick={() => setActiveTab('session')} className={`flex-1 py-3 flex justify-center border-b-2 transition-colors ${activeTab === 'session' ? 'border-indigo-500 text-white' : 'border-transparent text-slate-500 hover:text-slate-300'}`} title="Current Session"><FolderOpen size={18}/></button>
+                  <button onClick={() => setActiveTab('github')} className={`flex-1 py-3 flex justify-center border-b-2 transition-colors ${activeTab === 'github' ? 'border-indigo-500 text-white' : 'border-transparent text-slate-500 hover:text-slate-300'}`} title="GitHub"><Github size={18}/></button>
+                  <button onClick={() => setActiveTab('cloud')} className={`flex-1 py-3 flex justify-center border-b-2 transition-colors ${activeTab === 'cloud' ? 'border-indigo-500 text-white' : 'border-transparent text-slate-500 hover:text-slate-300'}`} title="Cloud Storage"><Cloud size={18}/></button>
+                  <button onClick={() => setActiveTab('drive')} className={`flex-1 py-3 flex justify-center border-b-2 transition-colors ${activeTab === 'drive' ? 'border-indigo-500 text-white' : 'border-transparent text-slate-500 hover:text-slate-300'}`} title="Google Drive"><HardDrive size={18}/></button>
               </div>
-              <div className="flex-1 overflow-y-auto p-2 space-y-0.5">
-                  {fileTree.map(node => (
-                      <FileTreeNode 
-                          key={node.path}
-                          node={node}
-                          depth={0}
-                          activeFileIndex={activeFileIndex}
-                          onSelect={setActiveFileIndex}
-                          onFolderSelect={setSelectedFolder}
-                          expandedFolders={expandedFolders}
-                          toggleFolder={toggleFolder}
-                          loadingFolders={loadingFolders}
-                          selectedFolder={selectedFolder}
-                      />
-                  ))}
+
+              {/* Sidebar Content */}
+              <div className="flex-1 overflow-y-auto">
+                  
+                  {/* TAB 1: SESSION */}
+                  {activeTab === 'session' && (
+                      <div className="p-2 space-y-0.5">
+                          {fileTree.map(node => (
+                              <FileTreeNode 
+                                  key={node.path}
+                                  node={node}
+                                  depth={0}
+                                  activeFileIndex={activeFileIndex}
+                                  onSelect={setActiveFileIndex}
+                                  onFolderSelect={setSelectedFolder}
+                                  expandedFolders={expandedFolders}
+                                  toggleFolder={toggleFolder}
+                                  loadingFolders={loadingFolders}
+                                  selectedFolder={selectedFolder}
+                              />
+                          ))}
+                      </div>
+                  )}
+
+                  {/* TAB 2: GITHUB */}
+                  {activeTab === 'github' && (
+                      <div className="p-4 space-y-4">
+                          <button onClick={() => setShowImportModal(true)} className="w-full py-2 bg-slate-800 border border-slate-700 rounded-lg text-xs font-bold hover:bg-slate-700 text-white flex items-center justify-center gap-2">
+                              <DownloadCloud size={14} /> Clone Repo
+                          </button>
+                          
+                          <div className="border-t border-slate-800 pt-2">
+                              <p className="text-[10px] text-slate-500 uppercase font-bold mb-2">Presets</p>
+                              {PRESET_REPOS.map(repo => (
+                                <button key={repo.path} onClick={() => handleLoadPublicRepo(repo.path)} className="w-full text-left px-3 py-2 bg-slate-800/50 hover:bg-slate-800 rounded-lg text-xs text-slate-300 mb-1 flex items-center gap-2">
+                                    <Github size={12} /> {repo.label}
+                                </button>
+                              ))}
+                          </div>
+                      </div>
+                  )}
+
+                  {/* TAB 3: CLOUD */}
+                  {activeTab === 'cloud' && (
+                      <div className="p-2">
+                          {isCloudLoading ? (
+                              <div className="py-8 text-center text-indigo-400"><Loader2 className="animate-spin mx-auto"/></div>
+                          ) : cloudFiles.length === 0 ? (
+                              <div className="p-4 text-center text-slate-500 text-xs italic">No cloud files found.</div>
+                          ) : (
+                              cloudFiles.map((file) => (
+                                  <div key={file.fullPath} className="flex items-center justify-between p-2 hover:bg-slate-800 rounded group">
+                                      <div className="flex items-center gap-2 overflow-hidden">
+                                          <FileCode size={14} className="text-indigo-400 shrink-0"/>
+                                          <span className="text-xs text-slate-300 truncate">{file.name}</span>
+                                      </div>
+                                      <div className="flex gap-1 opacity-0 group-hover:opacity-100">
+                                          <button onClick={() => handleLoadCloudFile(file.url)} className="p-1 hover:bg-indigo-600 rounded text-slate-400 hover:text-white" title="Import"><DownloadCloud size={12}/></button>
+                                          <button onClick={async () => {
+                                              if(!confirm("Delete?")) return;
+                                              setIsCloudLoading(true);
+                                              await deleteProjectFromStorage(file.fullPath);
+                                              await fetchCloudFiles();
+                                          }} className="p-1 hover:bg-red-600 rounded text-slate-400 hover:text-white" title="Delete"><Trash2 size={12}/></button>
+                                      </div>
+                                  </div>
+                              ))
+                          )}
+                      </div>
+                  )}
+
+                  {/* TAB 4: DRIVE */}
+                  {activeTab === 'drive' && (
+                      <div className="p-2">
+                          {!driveToken ? (
+                              <div className="p-4 flex flex-col items-center justify-center space-y-3">
+                                  <HardDrive size={32} className="text-slate-600"/>
+                                  <button onClick={handleConnectDrive} className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-lg flex items-center gap-2">
+                                      <LogIn size={14}/> Connect Drive
+                                  </button>
+                              </div>
+                          ) : isDriveLoading ? (
+                              <div className="py-8 text-center text-indigo-400"><Loader2 className="animate-spin mx-auto"/></div>
+                          ) : driveFiles.length === 0 ? (
+                              <div className="p-4 text-center text-slate-500 text-xs italic">Folder 'codestudio' is empty.</div>
+                          ) : (
+                              driveFiles.map((file) => (
+                                  <div key={file.id} className="flex items-center justify-between p-2 hover:bg-slate-800 rounded group">
+                                      <div className="flex items-center gap-2 overflow-hidden">
+                                          <FileCode size={14} className="text-green-400 shrink-0"/>
+                                          <span className="text-xs text-slate-300 truncate">{file.name}</span>
+                                      </div>
+                                      <div className="opacity-0 group-hover:opacity-100">
+                                          <button onClick={() => handleLoadDriveFile(file.id, file.name)} className="p-1 hover:bg-indigo-600 rounded text-slate-400 hover:text-white" title="Import"><DownloadCloud size={12}/></button>
+                                      </div>
+                                  </div>
+                              ))
+                          )}
+                      </div>
+                  )}
               </div>
           </div>
 
           {/* Editor Area */}
           <div className="flex-1 bg-slate-950 flex flex-col min-w-0">
-              {/* Tab Bar */}
               {activeFile && (
                   <div className="bg-slate-900 border-b border-slate-800 px-4 py-2 flex items-center gap-2">
                       <FileIcon filename={activeFile.name} />
@@ -475,73 +643,6 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
               )}
           </div>
       </div>
-
-      {/* Cloud Storage Modal */}
-      {showStorageModal && (
-          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
-              <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-xl shadow-2xl p-6 flex flex-col max-h-[80vh] animate-fade-in-up">
-                  <div className="flex justify-between items-center mb-6">
-                      <h3 className="text-xl font-bold text-white flex items-center gap-2"><Cloud size={24} className="text-indigo-400"/> Cloud Projects</h3>
-                      <button onClick={() => setShowStorageModal(false)} className="text-slate-400 hover:text-white"><X size={20}/></button>
-                  </div>
-                  
-                  <button 
-                      onClick={handleCloudSave} 
-                      disabled={isCloudLoading}
-                      className="w-full mb-4 py-3 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white font-bold rounded-xl flex items-center justify-center gap-2 shadow-lg"
-                  >
-                      {isCloudLoading ? <Loader2 size={18} className="animate-spin"/> : <Save size={18}/>}
-                      <span>Save Current Workspace to Cloud</span>
-                  </button>
-                  
-                  <div className="flex-1 overflow-y-auto pr-1">
-                      {isCloudLoading && cloudFiles.length === 0 ? (
-                          <div className="py-10 text-center"><Loader2 className="animate-spin mx-auto text-indigo-400"/></div>
-                      ) : cloudFiles.length === 0 ? (
-                          <div className="py-10 text-center text-slate-500 border border-dashed border-slate-800 rounded-xl">No saved projects found.</div>
-                      ) : (
-                          <div className="space-y-2">
-                              {cloudFiles.map((file) => (
-                                  <div key={file.fullPath} className="bg-slate-800 border border-slate-700 rounded-lg p-3 flex items-center justify-between group hover:border-indigo-500/50 transition-colors">
-                                      <div className="flex-1 min-w-0 mr-3">
-                                          <div className="flex items-center gap-2 mb-1">
-                                              <FileCode size={16} className="text-indigo-400 shrink-0"/>
-                                              <p className="font-bold text-white text-sm truncate">{file.name}</p>
-                                          </div>
-                                          <p className="text-xs text-slate-500 font-mono">{new Date(file.timeCreated).toLocaleString()}</p>
-                                      </div>
-                                      <div className="flex items-center gap-2">
-                                          <button 
-                                              onClick={() => handleCloudLoad(file.url)}
-                                              className="p-1.5 bg-slate-700 hover:bg-indigo-600 text-white rounded transition-colors"
-                                              title="Load Project"
-                                          >
-                                              <DownloadCloud size={14}/>
-                                          </button>
-                                          <button 
-                                              onClick={async () => {
-                                                  if(!confirm("Delete backup?")) return;
-                                                  setIsCloudLoading(true);
-                                                  try {
-                                                      await deleteProjectFromStorage(file.fullPath);
-                                                      const f = await getProjectsFromStorage(currentUser.uid);
-                                                      setCloudFiles(f);
-                                                  } catch(e) { alert("Error deleting"); } finally { setIsCloudLoading(false); }
-                                              }}
-                                              className="p-1.5 bg-slate-700 hover:bg-red-600 text-slate-300 hover:text-white rounded transition-colors"
-                                              title="Delete Backup"
-                                          >
-                                              <Trash2 size={14}/>
-                                          </button>
-                                      </div>
-                                  </div>
-                              ))}
-                          </div>
-                      )}
-                  </div>
-              </div>
-          </div>
-      )}
 
       {/* Git Import Modal */}
       {showImportModal && (

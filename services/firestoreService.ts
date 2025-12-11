@@ -1,5 +1,5 @@
 
-// [FORCE-SYNC-v3.44.0] Timestamp: ${new Date().toISOString()}
+// ... existing imports ...
 import { db, auth, storage } from './firebaseConfig';
 import firebase from 'firebase/compat/app';
 import { Channel, Group, UserProfile, Invitation, GeneratedLecture, CommunityDiscussion, Comment, Booking, RecordingSession, TranscriptItem, CodeProject, Attachment, Blog, BlogPost, SubscriptionTier, CodeFile, CursorPosition, RealTimeMessage, ChatChannel, CareerApplication, JobPosting } from '../types';
@@ -7,16 +7,12 @@ import { HANDCRAFTED_CHANNELS } from '../utils/initialData';
 import { SPOTLIGHT_DATA } from '../utils/spotlightContent';
 import { OFFLINE_LECTURES, OFFLINE_CHANNEL_ID } from '../utils/offlineContent';
 
+// ... (keep all existing constants and helper functions) ...
 // --- STRIPE CONFIGURATION ---
-// REPLACE THIS WITH YOUR ACTUAL STRIPE PRICE ID FROM THE DASHBOARD
-
-export const STRIPE_PRICE_ID_PROMO = 'price_1ScFfnIVNYhSs7Hca9yHlHwA'; // $0.01 for 1st month
-export const STRIPE_PRICE_ID_REGULAR = 'price_1ScGG7IVNYhSs7HchATUVYY4'; // $29.00/mo normal
-
-// Set the active price ID here
+export const STRIPE_PRICE_ID_PROMO = 'price_1ScFfnIVNYhSs7Hca9yHlHwA'; 
+export const STRIPE_PRICE_ID_REGULAR = 'price_1ScGG7IVNYhSs7HchATUVYY4'; 
 export const STRIPE_PRICE_ID = STRIPE_PRICE_ID_PROMO; 
 
-// Helper to remove undefined fields which Firestore rejects
 function sanitizeData(data: any): any {
   if (Array.isArray(data)) {
     return data.map(item => sanitizeData(item));
@@ -33,17 +29,11 @@ function sanitizeData(data: any): any {
   return data;
 }
 
-// ... (Rest of existing functions omitted for brevity, keeping all existing imports and code structure) ...
-// Note: In real implementation, the file content is merged. Here I am just appending the new functions.
-
-// --- WORKPLACE CHAT ---
+// ... (keep existing Workplace Chat functions) ...
 export async function sendMessage(channelId: string, text: string, collectionPath?: string, replyTo?: any, attachments?: any[]): Promise<void> {
     const user = auth.currentUser;
     if (!user) throw new Error("Must be logged in");
-
-    // Default collection path is 'chat_channels/{id}/messages', but groups use 'groups/{id}/messages'
     const basePath = collectionPath || `chat_channels/${channelId}/messages`;
-    
     const payload: any = {
         text,
         senderId: user.uid,
@@ -51,18 +41,9 @@ export async function sendMessage(channelId: string, text: string, collectionPat
         senderImage: user.photoURL || '',
         timestamp: firebase.firestore.FieldValue.serverTimestamp()
     };
-
-    if (replyTo) {
-        payload.replyTo = sanitizeData(replyTo);
-    }
-
-    if (attachments && attachments.length > 0) {
-        payload.attachments = sanitizeData(attachments);
-    }
-    
+    if (replyTo) payload.replyTo = sanitizeData(replyTo);
+    if (attachments && attachments.length > 0) payload.attachments = sanitizeData(attachments);
     await db.collection(basePath).add(payload);
-
-    // Update last message on the parent doc if it's a chat_channel
     if (basePath.startsWith('chat_channels')) {
         db.collection('chat_channels').doc(channelId).set({
             lastMessage: {
@@ -77,15 +58,12 @@ export async function sendMessage(channelId: string, text: string, collectionPat
 export async function deleteMessage(channelId: string, messageId: string, collectionPath?: string): Promise<void> {
     const user = auth.currentUser;
     if (!user) throw new Error("Must be logged in");
-
     const basePath = collectionPath || `chat_channels/${channelId}/messages`;
-    // Note: Firestore Rules should enforce ownership check
     await db.collection(basePath).doc(messageId).delete();
 }
 
 export function subscribeToMessages(channelId: string, onUpdate: (msgs: RealTimeMessage[]) => void, collectionPath?: string): () => void {
     const basePath = collectionPath || `chat_channels/${channelId}/messages`;
-    
     return db.collection(basePath)
         .orderBy('timestamp', 'desc')
         .limit(50)
@@ -101,24 +79,17 @@ export function subscribeToMessages(channelId: string, onUpdate: (msgs: RealTime
 export async function createOrGetDMChannel(otherUserId: string): Promise<string> {
     const user = auth.currentUser;
     if (!user) throw new Error("Must be logged in");
-
-    // Check if DM exists
     const snap = await db.collection('chat_channels')
         .where('type', '==', 'dm')
         .where('memberIds', 'array-contains', user.uid)
         .get();
-
     const existing = snap.docs.find(doc => {
         const data = doc.data();
         return data.memberIds.includes(otherUserId);
     });
-
     if (existing) return existing.id;
-
-    // Create new
     const otherUser = await getUserProfile(otherUserId);
     const name = otherUser ? `${user.displayName} & ${otherUser.displayName}` : 'Direct Message';
-
     const docRef = await db.collection('chat_channels').add({
         type: 'dm',
         memberIds: [user.uid, otherUserId],
@@ -131,35 +102,27 @@ export async function createOrGetDMChannel(otherUserId: string): Promise<string>
 export async function getUserDMChannels(): Promise<ChatChannel[]> {
     const user = auth.currentUser;
     if (!user) return [];
-
     const snap = await db.collection('chat_channels')
         .where('type', '==', 'dm')
         .where('memberIds', 'array-contains', user.uid)
         .get();
-
     return snap.docs.map(d => ({ id: d.id, ...d.data() } as ChatChannel));
 }
 
-// ... (Existing collaboration and whiteboard functions) ...
-// --- REAL-TIME COLLABORATION LISTENERS ---
-
+// ... (keep CodeProject listeners) ...
 export function subscribeToCodeProject(projectId: string, onUpdate: (project: CodeProject) => void): () => void {
   return db.collection('code_projects').doc(projectId).onSnapshot((doc) => {
     if (doc.exists) {
       const data = doc.data();
       let files: CodeFile[] = [];
-      
-      // Handle both legacy Array and new Map structure
       if (Array.isArray(data?.files)) {
           files = data.files as CodeFile[];
       } else if (data?.files && typeof data.files === 'object') {
-          // Sort by name or some other criteria to maintain order stability
           files = (Object.values(data.files) as CodeFile[]).sort((a: any, b: any) => {
               if (a.isDirectory !== b.isDirectory) return a.isDirectory ? -1 : 1;
               return a.name.localeCompare(b.name);
           });
       }
-      
       onUpdate({ ...data, id: doc.id, files } as CodeProject);
     }
   });
@@ -168,27 +131,18 @@ export function subscribeToCodeProject(projectId: string, onUpdate: (project: Co
 export async function updateCodeFile(projectId: string, file: CodeFile): Promise<void> {
     const safeFile = sanitizeData(file);
     const path = new firebase.firestore.FieldPath('files', file.name);
-    
-    await db.collection('code_projects').doc(projectId).update(
-        path, safeFile,
-        'lastModified', Date.now()
-    );
+    await db.collection('code_projects').doc(projectId).update(path, safeFile, 'lastModified', Date.now());
 }
 
 export async function deleteCodeFile(projectId: string, fileName: string): Promise<void> {
     const path = new firebase.firestore.FieldPath('files', fileName);
-    await db.collection('code_projects').doc(projectId).update(
-        path, firebase.firestore.FieldValue.delete(),
-        'lastModified', Date.now()
-    );
+    await db.collection('code_projects').doc(projectId).update(path, firebase.firestore.FieldValue.delete(), 'lastModified', Date.now());
 }
 
 export async function updateCursor(projectId: string, cursor: CursorPosition): Promise<void> {
     if (!cursor.userId) return;
     const path = new firebase.firestore.FieldPath('cursors', cursor.userId);
-    await db.collection('code_projects').doc(projectId).update(
-        path, sanitizeData(cursor)
-    );
+    await db.collection('code_projects').doc(projectId).update(path, sanitizeData(cursor));
 }
 
 export async function claimCodeProjectLock(projectId: string, clientId: string, writerName: string): Promise<void> {
@@ -199,7 +153,6 @@ export async function claimCodeProjectLock(projectId: string, clientId: string, 
     });
 }
 
-// Handover Workflow
 export async function requestEditAccess(projectId: string, clientId: string, userName: string): Promise<void> {
     await db.collection('code_projects').doc(projectId).update({
         editRequest: { clientId, userName, timestamp: Date.now() }
@@ -210,7 +163,7 @@ export async function grantEditAccess(projectId: string, requesterClientId: stri
     await db.collection('code_projects').doc(projectId).update({
         activeClientId: requesterClientId,
         activeWriterName: requesterName,
-        editRequest: firebase.firestore.FieldValue.delete(), // Clear request
+        editRequest: firebase.firestore.FieldValue.delete(), 
         lastModified: Date.now()
     });
 }
@@ -240,23 +193,45 @@ export async function saveProjectToStorage(userId: string, project: CodeProject)
 }
 
 export async function getProjectsFromStorage(userId: string): Promise<any[]> {
-  const listRef = storage.ref(`codestudio/${userId}`);
-  const res = await listRef.listAll();
+  const rootRef = storage.ref(`codestudio/${userId}`);
   
-  const files = await Promise.all(res.items.map(async (itemRef) => {
-    const url = await itemRef.getDownloadURL();
-    const meta = await itemRef.getMetadata();
-    return {
-      name: meta.customMetadata?.originalName || itemRef.name,
-      fileName: itemRef.name,
-      fullPath: itemRef.fullPath,
-      url,
-      timeCreated: meta.timeCreated,
-      size: meta.size
-    };
-  }));
-  
-  return files.sort((a, b) => new Date(b.timeCreated).getTime() - new Date(a.timeCreated).getTime());
+  try {
+      const res = await rootRef.listAll();
+      
+      // If empty, create a default file so the folder exists in listing
+      if (res.items.length === 0) {
+          const dummyRef = rootRef.child('README_EMPTY.md');
+          const dummyContent = new Blob(["# Cloud Storage\nThis folder is empty. Save a project here."], {type: 'text/markdown'});
+          await dummyRef.put(dummyContent);
+          
+          return [{
+              name: 'README_EMPTY.md',
+              fileName: 'README_EMPTY.md',
+              fullPath: dummyRef.fullPath,
+              url: await dummyRef.getDownloadURL(),
+              timeCreated: new Date().toISOString(),
+              size: dummyContent.size
+          }];
+      }
+
+      const files = await Promise.all(res.items.map(async (itemRef) => {
+        const url = await itemRef.getDownloadURL();
+        const meta = await itemRef.getMetadata();
+        return {
+          name: meta.customMetadata?.originalName || itemRef.name,
+          fileName: itemRef.name,
+          fullPath: itemRef.fullPath,
+          url,
+          timeCreated: meta.timeCreated,
+          size: meta.size
+        };
+      }));
+      
+      return files.sort((a, b) => new Date(b.timeCreated).getTime() - new Date(a.timeCreated).getTime());
+  } catch (e) {
+      console.error("Storage list failed", e);
+      return [];
+  }
 }
 
 export async function deleteProjectFromStorage(fullPath: string): Promise<void> {
@@ -264,6 +239,7 @@ export async function deleteProjectFromStorage(fullPath: string): Promise<void> 
   await ref.delete();
 }
 
+// ... (keep the rest of the file exactly as is: whiteboards, jobs, profiles, etc.)
 export function subscribeToWhiteboard(boardId: string, onUpdate: (elements: any[]) => void): () => void {
   return db.collection('whiteboards').doc(boardId).onSnapshot((doc) => {
     if (doc.exists) {
@@ -407,9 +383,6 @@ export async function uploadResumeToStorage(userId: string, file: File): Promise
     await ref.put(file, metadata);
     return await ref.getDownloadURL();
 }
-
-// ... (Rest of existing functions for user profile, bookings, etc. must be preserved)
-// I am including them below for completeness if file replacement is full
 
 // --- USER PROFILE ---
 export async function syncUserProfile(user: any): Promise<void> {

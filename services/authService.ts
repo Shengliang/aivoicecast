@@ -25,6 +25,27 @@ export async function signInWithGoogle(): Promise<firebase.User | null> {
   }
 }
 
+export async function connectGoogleDrive(): Promise<string> {
+  const provider = new firebase.auth.GoogleAuthProvider();
+  provider.addScope('https://www.googleapis.com/auth/drive.file');
+  
+  // Re-authenticate or Link to get the credential with the new scope
+  if (!auth.currentUser) throw new Error("Must be logged in");
+
+  try {
+    // We use linkWithPopup or reauthenticateWithPopup to get the OAuth credential
+    // containing the Google Access Token (needed for Drive API, distinct from Firebase ID Token)
+    const result = await auth.currentUser.reauthenticateWithPopup(provider);
+    const credential = result.credential as firebase.auth.OAuthCredential;
+    
+    if (!credential.accessToken) throw new Error("Failed to get Google Access Token");
+    return credential.accessToken;
+  } catch (error) {
+    console.error("Drive connection failed:", error);
+    throw error;
+  }
+}
+
 export async function reauthenticateWithGitHub(): Promise<{ user: firebase.User | null, token: string | null }> {
     const provider = new firebase.auth.GithubAuthProvider();
     provider.addScope('repo');
