@@ -279,6 +279,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
           setDriveToken(token);
           await initDrive(token);
       } catch (e: any) {
+          console.error("Drive Auth Failed:", e);
           alert("Failed to connect Drive: " + e.message);
       }
   };
@@ -290,9 +291,9 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
           setDriveFolderId(folderId);
           const files = await listDriveFiles(token, folderId);
           setDriveFiles(files);
-      } catch(e) {
-          console.error(e);
-          alert("Drive Error");
+      } catch(e: any) {
+          console.error("Drive Init Failed:", e);
+          alert("Drive Error: " + e.message);
       } finally {
           setIsDriveLoading(false);
       }
@@ -314,13 +315,15 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
       setIsCloudLoading(true);
       try {
           const res = await fetch(url);
+          if (!res.ok) throw new Error(`Fetch failed: ${res.status}`);
           const data = await res.json();
           setProject(data);
           setActiveFileIndex(0);
           setExpandedFolders({});
           setActiveTab('session'); // Switch back to session view
-      } catch(e) {
-          alert("Failed to load.");
+      } catch(e: any) {
+          console.error("Cloud Load Error:", e);
+          alert("Failed to load file. (CORS might be blocking direct download). " + e.message);
       } finally {
           setIsCloudLoading(false);
       }
@@ -330,7 +333,6 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
       if (!driveToken) return;
       // For Drive, we likely saved a text/json dump. 
       // If it's a full project JSON, we replace project. If it's a single file, we add it.
-      // Assuming JSON project for simplicity here as per 'saveToDrive' logic implied later.
       if (!confirm("Load from Drive? Current session will be overwritten if this is a project file.")) return;
       
       setIsDriveLoading(true);
@@ -361,8 +363,9 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
           setActiveFileIndex(project.files.length);
           setActiveTab('session');
 
-      } catch(e) {
-          alert("Failed to read Drive file.");
+      } catch(e: any) {
+          console.error("Drive Load Error:", e);
+          alert("Failed to read Drive file: " + e.message);
       } finally {
           setIsDriveLoading(false);
       }
@@ -375,8 +378,9 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
           await saveProjectToStorage(currentUser.uid, project);
           await fetchCloudFiles(); // Refresh list
           alert("Saved to Firebase Cloud Storage!");
-      } catch(e) {
-          alert("Save failed.");
+      } catch(e: any) {
+          console.error("Cloud Save Error:", e);
+          alert("Save failed: " + e.message);
       } finally {
           setIsCloudLoading(false);
       }
@@ -384,7 +388,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
 
   const handleSaveToDrive = async () => {
       if (!driveToken || !driveFolderId) {
-          alert("Connect Drive first.");
+          alert("Please connect to Google Drive first.");
           return;
       }
       setIsDriveLoading(true);
@@ -394,10 +398,29 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
           await saveToDrive(driveToken, driveFolderId, filename, content);
           await refreshDrive();
           alert("Saved to Google Drive!");
-      } catch(e) {
-          alert("Drive save failed.");
+      } catch(e: any) {
+          console.error("Drive Save Error:", e);
+          alert("Drive save failed: " + e.message);
       } finally {
           setIsDriveLoading(false);
+      }
+  };
+
+  const handleGeneralSave = () => {
+      // Logic to decide where to save based on context
+      if (activeTab === 'drive' && driveToken) {
+          handleSaveToDrive();
+      } else if (activeTab === 'cloud' && currentUser) {
+          handleSaveToCloud();
+      } else {
+          // Default logic
+          if (driveToken) {
+              if (confirm("Save to Google Drive?")) handleSaveToDrive();
+          } else if (currentUser) {
+              if (confirm("Save to Cloud Storage?")) handleSaveToCloud();
+          } else {
+              alert("Sign in or Connect Drive to save your project.");
+          }
       }
   };
 
@@ -478,8 +501,12 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
             </div>
             
             <div className="flex items-center space-x-2">
+               <button onClick={handleGeneralSave} className="flex items-center space-x-2 px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold transition-colors shadow-md">
+                   <Save size={14} /> <span>Save Project</span>
+               </button>
+
                <div className="relative">
-                    <button onClick={() => setShowLanguageDropdown(!showLanguageDropdown)} className="flex items-center space-x-2 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-bold transition-colors">
+                    <button onClick={() => setShowLanguageDropdown(!showLanguageDropdown)} className="flex items-center space-x-2 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-white rounded-lg text-xs font-bold transition-colors border border-slate-700">
                         <Plus size={14} /> <span>New File</span>
                     </button>
                     {showLanguageDropdown && (
@@ -494,16 +521,6 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
                         </div>
                         </>
                     )}
-                </div>
-                
-                {/* Save Options */}
-                <div className="flex bg-slate-800 rounded-lg p-0.5 border border-slate-700">
-                    <button onClick={handleSaveToCloud} disabled={isCloudLoading} className="px-2 py-1 hover:bg-slate-700 rounded text-slate-400 hover:text-white" title="Save to Firebase Cloud">
-                        <CloudUpload size={16} />
-                    </button>
-                    <button onClick={handleSaveToDrive} disabled={isDriveLoading || !driveToken} className={`px-2 py-1 hover:bg-slate-700 rounded transition-colors ${driveToken ? 'text-slate-400 hover:text-white' : 'text-slate-600'}`} title="Save to Google Drive">
-                        <HardDrive size={16} />
-                    </button>
                 </div>
             </div>
          </div>
@@ -565,6 +582,10 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
                   {/* TAB 3: CLOUD */}
                   {activeTab === 'cloud' && (
                       <div className="p-2">
+                          <div className="px-2 mb-2 flex justify-between items-center">
+                              <span className="text-xs font-bold text-slate-500 uppercase">Cloud Files</span>
+                              <button onClick={fetchCloudFiles} className="p-1 hover:bg-slate-700 rounded text-slate-400"><RefreshCw size={12}/></button>
+                          </div>
                           {isCloudLoading ? (
                               <div className="py-8 text-center text-indigo-400"><Loader2 className="animate-spin mx-auto"/></div>
                           ) : cloudFiles.length === 0 ? (
@@ -574,7 +595,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
                                   <div key={file.fullPath} className="flex items-center justify-between p-2 hover:bg-slate-800 rounded group">
                                       <div className="flex items-center gap-2 overflow-hidden">
                                           <FileCode size={14} className="text-indigo-400 shrink-0"/>
-                                          <span className="text-xs text-slate-300 truncate">{file.name}</span>
+                                          <span className="text-xs text-slate-300 truncate" title={file.name}>{file.name}</span>
                                       </div>
                                       <div className="flex gap-1 opacity-0 group-hover:opacity-100">
                                           <button onClick={() => handleLoadCloudFile(file.url)} className="p-1 hover:bg-indigo-600 rounded text-slate-400 hover:text-white" title="Import"><DownloadCloud size={12}/></button>
@@ -601,22 +622,30 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
                                       <LogIn size={14}/> Connect Drive
                                   </button>
                               </div>
-                          ) : isDriveLoading ? (
-                              <div className="py-8 text-center text-indigo-400"><Loader2 className="animate-spin mx-auto"/></div>
-                          ) : driveFiles.length === 0 ? (
-                              <div className="p-4 text-center text-slate-500 text-xs italic">Folder 'codestudio' is empty.</div>
                           ) : (
-                              driveFiles.map((file) => (
-                                  <div key={file.id} className="flex items-center justify-between p-2 hover:bg-slate-800 rounded group">
-                                      <div className="flex items-center gap-2 overflow-hidden">
-                                          <FileCode size={14} className="text-green-400 shrink-0"/>
-                                          <span className="text-xs text-slate-300 truncate">{file.name}</span>
-                                      </div>
-                                      <div className="opacity-0 group-hover:opacity-100">
-                                          <button onClick={() => handleLoadDriveFile(file.id, file.name)} className="p-1 hover:bg-indigo-600 rounded text-slate-400 hover:text-white" title="Import"><DownloadCloud size={12}/></button>
-                                      </div>
+                              <>
+                                  <div className="px-2 mb-2 flex justify-between items-center">
+                                      <span className="text-xs font-bold text-slate-500 uppercase">Drive Files</span>
+                                      <button onClick={refreshDrive} className="p-1 hover:bg-slate-700 rounded text-slate-400"><RefreshCw size={12}/></button>
                                   </div>
-                              ))
+                                  {isDriveLoading ? (
+                                      <div className="py-8 text-center text-indigo-400"><Loader2 className="animate-spin mx-auto"/></div>
+                                  ) : driveFiles.length === 0 ? (
+                                      <div className="p-4 text-center text-slate-500 text-xs italic">Folder 'codestudio' is empty.</div>
+                                  ) : (
+                                      driveFiles.map((file) => (
+                                          <div key={file.id} className="flex items-center justify-between p-2 hover:bg-slate-800 rounded group">
+                                              <div className="flex items-center gap-2 overflow-hidden">
+                                                  <FileCode size={14} className="text-green-400 shrink-0"/>
+                                                  <span className="text-xs text-slate-300 truncate" title={file.name}>{file.name}</span>
+                                              </div>
+                                              <div className="opacity-0 group-hover:opacity-100">
+                                                  <button onClick={() => handleLoadDriveFile(file.id, file.name)} className="p-1 hover:bg-indigo-600 rounded text-slate-400 hover:text-white" title="Import"><DownloadCloud size={12}/></button>
+                                              </div>
+                                          </div>
+                                      ))
+                                  )}
+                              </>
                           )}
                       </div>
                   )}

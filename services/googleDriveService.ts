@@ -8,13 +8,19 @@ export interface DriveFile {
 }
 
 export async function ensureCodeStudioFolder(accessToken: string): Promise<string> {
-  // 1. Search for folder
+  // 1. Search for folder (created by this app)
   const query = "mimeType='application/vnd.google-apps.folder' and name='codestudio' and trashed=false";
-  const searchRes = await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}`, {
+  const searchUrl = `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}`;
+  
+  const searchRes = await fetch(searchUrl, {
     headers: { Authorization: `Bearer ${accessToken}` }
   });
   
-  if (!searchRes.ok) throw new Error("Failed to search Drive");
+  if (!searchRes.ok) {
+      const errText = await searchRes.text();
+      throw new Error(`Drive Search Failed (${searchRes.status}): ${errText}`);
+  }
+  
   const data = await searchRes.json();
   
   if (data.files && data.files.length > 0) {
@@ -36,7 +42,11 @@ export async function ensureCodeStudioFolder(accessToken: string): Promise<strin
     body: JSON.stringify(metadata)
   });
   
-  if (!createRes.ok) throw new Error("Failed to create folder");
+  if (!createRes.ok) {
+      const errText = await createRes.text();
+      throw new Error(`Drive Folder Create Failed (${createRes.status}): ${errText}`);
+  }
+  
   const folder = await createRes.json();
   return folder.id;
 }
@@ -47,7 +57,10 @@ export async function listDriveFiles(accessToken: string, folderId: string): Pro
     headers: { Authorization: `Bearer ${accessToken}` }
   });
   
-  if (!res.ok) throw new Error("Failed to list files");
+  if (!res.ok) {
+      const errText = await res.text();
+      throw new Error(`Drive List Failed (${res.status}): ${errText}`);
+  }
   const data = await res.json();
   return data.files || [];
 }
@@ -57,12 +70,12 @@ export async function saveToDrive(accessToken: string, folderId: string, filenam
   const metadata = {
     name: filename,
     parents: [folderId],
-    mimeType: 'text/plain'
+    mimeType: 'application/json'
   };
   
   const form = new FormData();
   form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
-  form.append('file', new Blob([content], { type: 'text/plain' }));
+  form.append('file', new Blob([content], { type: 'application/json' }));
 
   const res = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
     method: 'POST',
@@ -70,13 +83,19 @@ export async function saveToDrive(accessToken: string, folderId: string, filenam
     body: form
   });
   
-  if (!res.ok) throw new Error("Failed to upload to Drive");
+  if (!res.ok) {
+      const errText = await res.text();
+      throw new Error(`Drive Upload Failed (${res.status}): ${errText}`);
+  }
 }
 
 export async function readDriveFile(accessToken: string, fileId: string): Promise<string> {
   const res = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
     headers: { Authorization: `Bearer ${accessToken}` }
   });
-  if (!res.ok) throw new Error("Failed to read file");
+  if (!res.ok) {
+      const errText = await res.text();
+      throw new Error(`Drive Read Failed (${res.status}): ${errText}`);
+  }
   return await res.text();
 }
