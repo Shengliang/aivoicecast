@@ -141,6 +141,21 @@ const buildFileTree = (files: CodeFile[], expandedFolders: Record<string, boolea
     });
   });
   
+  // Propagate modification state up to folders
+  const propagateModified = (nodes: FileNode[]): boolean => {
+      let anyModified = false;
+      nodes.forEach(node => {
+          if (node.type === 'folder') {
+              const childModified = propagateModified(node.children);
+              if (childModified) node.isModified = true;
+          }
+          if (node.isModified) anyModified = true;
+      });
+      return anyModified;
+  };
+  
+  propagateModified(root);
+  
   const sortNodes = (nodes: FileNode[]) => {
     nodes.sort((a, b) => {
       if (a.type === b.type) return a.name.localeCompare(b.name);
@@ -163,63 +178,82 @@ const FileTreeNode: React.FC<{
   toggleFolder: (path: string) => void;
   loadingFolders: Record<string, boolean>;
   selectedFolder: string | null;
-}> = ({ node, depth, activeFileIndex, onSelect, onFolderSelect, expandedFolders, toggleFolder, loadingFolders, selectedFolder }) => {
+  onSaveNode: (node: FileNode) => void;
+  onDeleteNode: (node: FileNode) => void;
+}> = ({ node, depth, activeFileIndex, onSelect, onFolderSelect, expandedFolders, toggleFolder, loadingFolders, selectedFolder, onSaveNode, onDeleteNode }) => {
   const isOpen = expandedFolders[node.path];
   const isLoading = loadingFolders[node.path];
   const isSelected = selectedFolder === node.path && node.type === 'folder';
   
-  if (node.type === 'folder') {
-    return (
-      <>
-        <div 
-          className={`w-full flex items-center space-x-1 px-3 py-1.5 text-xs text-left transition-colors cursor-pointer group ${isSelected ? 'bg-indigo-900/40 text-indigo-300' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`}
-          style={{ paddingLeft: `${depth * 12 + 12}px` }}
-          onClick={(e) => {
-              e.stopPropagation();
-              onFolderSelect(node.path);
-              toggleFolder(node.path);
-          }}
-        >
-          {isLoading ? (
-             <Loader2 size={14} className="animate-spin text-indigo-400" />
-          ) : isOpen ? (
-             <ChevronDown size={14} />
-          ) : (
-             <ChevronRight size={14} />
-          )}
-          
-          {isOpen ? <FolderOpen size={14} className={isSelected ? "text-indigo-400" : "text-slate-500"} /> : <Folder size={14} className={isSelected ? "text-indigo-400" : "text-slate-500"} />}
-          <span className="truncate">{node.name}</span>
-        </div>
-        {isOpen && node.children.map(child => (
-          <FileTreeNode 
-            key={child.path} 
-            node={child} 
-            depth={depth + 1}
-            activeFileIndex={activeFileIndex}
-            onSelect={onSelect}
-            onFolderSelect={onFolderSelect}
-            expandedFolders={expandedFolders}
-            toggleFolder={toggleFolder}
-            loadingFolders={loadingFolders}
-            selectedFolder={selectedFolder}
-          />
-        ))}
-      </>
-    );
-  }
-
-  const isActive = node.index === activeFileIndex;
   return (
-    <button 
-      onClick={(e) => { e.stopPropagation(); node.index !== undefined && onSelect(node.index); }}
-      className={`w-full flex items-center space-x-2 px-3 py-1.5 text-xs text-left transition-colors border-l-2 ${isActive ? 'bg-slate-800 text-white border-indigo-500' : 'border-transparent text-slate-400 hover:text-white hover:bg-slate-800/50'}`}
-      style={{ paddingLeft: `${depth * 12 + 12}px` }}
-    >
-      <FileIcon filename={node.name} />
-      <span className="truncate flex-1">{node.name}</span>
-      {node.isModified && <span className="w-1.5 h-1.5 rounded-full bg-yellow-400 ml-2" title="Modified"></span>}
-    </button>
+    <>
+      <div 
+        className={`w-full flex items-center space-x-1 px-3 py-1.5 text-xs text-left transition-colors cursor-pointer group hover:bg-slate-800 ${isSelected ? 'bg-indigo-900/40' : ''} ${node.index === activeFileIndex && node.type === 'file' ? 'bg-slate-800 border-l-2 border-indigo-500' : 'border-l-2 border-transparent'}`}
+        style={{ paddingLeft: `${depth * 12 + 12}px` }}
+        onClick={(e) => {
+            e.stopPropagation();
+            if (node.type === 'folder') {
+                onFolderSelect(node.path);
+                toggleFolder(node.path);
+            } else {
+                if (node.index !== undefined) onSelect(node.index);
+            }
+        }}
+      >
+        <span className="shrink-0 text-slate-500 group-hover:text-white">
+            {node.type === 'folder' ? (
+                isLoading ? <Loader2 size={14} className="animate-spin text-indigo-400" /> :
+                isOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />
+            ) : null}
+        </span>
+        
+        {node.type === 'folder' ? (
+            isOpen ? <FolderOpen size={14} className={isSelected ? "text-indigo-400" : "text-slate-500"} /> : <Folder size={14} className={isSelected ? "text-indigo-400" : "text-slate-500"} />
+        ) : (
+            <FileIcon filename={node.name} />
+        )}
+        
+        <span className={`truncate flex-1 ${node.index === activeFileIndex ? 'text-white' : 'text-slate-400 group-hover:text-slate-200'}`}>{node.name}</span>
+        
+        <div className="flex items-center space-x-1 opacity-0 group-hover:opacity-100 transition-opacity">
+            {node.isModified && (
+                <button 
+                    onClick={(e) => { e.stopPropagation(); onSaveNode(node); }}
+                    className="p-1 hover:bg-emerald-900/50 text-emerald-500 rounded"
+                    title="Save"
+                >
+                    <Save size={12} />
+                </button>
+            )}
+            <button 
+                onClick={(e) => { e.stopPropagation(); onDeleteNode(node); }}
+                className="p-1 hover:bg-red-900/50 text-slate-500 hover:text-red-400 rounded"
+                title="Delete"
+            >
+                <Trash2 size={12} />
+            </button>
+        </div>
+        
+        {node.isModified && !node.type /* Yellow dot fallback if buttons hidden */ && <span className="w-1.5 h-1.5 rounded-full bg-yellow-400 ml-1"></span>}
+      </div>
+      
+      {node.type === 'folder' && isOpen && node.children.map(child => (
+        <FileTreeNode 
+          key={child.path} 
+          node={child} 
+          depth={depth + 1}
+          activeFileIndex={activeFileIndex}
+          onSelect={onSelect}
+          onFolderSelect={onFolderSelect}
+          expandedFolders={expandedFolders}
+          toggleFolder={toggleFolder}
+          loadingFolders={loadingFolders}
+          selectedFolder={selectedFolder}
+          onSaveNode={onSaveNode}
+          onDeleteNode={onDeleteNode}
+        />
+      ))}
+    </>
   );
 };
 
@@ -447,32 +481,46 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
       }
   };
 
-  const handleSaveToDrive = async () => {
+  // Helper to save a list of files to drive
+  const saveFilesToDrive = async (filesToSave: CodeFile[]) => {
       if (!driveToken || !driveFolderId) {
           alert("Please connect to Google Drive first.");
           return;
       }
+      
       setIsDriveLoading(true);
       try {
-          // Iterate over all files in the project and save each as a raw file
-          let savedCount = 0;
-          for (const file of project.files) {
-              // Skip directories or lazy-loaded files that haven't been fetched
-              if (file.isDirectory || (file.loaded === false)) continue;
+          const savedNames: string[] = [];
+          
+          for (const file of filesToSave) {
+              if (file.isDirectory) continue;
               
               const mimeType = getMimeTypeFromFilename(file.name);
               await saveToDrive(driveToken, driveFolderId, file.name, file.content, mimeType);
-              savedCount++;
+              savedNames.push(file.name);
           }
           
+          // Update local state to remove modified flag for saved files
+          setProject(prev => ({
+              ...prev,
+              files: prev.files.map(f => savedNames.includes(f.name) ? { ...f, isModified: false } : f)
+          }));
+          
           await refreshDrive();
-          alert(`Saved ${savedCount} files to Google Drive!`);
       } catch(e: any) {
           console.error("Drive Save Error:", e);
           alert("Drive save failed: " + e.message);
       } finally {
           setIsDriveLoading(false);
       }
+  };
+
+  const handleSaveToDrive = async () => {
+      // Save ONLY modified files to optimize
+      const modifiedFiles = project.files.filter(f => f.isModified && !f.isDirectory);
+      if (modifiedFiles.length === 0) return;
+      
+      await saveFilesToDrive(modifiedFiles);
   };
 
   const handleDeleteDriveFile = async (fileId: string) => {
@@ -500,13 +548,43 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
       } else {
           // Default logic
           if (driveToken) {
-              if (confirm("Save to Google Drive?")) handleSaveToDrive();
+              // Drive: Silent save (status update only)
+              handleSaveToDrive(); 
           } else if (currentUser) {
               if (confirm("Save to Cloud Storage?")) handleSaveToCloud();
           } else {
               alert("Sign in or Connect Drive to save your project.");
           }
       }
+  };
+
+  // Node Actions (Explorer)
+  const handleSaveNode = async (node: FileNode) => {
+      let filesToSave: CodeFile[] = [];
+      if (node.type === 'folder') {
+          filesToSave = project.files.filter(f => f.name.startsWith(node.path + '/') && f.isModified);
+      } else {
+          const file = project.files[node.index!];
+          if (file && file.isModified) filesToSave.push(file);
+      }
+      
+      if (filesToSave.length === 0) return;
+      await saveFilesToDrive(filesToSave);
+  };
+
+  const handleDeleteNode = async (node: FileNode) => {
+      if (!confirm(`Delete ${node.type === 'folder' ? 'folder and its contents' : 'file'} "${node.name}" from workspace?`)) return;
+      
+      let newFiles: CodeFile[] = [];
+      if (node.type === 'folder') {
+          newFiles = project.files.filter(f => !f.name.startsWith(node.path + '/'));
+      } else {
+          newFiles = project.files.filter((_, i) => i !== node.index);
+      }
+      
+      setProject(prev => ({ ...prev, files: newFiles }));
+      // Adjust active index
+      if (activeFileIndex >= newFiles.length) setActiveFileIndex(Math.max(0, newFiles.length - 1));
   };
 
   const handleAddFile = (langId: string) => {
@@ -587,7 +665,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
             
             <div className="flex items-center space-x-2">
                <button onClick={handleGeneralSave} className="flex items-center space-x-2 px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold transition-colors shadow-md">
-                   <Save size={14} /> <span>Save All Files</span>
+                   {isDriveLoading ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} <span>Save Project</span>
                </button>
 
                <div className="relative">
@@ -641,6 +719,8 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, ses
                                   toggleFolder={toggleFolder}
                                   loadingFolders={loadingFolders}
                                   selectedFolder={selectedFolder}
+                                  onSaveNode={handleSaveNode}
+                                  onDeleteNode={handleDeleteNode}
                               />
                           ))}
                       </div>
