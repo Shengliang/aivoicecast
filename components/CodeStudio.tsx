@@ -182,7 +182,8 @@ const RichCodeEditor: React.FC<{
     const [highlightedCode, setHighlightedCode] = useState('');
     const textareaRef = useRef<HTMLTextAreaElement>(null);
     const lineNumbersRef = useRef<HTMLDivElement>(null);
-    const scrollContainerRef = useRef<HTMLDivElement>(null);
+    const preRef = useRef<HTMLPreElement>(null);
+    const cursorLayerRef = useRef<HTMLDivElement>(null);
     
     useEffect(() => {
         if ((window as any).Prism) {
@@ -209,23 +210,40 @@ const RichCodeEditor: React.FC<{
         }
     };
 
-    const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    // Synchronized Scroll Logic
+    const handleScroll = (e: React.UIEvent<HTMLTextAreaElement>) => {
+        const { scrollTop, scrollLeft } = e.currentTarget;
+        
+        // Sync Line Numbers
         if (lineNumbersRef.current) {
-            lineNumbersRef.current.scrollTop = e.currentTarget.scrollTop;
+            lineNumbersRef.current.scrollTop = scrollTop;
+        }
+        
+        // Sync Highlight Layer
+        if (preRef.current) {
+            preRef.current.scrollTop = scrollTop;
+            preRef.current.scrollLeft = scrollLeft;
+        }
+
+        // Sync Cursor Layer
+        if (cursorLayerRef.current) {
+            cursorLayerRef.current.scrollTop = scrollTop;
+            cursorLayerRef.current.scrollLeft = scrollLeft;
         }
     };
 
-    // Shared Styles for critical alignment
+    // Strict alignment styles
     const EDITOR_FONT = {
         fontFamily: '"JetBrains Mono", monospace',
         fontSize: '14px',
-        lineHeight: '24px', // Explicit line height for alignment
+        lineHeight: '24px',
+        tabSize: 4,
     };
     
     const CONTAINER_PADDING = '16px';
 
     return (
-        <div className="relative w-full h-full flex overflow-hidden group bg-[#1e1e1e]">
+        <div className="relative w-full h-full flex bg-[#1e1e1e] overflow-hidden">
             {/* Line Numbers */}
             <div 
                 ref={lineNumbersRef}
@@ -239,18 +257,17 @@ const RichCodeEditor: React.FC<{
                 {code.split('\n').map((_, i) => <div key={i}>{i + 1}</div>)}
             </div>
             
-            <div 
-                ref={scrollContainerRef}
-                className="relative flex-1 h-full overflow-auto custom-scrollbar"
-                onScroll={handleScroll}
-            >
-                {/* Highlight Layer */}
+            <div className="relative flex-1 h-full overflow-hidden">
+                {/* 1. Highlight Layer (Bottom) */}
                 <pre 
-                    className="absolute top-0 left-0 min-w-full min-h-full m-0 pointer-events-none"
+                    ref={preRef}
+                    className="absolute inset-0 m-0 w-full h-full pointer-events-none overflow-hidden"
                     style={{
                         ...EDITOR_FONT,
                         padding: CONTAINER_PADDING,
-                        whiteSpace: 'pre' // Force no-wrap to align exactly
+                        whiteSpace: 'pre',
+                        border: 'none',
+                        margin: 0
                     }}
                     aria-hidden="true"
                 >
@@ -260,57 +277,65 @@ const RichCodeEditor: React.FC<{
                     />
                 </pre>
                 
-                {/* Remote Cursors Layer */}
-                {remoteCursors && remoteCursors.map(cursor => (
-                    <div 
-                        key={cursor.clientId}
-                        className="absolute pointer-events-none transition-all duration-75"
-                        style={{
-                            top: `${(cursor.line - 1) * 24 + 16}px`, // 24px line height, 16px padding top
-                            left: `calc(${(cursor.column - 1)}ch + 16px)`, // 1ch per char (monospace), 16px padding left
-                            height: '24px',
-                            ...EDITOR_FONT
-                        }}
-                    >
-                        <div className="w-0.5 h-full absolute top-0 left-0 animate-pulse" style={{ backgroundColor: cursor.color }}></div>
+                {/* 2. Remote Cursors Layer (Middle) */}
+                <div 
+                    ref={cursorLayerRef}
+                    className="absolute inset-0 w-full h-full pointer-events-none overflow-hidden"
+                >
+                    {remoteCursors && remoteCursors.map(cursor => (
                         <div 
-                            className="absolute -top-5 left-0 text-[10px] px-1.5 rounded text-white whitespace-nowrap z-10 shadow-md font-bold"
-                            style={{ backgroundColor: cursor.color, fontFamily: 'sans-serif', lineHeight: 'normal' }}
+                            key={cursor.clientId}
+                            className="absolute pointer-events-none transition-all duration-75"
+                            style={{
+                                top: `${(cursor.line - 1) * 24 + 16}px`, 
+                                left: `calc(${(cursor.column - 1)}ch + 16px)`, 
+                                height: '24px',
+                                ...EDITOR_FONT
+                            }}
                         >
-                            {cursor.userName}
+                            <div className="w-0.5 h-full absolute top-0 left-0 animate-pulse" style={{ backgroundColor: cursor.color }}></div>
+                            <div 
+                                className="absolute -top-5 left-0 text-[10px] px-1.5 rounded text-white whitespace-nowrap z-10 shadow-md font-bold"
+                                style={{ backgroundColor: cursor.color, fontFamily: 'sans-serif', lineHeight: 'normal' }}
+                            >
+                                {cursor.userName}
+                            </div>
                         </div>
-                    </div>
-                ))}
+                    ))}
 
-                {/* Local Cursor Label "You" */}
-                {localCursor && (
-                    <div 
-                        className="absolute pointer-events-none transition-all duration-75 z-20"
-                        style={{
-                            top: `${(localCursor.line - 1) * 24 + 16}px`,
-                            left: `calc(${(localCursor.col - 1)}ch + 16px)`,
-                            height: '24px',
-                            ...EDITOR_FONT
-                        }}
-                    >
-                        <div className="absolute -top-5 left-0 text-[10px] px-1.5 rounded bg-emerald-600 text-white font-bold shadow-sm whitespace-nowrap opacity-80" style={{ fontFamily: 'sans-serif', lineHeight: 'normal' }}>
-                            You
+                    {/* Local Cursor Label "You" */}
+                    {localCursor && (
+                        <div 
+                            className="absolute pointer-events-none transition-all duration-75 z-20"
+                            style={{
+                                top: `${(localCursor.line - 1) * 24 + 16}px`,
+                                left: `calc(${(localCursor.col - 1)}ch + 16px)`,
+                                height: '24px',
+                                ...EDITOR_FONT
+                            }}
+                        >
+                            <div className="absolute -top-5 left-0 text-[10px] px-1.5 rounded bg-emerald-600 text-white font-bold shadow-sm whitespace-nowrap opacity-80" style={{ fontFamily: 'sans-serif', lineHeight: 'normal' }}>
+                                You
+                            </div>
                         </div>
-                    </div>
-                )}
+                    )}
+                </div>
 
-                {/* Input Layer */}
+                {/* 3. Input Layer (Top, Scroll Master) */}
                 <textarea 
                     ref={textareaRef}
                     value={code} 
                     onChange={(e) => onChange(e.target.value)}
                     onKeyUp={handleInputEvents}
                     onClick={handleInputEvents}
-                    className="absolute top-0 left-0 w-full h-full bg-transparent text-transparent caret-white outline-none resize-none overflow-hidden"
+                    onScroll={handleScroll}
+                    className="absolute inset-0 w-full h-full bg-transparent text-transparent caret-white outline-none resize-none overflow-auto z-10 custom-scrollbar"
                     style={{
                         ...EDITOR_FONT,
                         padding: CONTAINER_PADDING,
-                        whiteSpace: 'pre'
+                        whiteSpace: 'pre',
+                        border: 'none',
+                        margin: 0
                     }}
                     spellCheck={false}
                     autoCapitalize="off"
@@ -587,7 +612,8 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
               });
               
               if (activeFile && activeFile.path && !activeFile.path.startsWith('drive://') && !activeFile.path.startsWith('cloud://')) {
-                  const remoteFile = remoteProject.files.find(f => f.path === activeFile.path);
+                  // FIX: Robust file matching by path OR name (for new files)
+                  const remoteFile = remoteProject.files.find(f => (f.path || f.name) === (activeFile.path || activeFile.name));
                   if (remoteFile && remoteFile.content !== activeFile.content) {
                       // Last Writer Wins: Always accept incoming content if it changed remotely
                       setActiveFile(remoteFile);
