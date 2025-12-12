@@ -14,12 +14,18 @@ interface GithubRepo {
   };
 }
 
-// Check if a public repo exists and get details (No token required)
-export async function fetchPublicRepoInfo(owner: string, repo: string): Promise<{ default_branch: string, id: number, full_name: string }> {
-  const response = await fetch(`${GITHUB_API_BASE}/repos/${owner}/${repo}`);
+// Check if a repo exists and get details (Token optional but needed for private repos)
+export async function fetchRepoInfo(owner: string, repo: string, token?: string | null): Promise<{ default_branch: string, id: number, full_name: string, private: boolean, permissions?: { push: boolean } }> {
+  const headers: Record<string, string> = {};
+  if (token) {
+      headers.Authorization = `token ${token}`;
+  }
+  
+  const response = await fetch(`${GITHUB_API_BASE}/repos/${owner}/${repo}`, { headers });
   if (!response.ok) {
-      if (response.status === 404) throw new Error(`Repository '${owner}/${repo}' not found. Check spelling.`);
-      if (response.status === 403) throw new Error('GitHub API rate limit exceeded. Please sign in to increase limits.');
+      if (response.status === 404) throw new Error(`Repository '${owner}/${repo}' not found. Check spelling or access rights.`);
+      if (response.status === 403) throw new Error('GitHub API rate limit exceeded. Please sign in.');
+      if (response.status === 401) throw new Error('Unauthorized. Please check your GitHub token.');
       throw new Error(`Failed to fetch repository info: ${response.status} ${response.statusText}`);
   }
   return await response.json();

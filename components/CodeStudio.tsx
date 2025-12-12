@@ -5,7 +5,7 @@ import { ArrowLeft, Save, Plus, Github, Cloud, HardDrive, Code, X, ChevronRight,
 import { listCloudDirectory, saveProjectToCloud, deleteCloudItem, createCloudFolder, subscribeToCodeProject, saveCodeProject, updateCodeFile, updateCursor, claimCodeProjectLock, updateProjectActiveFile, deleteCodeFile, moveCloudFile } from '../services/firestoreService';
 import { ensureCodeStudioFolder, listDriveFiles, readDriveFile, saveToDrive, deleteDriveFile, createDriveFolder, DriveFile, moveDriveFile } from '../services/googleDriveService';
 import { connectGoogleDrive, signInWithGitHub } from '../services/authService';
-import { fetchPublicRepoInfo, fetchRepoContents, fetchFileContent, updateRepoFile, deleteRepoFile, renameRepoFile } from '../services/githubService';
+import { fetchRepoInfo, fetchRepoContents, fetchFileContent, updateRepoFile, deleteRepoFile, renameRepoFile } from '../services/githubService';
 import { MarkdownView } from './MarkdownView';
 import { encodePlantUML } from '../utils/plantuml';
 import { Whiteboard } from './Whiteboard';
@@ -356,6 +356,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
           setDriveItems([{ id: driveRootId, name: 'CodeStudio', mimeType: 'application/vnd.google-apps.folder', isLoaded: true }, ...files.map(f => ({ ...f, parentId: driveRootId, isLoaded: false }))]);
       } else if (activeTab === 'github' && project.github) {
           // Re-fetch project root
+          // Use githubToken to refresh private repos too
           const { files, latestSha } = await fetchRepoContents(githubToken, project.github.owner, project.github.repo, project.github.branch);
           setProject(prev => ({ ...prev, files: files, github: { ...prev.github!, sha: latestSha } }));
       }
@@ -798,8 +799,9 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
       setIsLoadingPublic(true);
       try {
           const [owner, repo] = publicRepoPath.split('/');
-          const info = await fetchPublicRepoInfo(owner, repo);
-          const { files, latestSha } = await fetchRepoContents(null, owner, repo, info.default_branch);
+          // Pass githubToken here to support private repos or higher rate limits
+          const info = await fetchRepoInfo(owner, repo, githubToken); 
+          const { files, latestSha } = await fetchRepoContents(githubToken, owner, repo, info.default_branch);
           
           const newProjectData: CodeProject = { 
               id: sessionId || `gh-${info.id}`,
@@ -1001,6 +1003,11 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
                   )}
                   {activeTab === 'github' && (
                       <div className="p-2">
+                          {!githubToken && (
+                              <button onClick={() => getOrRequestGithubToken()} className="w-full mb-3 py-2 bg-[#2da44e] hover:bg-[#2c974b] text-white text-xs font-bold rounded-lg transition-colors flex items-center justify-center gap-2 shadow-sm">
+                                  <Github size={14} /> <span>Connect GitHub</span>
+                              </button>
+                          )}
                           {!project.github ? <div className="p-4 text-center"><button onClick={() => setShowImportModal(true)} className="px-4 py-2 bg-slate-800 text-white text-xs font-bold rounded-lg border border-slate-700 hover:bg-slate-700">Open Repo</button></div> : workspaceTree.map(node => <FileTreeItem key={node.id} node={node} depth={0} activeId={selectedExplorerNode?.id} onSelect={handleExplorerSelect} onToggle={(n: any) => setExpandedFolders(prev => ({...prev, [n.id]: !expandedFolders[n.id]}))} onDelete={handleDeleteItem} onRename={handleRenameItem} expandedIds={expandedFolders} loadingIds={loadingFolders} onDragStart={handleDragStart} onDrop={handleDrop}/>)}
                       </div>
                   )}
