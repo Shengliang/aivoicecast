@@ -829,12 +829,20 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
                   <button onClick={() => setActiveTab('session')} className={`flex-1 py-3 flex justify-center border-b-2 transition-colors ${activeTab === 'session' ? 'border-indigo-500 text-white' : 'border-transparent text-slate-500 hover:text-slate-300'}`} title="Live Session"><Laptop size={16}/></button>
               </div>
 
-              {/* ACTION TOOLBAR - Force Synced */}
-              <div className="p-2 border-b border-slate-800 flex gap-2 justify-center bg-slate-900">
-                  <button onClick={handleCreateFolder} className="p-1.5 hover:bg-slate-800 rounded text-slate-400 hover:text-white" title="New Folder"><FolderPlus size={16}/></button>
-                  <button onClick={handleCreateFile} className="p-1.5 hover:bg-slate-800 rounded text-slate-400 hover:text-white" title="New File"><FileCode size={16}/></button>
-                  <button onClick={handleCreateWhiteboard} className="p-1.5 hover:bg-slate-800 rounded text-pink-400 hover:text-pink-300" title="New Whiteboard"><PenTool size={16}/></button>
-                  <button onClick={() => refreshExplorer()} className="p-1.5 hover:bg-slate-800 rounded text-slate-400 hover:text-white" title="Refresh"><RefreshCw size={16}/></button>
+              {/* ACTION TOOLBAR - Improved Visibility */}
+              <div className="p-3 border-b border-slate-800 flex flex-wrap gap-2 bg-slate-900 justify-center">
+                  <button onClick={handleCreateFile} className="flex-1 flex items-center justify-center gap-1 bg-indigo-600 hover:bg-indigo-500 text-white py-1.5 px-2 rounded text-xs font-bold shadow-md transition-colors whitespace-nowrap" title="Create New Code File">
+                      <FileCode size={14}/> <span>New File</span>
+                  </button>
+                  <button onClick={handleCreateWhiteboard} className="flex-1 flex items-center justify-center gap-1 bg-pink-600 hover:bg-pink-500 text-white py-1.5 px-2 rounded text-xs font-bold shadow-md transition-colors whitespace-nowrap" title="Create New Whiteboard">
+                      <PenTool size={14}/> <span>New Board</span>
+                  </button>
+                  <button onClick={handleCreateFolder} className="p-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white rounded border border-slate-700 transition-colors" title="New Folder">
+                      <FolderPlus size={16}/>
+                  </button>
+                  <button onClick={() => refreshExplorer()} className="p-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white rounded border border-slate-700 transition-colors" title="Refresh Explorer">
+                      <RefreshCw size={16}/>
+                  </button>
               </div>
 
               <div className="flex-1 overflow-y-auto">
