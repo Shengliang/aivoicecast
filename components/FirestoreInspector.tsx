@@ -1,6 +1,7 @@
+
 import React, { useState } from 'react';
-import { getDebugCollectionDocs, seedDatabase } from '../services/firestoreService';
-import { ArrowLeft, RefreshCw, Database, Table, Code, Search, UploadCloud } from 'lucide-react';
+import { getDebugCollectionDocs, seedDatabase, recalculateGlobalStats } from '../services/firestoreService';
+import { ArrowLeft, RefreshCw, Database, Table, Code, Search, UploadCloud, Users } from 'lucide-react';
 
 interface FirestoreInspectorProps {
   onBack: () => void;
@@ -14,7 +15,8 @@ const COLLECTIONS = [
   'bookings',
   'discussions',
   'recordings',
-  'activity_logs'
+  'activity_logs',
+  'stats'
 ];
 
 export const FirestoreInspector: React.FC<FirestoreInspectorProps> = ({ onBack }) => {
@@ -52,6 +54,19 @@ export const FirestoreInspector: React.FC<FirestoreInspectorProps> = ({ onBack }
     }
   };
 
+  const handleRecalculateStats = async () => {
+      setIsLoading(true);
+      try {
+          const count = await recalculateGlobalStats();
+          alert(`Stats Recalculated! Found ${count} existing users. The global counter has been updated.`);
+          await fetchCollection('stats');
+      } catch(e: any) {
+          alert("Failed: " + e.message);
+      } finally {
+          setIsLoading(false);
+      }
+  };
+
   const renderValue = (val: any) => {
     if (typeof val === 'object' && val !== null) {
         // Handle Firestore timestamps
@@ -82,6 +97,17 @@ export const FirestoreInspector: React.FC<FirestoreInspectorProps> = ({ onBack }
               </h1>
               <p className="text-xs text-slate-500 mt-0.5">Live view of backend collections</p>
            </div>
+         </div>
+         
+         <div className="flex gap-2">
+             <button 
+                onClick={handleRecalculateStats}
+                disabled={isLoading}
+                className="flex items-center gap-2 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-bold transition-colors shadow-lg"
+                title="Fix user count if incorrect"
+             >
+                <Users size={14} /> Recalculate Stats
+             </button>
          </div>
       </div>
 
@@ -130,7 +156,7 @@ export const FirestoreInspector: React.FC<FirestoreInspectorProps> = ({ onBack }
                                 <button onClick={() => setViewMode('json')} className={`p-1.5 rounded ${viewMode === 'json' ? 'bg-slate-700 text-white' : 'text-slate-400 hover:text-white'}`}><Code size={16}/></button>
                                 <button onClick={() => setViewMode('table')} className={`p-1.5 rounded ${viewMode === 'table' ? 'bg-slate-700 text-white' : 'text-slate-400 hover:text-white'}`}><Table size={16}/></button>
                             </div>
-                            <button onClick={() => fetchCollection(activeCollection)} className="p-2 bg-slate-800 hover:bg-slate-700 rounded-lg text-white transition-colors">
+                            <button onClick={() => fetchCollection(activeCollection!)} className="p-2 bg-slate-800 hover:bg-slate-700 rounded-lg text-white transition-colors">
                                 <RefreshCw size={16} className={isLoading ? 'animate-spin' : ''} />
                             </button>
                         </div>

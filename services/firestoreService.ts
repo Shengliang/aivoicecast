@@ -27,6 +27,19 @@ export async function getGlobalStats(): Promise<GlobalStats> {
   };
 }
 
+export async function recalculateGlobalStats(): Promise<number> {
+  // 1. Count Users
+  const usersSnap = await db.collection('users').get();
+  const userCount = usersSnap.size;
+
+  // 2. Update Global Stats
+  await db.collection('stats').doc('global').set({
+      uniqueUsers: userCount
+  }, { merge: true });
+
+  return userCount;
+}
+
 export async function syncUserProfile(user: firebase.User): Promise<void> {
   const userRef = db.collection('users').doc(user.uid);
   const doc = await userRef.get();
