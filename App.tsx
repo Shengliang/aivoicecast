@@ -406,6 +406,18 @@ const App: React.FC = () => {
       window.history.pushState({}, '', url.toString());
   };
 
+  const handleSessionStop = () => {
+      setSharedSessionId(undefined);
+      setAccessKey(undefined);
+      
+      const url = new URL(window.location.href);
+      url.searchParams.delete('session');
+      url.searchParams.delete('key');
+      // Only removing 'session' and 'key', leaving other potential state like 'view' if we were using it (though here we use state)
+      
+      window.history.pushState({}, '', url.toString());
+  };
+
   // --- Sorting & Filtering Logic ---
 
   const handleSort = (key: SortKey) => {
@@ -626,6 +638,7 @@ const App: React.FC = () => {
                 sessionId={sharedSessionId}
                 accessKey={accessKey}
                 onSessionStart={handleSessionStart} // Unified Session Handler
+                onSessionStop={handleSessionStop} // Stop Sharing Handler
                 onStartLiveSession={(channel, context) => handleStartLiveSession(channel, context)} // Teach Me Mode
             />
         )}

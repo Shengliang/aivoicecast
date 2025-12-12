@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { CodeProject, CodeFile, UserProfile, Channel, CursorPosition } from '../types';
-import { ArrowLeft, Save, Plus, Github, Cloud, HardDrive, Code, X, ChevronRight, ChevronDown, File, Folder, DownloadCloud, Loader2, CheckCircle, AlertTriangle, Info, FolderPlus, FileCode, RefreshCw, LogIn, CloudUpload, Trash2, ArrowUp, Edit2, FolderOpen, MoreVertical, Send, MessageSquare, Bot, Mic, Sparkles, SidebarClose, SidebarOpen, Users, Eye, FileText as FileTextIcon, Image as ImageIcon, StopCircle, Minus, Maximize2, Lock, Unlock, Share2, Terminal, Copy } from 'lucide-react';
+import { ArrowLeft, Save, Plus, Github, Cloud, HardDrive, Code, X, ChevronRight, ChevronDown, File, Folder, DownloadCloud, Loader2, CheckCircle, AlertTriangle, Info, FolderPlus, FileCode, RefreshCw, LogIn, CloudUpload, Trash2, ArrowUp, Edit2, FolderOpen, MoreVertical, Send, MessageSquare, Bot, Mic, Sparkles, SidebarClose, SidebarOpen, Users, Eye, FileText as FileTextIcon, Image as ImageIcon, StopCircle, Minus, Maximize2, Lock, Unlock, Share2, Terminal, Copy, WifiOff } from 'lucide-react';
 import { connectGoogleDrive } from '../services/authService';
 import { fetchPublicRepoInfo, fetchRepoContents, fetchFileContent, commitToRepo, fetchRepoSubTree } from '../services/githubService';
 import { listCloudDirectory, saveProjectToCloud, deleteCloudItem, createCloudFolder, CloudItem, subscribeToCodeProject, saveCodeProject, updateCodeFile, updateCursor, claimCodeProjectLock, updateProjectActiveFile } from '../services/firestoreService';
@@ -19,6 +19,7 @@ interface CodeStudioProps {
   sessionId?: string;
   accessKey?: string;
   onSessionStart?: (id: string) => void;
+  onSessionStop?: () => void;
   onStartLiveSession?: (channel: Channel, context?: string) => void;
 }
 
@@ -310,7 +311,7 @@ const AIChatPanel: React.FC<{
     );
 };
 
-export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, userProfile, sessionId, accessKey, onSessionStart }) => {
+export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, userProfile, sessionId, accessKey, onSessionStart, onSessionStop }) => {
   const [project, setProject] = useState<CodeProject>({ id: 'init', name: 'New Project', files: [], lastModified: Date.now() });
   const [activeFile, setActiveFile] = useState<CodeFile | null>(null);
   const [viewMode, setViewMode] = useState<'code' | 'preview'>('code');
@@ -396,6 +397,9 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
               addDebugLog(`Received project update. Files: ${remoteProject.files.length}`);
           });
           return () => unsubscribe();
+      } else {
+          setIsSharedSession(false);
+          // We don't clear the project, allowing the user to continue "offline" or in a private state.
       }
   }, [sessionId]);
 
@@ -811,7 +815,20 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
          <div className="flex items-center space-x-2">
             {isLockedByOther && <button onClick={handleTakeControl} className="px-3 py-1.5 bg-amber-600 hover:bg-amber-500 text-white rounded-lg text-xs font-bold flex items-center gap-1"><Unlock size={12}/> Take Control</button>}
             <button onClick={() => setShowDebug(!showDebug)} className={`p-2 rounded-lg transition-colors ${showDebug ? 'text-green-400 bg-green-900/20' : 'text-slate-400 hover:text-white'}`}><Terminal size={18}/></button>
-            <button onClick={handleShare} className="flex items-center space-x-2 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-bold shadow-md"><Share2 size={14}/><span>Share</span></button>
+            
+            {isSharedSession ? (
+                <div className="flex items-center gap-2">
+                    <button onClick={handleShare} className="flex items-center space-x-2 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-bold shadow-md" title="Copy Link">
+                        <Share2 size={14}/><span>Link</span>
+                    </button>
+                    <button onClick={() => { if(confirm('Disconnect from session?')) onSessionStop?.(); }} className="flex items-center space-x-2 px-3 py-1.5 bg-red-600 hover:bg-red-500 text-white rounded-lg text-xs font-bold shadow-md">
+                        <WifiOff size={14}/><span>Stop</span>
+                    </button>
+                </div>
+            ) : (
+                <button onClick={handleShare} className="flex items-center space-x-2 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-bold shadow-md"><Share2 size={14}/><span>Share</span></button>
+            )}
+
             <button onClick={handleSmartSave} className="flex items-center space-x-2 px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold shadow-md"><Save size={14}/><span>Save</span></button>
             <button onClick={() => setIsAIChatOpen(!isAIChatOpen)} className="p-2 rounded-lg text-slate-400 hover:text-white"><SidebarOpen size={18}/></button>
          </div>
