@@ -1,61 +1,53 @@
-# Welcome to AIVoiceCast: The Future of Interactive Learning
+
+# Welcome to AIVoiceCast v3.55: The Complete Knowledge Ecosystem
 
 **By Admin** | *Posted in Platform Updates*
 
-The era of passive listening is over. Traditional podcasts are great for consumption, but what if you could raise your hand and ask the host a question? What if the podcast could rewrite itself based on *your* code, *your* documents, or *your* specific learning goals?
+The era of passive listening is over. Traditional podcasts are great for consumption, but AIVoiceCast transforms consumption into creation. With the release of **v3.55**, we have evolved from a generative podcast player into a comprehensive **Knowledge Ecosystem** that spans learning, coding, collaborating, and career growth.
 
-Welcome to **AIVoiceCast**, a decentralized, AI-native platform designed to transform how we create, share, and consume knowledge.
+## What's New in v3.55?
 
-## What is AIVoiceCast?
+### 1. 📂 Code Studio with Google Drive & Cloud Integration
+The Code Studio has been completely re-architected to serve as your primary cloud IDE.
+*   **Google Drive Integration:** You can now connect your Google Drive directly. Open, edit, and save code files residing in your Drive without leaving the app.
+*   **Private Cloud Storage:** A robust file system powered by Firebase Storage allows you to create folders, manage complex projects, and store assets persistently.
+*   **GitHub Support:** Seamlessly import repositories to review code while listening to an AI explanation of the codebase.
 
-AIVoiceCast is not just a podcast player. It is a **Generative Audio Knowledge Engine**. Powered by Google's Gemini 3.0 and Live API models, it allows users to create domain-specific "Channels" hosted by AI personas.
+### 2. 💼 The Career Center
+We believe learning should lead to earning.
+*   **Job Board:** Find opportunities tailored to the skills you are learning on the platform.
+*   **Talent Pool:** Upload your resume and showcase your "Knowledge Profile"—verified proof of the courses and live sessions you've completed.
+*   **Mentor Applications:** Apply to become a paid mentor and share your expertise with the community.
 
-Whether you are preparing for a Google system design interview, learning the Linux Kernel internals, or exploring Stoic philosophy, AIVoiceCast generates a structured curriculum, synthesizes professional-grade audio lectures, and—most importantly—lets you talk back.
+### 3. 💬 Workplace Chat
+Communication is key to learning. We've introduced a full-featured real-time chat system.
+*   **Teams & Groups:** Every study group now has a dedicated chat channel.
+*   **Direct Messages:** Reach out to mentors or peers directly.
+*   **Rich Media:** Share code snippets, screenshots, and video recordings instantly.
 
 ---
 
-## Key Features
+## Core Pillars
 
-### 1. 🎙️ Infinite Generative Podcasts
-Unlike Spotify or Apple Podcasts, content here is generated on-demand.
-*   **AI Curriculum Design:** Simply type a topic (e.g., "Quantum Physics for 5-year-olds") or upload a PDF document. The AI analyzes the request and builds a complete, multi-chapter syllabus.
-*   **Dual-Speaker Dialogue:** Lectures are generated as engaging scripts between a "Professor" and a "Student" persona, making complex topics easier to digest.
-*   **Neural Audio:** We utilize Gemini's high-quality neural voices (Puck, Charon, Kore, Fenrir, Zephyr) to bring scripts to life with human-like intonation.
+### 🎙️ Generative Podcasts
+*   **AI Curriculum Design:** Type a topic (e.g., "Quantum Physics") or upload a PDF, and the AI builds a complete syllabus.
+*   **Neural Audio:** Lectures are synthesized using Gemini's high-quality neural voices.
 
-### 2. ⚡ The Live Studio (Real-Time Voice)
-This is our flagship feature. At any point during a lecture, you can click **"Start Live Session"**.
-*   **Voice-to-Voice:** Have a real-time, low-latency conversation with the AI host.
-*   **Multimodal Input:** The AI can "see." Share your **Screen** or **Camera** during the session, and the AI will analyze your code, diagrams, or environment in real-time.
-*   **Meeting Recorder:** Use the Live Studio to record human-to-human meetings. The AI acts as a silent scribe, generating transcripts and summaries automatically.
+### ⚡ The Live Studio
+*   **Voice-to-Voice:** Interrupt the host and ask questions.
+*   **Multimodal Input:** Share your **Screen** or **Camera**. The AI sees what you see.
+*   **Meeting Recorder:** Use "Silent Scribe" mode to transcribe and summarize your human meetings.
 
-### 3. 💻 Code Studio
-A fully integrated IDE for developers.
-*   **AI Pair Programmer:** An AI assistant lives inside the editor. It doesn't just chat; it has permission to **edit your files directly** using function calling tools.
-*   **GitHub Integration:** Import public repos or connect your account to pull/push private repositories.
-*   **"Teach Me" Mode:** Click a button to launch a Live Session where the AI creates a personalized audio lesson based on the *current file* you are editing.
-
-### 4. 🎨 AI Whiteboard
-A collaborative canvas for systems thinking.
-*   **Generative Diagrams:** Ask the AI to "Draw the architecture of a scalable Microservices app," and it will automatically layout nodes and edges for you.
-*   **Visual Thinking:** Draw shapes, add text, and let the AI analyze your diagrams to provide feedback.
-
-### 5. 🤝 Community & Mentorship
-AIVoiceCast is built for humans, too.
-*   **Mentorship Hub:** Book sessions with AI mentors OR schedule P2P (Peer-to-Peer) meetings with other human members of the community.
-*   **Groups:** Create private study groups or research teams.
-*   **Community Blog:** A space for members to write articles, share insights, and comment on each other's work.
-
-### 6. 🔒 Privacy & Offline-First
-*   **IndexedDB Caching:** We store heavy audio and text data directly in your browser's database. This makes the app incredibly fast and functional even without an internet connection.
-*   **Cloud Sync:** When you choose, you can sync your local data to the cloud to access it across devices.
+### 🎨 AI Whiteboard
+*   **Visual Thinking:** A collaborative canvas for systems design. Draw architectures and let the AI analyze them.
 
 ---
 
 ## How to Get Started
 
-1.  **Create a Channel:** Click the **+** button or use the **Magic Wand** to voice-prompt a new podcast.
-2.  **Listen:** Click on a lesson to generate the audio.
-3.  **Engage:** Don't just listen—start a Live Session and challenge the AI host!
+1.  **Create:** Use the **Magic Wand** to voice-prompt a new podcast series.
+2.  **Collaborate:** Open **Code Studio**, import a project from Google Drive, and invite a friend to pair-program.
+3.  **Connect:** Join a **Group**, chat with peers, and apply for your next role in the **Career Center**.
 
 We are excited to see what you build and learn.
 

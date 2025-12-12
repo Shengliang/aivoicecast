@@ -35,44 +35,47 @@ You don't need a microphone to be a creator here. You need an idea.
     2.  **Paste a Document**: You can paste a PDF transcript, a lecture note, or a Wikipedia article. The AI will parse it and structure it into a learning path.
 
 ### 4. ⚡ The Live Studio (Real-Time Voice)
-This is the core differentiator. You can interrupt the podcast and talk to the host.
-
-*   **Start a Session**: Click **"Start Live Chat"** on any channel page.
-*   **Voice Mode**: Have a fluid, low-latency conversation. Ask clarifying questions about the lecture you just heard.
-*   **Multimodal Vision**:
-    *   **Screen Share**: Click the Monitor icon to share your screen. The AI can see your code, slides, or diagrams and give feedback.
-    *   **Camera**: Click the Video icon to show physical objects or whiteboards.
-*   **Meeting Recorder**:
+This is our flagship feature. At any point during a lecture, you can click **"Start Live Chat"** on any channel page.
+*   **Voice-to-Voice:** Have a real-time, low-latency conversation with the AI host.
+*   **Multimodal Vision:** The AI can "see." Share your **Screen** or **Camera** during the session, and the AI will analyze your code, diagrams, or environment in real-time.
+*   **Meeting Recorder:**
     *   In the "My Recordings" tab, click **Record Meeting**.
     *   Choose **"Silent Scribe"** mode. The AI will listen to your human meeting and generate a transcript + summary without speaking.
     *   Choose **"Translator"** mode to have the AI translate spoken words into another language in real-time.
 
-### 5. 💻 Code Studio (IDE)
-A full-featured code editor with an embedded AI pair programmer.
+### 5. 💻 Code Studio (Unified Workspace)
+A full-featured Cloud IDE with an embedded AI pair programmer and multi-backend storage.
 
-*   **Access**: Click **Code Studio** in the navigation bar.
-*   **Projects**: Load a template (e.g., C++, Python) or import a **GitHub Repository**.
+*   **Storage Backends**:
+    *   **☁️ Private Cloud**: Uses Firebase Storage. Supports files and folders. Ideal for persistent projects.
+    *   **💾 Google Drive**: Connect your Google Drive to edit files directly. No download required.
+    *   **🐙 GitHub**: Import public repositories or connect your account to browse private repos.
+    *   **🔴 Live Session**: Ephemeral storage for collaborative coding during a call.
 *   **AI Tools**:
     *   **Chat**: Ask the AI to "Refactor this function" or "Fix the bug".
-    *   **Direct Editing**: The AI has permission to *edit your file directly*. It can rewrite code blocks for you.
+    *   **Direct Editing**: The AI has permission to *edit your file directly* using function calling tools.
 *   **Multi-User Collaboration**:
     *   Click **Share** to generate a link.
-    *   Send it to a friend. You can both edit the same file simultaneously (Google Docs style).
+    *   Send it to a friend. You can both edit the same file simultaneously (Google Docs style) with visible cursors.
 
 ### 6. 🎨 Whiteboard
 A collaborative infinite canvas for systems design.
 
-*   **Tools**: Draw rectangles, arrows, text, and freehand sketches.
-*   **AI Analysis**: (Coming Soon) Ask the AI to "Explain this architecture diagram" by looking at your drawing.
+*   **Tools**: Draw rectangles, arrows, text, and freehand sketches. Supports various brush types (Pencil, Marker, Airbrush).
+*   **Sharing**: Create read-only or edit links to collaborate with peers in real-time.
 
-### 7. 🤝 Community & Career
-*   **Mentorship Hub**:
-    *   **Book AI**: Schedule a deep-dive session with an AI expert persona.
-    *   **Book Humans**: Find real community members and book P2P learning sessions.
-*   **Groups**: Create private study groups (e.g., "React Learners").
-*   **Career Center**:
-    *   **Job Board**: Post or find jobs.
-    *   **Talent Pool**: Upload your resume to be discovered by others.
+### 7. 🏢 Workplace Chat
+A Slack-like communication hub for your teams.
+*   **Channels**: Join public channels (#general, #announcements).
+*   **Groups**: Communicate within your private study groups.
+*   **Direct Messages**: Message any user on the platform privately.
+*   **File Sharing**: Upload images, videos, and documents securely.
+
+### 8. 💼 Career Center
+Connect your learning journey to real-world opportunities.
+*   **Job Board**: Browse openings posted by the community or partner companies.
+*   **Talent Pool**: Create a profile, upload your resume, and tag your skills to be discovered by recruiters.
+*   **Mentorship Application**: Apply to become a verified Mentor or Domain Expert on the platform.
 
 ---
 
@@ -113,6 +116,7 @@ npm start
 *   **Frontend**: React 19, Tailwind CSS.
 *   **State**: LocalStorage + Context + Refs (No Redux).
 *   **Database**:
-    *   **Firestore**: Public channels, User profiles, Social graph.
+    *   **Firestore**: Public channels, User profiles, Social graph, Chat Messages.
     *   **IndexedDB**: Local cache for Audio Blobs and Lecture Scripts (Offline-first).
+    *   **Cloud Storage**: User assets, Code Studio files, Meeting recordings.
 *   **AI**: Google Gemini Pro (Logic) + Gemini Flash (Speed) + Gemini Live (Voice).
