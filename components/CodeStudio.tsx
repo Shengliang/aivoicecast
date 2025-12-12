@@ -198,7 +198,7 @@ const RichCodeEditor: React.FC<{
     const PADDING = 16; 
 
     return (
-        <div className={`relative w-full h-full flex bg-[#1e1e1e] overflow-hidden ${readOnly ? 'opacity-70 grayscale-[0.2]' : ''}`}>
+        <div className={`relative w-full h-full flex bg-[#1e1e1e] overflow-hidden ${readOnly ? 'opacity-90' : ''}`}>
             <pre ref={lineNumbersRef} className="w-12 bg-[#1e1e1e] text-slate-600 text-right pr-3 select-none border-r border-slate-800 shrink-0 overflow-hidden" style={{ ...EDITOR_FONT, paddingTop: `${PADDING}px`, paddingBottom: `${PADDING}px`, margin: 0 }}>
                 {lineNumbers}
             </pre>
@@ -637,7 +637,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
             <button onClick={onBack} className="p-2 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white"><ArrowLeft size={20} /></button>
             <div className="flex flex-col">
                <h1 className="font-bold text-white text-sm flex items-center gap-2">{project.name} {activeFile && ` - ${activeFile.name}`}</h1>
-               {isLockedByOther && <span className="text-[10px] text-amber-400 flex items-center gap-1"><Lock size={8}/> Locked by {activeWriterName}</span>}
+               {isLockedByOther && <span className="text-[10px] text-amber-400 flex items-center gap-1 bg-amber-900/30 px-2 py-0.5 rounded border border-amber-500/50"><Lock size={10}/> Locked by {activeWriterName} (Read Only)</span>}
             </div>
          </div>
          <div className="flex items-center space-x-2">
@@ -697,7 +697,6 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
                         <div className="flex items-center gap-2"><FileIcon filename={activeFile.name} /><span className="text-sm font-bold text-white">{activeFile.name}</span></div>
                     </div>
                     <div className="flex-1 overflow-hidden relative">
-                        {isLockedByOther && <div className="absolute inset-0 bg-black/50 z-20 flex items-center justify-center backdrop-blur-[1px] pointer-events-none"><div className="bg-slate-900 border border-amber-500/50 rounded-xl px-6 py-4 flex flex-col items-center gap-2 shadow-2xl pointer-events-auto"><Lock size={32} className="text-amber-500"/><h3 className="text-lg font-bold text-white">Locked by {activeWriterName}</h3><button onClick={handleTakeControl} className="mt-2 px-4 py-2 bg-indigo-600 text-white font-bold rounded-lg text-sm">Take Control</button></div></div>}
                         <RichCodeEditor code={activeFile.content} onChange={handleCodeChange} onCursorMove={(l, c) => setLocalCursor({line: l, col: c})} language={activeFile.language} isShared={isSharedSession} remoteCursors={activeRemoteCursors} localCursor={localCursor} readOnly={isLockedByOther} />
                     </div>
                   </>
