@@ -159,3 +159,16 @@ export async function deleteDriveFile(accessToken: string, fileId: string): Prom
       throw new Error(`Drive Delete Failed (${res.status})`);
   }
 }
+
+export async function moveDriveFile(accessToken: string, fileId: string, currentParentId: string, newParentId: string): Promise<void> {
+  const url = `https://www.googleapis.com/drive/v3/files/${fileId}?addParents=${newParentId}&removeParents=${currentParentId}`;
+  const res = await fetch(url, {
+    method: 'PATCH',
+    headers: { Authorization: `Bearer ${accessToken}` }
+  });
+  
+  if (!res.ok) {
+      const errText = await res.text();
+      throw new Error(`Drive Move Failed (${res.status}): ${errText}`);
+  }
+}

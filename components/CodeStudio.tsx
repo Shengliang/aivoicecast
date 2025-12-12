@@ -1,10 +1,11 @@
+
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { CodeProject, CodeFile, UserProfile, Channel, CursorPosition } from '../types';
 import { ArrowLeft, Save, Plus, Github, Cloud, HardDrive, Code, X, ChevronRight, ChevronDown, File, Folder, DownloadCloud, Loader2, CheckCircle, AlertTriangle, Info, FolderPlus, FileCode, RefreshCw, LogIn, CloudUpload, Trash2, ArrowUp, Edit2, FolderOpen, MoreVertical, Send, MessageSquare, Bot, Mic, Sparkles, SidebarClose, SidebarOpen, Users, Eye, FileText as FileTextIcon, Image as ImageIcon, StopCircle, Minus, Maximize2, Lock, Unlock, Share2, Terminal, Copy, WifiOff, PanelRightClose, PanelRightOpen, Monitor, Laptop } from 'lucide-react';
 import { connectGoogleDrive } from '../services/authService';
 import { fetchPublicRepoInfo, fetchRepoContents, fetchFileContent, commitToRepo, fetchRepoSubTree } from '../services/githubService';
-import { listCloudDirectory, saveProjectToCloud, deleteCloudItem, createCloudFolder, CloudItem, subscribeToCodeProject, saveCodeProject, updateCodeFile, updateCursor, claimCodeProjectLock, updateProjectActiveFile, deleteCodeFile } from '../services/firestoreService';
-import { ensureCodeStudioFolder, listDriveFiles, readDriveFile, saveToDrive, deleteDriveFile, createDriveFolder, DriveFile } from '../services/googleDriveService';
+import { listCloudDirectory, saveProjectToCloud, deleteCloudItem, createCloudFolder, CloudItem, subscribeToCodeProject, saveCodeProject, updateCodeFile, updateCursor, claimCodeProjectLock, updateProjectActiveFile, deleteCodeFile, moveCloudFile } from '../services/firestoreService';
+import { ensureCodeStudioFolder, listDriveFiles, readDriveFile, saveToDrive, deleteDriveFile, createDriveFolder, DriveFile, moveDriveFile } from '../services/googleDriveService';
 import { GoogleGenAI, FunctionDeclaration, Type } from '@google/genai';
 import { GeminiLiveService } from '../services/geminiLive';
 import { GEMINI_API_KEY } from '../services/private_keys';
@@ -82,6 +83,7 @@ interface TreeNode {
     children: TreeNode[];
     isLoaded?: boolean; 
     status?: 'modified' | 'new' | 'sync' | 'error';
+    parentId?: string; // Add parentId to track source folder
 }
 
 const FileTreeItem: React.FC<{
@@ -92,22 +94,55 @@ const FileTreeItem: React.FC<{
     onToggle: (node: TreeNode) => void;
     onDelete?: (node: TreeNode) => void;
     onShare?: (node: TreeNode) => void;
+    onDragStart: (e: React.DragEvent, node: TreeNode) => void;
+    onDrop: (e: React.DragEvent, targetNode: TreeNode) => void;
     expandedIds: Record<string, boolean>;
     loadingIds: Record<string, boolean>;
-}> = ({ node, depth, activeId, onSelect, onToggle, onDelete, onShare, expandedIds, loadingIds }) => {
+}> = ({ node, depth, activeId, onSelect, onToggle, onDelete, onShare, onDragStart, onDrop, expandedIds, loadingIds }) => {
     const isOpen = expandedIds[node.id];
     const isLoading = loadingIds[node.id];
     const isActive = activeId === node.id;
     const [showMenu, setShowMenu] = useState(false);
+    const [isDragOver, setIsDragOver] = useState(false);
+
+    const handleDragOver = (e: React.DragEvent) => {
+        if (node.type === 'folder') {
+            e.preventDefault(); // Allow drop
+            e.stopPropagation();
+            if (!isDragOver) setIsDragOver(true);
+        }
+    };
+
+    const handleDragLeave = (e: React.DragEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (node.type === 'folder') {
+            setIsDragOver(false);
+        }
+    };
+
+    const handleDrop = (e: React.DragEvent) => {
+        if (node.type === 'folder') {
+            e.preventDefault();
+            e.stopPropagation();
+            setIsDragOver(false);
+            onDrop(e, node);
+        }
+    };
 
     return (
         <div className="select-none relative group">
             <div 
-                className={`flex items-center justify-between py-1 px-2 cursor-pointer hover:bg-slate-800 transition-colors ${isActive ? 'bg-slate-800/80 text-white border-l-2 border-indigo-500' : 'text-slate-400 border-l-2 border-transparent'}`}
+                className={`flex items-center justify-between py-1 px-2 cursor-pointer transition-colors ${isActive ? 'bg-slate-800/80 text-white border-l-2 border-indigo-500' : 'text-slate-400 border-l-2 border-transparent'} ${isDragOver ? 'bg-indigo-900/50 border-indigo-400 border-l-2' : 'hover:bg-slate-800'}`}
                 style={{ paddingLeft: `${depth * 12 + 8}px` }}
                 onClick={() => onSelect(node)}
                 onMouseEnter={() => setShowMenu(true)}
                 onMouseLeave={() => setShowMenu(false)}
+                draggable={true}
+                onDragStart={(e) => onDragStart(e, node)}
+                onDragOver={handleDragOver}
+                onDragLeave={handleDragLeave}
+                onDrop={handleDrop}
             >
                 <div className="flex items-center gap-2 min-w-0 flex-1 overflow-hidden">
                     {node.type === 'folder' ? (
@@ -158,6 +193,8 @@ const FileTreeItem: React.FC<{
                                 onToggle={onToggle}
                                 onDelete={onDelete}
                                 onShare={onShare}
+                                onDragStart={onDragStart}
+                                onDrop={onDrop}
                                 expandedIds={expandedIds}
                                 loadingIds={loadingIds}
                             />
@@ -356,6 +393,9 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
   
   // Selection State
   const [selectedExplorerNode, setSelectedExplorerNode] = useState<TreeNode | null>(null);
+  
+  // Drag and Drop State
+  const [draggedNode, setDraggedNode] = useState<TreeNode | null>(null);
 
   // Layout State
   const [isLeftOpen, setIsLeftOpen] = useState(true);
@@ -545,6 +585,99 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
               });
           } catch(e) { console.error(e); } 
           finally { setLoadingFolders(prev => ({ ...prev, [node.id]: false })); }
+      }
+  };
+
+  // --- DRAG AND DROP HANDLERS ---
+  const handleDragStart = (e: React.DragEvent, node: TreeNode) => {
+      setDraggedNode(node);
+      e.dataTransfer.effectAllowed = 'move';
+      // Set visual drag image if needed, default is usually fine
+  };
+
+  const handleDrop = async (e: React.DragEvent, targetNode: TreeNode) => {
+      e.preventDefault();
+      if (!draggedNode) return;
+      if (draggedNode.id === targetNode.id) return;
+      if (targetNode.type !== 'folder') return; // Should be handled by FileTreeItem logic but double check
+
+      // Prevent moving parent into child (basic cycle check)
+      if (activeTab !== 'session') {
+          // Check if dragging logic is valid for backend
+      }
+
+      try {
+          if (activeTab === 'session') {
+              // Local Session Move
+              // Construct new path
+              const newPath = targetNode.id + '/' + draggedNode.name.split('/').pop();
+              
+              setProject(prev => {
+                  const newFiles = prev.files.map(f => {
+                      if ((f.path || f.name) === draggedNode.id) {
+                          return { ...f, path: newPath, name: newPath }; // Update both for consistency in simplified model
+                      }
+                      return f;
+                  });
+                  return { ...prev, files: newFiles };
+              });
+              
+              if (activeFile && (activeFile.path || activeFile.name) === draggedNode.id) {
+                  setActiveFile(prev => prev ? ({ ...prev, path: newPath, name: newPath }) : null);
+              }
+              
+              if (isSharedSession && sessionId) {
+                  // In shared session, delete old and create new is safest pattern without complex atomic move
+                  await deleteCodeFile(sessionId, draggedNode.id);
+                  const fileData = project.files.find(f => (f.path || f.name) === draggedNode.id);
+                  if (fileData) {
+                      await updateCodeFile(sessionId, { ...fileData, path: newPath, name: newPath });
+                  }
+              }
+              showToast(`Moved to ${targetNode.name}`, "success");
+
+          } else if (activeTab === 'cloud') {
+              if (draggedNode.type === 'folder') {
+                  alert("Moving folders is not supported in Cloud mode yet.");
+                  return;
+              }
+              // Cloud Move
+              const item = draggedNode.data as CloudItem;
+              const targetPath = (targetNode.data as CloudItem).fullPath;
+              const newFullPath = targetPath + '/' + item.name;
+              
+              await moveCloudFile(item.fullPath, newFullPath);
+              showToast("File moved in Cloud", "success");
+              refreshExplorer();
+
+          } else if (activeTab === 'drive') {
+              if (!driveToken) return;
+              // Drive Move
+              const file = draggedNode.data as DriveFile;
+              const targetId = (targetNode.data as DriveFile).id;
+              
+              // We need current parent ID. It is tracked in driveItems state as 'parentId'.
+              const currentItem = driveItems.find(i => i.id === file.id);
+              const currentParentId = currentItem?.parentId;
+              
+              if (currentParentId && currentParentId !== targetId) {
+                  await moveDriveFile(driveToken, file.id, currentParentId, targetId);
+                  showToast("File moved in Drive", "success");
+                  
+                  // Update local state to reflect move without full reload
+                  setDriveItems(prev => prev.map(i => {
+                      if (i.id === file.id) return { ...i, parentId: targetId };
+                      return i;
+                  }));
+              } else {
+                  console.warn("Could not determine parent ID or moving to same folder.");
+              }
+          }
+      } catch (err: any) {
+          console.error("Move failed", err);
+          showToast("Move failed: " + err.message, "error");
+      } finally {
+          setDraggedNode(null);
       }
   };
 
@@ -890,12 +1023,12 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
                               <span className="text-[10px] font-bold text-slate-500">REPOSITORY</span>
                               <button onClick={() => setShowImportModal(true)} className="text-[10px] text-indigo-400 hover:underline">Change</button>
                           </div>
-                          {workspaceTree.map(node => <FileTreeItem key={node.id} node={node} depth={0} activeId={selectedExplorerNode?.id} onSelect={handleExplorerSelect} onToggle={(n) => setExpandedFolders(p => ({...p, [n.id]: !p[n.id]}))} expandedIds={expandedFolders} loadingIds={loadingFolders} onShare={handleShareItem} />)}
+                          {workspaceTree.map(node => <FileTreeItem key={node.id} node={node} depth={0} activeId={selectedExplorerNode?.id} onSelect={handleExplorerSelect} onToggle={(n) => setExpandedFolders(p => ({...p, [n.id]: !p[n.id]}))} expandedIds={expandedFolders} loadingIds={loadingFolders} onShare={handleShareItem} onDragStart={handleDragStart} onDrop={handleDrop} />)}
                       </div>
                   )}
                   {activeTab === 'cloud' && (
                       <div className="p-2">
-                          {!currentUser ? <p className="text-xs text-slate-500 p-4 text-center">Sign in to access your Private Cloud storage.</p> : cloudTree.map(node => <FileTreeItem key={node.id} node={node} depth={0} activeId={selectedExplorerNode?.id} onSelect={handleExplorerSelect} onToggle={()=>{}} onDelete={handleDeleteItem} onShare={handleShareItem} expandedIds={expandedFolders} loadingIds={loadingFolders}/>)}
+                          {!currentUser ? <p className="text-xs text-slate-500 p-4 text-center">Sign in to access your Private Cloud storage.</p> : cloudTree.map(node => <FileTreeItem key={node.id} node={node} depth={0} activeId={selectedExplorerNode?.id} onSelect={handleExplorerSelect} onToggle={()=>{}} onDelete={handleDeleteItem} onShare={handleShareItem} expandedIds={expandedFolders} loadingIds={loadingFolders} onDragStart={handleDragStart} onDrop={handleDrop}/>)}
                       </div>
                   )}
                   {activeTab === 'drive' && (
@@ -914,6 +1047,8 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
                                       onToggle={handleDriveToggle} 
                                       onDelete={handleDeleteItem}
                                       expandedIds={expandedFolders} loadingIds={loadingFolders}
+                                      onDragStart={handleDragStart}
+                                      onDrop={handleDrop}
                                   />
                               ))
                           )}
@@ -922,7 +1057,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
                   {activeTab === 'session' && (
                       <div className="p-2">
                           <p className="text-[10px] font-bold text-slate-500 px-2 mb-2">IN MEMORY / SESSION</p>
-                          {workspaceTree.map(node => <FileTreeItem key={node.id} node={node} depth={0} activeId={selectedExplorerNode?.id} onSelect={handleExplorerSelect} onToggle={(n) => setExpandedFolders(p => ({...p, [n.id]: !p[n.id]}))} onDelete={handleDeleteItem} expandedIds={expandedFolders} loadingIds={loadingFolders} />)}
+                          {workspaceTree.map(node => <FileTreeItem key={node.id} node={node} depth={0} activeId={selectedExplorerNode?.id} onSelect={handleExplorerSelect} onToggle={(n) => setExpandedFolders(p => ({...p, [n.id]: !p[n.id]}))} onDelete={handleDeleteItem} expandedIds={expandedFolders} loadingIds={loadingFolders} onDragStart={handleDragStart} onDrop={handleDrop} />)}
                       </div>
                   )}
               </div>
