@@ -628,10 +628,21 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
               
               const currentActive = activeFileRef.current;
               // Check if the file we are currently viewing has been updated remotely
-              if (currentActive && currentActive.path && !currentActive.path.startsWith('drive://') && !currentActive.path.startsWith('cloud://')) {
-                  const remoteFile = remoteProject.files.find(f => (f.path || f.name) === (currentActive.path || currentActive.name));
+              // Relaxed check: Allow files without path (e.g. new files) to sync, but skip Cloud/Drive files
+              const isRemoteStorage = currentActive?.path?.startsWith('drive://') || currentActive?.path?.startsWith('cloud://');
+              
+              if (currentActive && !isRemoteStorage) {
+                  // Robust file matching by path OR name (for new files where path might be undefined)
+                  const remoteFile = remoteProject.files.find(f => {
+                      const p1 = f.path || f.name;
+                      const p2 = currentActive.path || currentActive.name;
+                      return p1 === p2;
+                  });
+
                   if (remoteFile && remoteFile.content !== currentActive.content) {
                       // Last Writer Wins: Always accept incoming content if it changed remotely
+                      // Important: Update ref immediately to prevent race conditions
+                      activeFileRef.current = remoteFile;
                       setActiveFile(remoteFile);
                   }
               }
