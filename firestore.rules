@@ -1,3 +1,4 @@
+
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -59,6 +60,13 @@ service cloud.firestore {
       match /lectures/{lectureId} { allow read, write: if true; }
       match /comments/{commentId} { allow read, write: if true; }
       match /meta/{docId} { allow read, write: if true; }
+    }
+
+    // ----------------------------------------------------------------------
+    // GLOBAL STATS (New)
+    match /stats/{statId} {
+      allow read: if true; 
+      allow write: if isAuthenticated();
     }
 
     // ----------------------------------------------------------------------

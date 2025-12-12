@@ -1,5 +1,4 @@
 
-
 import { db, auth, storage } from './firebaseConfig';
 import firebase from 'firebase/compat/app';
 import { 
@@ -20,7 +19,12 @@ export async function getUserProfile(uid: string): Promise<UserProfile | null> {
 export async function getGlobalStats(): Promise<GlobalStats> {
   const doc = await db.collection('stats').doc('global').get();
   if (!doc.exists) return { totalLogins: 0, uniqueUsers: 0 };
-  return doc.data() as GlobalStats;
+  
+  const data = doc.data();
+  return {
+      totalLogins: data?.totalLogins || 0,
+      uniqueUsers: data?.uniqueUsers || 0
+  };
 }
 
 export async function syncUserProfile(user: firebase.User): Promise<void> {
@@ -46,9 +50,13 @@ export async function syncUserProfile(user: firebase.User): Promise<void> {
     
     // Increment Unique Users Count Global Stats
     const statsRef = db.collection('stats').doc('global');
-    await statsRef.set({
-        uniqueUsers: firebase.firestore.FieldValue.increment(1)
-    }, { merge: true });
+    try {
+        await statsRef.set({
+            uniqueUsers: firebase.firestore.FieldValue.increment(1)
+        }, { merge: true });
+    } catch (e) {
+        console.error("Failed to increment unique users stat:", e);
+    }
 
   } else {
     await userRef.update(userData);
@@ -84,9 +92,13 @@ export async function logUserActivity(type: string, data: any): Promise<void> {
   // Increment Total Logins Global Stats
   if (type === 'login') {
       const statsRef = db.collection('stats').doc('global');
-      await statsRef.set({
-          totalLogins: firebase.firestore.FieldValue.increment(1)
-      }, { merge: true });
+      try {
+          await statsRef.set({
+              totalLogins: firebase.firestore.FieldValue.increment(1)
+          }, { merge: true });
+      } catch (e) {
+          console.error("Failed to increment login stat:", e);
+      }
   }
 }
 
