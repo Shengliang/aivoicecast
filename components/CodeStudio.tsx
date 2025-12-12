@@ -222,7 +222,7 @@ const RichCodeEditor: React.FC<{
     return (
         <div className="relative w-full h-full flex overflow-hidden group">
             {/* Line Numbers */}
-            <div className="w-10 bg-slate-900 text-slate-600 text-right pr-2 select-none text-sm font-mono pt-4 border-r border-slate-800 shrink-0">
+            <div className="w-10 bg-slate-900 text-slate-600 text-right pr-2 select-none text-sm font-mono pt-4 border-r border-slate-800 shrink-0" style={{lineHeight: '21px'}}>
                 {code.split('\n').map((_, i) => <div key={i}>{i + 1}</div>)}
             </div>
             
@@ -230,7 +230,7 @@ const RichCodeEditor: React.FC<{
                 {/* Highlight Layer */}
                 <pre 
                     className="absolute top-0 left-0 m-0 p-4 font-mono text-sm pointer-events-none w-full min-h-full"
-                    style={{ fontFamily: '"JetBrains Mono", monospace', lineHeight: '1.5' }}
+                    style={{ fontFamily: '"JetBrains Mono", monospace', lineHeight: '21px' }} // Strict 21px line height
                     aria-hidden="true"
                 >
                     <code 
@@ -243,11 +243,15 @@ const RichCodeEditor: React.FC<{
                 {remoteCursors && remoteCursors.map(cursor => (
                     <div 
                         key={cursor.clientId}
-                        className="absolute pointer-events-none transition-all duration-100"
+                        className="absolute pointer-events-none transition-all duration-75"
                         style={{
-                            top: `${(cursor.line - 1) * 21 + 16}px`, // 21px line height approx, 16px padding
-                            left: `${(cursor.column) * 8.4 + 16}px`, // 8.4px char width approx, 16px padding
-                            height: '21px'
+                            // Fix: Use 21px hardcoded step. Padding 16px.
+                            top: `${(cursor.line - 1) * 21 + 16}px`, 
+                            // Fix: Use ch units to match font width exactly. Padding 16px.
+                            left: `calc(${(cursor.column - 1)}ch + 16px)`, 
+                            height: '21px',
+                            fontFamily: '"JetBrains Mono", monospace',
+                            fontSize: '0.875rem' // 14px
                         }}
                     >
                         <div className="w-0.5 h-full absolute top-0 left-0 animate-pulse" style={{ backgroundColor: cursor.color }}></div>
@@ -268,7 +272,7 @@ const RichCodeEditor: React.FC<{
                     onKeyUp={handleInputEvents}
                     onClick={handleInputEvents}
                     className="absolute top-0 left-0 w-full h-full p-4 font-mono text-sm bg-transparent text-transparent caret-white outline-none resize-none overflow-hidden"
-                    style={{ fontFamily: '"JetBrains Mono", monospace', lineHeight: '1.5' }}
+                    style={{ fontFamily: '"JetBrains Mono", monospace', lineHeight: '21px' }} // Strict 21px line height
                     spellCheck={false}
                     autoCapitalize="off"
                     autoComplete="off"
@@ -280,23 +284,26 @@ const RichCodeEditor: React.FC<{
 
 // --- Debug Cursor Window ---
 const DebugCursorPanel: React.FC<{ localCursor: {line: number, col: number} | null, remoteCursors: CursorPosition[] }> = ({ localCursor, remoteCursors }) => {
-    const [minimized, setMinimized] = useState(false);
+    const [minimized, setMinimized] = useState(true);
 
     if (minimized) {
         return (
             <button 
                 onClick={() => setMinimized(false)}
-                className="absolute bottom-4 right-4 bg-slate-900/90 hover:bg-slate-800 text-slate-300 border border-slate-700 rounded-lg shadow-xl p-2 z-[60] flex items-center gap-2 transition-all hover:scale-105"
+                className="absolute bottom-4 left-4 bg-slate-900/90 hover:bg-slate-800 text-slate-300 border border-slate-700 rounded-lg shadow-xl p-2 z-[60] flex items-center gap-2 transition-all hover:scale-105 font-mono"
                 title="Show Debug Info"
             >
                 <Maximize2 size={14} />
-                <span className="text-xs font-bold">Debug ({remoteCursors.length})</span>
+                <span className="text-[10px] font-bold">
+                    M({localCursor?.line || 1},{localCursor?.col || 1})
+                    {remoteCursors.length > 0 && ` R(${remoteCursors[0].line},${remoteCursors[0].column})`}
+                </span>
             </button>
         );
     }
 
     return (
-        <div className="absolute bottom-4 right-4 bg-slate-900/95 border border-slate-700 rounded-xl shadow-2xl p-0 z-[60] text-xs text-slate-300 font-mono w-72 backdrop-blur-md overflow-hidden animate-fade-in-up">
+        <div className="absolute bottom-4 left-4 bg-slate-900/95 border border-slate-700 rounded-xl shadow-2xl p-0 z-[60] text-xs text-slate-300 font-mono w-72 backdrop-blur-md overflow-hidden animate-fade-in-up">
             <div className="flex justify-between items-center bg-slate-950/80 p-2 border-b border-slate-800">
                 <span className="font-bold text-slate-400 flex items-center gap-2">
                     <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
@@ -543,9 +550,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
               if (activeFile && activeFile.path && !activeFile.path.startsWith('drive://') && !activeFile.path.startsWith('cloud://')) {
                   const remoteFile = remoteProject.files.find(f => f.path === activeFile.path);
                   if (remoteFile && remoteFile.content !== activeFile.content) {
-                      // Simple merge: Remote update wins if it's newer (handled by lastModified check above mostly, but direct file content check here)
-                      // In a real N-user concurrent system with no locking, we accept the incoming change.
-                      // This might overwrite mid-typing if latency is high, but "Last Writer Wins" was requested.
+                      // Last Writer Wins: Always accept incoming content if it changed remotely
                       setActiveFile(remoteFile);
                   }
               }
@@ -991,11 +996,6 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
           ))}
       </div>
 
-      {/* Debug Overlay - Now at Root Level to fix positioning */}
-      {activeFile && (
-          <DebugCursorPanel localCursor={localCursor} remoteCursors={activeRemoteCursors} />
-      )}
-
       {/* Header */}
       <header className="h-14 bg-slate-900 border-b border-slate-800 flex items-center justify-between px-4 shrink-0 z-20">
          <div className="flex items-center space-x-4">
@@ -1149,6 +1149,10 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
                                 isShared={isSharedSession}
                                 remoteCursors={activeRemoteCursors}
                             />
+                        )}
+                        {/* Debug Overlay - Inside the Editor Container */}
+                        {isSharedSession && (
+                            <DebugCursorPanel localCursor={localCursor} remoteCursors={activeRemoteCursors} />
                         )}
                     </div>
                   </>
