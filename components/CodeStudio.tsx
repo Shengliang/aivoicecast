@@ -497,7 +497,17 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
       setSaveStatus('saving');
       try {
           if (activeTab === 'cloud' && currentUser && activeFile) {
-               await saveProjectToCloud(`projects/${currentUser.uid}`, activeFile.name, activeFile.content);
+               // Calculate directory path from file path to prevent saving to root
+               let parentPath = `projects/${currentUser.uid}`;
+               if (activeFile.path) {
+                   // activeFile.path is full path like "projects/uid/folder/file.txt"
+                   const lastSlash = activeFile.path.lastIndexOf('/');
+                   if (lastSlash > -1) {
+                       parentPath = activeFile.path.substring(0, lastSlash);
+                   }
+               }
+               
+               await saveProjectToCloud(parentPath, activeFile.name, activeFile.content);
                showToast("Saved to Cloud", "success");
           } else if (activeTab === 'drive' && driveToken && driveRootId && activeFile) {
                await saveToDrive(driveToken, driveRootId, activeFile.name, activeFile.content);
