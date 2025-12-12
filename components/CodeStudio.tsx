@@ -633,10 +633,11 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
               
               if (currentActive && !isRemoteStorage) {
                   // Robust file matching by path OR name (for new files where path might be undefined)
+                  // Use a simpler matching strategy first: Match strict path if available, else match name
                   const remoteFile = remoteProject.files.find(f => {
-                      const p1 = f.path || f.name;
-                      const p2 = currentActive.path || currentActive.name;
-                      return p1 === p2;
+                      if (currentActive.path && f.path) return f.path === currentActive.path;
+                      // Fallback: If local file has no path (new file), match by name
+                      return f.name === currentActive.name;
                   });
 
                   if (remoteFile && remoteFile.content !== currentActive.content) {
