@@ -286,7 +286,7 @@ const DebugCursorPanel: React.FC<{ localCursor: {line: number, col: number} | nu
         return (
             <button 
                 onClick={() => setMinimized(false)}
-                className="absolute bottom-4 right-4 bg-slate-900/90 hover:bg-slate-800 text-slate-300 border border-slate-700 rounded-lg shadow-xl p-2 z-50 flex items-center gap-2 transition-all hover:scale-105"
+                className="absolute bottom-4 right-4 bg-slate-900/90 hover:bg-slate-800 text-slate-300 border border-slate-700 rounded-lg shadow-xl p-2 z-[60] flex items-center gap-2 transition-all hover:scale-105"
                 title="Show Debug Info"
             >
                 <Maximize2 size={14} />
@@ -296,7 +296,7 @@ const DebugCursorPanel: React.FC<{ localCursor: {line: number, col: number} | nu
     }
 
     return (
-        <div className="absolute bottom-4 right-4 bg-slate-900/95 border border-slate-700 rounded-xl shadow-2xl p-0 z-50 text-xs text-slate-300 font-mono w-72 backdrop-blur-md overflow-hidden animate-fade-in-up">
+        <div className="absolute bottom-4 right-4 bg-slate-900/95 border border-slate-700 rounded-xl shadow-2xl p-0 z-[60] text-xs text-slate-300 font-mono w-72 backdrop-blur-md overflow-hidden animate-fade-in-up">
             <div className="flex justify-between items-center bg-slate-950/80 p-2 border-b border-slate-800">
                 <span className="font-bold text-slate-400 flex items-center gap-2">
                     <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
@@ -989,11 +989,12 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
                   {n.type === 'error' ? <AlertTriangle size={14}/> : <Info size={14}/>} <span>{n.message}</span>
               </div>
           ))}
-          {/* Debug Overlay */}
-          {activeFile && isSharedSession && (
-              <DebugCursorPanel localCursor={localCursor} remoteCursors={activeRemoteCursors} />
-          )}
       </div>
+
+      {/* Debug Overlay - Now at Root Level to fix positioning */}
+      {activeFile && (
+          <DebugCursorPanel localCursor={localCursor} remoteCursors={activeRemoteCursors} />
+      )}
 
       {/* Header */}
       <header className="h-14 bg-slate-900 border-b border-slate-800 flex items-center justify-between px-4 shrink-0 z-20">
