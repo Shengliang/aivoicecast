@@ -47,6 +47,19 @@ function getLanguageFromExt(filename: string): any {
     return 'text';
 }
 
+function cleanRepoPath(input: string) {
+    if (!input) return null;
+    let clean = input.trim();
+    // Remove protocol and domain if present
+    clean = clean.replace(/^(https?:\/\/)?(www\.)?github\.com\//, '');
+    // Remove .git extension
+    if (clean.endsWith('.git')) clean = clean.slice(0, -4);
+    
+    const parts = clean.split('/').filter(Boolean);
+    if (parts.length >= 2) return { owner: parts[0], repo: parts[1] };
+    return null;
+}
+
 // --- Helper Components ---
 
 const FileIcon = ({ filename }: { filename: string }) => {
@@ -263,9 +276,17 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
 
   const handleLoadPublicRepo = useCallback(async () => {
       if (!publicRepoPath.trim()) return;
+      
+      const cleaned = cleanRepoPath(publicRepoPath);
+      if (!cleaned) {
+          // If manually typed, show error. If auto-loaded, maybe silent or error.
+          // But here we just return to avoid crashing
+          return; 
+      }
+      const { owner, repo } = cleaned;
+
       setIsLoadingPublic(true);
       try {
-          const [owner, repo] = publicRepoPath.split('/');
           // Pass githubToken here to support private repos or higher rate limits
           const info = await fetchRepoInfo(owner, repo, githubToken); 
           const { files, latestSha } = await fetchRepoContents(githubToken, owner, repo, info.default_branch);
@@ -283,12 +304,20 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
           setActiveFile(null); 
           setShowImportModal(false); 
           setExpandedFolders({}); 
-          showToast("Repo opened", "success");
+          showToast(`Repo ${owner}/${repo} opened`, "success");
           if (isSharedSession && sessionId) {
               await saveCodeProject(newProjectData);
               updateProjectActiveFile(sessionId, '');
           }
-      } catch (e: any) { showToast(e.message, "error"); } finally { setIsLoadingPublic(false); }
+      } catch (e: any) { 
+          // If error is 404 and we don't have token, it might be private.
+          // The auto-load effect will retry when token becomes available (via Connect GitHub)
+          if (!githubToken && e.message.includes('404')) {
+              // Be silent on auto-load failure for private repo until user connects
+          } else {
+              showToast(e.message, "error"); 
+          }
+      } finally { setIsLoadingPublic(false); }
   }, [publicRepoPath, githubToken, sessionId, currentUser, isSharedSession]);
 
   // Auto-Load Default Repo logic
@@ -298,7 +327,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
       if (activeTab === 'github' && !project.github && publicRepoPath && !isLoadingPublic) {
           handleLoadPublicRepo(); 
       }
-  }, [activeTab, publicRepoPath, project.github, handleLoadPublicRepo]);
+  }, [activeTab, publicRepoPath, project.github, handleLoadPublicRepo, githubToken]); // Add githubToken to retry on auth
 
   useEffect(() => {
       const currentPath = activeFile ? (activeFile.path || activeFile.name) : null;
@@ -1007,7 +1036,18 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
                                   <Github size={14} /> <span>Connect GitHub</span>
                               </button>
                           )}
-                          {!project.github ? <div className="p-4 text-center"><button onClick={() => setShowImportModal(true)} className="px-4 py-2 bg-slate-800 text-white text-xs font-bold rounded-lg border border-slate-700 hover:bg-slate-700">Open Repo</button></div> : workspaceTree.map(node => <FileTreeItem key={node.id} node={node} depth={0} activeId={selectedExplorerNode?.id} onSelect={handleExplorerSelect} onToggle={(n: any) => setExpandedFolders(prev => ({...prev, [n.id]: !expandedFolders[n.id]}))} onDelete={handleDeleteItem} onRename={handleRenameItem} expandedIds={expandedFolders} loadingIds={loadingFolders} onDragStart={handleDragStart} onDrop={handleDrop}/>)}
+                          {!project.github ? (
+                              <div className="p-4 text-center">
+                                  {isLoadingPublic ? (
+                                      <div className="flex flex-col items-center gap-2 text-slate-500">
+                                          <Loader2 className="animate-spin" size={24}/>
+                                          <span className="text-xs">Loading {publicRepoPath || 'repo'}...</span>
+                                      </div>
+                                  ) : (
+                                      <button onClick={() => setShowImportModal(true)} className="px-4 py-2 bg-slate-800 text-white text-xs font-bold rounded-lg border border-slate-700 hover:bg-slate-700">Open Repo</button>
+                                  )}
+                              </div>
+                          ) : workspaceTree.map(node => <FileTreeItem key={node.id} node={node} depth={0} activeId={selectedExplorerNode?.id} onSelect={handleExplorerSelect} onToggle={(n: any) => setExpandedFolders(prev => ({...prev, [n.id]: !expandedFolders[n.id]}))} onDelete={handleDeleteItem} onRename={handleRenameItem} expandedIds={expandedFolders} loadingIds={loadingFolders} onDragStart={handleDragStart} onDrop={handleDrop}/>)}
                       </div>
                   )}
                   {activeTab === 'session' && (
