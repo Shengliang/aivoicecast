@@ -667,8 +667,31 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
           const [owner, repo] = publicRepoPath.split('/');
           const info = await fetchPublicRepoInfo(owner, repo);
           const { files, latestSha } = await fetchRepoContents(null, owner, repo, info.default_branch);
-          setProject({ id: `gh-${info.id}`, name: info.full_name, files, lastModified: Date.now(), github: { owner, repo, branch: info.default_branch, sha: latestSha } });
-          setActiveFile(null); setShowImportModal(false); setExpandedFolders({}); setActiveTab('github'); showNotification("Repo opened", "success");
+          
+          const newProjectData: CodeProject = { 
+              id: sessionId || `gh-${info.id}`, // Use session ID if shared to maintain session
+              name: info.full_name, 
+              files, 
+              lastModified: Date.now(), 
+              github: { owner, repo, branch: info.default_branch, sha: latestSha },
+              ownerId: currentUser?.uid
+          };
+
+          setProject(newProjectData);
+          setActiveFile(null); 
+          setShowImportModal(false); 
+          setExpandedFolders({}); 
+          setActiveTab('github'); 
+          showNotification("Repo opened", "success");
+          
+          // IMPORTANT: If we are in a shared session, we MUST update the shared project state
+          // so readers can see the new file tree.
+          if (isSharedSession && sessionId) {
+              await saveCodeProject(newProjectData);
+              // Clear active file path on cloud so readers don't try to sync to a file that might not exist in new repo
+              updateProjectActiveFile(sessionId, '');
+          }
+
       } catch (e: any) { showNotification(e.message, "error"); } finally { setIsLoadingPublic(false); }
   };
 
@@ -678,8 +701,14 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
           try {
               const content = await fetchFileContent(null, project.github.owner, project.github.repo, file.path || file.name, project.github.branch);
               const updatedFile = { ...file, content, loaded: true };
+              
               setProject(prev => ({ ...prev, files: prev.files.map(f => (f.path || f.name) === (file.path || file.name) ? updatedFile : f) }));
               setActiveFile(updatedFile);
+              
+              // If we fetched content, sync it to shared session so readers can see it too
+              if (isSharedSession && sessionId) {
+                  updateCodeFile(sessionId, updatedFile);
+              }
           } catch(e) { showNotification("Load failed", "error"); }
       } else {
           setActiveFile(file);
