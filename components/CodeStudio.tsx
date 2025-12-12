@@ -247,7 +247,8 @@ const AIChatPanel: React.FC<{
     onSendMessage: (text: string) => void;
     isThinking: boolean;
     onApplyCode: (newCode: string) => void;
-}> = ({ isOpen, onClose, messages, onSendMessage, isThinking, onApplyCode }) => {
+    onStartLive: () => void;
+}> = ({ isOpen, onClose, messages, onSendMessage, isThinking, onApplyCode, onStartLive }) => {
     const [input, setInput] = useState('');
     const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -273,7 +274,12 @@ const AIChatPanel: React.FC<{
         <div className="w-80 bg-slate-900 border-l border-slate-800 flex flex-col h-full absolute right-0 top-0 z-20 shadow-2xl">
             <div className="p-3 border-b border-slate-800 flex justify-between items-center bg-slate-950">
                 <h3 className="font-bold text-white flex items-center gap-2"><Bot size={16} className="text-indigo-400"/> AI Assistant</h3>
-                <button onClick={onClose}><X size={16} className="text-slate-400 hover:text-white"/></button>
+                <div className="flex items-center gap-1">
+                    <button onClick={onStartLive} className="p-1.5 hover:bg-slate-800 rounded text-pink-400 hover:text-pink-300" title="Start Live Voice Session">
+                        <Mic size={16} />
+                    </button>
+                    <button onClick={onClose}><X size={16} className="text-slate-400 hover:text-white"/></button>
+                </div>
             </div>
             
             <div className="flex-1 overflow-y-auto p-4 space-y-4">
@@ -652,10 +658,20 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
       }
   };
 
-  const handleTeachMe = () => {
-      if (!activeFile) return;
-      setIsAIChatOpen(true);
-      handleChatSendMessage(`Explain the code in ${activeFile.name} to me like I'm a junior engineer. Break it down step by step.`);
+  // Replaces the old handleTeachMe with a direct voice launch logic
+  const handleStartVoice = () => {
+      if (!onStartLiveSession || !activeFile) return;
+      const channel: Channel = {
+          id: `voice-${Date.now()}`,
+          title: `Code Review: ${activeFile.name}`,
+          description: "Live Code Review",
+          author: "System",
+          voiceName: "Fenrir",
+          systemInstruction: `You are a senior engineer doing a code review of ${activeFile.name}. The user will ask questions or ask for explanation. Be strict but helpful.`,
+          likes: 0, dislikes: 0, comments: [], tags: [], imageUrl: "", createdAt: Date.now()
+      };
+      // Start the voice session passing the file content as initial context
+      onStartLiveSession(channel, activeFile.content);
   };
 
   const handleSmartSave = async () => {
@@ -701,13 +717,6 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
             </div>
             
             <div className="flex items-center space-x-2">
-               {/* Teach Me Button - Now triggers AI Chat Explanation */}
-               {activeFile && (
-                   <button onClick={handleTeachMe} className="flex items-center space-x-2 px-3 py-1.5 bg-pink-900/30 hover:bg-pink-900/50 text-pink-400 border border-pink-500/30 rounded-lg text-xs font-bold transition-colors">
-                       <Bot size={14}/> <span>Teach Me</span>
-                   </button>
-               )}
-               
                {/* Share Button */}
                <button onClick={handleShareSession} className={`flex items-center space-x-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors border ${isSharedSession ? 'bg-indigo-900/50 text-indigo-300 border-indigo-500/50' : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700'}`}>
                    <Users size={14}/> <span>{isSharedSession ? 'Shared' : 'Share'}</span>
@@ -858,6 +867,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
               onSendMessage={handleChatSendMessage}
               isThinking={isChatThinking}
               onApplyCode={handleCodeChange}
+              onStartLive={handleStartVoice}
           />
       </div>
 
