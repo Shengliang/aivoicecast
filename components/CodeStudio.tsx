@@ -1,13 +1,15 @@
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { CodeProject, CodeFile, UserProfile, Channel } from '../types';
-import { ArrowLeft, Save, Plus, Github, Cloud, HardDrive, Code, X, ChevronRight, ChevronDown, File, Folder, DownloadCloud, Loader2, CheckCircle, AlertTriangle, Info, FolderPlus, FileCode, RefreshCw, LogIn, CloudUpload, Trash2, ArrowUp, Edit2, FolderOpen, MoreVertical, Send, MessageSquare, Bot, Mic, Sparkles, SidebarClose, SidebarOpen, Users } from 'lucide-react';
+import { ArrowLeft, Save, Plus, Github, Cloud, HardDrive, Code, X, ChevronRight, ChevronDown, File, Folder, DownloadCloud, Loader2, CheckCircle, AlertTriangle, Info, FolderPlus, FileCode, RefreshCw, LogIn, CloudUpload, Trash2, ArrowUp, Edit2, FolderOpen, MoreVertical, Send, MessageSquare, Bot, Mic, Sparkles, SidebarClose, SidebarOpen, Users, Eye, FileText as FileTextIcon, Image as ImageIcon } from 'lucide-react';
 import { connectGoogleDrive } from '../services/authService';
 import { fetchPublicRepoInfo, fetchRepoContents, fetchFileContent, commitToRepo, fetchRepoSubTree } from '../services/githubService';
 import { listCloudDirectory, saveProjectToCloud, deleteCloudItem, createCloudFolder, CloudItem, subscribeToCodeProject, saveCodeProject } from '../services/firestoreService';
 import { ensureCodeStudioFolder, listDriveFiles, readDriveFile, saveToDrive, deleteDriveFile, createDriveFolder, DriveFile } from '../services/googleDriveService';
 import { GoogleGenAI } from '@google/genai';
 import { GEMINI_API_KEY } from '../services/private_keys';
+import { MarkdownView } from './MarkdownView';
+import { encodePlantUML } from '../utils/plantuml';
 
 interface CodeStudioProps {
   onBack: () => void;
@@ -26,7 +28,8 @@ const LANGUAGES = [
   { id: 'html', label: 'HTML' },
   { id: 'css', label: 'CSS' },
   { id: 'json', label: 'JSON' },
-  { id: 'markdown', label: 'Markdown' }
+  { id: 'markdown', label: 'Markdown' },
+  { id: 'plantuml', label: 'PlantUML' }
 ];
 
 const PRESET_REPOS = [
@@ -50,6 +53,7 @@ function getLanguageFromExt(filename: string): any {
     if (ext === 'css') return 'css';
     if (ext === 'json') return 'json';
     if (ext === 'md') return 'markdown';
+    if (['puml', 'plantuml'].includes(ext || '')) return 'plantuml';
     return 'text';
 }
 
@@ -60,6 +64,8 @@ const FileIcon: React.FC<{ filename: string }> = ({ filename }) => {
     if (['html', 'css'].includes(ext || '')) return <Code size={14} className="text-orange-400" />;
     if (['py'].includes(ext || '')) return <FileCode size={14} className="text-blue-400" />;
     if (['json'].includes(ext || '')) return <FileCode size={14} className="text-green-400" />;
+    if (ext === 'md') return <Info size={14} className="text-indigo-400" />;
+    if (['puml', 'plantuml'].includes(ext || '')) return <ImageIcon size={14} className="text-pink-400" />;
     return <File size={14} className="text-slate-400" />;
 };
 
@@ -162,7 +168,11 @@ const RichCodeEditor: React.FC<{
         // Use Prism if available globally
         if ((window as any).Prism) {
             const prismLang = (window as any).Prism.languages[language] || (window as any).Prism.languages.javascript;
-            setHighlightedCode((window as any).Prism.highlight(code, prismLang, language));
+            if (prismLang) {
+                setHighlightedCode((window as any).Prism.highlight(code, prismLang, language));
+            } else {
+                setHighlightedCode(code.replace(/</g, '&lt;').replace(/>/g, '&gt;'));
+            }
         } else {
             // Fallback
             setHighlightedCode(code.replace(/</g, '&lt;').replace(/>/g, '&gt;'));
@@ -172,7 +182,7 @@ const RichCodeEditor: React.FC<{
     return (
         <div className="relative w-full h-full flex overflow-hidden">
             {/* Line Numbers */}
-            <div className="w-10 bg-slate-900 text-slate-600 text-right pr-2 select-none text-sm font-mono pt-4 border-r border-slate-800">
+            <div className="w-10 bg-slate-900 text-slate-600 text-right pr-2 select-none text-sm font-mono pt-4 border-r border-slate-800 shrink-0">
                 {code.split('\n').map((_, i) => <div key={i}>{i + 1}</div>)}
             </div>
             
@@ -200,6 +210,24 @@ const RichCodeEditor: React.FC<{
                     autoComplete="off"
                 />
             </div>
+        </div>
+    );
+};
+
+// --- PlantUML Preview ---
+const PlantUMLPreview: React.FC<{ code: string }> = ({ code }) => {
+    const [url, setUrl] = useState('');
+    useEffect(() => {
+        encodePlantUML(code).then(encoded => {
+            setUrl(`https://www.plantuml.com/plantuml/img/${encoded}`);
+        });
+    }, [code]);
+
+    if (!url) return <div className="flex items-center justify-center h-full text-slate-500">Generating preview...</div>;
+    
+    return (
+        <div className="flex items-center justify-center h-full bg-white/5 p-4 overflow-auto">
+            <img src={url} alt="PlantUML Diagram" className="max-w-full shadow-lg rounded bg-white" />
         </div>
     );
 };
@@ -309,9 +337,13 @@ const AIChatPanel: React.FC<{
 };
 
 export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, userProfile, sessionId, accessKey, onSessionStart, onStartLiveSession }) => {
-  // Project State
+  // Project State (Strictly GitHub Repo or Local)
   const [project, setProject] = useState<CodeProject>({ id: 'init', name: 'New Project', files: [], lastModified: Date.now() });
-  const [activeFileIndex, setActiveFileIndex] = useState<number>(-1);
+  
+  // Active File State (Decoupled from project)
+  const [activeFile, setActiveFile] = useState<CodeFile | null>(null);
+  const [viewMode, setViewMode] = useState<'code' | 'preview'>('code');
+
   const [activeTab, setActiveTab] = useState<'github' | 'cloud' | 'drive'>('github');
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [isAIChatOpen, setIsAIChatOpen] = useState(false);
@@ -325,13 +357,6 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
   const [expandedFolders, setExpandedFolders] = useState<Record<string, boolean>>({});
   const [loadingFolders, setLoadingFolders] = useState<Record<string, boolean>>({});
   const [notifications, setNotifications] = useState<Array<{id: string, type: 'success' | 'error' | 'info', message: string}>>([]);
-  const [modal, setModal] = useState<{
-      title: string; 
-      message?: string; 
-      hasInput?: boolean; 
-      inputPlaceholder?: string; 
-      onConfirm: (val?: string) => void;
-  } | null>(null);
   
   // GitHub Specific
   const [publicRepoPath, setPublicRepoPath] = useState('');
@@ -347,46 +372,55 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
 
   // Shared Session
   const [isSharedSession, setIsSharedSession] = useState(!!sessionId);
-  const [sharedUsers, setSharedUsers] = useState<string[]>([]); // Mock list of active users
+
+  // Auto-switch view mode for markdown/plantuml
+  useEffect(() => {
+      if (activeFile) {
+          const lang = activeFile.language;
+          if (lang === 'markdown' || lang === 'plantuml') {
+              setViewMode('preview');
+          } else {
+              setViewMode('code');
+          }
+      }
+  }, [activeFile?.name]); // Depend on name change to trigger auto-switch
 
   // --- Real-time Collaboration Hook ---
   useEffect(() => {
       if (sessionId) {
           setIsSharedSession(true);
           const unsubscribe = subscribeToCodeProject(sessionId, (remoteProject) => {
-              // Simple Last-Write-Wins Merge Strategy
               setProject(prev => {
-                  // Only update if remote is newer
                   if (remoteProject.lastModified > prev.lastModified) {
                       return remoteProject;
                   }
                   return prev;
               });
-              
-              // If active file was updated remotely, force refresh
-              if (activeFileIndex >= 0) {
-                  // Re-render handled by React key or state update
+              // If active file is part of project, update it
+              if (activeFile && activeFile.path && !activeFile.path.startsWith('drive://') && !activeFile.path.startsWith('cloud://')) {
+                  const remoteFile = remoteProject.files.find(f => f.path === activeFile.path);
+                  if (remoteFile && remoteFile.content !== activeFile.content) {
+                      setActiveFile(remoteFile);
+                  }
               }
           });
-          
-          setSharedUsers(['You', 'Teammate']); // Mock for UI
-          
           return () => unsubscribe();
       }
-  }, [sessionId]);
-
-  const activeFile = activeFileIndex >= 0 ? project.files[activeFileIndex] : null;
+  }, [sessionId, activeFile]);
 
   // --- Tree Builders ---
-  // (Identical to previous implementation - condensed for brevity)
   const workspaceTree = useMemo(() => {
       const root: TreeNode[] = [];
       const map = new Map<string, TreeNode>();
-      project.files.forEach(f => {
+      
+      // Filter out non-repo files if any crept in
+      const repoFiles = project.files.filter(f => !f.path?.startsWith('drive://') && !f.path?.startsWith('cloud://'));
+
+      repoFiles.forEach(f => {
           const path = f.path || f.name;
           map.set(path, { id: path, name: f.name.split('/').pop()!, type: f.isDirectory ? 'folder' : 'file', data: f, children: [], isLoaded: f.childrenFetched });
       });
-      project.files.forEach(f => {
+      repoFiles.forEach(f => {
           const path = f.path || f.name;
           const node = map.get(path)!;
           const parts = path.split('/');
@@ -429,7 +463,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
       return root;
   }, [driveItems, driveRootId]);
 
-  // --- Handlers (Identical logic to previous) ---
+  // --- Handlers ---
   const showNotification = (message: string, type: 'success' | 'error' | 'info' = 'info') => {
       const id = crypto.randomUUID();
       setNotifications(prev => [...prev, { id, type, message }]);
@@ -445,21 +479,30 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
           const info = await fetchPublicRepoInfo(owner, repo);
           const { files, latestSha } = await fetchRepoContents(null, owner, repo, info.default_branch);
           setProject({ id: `gh-${info.id}`, name: info.full_name, files, lastModified: Date.now(), github: { owner, repo, branch: info.default_branch, sha: latestSha } });
-          setActiveFileIndex(-1); setShowImportModal(false); setExpandedFolders({}); setActiveTab('github'); showNotification("Repo loaded", "success");
+          setActiveFile(null); 
+          setShowImportModal(false); setExpandedFolders({}); setActiveTab('github'); showNotification("Repo opened in Workspace", "success");
       } catch (e: any) { showNotification("Failed: " + e.message, "error"); } finally { setIsLoadingPublic(false); }
   };
 
   const handleWorkspaceSelect = async (node: TreeNode) => {
       const file = node.data as CodeFile;
-      const index = project.files.findIndex(f => (f.path || f.name) === (file.path || file.name));
-      if (index === -1) return;
+      
+      // If content not loaded, fetch it
       if (!file.loaded && project.github) {
           try {
               const content = await fetchFileContent(null, project.github.owner, project.github.repo, file.path || file.name, project.github.branch);
-              setProject(prev => { const newFiles = [...prev.files]; newFiles[index] = { ...newFiles[index], content, loaded: true }; return { ...prev, files: newFiles }; });
+              const updatedFile = { ...file, content, loaded: true };
+              
+              // Update project state
+              setProject(prev => ({
+                  ...prev,
+                  files: prev.files.map(f => (f.path || f.name) === (file.path || file.name) ? updatedFile : f)
+              }));
+              setActiveFile(updatedFile);
           } catch(e) { showNotification("Load failed", "error"); }
+      } else {
+          setActiveFile(file);
       }
-      setActiveFileIndex(index);
   };
 
   const handleWorkspaceToggle = async (node: TreeNode) => {
@@ -470,7 +513,10 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
           setLoadingFolders(prev => ({ ...prev, [path]: true }));
           try {
               const children = await fetchRepoSubTree(localStorage.getItem('github_token'), project.github.owner, project.github.repo, file.treeSha!, file.path!);
-              setProject(prev => { const newFiles = prev.files.map(f => (f.path || f.name) === path ? { ...f, childrenFetched: true } : f); return { ...prev, files: [...newFiles, ...children.filter(c => !newFiles.some(nf => (nf.path || nf.name) === (c.path || c.name)))] }; });
+              setProject(prev => { 
+                  const newFiles = prev.files.map(f => (f.path || f.name) === path ? { ...f, childrenFetched: true } : f); 
+                  return { ...prev, files: [...newFiles, ...children.filter(c => !newFiles.some(nf => (nf.path || nf.name) === (c.path || c.name)))] }; 
+              });
           } catch (e) { showNotification("Fetch failed", "error"); } finally { setLoadingFolders(prev => ({ ...prev, [path]: false })); }
       }
   };
@@ -482,26 +528,19 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
       const item = node.data as CloudItem;
       if (item.isFolder || !item.url) return;
 
-      const existingIdx = project.files.findIndex(f => f.path === item.fullPath);
-      if (existingIdx !== -1) {
-          setActiveFileIndex(existingIdx);
-          return;
-      }
-
       setLoadingFolders(prev => ({ ...prev, [item.fullPath]: true }));
       try {
           const res = await fetch(item.url);
           const text = await res.text();
           const newFile: CodeFile = {
               name: item.name,
-              path: item.fullPath,
+              path: `cloud://${item.fullPath}`, // Marker to know source
               content: text,
               language: getLanguageFromExt(item.name),
               loaded: true,
               isDirectory: false
           };
-          setProject(prev => ({ ...prev, files: [...prev.files, newFile] }));
-          setActiveFileIndex(project.files.length);
+          setActiveFile(newFile);
       } catch (e: any) {
           showNotification("Failed to download cloud file", "error");
       } finally {
@@ -518,7 +557,6 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
           const rootId = await ensureCodeStudioFolder(token); 
           setDriveRootId(rootId); 
           const files = await listDriveFiles(token, rootId); 
-          // Set root as loaded
           setDriveItems([{ id: rootId, name: 'CodeStudio', mimeType: 'application/vnd.google-apps.folder', isLoaded: true }, ...files.map(f => ({ ...f, parentId: rootId, isLoaded: false }))]); 
       } catch(e: any) { 
           showNotification(e.message, "error"); 
@@ -540,7 +578,6 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
           const newItems = files.map(f => ({ ...f, parentId: driveFile.id, isLoaded: false }));
           setDriveItems(prev => {
               const updated = prev.map(i => i.id === driveFile.id ? { ...i, isLoaded: true } : i);
-              // Avoid duplicates
               const uniqueNew = newItems.filter(n => !prev.some(p => p.id === n.id));
               return [...updated, ...uniqueNew];
           });
@@ -556,25 +593,18 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
       const driveFile = node.data as DriveFile;
       if (!driveToken) return;
 
-      const existingIdx = project.files.findIndex(f => f.path === `drive://${driveFile.id}`);
-      if (existingIdx !== -1) {
-          setActiveFileIndex(existingIdx);
-          return;
-      }
-
       setLoadingFolders(prev => ({ ...prev, [node.id]: true }));
       try {
           const text = await readDriveFile(driveToken, driveFile.id);
           const newFile: CodeFile = {
               name: driveFile.name,
-              path: `drive://${driveFile.id}`,
+              path: `drive://${driveFile.id}`, // Marker
               content: text,
               language: getLanguageFromExt(driveFile.name),
               loaded: true,
               isDirectory: false
           };
-          setProject(prev => ({ ...prev, files: [...prev.files, newFile] }));
-          setActiveFileIndex(project.files.length);
+          setActiveFile(newFile);
       } catch (e: any) {
           showNotification("Failed to read Drive file", "error");
       } finally {
@@ -584,15 +614,23 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
 
   // Editor Logic
   const handleCodeChange = (val: string) => {
-      if (activeFileIndex < 0) return;
-      const newFiles = [...project.files];
-      newFiles[activeFileIndex] = { ...newFiles[activeFileIndex], content: val, isModified: true };
-      setProject(prev => ({ ...prev, files: newFiles }));
+      if (!activeFile) return;
+      
+      const updatedFile = { ...activeFile, content: val, isModified: true };
+      setActiveFile(updatedFile);
       setSaveStatus('modified');
       
-      // Real-time sync hook (Debounce this in real prod)
-      if (isSharedSession && sessionId) {
-          saveCodeProject({ ...project, files: newFiles, lastModified: Date.now() });
+      // Update Project if it's a project file
+      if (!activeFile.path?.startsWith('drive://') && !activeFile.path?.startsWith('cloud://')) {
+          setProject(prev => ({
+              ...prev,
+              files: prev.files.map(f => (f.path || f.name) === activeFile.path ? updatedFile : f)
+          }));
+      }
+      
+      // Real-time sync hook
+      if (isSharedSession && sessionId && !activeFile.path?.startsWith('drive://') && !activeFile.path?.startsWith('cloud://')) {
+          saveCodeProject({ ...project, files: project.files.map(f => (f.path || f.name) === activeFile.path ? updatedFile : f), lastModified: Date.now() });
       }
   };
 
@@ -623,20 +661,24 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
   };
 
   const handleSmartSave = async () => {
+      if (!activeFile) return;
       setSaveStatus('saving');
       try {
-          if (activeTab === 'github' && project.github) {
-              const ghToken = localStorage.getItem('github_token');
-              if (ghToken) { await commitToRepo(ghToken, project, "Update"); showNotification("Pushed to GitHub", "success"); }
-          } else if (activeTab === 'drive' && activeFile && driveToken && driveRootId) {
-              // Extract ID if it's a known drive file
-              const fileId = activeFile.path?.startsWith('drive://') ? activeFile.path.replace('drive://', '') : '';
-              // If it's a new file, saveToDrive handles creation. If existing, it handles patch.
-              // Logic needs to know filename.
-              await saveToDrive(driveToken, driveRootId, activeFile.name, activeFile.content); 
+          if (activeFile.path?.startsWith('drive://') && driveToken) {
+              const fileId = activeFile.path.replace('drive://', '');
+              // We need folder ID for saveToDrive if it's new, but here we likely opened existing.
+              // If new, logic would be different. Assuming update here.
+              await saveToDrive(driveToken, driveRootId || 'root', activeFile.name, activeFile.content);
               showNotification("Saved to Drive", "success");
-          } else if (activeTab === 'cloud' && activeFile) {
-              await saveProjectToCloud('projects', activeFile.name, activeFile.content); showNotification("Saved to Cloud", "success");
+          } else if (activeFile.path?.startsWith('cloud://')) {
+              const filename = activeFile.path.replace('cloud://', ''); // This might be full path
+              // Just save to projects folder for simplicity if modifying cloud file
+              await saveProjectToCloud('projects', activeFile.name, activeFile.content); 
+              showNotification("Saved to Cloud", "success");
+          } else if (project.github) {
+              const ghToken = localStorage.getItem('github_token');
+              if (ghToken) { await commitToRepo(ghToken, project, "Update from CodeStudio"); showNotification("Pushed to GitHub", "success"); }
+              else showNotification("No GitHub token found", "error");
           } else {
               showNotification("Saved locally", "success");
           }
@@ -661,7 +703,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
             <button onClick={onBack} className="p-2 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white"><ArrowLeft size={20} /></button>
             <div className="flex items-center space-x-2">
                <div className="bg-indigo-600 p-1.5 rounded-lg"><Code size={18} className="text-white" /></div>
-               <h1 className="font-bold text-white text-sm">{project.name}</h1>
+               <h1 className="font-bold text-white text-sm">{project.name} {activeFile && ` - ${activeFile.name}`}</h1>
                {isSharedSession && <span className="bg-red-900/50 text-red-400 text-[10px] px-2 py-0.5 rounded border border-red-500/50 animate-pulse flex items-center gap-1"><Users size={10}/> LIVE</span>}
             </div>
             
@@ -684,8 +726,11 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
                </button>
                <button onClick={() => { 
                    const newFile = { name: 'new.js', language: 'javascript' as any, content: '', loaded: true };
-                   setProject(prev => ({ ...prev, files: [...prev.files, newFile] }));
-                   setActiveFileIndex(project.files.length);
+                   // Add to project if in GitHub mode
+                   if (activeTab === 'github') {
+                       setProject(prev => ({ ...prev, files: [...prev.files, newFile] }));
+                   }
+                   setActiveFile(newFile);
                }} className="flex items-center space-x-2 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-white rounded-lg text-xs font-bold border border-slate-700">
                    <Plus size={14} /> <span>New File</span>
                </button>
@@ -711,7 +756,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
                       <div className="p-2">
                           <div className="flex items-center justify-between px-2 pb-2 mb-1 border-b border-slate-800/50">
                               <span className="text-xs font-bold text-slate-500">WORKSPACE</span>
-                              <button onClick={() => setShowImportModal(true)} className="text-[10px] text-indigo-400 hover:underline">Import Repo</button>
+                              <button onClick={() => setShowImportModal(true)} className="text-[10px] text-indigo-400 hover:underline">Open Repo</button>
                           </div>
                           {workspaceTree.map(node => (
                               <FileTreeItem 
@@ -751,6 +796,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
                               driveTree.map(node => (
                                   <FileTreeItem 
                                       key={node.id} node={node} depth={0} 
+                                      activeId={activeFile?.path}
                                       onSelect={handleDriveSelect} 
                                       onToggle={handleDriveToggle} 
                                       expandedIds={expandedFolders} loadingIds={loadingFolders}
@@ -766,21 +812,41 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
           <div className="flex-1 bg-[#1e1e1e] flex flex-col min-w-0 relative">
               {activeFile ? (
                   <>
-                    <div className="bg-slate-900 border-b border-slate-800 px-4 py-2 flex items-center justify-between">
+                    <div className="bg-slate-900 border-b border-slate-800 px-4 py-2 flex items-center justify-between shrink-0">
                         <div className="flex items-center gap-2">
                             <FileIcon filename={activeFile.name} />
                             <span className="text-sm font-bold text-white">{activeFile.name}</span>
                             {activeFile.isModified && <span className="w-2 h-2 rounded-full bg-yellow-500"></span>}
                         </div>
-                        <span className="text-xs text-slate-500">{activeFile.language}</span>
+                        <div className="flex items-center gap-3">
+                            {(activeFile.language === 'markdown' || activeFile.language === 'plantuml') && (
+                                <div className="flex bg-slate-800 rounded p-0.5">
+                                    <button onClick={() => setViewMode('code')} className={`px-2 py-0.5 text-xs rounded ${viewMode === 'code' ? 'bg-indigo-600 text-white' : 'text-slate-400'}`}>Code</button>
+                                    <button onClick={() => setViewMode('preview')} className={`px-2 py-0.5 text-xs rounded ${viewMode === 'preview' ? 'bg-indigo-600 text-white' : 'text-slate-400'}`}>Preview</button>
+                                </div>
+                            )}
+                            <span className="text-xs text-slate-500">{activeFile.language}</span>
+                        </div>
                     </div>
                     <div className="flex-1 overflow-hidden relative">
-                        <RichCodeEditor 
-                            code={activeFile.content} 
-                            onChange={handleCodeChange} 
-                            language={activeFile.language}
-                            isShared={isSharedSession}
-                        />
+                        {viewMode === 'preview' ? (
+                            activeFile.language === 'plantuml' ? (
+                                <PlantUMLPreview code={activeFile.content} />
+                            ) : (
+                                <div className="h-full overflow-auto p-8 bg-slate-950">
+                                    <div className="prose prose-invert max-w-none">
+                                        <MarkdownView content={activeFile.content} />
+                                    </div>
+                                </div>
+                            )
+                        ) : (
+                            <RichCodeEditor 
+                                code={activeFile.content} 
+                                onChange={handleCodeChange} 
+                                language={activeFile.language}
+                                isShared={isSharedSession}
+                            />
+                        )}
                     </div>
                   </>
               ) : (
