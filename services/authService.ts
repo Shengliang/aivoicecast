@@ -79,17 +79,33 @@ export async function signInWithGitHub(): Promise<{ user: firebase.User | null, 
          return { user: result.user, token: credential?.accessToken || null };
        } catch (linkError: any) {
          // Case A: GitHub account is ALREADY linked to THIS Firebase account.
-         // We just need to re-authenticate to retrieve the OAuth Access Token.
+         // We just need to retrieve a fresh OAuth Access Token.
          if (linkError.code === 'auth/provider-already-linked') {
-             const result = await auth.currentUser.reauthenticateWithPopup(provider);
-             const credential = result.credential as firebase.auth.OAuthCredential;
-             return { user: result.user, token: credential?.accessToken || null };
+             try {
+                // First try re-authenticating to get credentials
+                const result = await auth.currentUser.reauthenticateWithPopup(provider);
+                const credential = result.credential as firebase.auth.OAuthCredential;
+                return { user: result.user, token: credential?.accessToken || null };
+             } catch (reAuthError: any) {
+                 console.warn("Re-auth failed, falling back to sign-in:", reAuthError);
+                 // Fallback: If reauth fails (sometimes happens with popup blockers or specific flows),
+                 // try generic signIn (which handles existing users)
+                 try {
+                    const result = await auth.signInWithPopup(provider);
+                    const credential = result.credential as firebase.auth.OAuthCredential;
+                    return { user: result.user, token: credential?.accessToken || null };
+                 } catch (signInError: any) {
+                    throw signInError;
+                 }
+             }
          }
          
          // Case B: GitHub account is linked to DIFFERENT Firebase account.
          if (linkError.code === 'auth/credential-already-in-use') {
             throw new Error("This GitHub account is already linked to another user. Please sign in with that account.");
          }
+         
+         // Other linking errors
          throw linkError;
        }
     } 
@@ -103,6 +119,10 @@ export async function signInWithGitHub(): Promise<{ user: firebase.User | null, 
 
   } catch (error: any) {
     console.error("GitHub Login failed:", error);
+    // Ensure we return a helpful message for the toast
+    if (error.code === 'auth/popup-closed-by-user') {
+        throw new Error("Sign-in cancelled.");
+    }
     throw error;
   }
 }

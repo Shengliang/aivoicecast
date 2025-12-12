@@ -255,14 +255,50 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
       }
   }, [userProfile?.defaultRepoUrl]);
 
+  const showToast = (message: string, type: 'success' | 'error' | 'info' = 'info') => {
+      const id = crypto.randomUUID();
+      setNotifications(prev => [...prev, { id, type, message }]);
+      setTimeout(() => setNotifications(prev => prev.filter(n => n.id !== id)), 3000);
+  };
+
+  const handleLoadPublicRepo = useCallback(async () => {
+      if (!publicRepoPath.trim()) return;
+      setIsLoadingPublic(true);
+      try {
+          const [owner, repo] = publicRepoPath.split('/');
+          // Pass githubToken here to support private repos or higher rate limits
+          const info = await fetchRepoInfo(owner, repo, githubToken); 
+          const { files, latestSha } = await fetchRepoContents(githubToken, owner, repo, info.default_branch);
+          
+          const newProjectData: CodeProject = { 
+              id: sessionId || `gh-${info.id}`,
+              name: info.full_name, 
+              files, 
+              lastModified: Date.now(), 
+              github: { owner, repo, branch: info.default_branch, sha: latestSha },
+              ownerId: currentUser?.uid
+          };
+
+          setProject(newProjectData);
+          setActiveFile(null); 
+          setShowImportModal(false); 
+          setExpandedFolders({}); 
+          showToast("Repo opened", "success");
+          if (isSharedSession && sessionId) {
+              await saveCodeProject(newProjectData);
+              updateProjectActiveFile(sessionId, '');
+          }
+      } catch (e: any) { showToast(e.message, "error"); } finally { setIsLoadingPublic(false); }
+  }, [publicRepoPath, githubToken, sessionId, currentUser, isSharedSession]);
+
   // Auto-Load Default Repo logic
   useEffect(() => {
       // If user switches to GitHub tab, and no repo is loaded, and they have a default
-      if (activeTab === 'github' && !project.github && publicRepoPath) {
-          // Trigger a load only if we haven't already
+      // Check !isLoadingPublic to prevent infinite loop or re-entry
+      if (activeTab === 'github' && !project.github && publicRepoPath && !isLoadingPublic) {
           handleLoadPublicRepo(); 
       }
-  }, [activeTab]);
+  }, [activeTab, publicRepoPath, project.github, handleLoadPublicRepo]);
 
   useEffect(() => {
       const currentPath = activeFile ? (activeFile.path || activeFile.name) : null;
@@ -293,12 +329,6 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
           const newLogs = [...prev, `[${new Date().toLocaleTimeString()}] ${msg}`];
           return newLogs.slice(-20);
       });
-  };
-
-  const showToast = (message: string, type: 'success' | 'error' | 'info' = 'info') => {
-      const id = crypto.randomUUID();
-      setNotifications(prev => [...prev, { id, type, message }]);
-      setTimeout(() => setNotifications(prev => prev.filter(n => n.id !== id)), 3000);
   };
 
   const isLockedByOther = useMemo(() => {
@@ -792,37 +822,6 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
       if (isSharedSession && sessionId) {
           updateCodeFile(sessionId, updatedFile).catch(e => console.error(e));
       }
-  };
-
-  const handleLoadPublicRepo = async () => {
-      if (!publicRepoPath.trim()) return;
-      setIsLoadingPublic(true);
-      try {
-          const [owner, repo] = publicRepoPath.split('/');
-          // Pass githubToken here to support private repos or higher rate limits
-          const info = await fetchRepoInfo(owner, repo, githubToken); 
-          const { files, latestSha } = await fetchRepoContents(githubToken, owner, repo, info.default_branch);
-          
-          const newProjectData: CodeProject = { 
-              id: sessionId || `gh-${info.id}`,
-              name: info.full_name, 
-              files, 
-              lastModified: Date.now(), 
-              github: { owner, repo, branch: info.default_branch, sha: latestSha },
-              ownerId: currentUser?.uid
-          };
-
-          setProject(newProjectData);
-          setActiveFile(null); 
-          setShowImportModal(false); 
-          setExpandedFolders({}); 
-          setActiveTab('github'); 
-          showToast("Repo opened", "success");
-          if (isSharedSession && sessionId) {
-              await saveCodeProject(newProjectData);
-              updateProjectActiveFile(sessionId, '');
-          }
-      } catch (e: any) { showToast(e.message, "error"); } finally { setIsLoadingPublic(false); }
   };
 
   const handleWorkspaceSelect = async (node: TreeNode) => {

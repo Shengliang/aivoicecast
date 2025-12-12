@@ -1,6 +1,4 @@
 
-
-
 import React, { useState, useEffect, useMemo } from 'react';
 import { Channel, ViewState, UserProfile, TranscriptItem, SubscriptionTier } from './types';
 import { 
@@ -54,7 +52,7 @@ import { HANDCRAFTED_CHANNELS, CATEGORY_STYLES, TOPIC_CATEGORIES } from './utils
 import { OFFLINE_CHANNEL_ID } from './utils/offlineContent';
 import { GEMINI_API_KEY } from './services/private_keys';
 
-const APP_VERSION = "v3.58.0";
+const APP_VERSION = "v3.60.0";
 
 const UI_TEXT = {
   en: {
