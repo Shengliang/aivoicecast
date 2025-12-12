@@ -69,7 +69,7 @@ const FileTreeItem = ({ node, depth, activeId, onSelect, onToggle, onDelete, onS
     return (
         <div>
             <div 
-                className={`flex items-center gap-1 py-1 px-2 cursor-pointer select-none hover:bg-[#2a2d2e] ${isActive ? 'bg-[#37373d] text-white' : 'text-[#cccccc]'}`}
+                className={`flex items-center gap-1 py-1 px-2 cursor-pointer select-none hover:bg-slate-800/50 ${isActive ? 'bg-slate-800 text-white' : 'text-slate-400 hover:text-slate-200'}`}
                 style={{ paddingLeft: `${depth * 12 + 8}px` }}
                 onClick={() => onSelect(node)}
                 draggable
@@ -122,7 +122,7 @@ const RichCodeEditor = ({ code, onChange, onCursorMove, language, isShared, remo
     return (
         <div className="w-full h-full relative font-mono text-sm">
             <textarea
-                className="w-full h-full bg-[#1e1e1e] text-[#d4d4d4] p-4 resize-none outline-none leading-relaxed"
+                className="w-full h-full bg-slate-950 text-slate-300 p-4 resize-none outline-none leading-relaxed"
                 value={code}
                 onChange={(e) => onChange(e.target.value)}
                 onSelect={(e) => {
@@ -146,29 +146,29 @@ const RichCodeEditor = ({ code, onChange, onCursorMove, language, isShared, remo
 const AIChatPanel = ({ isOpen, onClose, messages, onSendMessage, isThinking, onApplyCode, onStartLive, isVoiceActive }: any) => {
     const [input, setInput] = useState('');
     return (
-        <div className="flex flex-col h-full bg-[#1e1e1e] border-l border-[#333333]">
-            <div className="p-3 border-b border-[#333333] flex justify-between items-center bg-[#252526]">
-                <span className="font-bold text-[#cccccc] text-sm flex items-center gap-2"><Bot size={16} className="text-indigo-400"/> AI Assistant</span>
-                <button onClick={onClose}><PanelRightClose size={16} className="text-[#858585] hover:text-white"/></button>
+        <div className="flex flex-col h-full bg-slate-950 border-l border-slate-800">
+            <div className="p-3 border-b border-slate-800 flex justify-between items-center bg-slate-900">
+                <span className="font-bold text-slate-300 text-sm flex items-center gap-2"><Bot size={16} className="text-indigo-400"/> AI Assistant</span>
+                <button onClick={onClose}><PanelRightClose size={16} className="text-slate-500 hover:text-white"/></button>
             </div>
             <div className="flex-1 overflow-y-auto p-4 space-y-4">
                 {messages.map((m: any, i: number) => (
                     <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                        <div className={`max-w-[90%] rounded-lg p-3 text-xs leading-relaxed ${m.role === 'user' ? 'bg-indigo-600 text-white' : 'bg-[#2d2d2d] text-[#d4d4d4]'}`}>
+                        <div className={`max-w-[90%] rounded-lg p-3 text-xs leading-relaxed ${m.role === 'user' ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-300'}`}>
                             {m.text}
                         </div>
                     </div>
                 ))}
-                {isThinking && <div className="text-[#858585] text-xs flex items-center gap-2 justify-center"><Loader2 className="animate-spin" size={12}/> AI is thinking...</div>}
+                {isThinking && <div className="text-slate-500 text-xs flex items-center gap-2 justify-center"><Loader2 className="animate-spin" size={12}/> AI is thinking...</div>}
             </div>
-            <div className="p-3 border-t border-[#333333] bg-[#1e1e1e]">
+            <div className="p-3 border-t border-slate-800 bg-slate-950">
                 <div className="flex gap-2">
                     <input 
                         type="text" 
                         value={input} 
                         onChange={e => setInput(e.target.value)} 
                         onKeyDown={e => { if(e.key === 'Enter') { onSendMessage(input); setInput(''); } }}
-                        className="flex-1 bg-[#3c3c3c] border border-[#3c3c3c] rounded-lg px-3 py-2 text-sm text-[#cccccc] focus:outline-none focus:border-indigo-500 placeholder-[#858585]"
+                        className="flex-1 bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-300 focus:outline-none focus:border-indigo-500 placeholder-slate-600"
                         placeholder="Ask AI..."
                     />
                     <button onClick={() => { onSendMessage(input); setInput(''); }} className="p-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg transition-colors"><Send size={16}/></button>
@@ -782,15 +782,15 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
   }, [driveItems, driveRootId]);
 
   return (
-    <div className="flex flex-col h-screen bg-[#1e1e1e] text-slate-100 overflow-hidden relative">
+    <div className="flex flex-col h-screen bg-slate-950 text-slate-100 overflow-hidden relative">
       <div className="absolute top-4 left-1/2 transform -translate-x-1/2 z-50 flex flex-col gap-2 pointer-events-none">
-          {notifications.map(n => <div key={n.id} className={`flex items-center gap-2 px-4 py-2 rounded-full shadow-xl text-sm font-bold ${n.type==='error'?'bg-red-600':'bg-[#333] border border-[#444]'}`}><span>{n.message}</span></div>)}
+          {notifications.map(n => <div key={n.id} className={`flex items-center gap-2 px-4 py-2 rounded-full shadow-xl text-sm font-bold ${n.type==='error'?'bg-red-600':'bg-slate-800 border border-slate-700'}`}><span>{n.message}</span></div>)}
       </div>
 
       {/* HEADER */}
-      <header className="h-14 bg-[#1e1e1e] border-b border-[#333333] flex items-center justify-between px-4 shrink-0 z-20">
+      <header className="h-14 bg-slate-950 border-b border-slate-800 flex items-center justify-between px-4 shrink-0 z-20">
          <div className="flex items-center space-x-4">
-            <button onClick={onBack} className="p-2 hover:bg-[#333333] rounded-lg text-slate-400 hover:text-white"><ArrowLeft size={20} /></button>
+            <button onClick={onBack} className="p-2 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white"><ArrowLeft size={20} /></button>
             <div className="flex flex-col">
                <h1 className="font-bold text-white text-sm flex items-center gap-2">{project.name} {activeFile && ` - ${activeFile.name}`}</h1>
                {isLockedByOther && <span className="text-[10px] text-amber-400 flex items-center gap-1 bg-amber-900/30 px-2 py-0.5 rounded border border-amber-500/50"><Lock size={10}/> Locked by {activeWriterName} (Read Only)</span>}
@@ -798,12 +798,12 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
          </div>
          <div className="flex items-center space-x-2">
             {!isZenMode && (
-                <button onClick={() => setIsLeftOpen(!isLeftOpen)} className={`p-2 rounded-lg transition-colors ${!isLeftOpen ? 'text-indigo-400 bg-[#333333]' : 'text-slate-400 hover:text-white'}`}><SidebarOpen size={18}/></button>
+                <button onClick={() => setIsLeftOpen(!isLeftOpen)} className={`p-2 rounded-lg transition-colors ${!isLeftOpen ? 'text-indigo-400 bg-slate-800' : 'text-slate-400 hover:text-white'}`}><SidebarOpen size={18}/></button>
             )}
             
             <button 
                 onClick={() => setIsZenMode(!isZenMode)}
-                className={`p-2 rounded-lg transition-colors ${isZenMode ? 'text-emerald-400 bg-[#333333]' : 'text-slate-400 hover:text-white'}`}
+                className={`p-2 rounded-lg transition-colors ${isZenMode ? 'text-emerald-400 bg-slate-800' : 'text-slate-400 hover:text-white'}`}
                 title={isZenMode ? "Exit Zen Mode" : "Zen Mode (Maximize Editor)"}
             >
                 {isZenMode ? <Minimize2 size={18}/> : <Maximize2 size={18}/>}
@@ -828,7 +828,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
             <button onClick={handleSmartSave} className="flex items-center space-x-2 px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold shadow-md"><Save size={14}/><span>Save</span></button>
             
             {!isZenMode && (
-                <button onClick={() => setIsRightOpen(!isRightOpen)} className={`p-2 rounded-lg transition-colors ${!isRightOpen ? 'text-indigo-400 bg-[#333333]' : 'text-slate-400 hover:text-white'}`}><PanelRightOpen size={18}/></button>
+                <button onClick={() => setIsRightOpen(!isRightOpen)} className={`p-2 rounded-lg transition-colors ${!isRightOpen ? 'text-indigo-400 bg-slate-800' : 'text-slate-400 hover:text-white'}`}><PanelRightOpen size={18}/></button>
             )}
          </div>
       </header>
@@ -837,9 +837,9 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
       <div className="flex-1 flex overflow-hidden relative">
           
           {/* LEFT PANE: EXPLORER */}
-          <div className={`${isZenMode ? 'hidden' : (isLeftOpen ? 'w-64' : 'w-0')} bg-[#1e1e1e] border-r border-[#333333] flex flex-col transition-all duration-300 overflow-hidden shrink-0`}>
+          <div className={`${isZenMode ? 'hidden' : (isLeftOpen ? 'w-64' : 'w-0')} bg-slate-950 border-r border-slate-800 flex flex-col transition-all duration-300 overflow-hidden shrink-0`}>
               {/* BACKEND TABS */}
-              <div className="flex border-b border-[#333333] bg-[#252526]">
+              <div className="flex border-b border-slate-800 bg-slate-900">
                   <button onClick={() => setActiveTab('cloud')} className={`flex-1 py-3 flex justify-center border-b-2 transition-colors ${activeTab === 'cloud' ? 'border-indigo-500 text-white' : 'border-transparent text-slate-500 hover:text-slate-300'}`} title="Private Cloud"><Cloud size={16}/></button>
                   <button onClick={() => setActiveTab('drive')} className={`flex-1 py-3 flex justify-center border-b-2 transition-colors ${activeTab === 'drive' ? 'border-indigo-500 text-white' : 'border-transparent text-slate-500 hover:text-slate-300'}`} title="Google Drive"><HardDrive size={16}/></button>
                   <button onClick={() => setActiveTab('github')} className={`flex-1 py-3 flex justify-center border-b-2 transition-colors ${activeTab === 'github' ? 'border-indigo-500 text-white' : 'border-transparent text-slate-500 hover:text-slate-300'}`} title="GitHub"><Github size={16}/></button>
@@ -847,17 +847,17 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
               </div>
 
               {/* ACTION TOOLBAR - Improved Visibility */}
-              <div className="p-3 border-b border-[#333333] flex flex-wrap gap-2 bg-[#1e1e1e] justify-center">
+              <div className="p-3 border-b border-slate-800 flex flex-wrap gap-2 bg-slate-950 justify-center">
                   <button onClick={handleCreateFile} className="flex-1 flex items-center justify-center gap-1 bg-indigo-600 hover:bg-indigo-500 text-white py-1.5 px-2 rounded text-xs font-bold shadow-md transition-colors whitespace-nowrap" title="Create New Code File">
                       <FileCode size={14}/> <span>New File</span>
                   </button>
                   <button onClick={handleCreateWhiteboard} className="flex-1 flex items-center justify-center gap-1 bg-pink-600 hover:bg-pink-500 text-white py-1.5 px-2 rounded text-xs font-bold shadow-md transition-colors whitespace-nowrap" title="Create New Whiteboard">
                       <PenTool size={14}/> <span>New Board</span>
                   </button>
-                  <button onClick={handleCreateFolder} className="p-1.5 bg-[#333333] hover:bg-[#444] text-slate-300 hover:text-white rounded border border-[#333] transition-colors" title="New Folder">
+                  <button onClick={handleCreateFolder} className="p-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white rounded border border-slate-700 transition-colors" title="New Folder">
                       <FolderPlus size={16}/>
                   </button>
-                  <button onClick={() => refreshExplorer()} className="p-1.5 bg-[#333333] hover:bg-[#444] text-slate-300 hover:text-white rounded border border-[#333] transition-colors" title="Refresh Explorer">
+                  <button onClick={() => refreshExplorer()} className="p-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white rounded border border-slate-700 transition-colors" title="Refresh Explorer">
                       <RefreshCw size={16}/>
                   </button>
               </div>
@@ -870,12 +870,12 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
                   )}
                   {activeTab === 'drive' && (
                       <div className="p-2">
-                          {!driveToken ? <div className="p-4 text-center"><button onClick={handleConnectDrive} className="px-4 py-2 bg-[#333] text-white text-xs font-bold rounded-lg border border-[#444] hover:bg-[#444]">Connect Drive</button></div> : driveTree.map(node => <FileTreeItem key={node.id} node={node} depth={0} activeId={selectedExplorerNode?.id} onSelect={handleExplorerSelect} onToggle={handleDriveToggle} expandedIds={expandedFolders} loadingIds={loadingFolders} onDragStart={handleDragStart} onDrop={handleDrop}/>)}
+                          {!driveToken ? <div className="p-4 text-center"><button onClick={handleConnectDrive} className="px-4 py-2 bg-slate-800 text-white text-xs font-bold rounded-lg border border-slate-700 hover:bg-slate-700">Connect Drive</button></div> : driveTree.map(node => <FileTreeItem key={node.id} node={node} depth={0} activeId={selectedExplorerNode?.id} onSelect={handleExplorerSelect} onToggle={handleDriveToggle} expandedIds={expandedFolders} loadingIds={loadingFolders} onDragStart={handleDragStart} onDrop={handleDrop}/>)}
                       </div>
                   )}
                   {activeTab === 'github' && (
                       <div className="p-2">
-                          {!project.github ? <div className="p-4 text-center"><button onClick={() => setShowImportModal(true)} className="px-4 py-2 bg-[#333] text-white text-xs font-bold rounded-lg border border-[#444] hover:bg-[#444]">Open Repo</button></div> : workspaceTree.map(node => <FileTreeItem key={node.id} node={node} depth={0} activeId={selectedExplorerNode?.id} onSelect={handleExplorerSelect} onToggle={(n: any) => setExpandedFolders(prev => ({...prev, [n.id]: !expandedFolders[n.id]}))} expandedIds={expandedFolders} loadingIds={loadingFolders} onDragStart={handleDragStart} onDrop={handleDrop}/>)}
+                          {!project.github ? <div className="p-4 text-center"><button onClick={() => setShowImportModal(true)} className="px-4 py-2 bg-slate-800 text-white text-xs font-bold rounded-lg border border-slate-700 hover:bg-slate-700">Open Repo</button></div> : workspaceTree.map(node => <FileTreeItem key={node.id} node={node} depth={0} activeId={selectedExplorerNode?.id} onSelect={handleExplorerSelect} onToggle={(n: any) => setExpandedFolders(prev => ({...prev, [n.id]: !expandedFolders[n.id]}))} expandedIds={expandedFolders} loadingIds={loadingFolders} onDragStart={handleDragStart} onDrop={handleDrop}/>)}
                       </div>
                   )}
                   {activeTab === 'session' && (
@@ -887,17 +887,17 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
           </div>
 
           {/* CENTER PANE: EDITOR */}
-          <div className="flex-1 bg-[#1e1e1e] flex flex-col min-w-0 relative border-r border-[#333333]">
+          <div className="flex-1 bg-slate-950 flex flex-col min-w-0 relative border-r border-slate-800">
               {activeFile ? (
                   <>
-                    <div className="bg-[#1e1e1e] border-b border-[#333333] px-4 py-2 flex items-center justify-between shrink-0">
+                    <div className="bg-slate-950 border-b border-slate-800 px-4 py-2 flex items-center justify-between shrink-0">
                         <div className="flex items-center gap-2">
                             <FileIcon filename={activeFile.name} />
                             <span className="text-sm font-bold text-white">{activeFile.name}</span>
                             {activeFile.isModified && <span className="w-2 h-2 bg-amber-400 rounded-full"></span>}
                             {/* Preview Toggle */}
                             {(activeFile.name.endsWith('.md') || activeFile.name.endsWith('.markdown') || activeFile.name.endsWith('.puml') || activeFile.name.endsWith('.plantuml')) && (
-                                <div className="flex bg-[#333] rounded-lg p-0.5 border border-[#444] ml-4">
+                                <div className="flex bg-slate-800 rounded-lg p-0.5 border border-slate-700 ml-4">
                                     <button onClick={() => setEditorMode('code')} className={`px-3 py-1 text-xs font-bold rounded-md ${editorMode === 'code' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'}`}>Code</button>
                                     <button onClick={() => setEditorMode('preview')} className={`px-3 py-1 text-xs font-bold rounded-md ${editorMode === 'preview' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'}`}>Preview</button>
                                 </div>
@@ -917,7 +917,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
                                 isReadOnly={isLockedByOther}
                             />
                         ) : editorMode === 'preview' ? (
-                            <div className="w-full h-full overflow-y-auto bg-[#1e1e1e] p-8">
+                            <div className="w-full h-full overflow-y-auto bg-slate-950 p-8">
                                 {activeFile.name.endsWith('.md') || activeFile.name.endsWith('.markdown') ? (
                                     <div className="prose prose-invert max-w-none">
                                         <MarkdownView content={activeFile.content} />
@@ -955,7 +955,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
           </div>
 
           {/* RIGHT PANE: AI / PREVIEW */}
-          <div className={`${isZenMode ? 'hidden' : (isRightOpen ? 'w-80' : 'w-0')} bg-[#1e1e1e] flex flex-col transition-all duration-300 overflow-hidden shrink-0`}>
+          <div className={`${isZenMode ? 'hidden' : (isRightOpen ? 'w-80' : 'w-0')} bg-slate-950 flex flex-col transition-all duration-300 overflow-hidden shrink-0`}>
               <AIChatPanel 
                   isOpen={true} // Always render content, hide by width 
                   onClose={() => setIsRightOpen(false)} 

@@ -264,6 +264,30 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({
       }
   };
 
+  const getElementBounds = (el: WhiteboardElement) => {
+      if (el.type === 'pen' || el.type === 'eraser') {
+          if (!el.points || el.points.length === 0) return { x: el.x, y: el.y, w: 0, h: 0 };
+          const xs = el.points.map(p => p.x); const ys = el.points.map(p => p.y);
+          const minX = Math.min(...xs); const maxX = Math.max(...xs);
+          const minY = Math.min(...ys); const maxY = Math.max(...ys);
+          return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
+      } else if (el.type === 'line' || el.type === 'arrow') {
+          const minX = Math.min(el.x, el.endX || el.x);
+          const maxX = Math.max(el.x, el.endX || el.x);
+          const minY = Math.min(el.y, el.endY || el.y);
+          const maxY = Math.max(el.y, el.endY || el.y);
+          return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
+      } else if (el.type === 'text') {
+          const fs = el.fontSize || 24; 
+          const w = el.width || ((el.text?.length || 1) * fs * 0.6);
+          const h = el.height || fs * 1.2;
+          return { x: el.x, y: el.y, w, h };
+      } else if (el.type === 'circle') {
+          return { x: el.x, y: el.y, w: el.width || 0, h: el.height || 0 };
+      }
+      return { x: el.x, y: el.y, w: el.width || 0, h: el.height || 0 };
+  };
+
   const isPointInElement = (x: number, y: number, el: WhiteboardElement): boolean => {
       const tolerance = 10 / scale;
       switch (el.type) {
@@ -292,18 +316,15 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({
           case 'pen':
           case 'eraser': {
               if (!el.points) return false;
-              const minX = Math.min(...el.points.map(p => p.x)) - tolerance;
-              const maxX = Math.max(...el.points.map(p => p.x)) + tolerance;
-              const minY = Math.min(...el.points.map(p => p.y)) - tolerance;
-              const maxY = Math.max(...el.points.map(p => p.y)) + tolerance;
-              if (x < minX || x > maxX || y < minY || y > maxY) return false;
+              const bounds = getElementBounds(el);
+              // Quick bounds check
+              if (x < bounds.x - tolerance || x > bounds.x + bounds.w + tolerance || y < bounds.y - tolerance || y > bounds.y + bounds.h + tolerance) return false;
+              
               return el.points.some(p => { const dist = Math.sqrt((p.x - x) ** 2 + (p.y - y) ** 2); return dist < tolerance; });
           }
           case 'text':
-              const fs = el.fontSize || 24;
-              const w = el.width || ((el.text?.length || 1) * fs * 0.6);
-              const h = el.height || fs * 1.2;
-              return x >= el.x && x <= el.x + w && y >= el.y && y <= el.y + h;
+              const bounds = getElementBounds(el);
+              return x >= bounds.x && x <= bounds.x + bounds.w && y >= bounds.y && y <= bounds.y + bounds.h;
           default: return false;
       }
   };
@@ -313,20 +334,14 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({
       const by = Math.min(box.y, box.y + box.h);
       const bw = Math.abs(box.w);
       const bh = Math.abs(box.h);
-      const getBounds = (e: WhiteboardElement) => {
-          if (e.type === 'pen' || e.type === 'eraser') {
-              if (!e.points) return { x: e.x, y: e.y, w: 0, h: 0 };
-              const xs = e.points.map(p => p.x); const ys = e.points.map(p => p.y);
-              return { x: Math.min(...xs), y: Math.min(...ys), w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys) };
-          } else if (e.type === 'line' || e.type === 'arrow') {
-              return { x: Math.min(e.x, e.endX || e.x), y: Math.min(e.y, e.endY || e.y), w: Math.abs((e.endX || e.x) - e.x), h: Math.abs((e.endY || e.y) - e.y) };
-          } else if (e.type === 'text') {
-              const fs = e.fontSize || 24; return { x: e.x, y: e.y, w: e.width || ((e.text?.length || 1) * fs * 0.6), h: e.height || fs };
-          }
-          return { x: Math.min(e.x, e.x + (e.width || 0)), y: Math.min(e.y, e.y + (e.height || 0)), w: Math.abs(e.width || 0), h: Math.abs(e.height || 0) };
-      };
-      const eb = getBounds(el);
-      return (bx < eb.x + eb.w && bx + bw > eb.x && by < eb.y + eb.h && by + bh > eb.y);
+      const eb = getElementBounds(el);
+      // Normalize eb
+      const ebx = Math.min(eb.x, eb.x + eb.w);
+      const eby = Math.min(eb.y, eb.y + eb.h);
+      const ebw = Math.abs(eb.w);
+      const ebh = Math.abs(eb.h);
+      
+      return (bx < ebx + ebw && bx + bw > ebx && by < eby + ebh && by + bh > eby);
   };
 
   const getWorldCoordinates = (e: React.MouseEvent | React.TouchEvent) => {
@@ -351,6 +366,7 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({
       if (tool === 'text') { setIsDrawing(true); setTextDragStart({ x, y }); setTextDragCurrent({ x, y }); return; }
       if (tool === 'select') {
           let hitId = null;
+          // Reverse iteration to select top-most element first
           for (let i = elements.length - 1; i >= 0; i--) { if (isPointInElement(x, y, elements[i])) { hitId = elements[i].id; break; } }
           const isCtrl = (e as React.MouseEvent).ctrlKey || (e as React.MouseEvent).metaKey;
           if (hitId) {
@@ -532,17 +548,55 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({
               else { const lines = el.text.split('\n'); lines.forEach((line, i) => ctx.fillText(line, el.x, el.y + i * (el.fontSize || 24) * 1.2)); }
           }
           ctx.restore();
-          if (selectedIds.includes(el.id)) {
-              ctx.save(); ctx.setLineDash([5, 5]); ctx.strokeStyle = '#3b82f6'; ctx.lineWidth = 1 / scale; 
-              // Simple box for selection indication
-              const b = isElementIntersectingBox(el, {x:-99999,y:-99999,w:999999,h:999999}) ? {x:el.x,y:el.y,w:el.width,h:el.height} : {x:0,y:0,w:0,h:0};
-              // Note: actual bounds logic already in isElementIntersectingBox, can reuse for robustness if extracted.
-              // For now, visual feedback relies on the selection tool box mainly.
-              ctx.restore();
-          }
       };
+
+      // 1. Render all elements
       elements.forEach(renderElement);
       if (currentElement) renderElement(currentElement);
+
+      // 2. Render Selection Overlay on TOP
+      if (selectedIds.length > 0) {
+          ctx.save();
+          selectedIds.forEach(id => {
+              const el = elements.find(e => e.id === id);
+              if (el) {
+                  const bounds = getElementBounds(el);
+                  const padding = 8 / scale;
+                  
+                  // Handle negative width/height normalization for drawing
+                  const bx = Math.min(bounds.x, bounds.x + bounds.w) - padding;
+                  const by = Math.min(bounds.y, bounds.y + bounds.h) - padding;
+                  const bw = Math.abs(bounds.w) + padding * 2;
+                  const bh = Math.abs(bounds.h) + padding * 2;
+
+                  // Draw Selection Box
+                  ctx.strokeStyle = '#3b82f6'; // Blue-500
+                  ctx.lineWidth = 1 / scale;
+                  ctx.setLineDash([]); // Solid line
+                  ctx.strokeRect(bx, by, bw, bh);
+
+                  // Draw Resize Handles (Corners)
+                  const handleSize = 8 / scale;
+                  const halfHandle = handleSize / 2;
+                  ctx.fillStyle = '#ffffff';
+                  ctx.strokeStyle = '#3b82f6';
+                  ctx.lineWidth = 1 / scale;
+
+                  // TL, TR, BL, BR
+                  [
+                      { cx: bx, cy: by }, 
+                      { cx: bx + bw, cy: by }, 
+                      { cx: bx, cy: by + bh }, 
+                      { cx: bx + bw, cy: by + bh }
+                  ].forEach(({cx, cy}) => {
+                      ctx.fillRect(cx - halfHandle, cy - halfHandle, handleSize, handleSize);
+                      ctx.strokeRect(cx - halfHandle, cy - halfHandle, handleSize, handleSize);
+                  });
+              }
+          });
+          ctx.restore();
+      }
+
       if (selectionBox) { ctx.save(); ctx.setLineDash([5, 5]); ctx.fillStyle = 'rgba(59, 130, 246, 0.1)'; ctx.strokeStyle = '#3b82f6'; ctx.lineWidth = 1 / scale; const w = selectionBox.currX - selectionBox.startX; const h = selectionBox.currY - selectionBox.startY; ctx.fillRect(selectionBox.startX, selectionBox.startY, w, h); ctx.strokeRect(selectionBox.startX, selectionBox.startY, w, h); ctx.restore(); }
       if (tool === 'text' && isDrawing && textDragStart && textDragCurrent) { ctx.save(); ctx.setLineDash([5, 5]); ctx.strokeStyle = '#22c55e'; ctx.lineWidth = 1 / scale; const w = textDragCurrent.x - textDragStart.x; const h = textDragCurrent.y - textDragStart.y; ctx.strokeRect(textDragStart.x, textDragStart.y, w, h); ctx.restore(); }
       ctx.restore();
