@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { ArrowLeft, Share2, Trash2, Undo, PenTool, Eraser, Download, Square, Circle, Minus, ArrowRight, Type, ZoomIn, ZoomOut, MousePointer2, Move, MoreHorizontal, Lock, Eye, Edit3, GripHorizontal } from 'lucide-react';
+import { ArrowLeft, Share2, Trash2, Undo, PenTool, Eraser, Download, Square, Circle, Minus, ArrowRight, Type, ZoomIn, ZoomOut, MousePointer2, Move, MoreHorizontal, Lock, Eye, Edit3, GripHorizontal, Brush, ChevronDown } from 'lucide-react';
 import { auth } from '../services/firebaseConfig';
 import { saveWhiteboardSession, subscribeToWhiteboard, updateWhiteboardElement, deleteWhiteboardElements } from '../services/firestoreService';
 import { WhiteboardElement, ToolType, LineStyle, BrushType } from '../types';
@@ -465,7 +465,7 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({
               ctx.lineCap = 'square'; 
               ctx.lineJoin = 'bevel'; 
               ctx.lineWidth = Math.max(el.strokeWidth, 8) / scale; 
-              ctx.globalCompositeOperation = 'multiply'; // Blends like a highlighter (if supported, else source-over)
+              ctx.globalCompositeOperation = 'source-over'; // Simple blending for dark mode visibility
           }
           else if (el.brushType === 'calligraphy-pen') { 
               ctx.lineCap = 'square'; 
@@ -476,8 +476,7 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({
           else if (el.brushType === 'writing-brush') { 
               // Chinese Brush style: soft edges, varying pressure look
               ctx.lineCap = 'round'; 
-              ctx.shadowBlur = 10; 
-              ctx.shadowColor = el.color; 
+              // No shadow for Chinese brush as requested
               ctx.lineWidth = Math.max(el.strokeWidth, 5) / scale;
           }
           else if (el.brushType === 'airbrush') { 
@@ -498,9 +497,6 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({
               ctx.shadowBlur = 5;
               ctx.shadowColor = el.color;
               ctx.lineWidth = Math.max(el.strokeWidth, 8) / scale;
-              // Note: 'multiply' composite works best on white background, might need 'screen' or 'lighter' on dark bg
-              // But standard watercolor on paper is subtractive. On dark bg, maybe 'screen' is better.
-              // Let's stick to standard blending for visibility on slate-950.
           }
           else if (el.brushType === 'crayon') {
               ctx.setLineDash([2, 4]); // Stippled look
@@ -679,25 +675,29 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({
                 
                 {/* Brush Type (Only for Pen) */}
                 {(tool === 'pen' || (selectedIds.length === 1 && elements.find(e => e.id === selectedIds[0])?.type === 'pen')) && (
-                     <select 
-                        value={brushType} 
-                        onChange={(e) => { 
-                            const val = e.target.value as BrushType; 
-                            setBrushType(val); 
-                            updateSelectedElements({ brushType: val }); 
-                        }}
-                        className="bg-slate-800 border border-slate-700 text-slate-300 text-xs rounded-lg px-2 py-1.5 outline-none focus:border-indigo-500 cursor-pointer"
-                     >
-                        <option value="standard">Standard Pen</option>
-                        <option value="pencil">Natural Pencil</option>
-                        <option value="marker">Marker</option>
-                        <option value="calligraphy-pen">Calligraphy Pen</option>
-                        <option value="writing-brush">Chinese Brush</option>
-                        <option value="airbrush">Airbrush</option>
-                        <option value="oil">Oil Brush</option>
-                        <option value="watercolor">Watercolor</option>
-                        <option value="crayon">Crayon</option>
-                     </select>
+                     <div className="relative flex items-center bg-slate-800 border border-slate-700 rounded-lg px-2 py-1.5 gap-2 group hover:border-indigo-500/50 transition-colors">
+                        <Brush size={14} className="text-slate-400" />
+                        <select 
+                            value={brushType} 
+                            onChange={(e) => { 
+                                const val = e.target.value as BrushType; 
+                                setBrushType(val); 
+                                updateSelectedElements({ brushType: val }); 
+                            }}
+                            className="bg-transparent border-none text-slate-300 text-xs outline-none focus:ring-0 cursor-pointer appearance-none pr-4"
+                        >
+                            <option value="standard">Standard Pen</option>
+                            <option value="pencil">Natural Pencil</option>
+                            <option value="marker">Marker</option>
+                            <option value="calligraphy-pen">Calligraphy Pen</option>
+                            <option value="writing-brush">Chinese Brush</option>
+                            <option value="airbrush">Airbrush</option>
+                            <option value="oil">Oil Brush</option>
+                            <option value="watercolor">Watercolor</option>
+                            <option value="crayon">Crayon</option>
+                        </select>
+                        <ChevronDown size={10} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none"/>
+                     </div>
                 )}
 
                 {/* Font Size (Only for Text) */}
