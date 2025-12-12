@@ -6,7 +6,7 @@ import { connectGoogleDrive } from '../services/authService';
 import { fetchPublicRepoInfo, fetchRepoContents, fetchFileContent, commitToRepo, fetchRepoSubTree } from '../services/githubService';
 import { listCloudDirectory, saveProjectToCloud, deleteCloudItem, createCloudFolder, CloudItem, subscribeToCodeProject, saveCodeProject } from '../services/firestoreService';
 import { ensureCodeStudioFolder, listDriveFiles, readDriveFile, saveToDrive, deleteDriveFile, createDriveFolder, DriveFile } from '../services/googleDriveService';
-import { GoogleGenAI } from '@google/genai';
+import { GoogleGenAI, FunctionDeclaration, Type } from '@google/genai';
 import { GeminiLiveService } from '../services/geminiLive';
 import { GEMINI_API_KEY } from '../services/private_keys';
 import { MarkdownView } from './MarkdownView';
@@ -45,6 +45,18 @@ const PRESET_REPOS = [
   { label: 'Vue', path: 'vuejs/core' },
   { label: 'Node.js', path: 'nodejs/node' }
 ];
+
+const updateCodeTool: FunctionDeclaration = {
+  name: "update_code",
+  description: "Update the code in the current active file. Use this tool when you need to modify, refactor, or rewrite the code for the user.",
+  parameters: {
+    type: Type.OBJECT,
+    properties: {
+      code: { type: Type.STRING, description: "The full new code content for the file." }
+    },
+    required: ["code"]
+  }
+};
 
 // Helper: Determine language from extension
 function getLanguageFromExt(filename: string): any {
@@ -386,6 +398,13 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
       }
   }, [activeFile?.name]); 
 
+  // Sync active file context to live session on switch
+  useEffect(() => {
+      if (isVoiceActive && liveService.current && activeFile) {
+           liveService.current.sendText(`[System] User switched active file to: ${activeFile.name}\n\nNew Content:\n\`\`\`${activeFile.language}\n${activeFile.content}\n\`\`\``);
+      }
+  }, [activeFile?.path || activeFile?.name, isVoiceActive]);
+
   // Cleanup Voice on Unmount
   useEffect(() => {
       return () => {
@@ -630,6 +649,10 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
           saveCodeProject({ ...project, files: project.files.map(f => (f.path || f.name) === activeFile.path ? updatedFile : f), lastModified: Date.now() });
       }
   };
+  
+  // UseRef to keep handleCodeChange fresh for callbacks (Live API)
+  const handleCodeChangeRef = useRef(handleCodeChange);
+  useEffect(() => { handleCodeChangeRef.current = handleCodeChange; }, [handleCodeChange]);
 
   const handleShareSession = async () => {
       if (!onSessionStart) return;
@@ -709,7 +732,11 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
       ${activeFile.content}
       \`\`\`
       
-      Your goal is to help explain the code, debug issues, or suggest refactors. Be concise and conversational.`;
+      Your goal is to help explain the code, debug issues, or suggest refactors. Be concise and conversational.
+      You have access to a tool named "update_code" to modify the file directly. Use it if requested.`;
+
+      // Define tools
+      const tools = [{ functionDeclarations: [updateCodeTool] }];
 
       try {
           await liveService.current.connect("Fenrir", systemInstruction, {
@@ -740,9 +767,37 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
               },
               onToolCall: async (toolCall) => {
                   console.log("Tool call received", toolCall);
-                  // Future: Implement code editing via voice tools here
+                  const responses = [];
+                  for (const fc of toolCall.functionCalls) {
+                      if (fc.name === 'update_code') {
+                          try {
+                              const newCode = fc.args.code;
+                              if (typeof newCode === 'string') {
+                                  // Execute update on main thread
+                                  handleCodeChangeRef.current(newCode);
+                                  responses.push({
+                                      id: fc.id,
+                                      name: fc.name,
+                                      response: { result: "Code updated successfully." }
+                                  });
+                                  setChatMessages(prev => [...prev, { role: 'ai', text: "*[System]: Code updated via Voice Tool.*" }]);
+                              } else {
+                                  throw new Error("Invalid code argument");
+                              }
+                          } catch (err: any) {
+                              responses.push({
+                                  id: fc.id,
+                                  name: fc.name,
+                                  response: { error: err.message }
+                              });
+                          }
+                      }
+                  }
+                  if (responses.length > 0) {
+                      liveService.current?.sendToolResponse({ functionResponses: responses });
+                  }
               }
-          });
+          }, tools);
       } catch (e: any) {
           showNotification("Connection Failed", "error");
           setIsVoiceActive(false);
