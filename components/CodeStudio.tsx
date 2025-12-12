@@ -7,6 +7,7 @@ import { ensureCodeStudioFolder, listDriveFiles, readDriveFile, saveToDrive, del
 import { connectGoogleDrive } from '../services/authService';
 import { fetchPublicRepoInfo, fetchRepoContents, fetchFileContent } from '../services/githubService';
 import { MarkdownView } from './MarkdownView';
+import { encodePlantUML } from '../utils/plantuml';
 
 // --- Interfaces & Constants ---
 
@@ -38,6 +39,7 @@ function getLanguageFromExt(filename: string): any {
     if (ext === 'css') return 'css';
     if (ext === 'json') return 'json';
     if (ext === 'md') return 'markdown';
+    if (['puml', 'plantuml'].includes(ext || '')) return 'plantuml';
     return 'text';
 }
 
@@ -52,6 +54,7 @@ const FileIcon = ({ filename }: { filename: string }) => {
     if (lang === 'css') return <FileCode size={16} className="text-blue-300" />;
     if (lang === 'json') return <FileCode size={16} className="text-green-400" />;
     if (lang === 'markdown') return <FileTextIcon size={16} className="text-slate-400" />;
+    if (lang === 'plantuml') return <ImageIcon size={16} className="text-pink-400" />;
     return <File size={16} className="text-slate-500" />;
 };
 
@@ -227,6 +230,35 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
   const [showDebug, setShowDebug] = useState(false);
   const [debugLogs, setDebugLogs] = useState<string[]>([]);
   const debugRef = useRef<HTMLDivElement>(null);
+
+  // Editor vs Preview State
+  const [editorMode, setEditorMode] = useState<'code' | 'preview'>('code');
+  const [plantUmlUrl, setPlantUmlUrl] = useState<string | null>(null);
+  const lastActivePathRef = useRef<string | null>(null);
+
+  useEffect(() => {
+      const currentPath = activeFile ? (activeFile.path || activeFile.name) : null;
+      if (currentPath !== lastActivePathRef.current) {
+          lastActivePathRef.current = currentPath;
+          // File switched - set default view mode
+          if (activeFile) {
+              const ext = activeFile.name.split('.').pop()?.toLowerCase();
+              if (['md', 'markdown', 'puml', 'plantuml'].includes(ext || '')) {
+                  setEditorMode('preview');
+              } else {
+                  setEditorMode('code');
+              }
+          }
+      }
+  }, [activeFile?.path, activeFile?.name]); // Trigger only when file identity changes
+
+  useEffect(() => {
+      if (activeFile && (activeFile.name.endsWith('.puml') || activeFile.name.endsWith('.plantuml')) && editorMode === 'preview') {
+          encodePlantUML(activeFile.content).then(code => {
+              setPlantUmlUrl(`http://www.plantuml.com/plantuml/svg/${code}`);
+          });
+      }
+  }, [activeFile?.content, editorMode, activeFile?.name]);
 
   const addDebugLog = (msg: string) => {
       setDebugLogs(prev => {
@@ -827,6 +859,13 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
                             <FileIcon filename={activeFile.name} />
                             <span className="text-sm font-bold text-white">{activeFile.name}</span>
                             {activeFile.isModified && <span className="w-2 h-2 bg-amber-400 rounded-full"></span>}
+                            {/* Preview Toggle */}
+                            {(activeFile.name.endsWith('.md') || activeFile.name.endsWith('.markdown') || activeFile.name.endsWith('.puml') || activeFile.name.endsWith('.plantuml')) && (
+                                <div className="flex bg-slate-800 rounded-lg p-0.5 border border-slate-700 ml-4">
+                                    <button onClick={() => setEditorMode('code')} className={`px-3 py-1 text-xs font-bold rounded-md ${editorMode === 'code' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'}`}>Code</button>
+                                    <button onClick={() => setEditorMode('preview')} className={`px-3 py-1 text-xs font-bold rounded-md ${editorMode === 'preview' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'}`}>Preview</button>
+                                </div>
+                            )}
                         </div>
                         <div className="text-xs text-slate-500">
                             {saveStatus === 'saving' ? <span className="text-indigo-400 flex items-center gap-1"><Loader2 size={10} className="animate-spin"/> Saving...</span> : 
@@ -835,7 +874,21 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
                         </div>
                     </div>
                     <div className="flex-1 overflow-hidden relative">
-                        <RichCodeEditor code={activeFile.content} onChange={handleCodeChange} onCursorMove={(l: number, c: number) => setLocalCursor({line: l, col: c})} language={activeFile.language} isShared={isSharedSession} remoteCursors={activeRemoteCursors} localCursor={localCursor} readOnly={isLockedByOther} />
+                        {editorMode === 'preview' ? (
+                            <div className="w-full h-full overflow-y-auto bg-slate-900 p-8">
+                                {activeFile.name.endsWith('.md') || activeFile.name.endsWith('.markdown') ? (
+                                    <div className="prose prose-invert max-w-none">
+                                        <MarkdownView content={activeFile.content} />
+                                    </div>
+                                ) : (
+                                    <div className="flex flex-col items-center">
+                                        {plantUmlUrl ? <img src={plantUmlUrl} alt="UML Diagram" className="max-w-full border border-slate-700 rounded-lg p-4 bg-white" /> : <div className="text-slate-500 flex items-center gap-2"><Loader2 size={16} className="animate-spin"/> Rendering UML...</div>}
+                                    </div>
+                                )}
+                            </div>
+                        ) : (
+                            <RichCodeEditor code={activeFile.content} onChange={handleCodeChange} onCursorMove={(l: number, c: number) => setLocalCursor({line: l, col: c})} language={activeFile.language} isShared={isSharedSession} remoteCursors={activeRemoteCursors} localCursor={localCursor} readOnly={isLockedByOther} />
+                        )}
                     </div>
                   </>
               ) : <div className="flex-1 flex flex-col items-center justify-center text-slate-600"><Code size={48} className="mb-4 opacity-20" /><p className="text-sm">Select a file from the explorer.</p></div>}
