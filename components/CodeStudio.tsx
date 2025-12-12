@@ -135,7 +135,7 @@ const FileTreeItem: React.FC<{
             <div 
                 className={`flex items-center justify-between py-1 px-2 cursor-pointer transition-colors ${isActive ? 'bg-slate-800/80 text-white border-l-2 border-indigo-500' : 'text-slate-400 border-l-2 border-transparent'} ${isDragOver ? 'bg-indigo-900/50 border-indigo-400 border-l-2' : 'hover:bg-slate-800'}`}
                 style={{ paddingLeft: `${depth * 12 + 8}px` }}
-                onClick={() => onSelect(node)}
+                onClick={() => node.type === 'folder' ? onToggle(node) : onSelect(node)}
                 onMouseEnter={() => setShowMenu(true)}
                 onMouseLeave={() => setShowMenu(false)}
                 draggable={true}
@@ -550,6 +550,36 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
           } catch(e) { showToast("Failed to load file", "error"); }
       }
   };
+  
+  const refreshCloudPath = async (path: string) => {
+      if (!currentUser) return;
+      try {
+          const items = await listCloudDirectory(path);
+          setCloudItems(prev => {
+              const existingMap = new Map(prev.map(i => [i.fullPath, i]));
+              items.forEach(i => existingMap.set(i.fullPath, i));
+              return Array.from(existingMap.values());
+          });
+      } catch(e) { console.error(e); }
+  };
+
+  const handleCloudToggle = async (node: TreeNode) => {
+      const isExpanded = expandedFolders[node.id];
+      setExpandedFolders(prev => ({ ...prev, [node.id]: !isExpanded }));
+
+      if (!isExpanded) {
+          setLoadingFolders(prev => ({ ...prev, [node.id]: true }));
+          try {
+             // node.id is fullPath
+             await refreshCloudPath(node.id);
+          } catch(e) {
+             console.error(e);
+             showToast("Failed to load folder", "error");
+          } finally {
+             setLoadingFolders(prev => ({ ...prev, [node.id]: false }));
+          }
+      }
+  };
 
   const handleConnectDrive = async () => {
       try {
@@ -647,8 +677,11 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
               const newFullPath = targetPath + '/' + item.name;
               
               await moveCloudFile(item.fullPath, newFullPath);
+              
+              // Refresh View
+              setCloudItems(prev => prev.filter(i => i.fullPath !== item.fullPath));
+              await refreshCloudPath(targetPath);
               showToast("File moved in Cloud", "success");
-              refreshExplorer();
 
           } else if (activeTab === 'drive') {
               if (!driveToken) return;
@@ -764,6 +797,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
               const parentPath = selectedExplorerNode?.type === 'folder' ? selectedExplorerNode.id : `projects/${currentUser.uid}`;
               await createCloudFolder(parentPath, name);
               showToast("Folder created in Cloud", "success");
+              await refreshCloudPath(parentPath);
           } else if (activeTab === 'drive' && driveToken) {
               const parentId = (selectedExplorerNode?.type === 'folder' ? selectedExplorerNode.id : null) || driveRootId!;
               await createDriveFolder(driveToken, parentId, name);
@@ -772,7 +806,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
               // Local logical folder not fully supported in this simplified model without path management
               showToast("Folders in session are path-based. Create a file like 'folder/file.txt'", "info");
           }
-          refreshExplorer();
+          if (activeTab !== 'cloud') refreshExplorer();
       } catch(e: any) { showToast(e.message, "error"); }
   };
 
@@ -788,6 +822,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
               const fullPath = parentPath.endsWith('/') ? `${parentPath}${name}` : `${parentPath}/${name}`;
               await saveProjectToCloud(parentPath, name, "// New File");
               showToast("File created in Cloud", "success");
+              await refreshCloudPath(parentPath);
           } else if (activeTab === 'drive' && driveToken) {
               const parentId = (selectedExplorerNode?.type === 'folder' ? selectedExplorerNode.id : null) || driveRootId!;
               await saveToDrive(driveToken, parentId, name, "// New File");
@@ -821,7 +856,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
               setActiveFile(newFile);
               if (isSharedSession && sessionId) await updateCodeFile(sessionId, newFile);
           }
-          refreshExplorer();
+          if (activeTab !== 'cloud') refreshExplorer();
       } catch(e: any) { showToast(e.message, "error"); }
   };
 
@@ -830,6 +865,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
       try {
           if (activeTab === 'cloud') {
               await deleteCloudItem(node.data as CloudItem);
+              setCloudItems(prev => prev.filter(i => i.fullPath !== node.id));
           } else if (activeTab === 'drive' && driveToken) {
               await deleteDriveFile(driveToken, node.id);
           } else if (activeTab === 'session') {
@@ -839,7 +875,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
               if (isSharedSession && sessionId) await deleteCodeFile(sessionId, node.name);
           }
           showToast("Item deleted", "success");
-          refreshExplorer();
+          if (activeTab !== 'cloud') refreshExplorer();
       } catch(e: any) { showToast(e.message, "error"); }
   };
 
@@ -1028,7 +1064,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
                   )}
                   {activeTab === 'cloud' && (
                       <div className="p-2">
-                          {!currentUser ? <p className="text-xs text-slate-500 p-4 text-center">Sign in to access your Private Cloud storage.</p> : cloudTree.map(node => <FileTreeItem key={node.id} node={node} depth={0} activeId={selectedExplorerNode?.id} onSelect={handleExplorerSelect} onToggle={()=>{}} onDelete={handleDeleteItem} onShare={handleShareItem} expandedIds={expandedFolders} loadingIds={loadingFolders} onDragStart={handleDragStart} onDrop={handleDrop}/>)}
+                          {!currentUser ? <p className="text-xs text-slate-500 p-4 text-center">Sign in to access your Private Cloud storage.</p> : cloudTree.map(node => <FileTreeItem key={node.id} node={node} depth={0} activeId={selectedExplorerNode?.id} onSelect={handleExplorerSelect} onToggle={handleCloudToggle} onDelete={handleDeleteItem} onShare={handleShareItem} expandedIds={expandedFolders} loadingIds={loadingFolders} onDragStart={handleDragStart} onDrop={handleDrop}/>)}
                       </div>
                   )}
                   {activeTab === 'drive' && (
