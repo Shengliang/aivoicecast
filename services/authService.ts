@@ -94,7 +94,10 @@ export async function signInWithGitHub(): Promise<{ user: firebase.User | null, 
          
          // Case B: GitHub account is linked to a DIFFERENT Firebase account.
          if (linkError.code === 'auth/credential-already-in-use') {
-            throw new Error("This GitHub account is already linked to another user. Please sign out and sign in with GitHub directly.");
+            const error: any = new Error("This GitHub account is already linked to another user. Please sign out and sign in with GitHub directly.");
+            error.code = linkError.code;
+            error.originalMessage = linkError.message;
+            throw error;
          }
          
          // Other linking errors

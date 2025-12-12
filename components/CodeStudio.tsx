@@ -261,6 +261,13 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
   // Zen Mode State
   const [isZenMode, setIsZenMode] = useState(false);
 
+  const addDebugLog = (msg: string) => {
+      setDebugLogs(prev => {
+          const newLogs = [...prev, `[${new Date().toLocaleTimeString()}] ${msg}`];
+          return newLogs.slice(-20);
+      });
+  };
+
   // Sync default repo if profile loads late
   useEffect(() => {
       if (userProfile?.defaultRepoUrl && !publicRepoPath) {
@@ -284,6 +291,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
       const { owner, repo } = cleaned;
 
       setIsLoadingPublic(true);
+      addDebugLog(`Attempting to load repo: ${owner}/${repo}`);
       try {
           // Pass githubToken here to support private repos or higher rate limits
           const info = await fetchRepoInfo(owner, repo, githubToken); 
@@ -303,13 +311,15 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
           setShowImportModal(false); 
           setExpandedFolders({}); 
           showToast(`Repo ${owner}/${repo} opened`, "success");
+          addDebugLog(`Repo loaded: ${files.length} files`);
           if (isSharedSession && sessionId) {
               await saveCodeProject(newProjectData);
               updateProjectActiveFile(sessionId, '');
           }
       } catch (e: any) { 
           // If error is 404 and we don't have token, it might be private.
-          if (!githubToken && e.message.includes('404')) {
+          addDebugLog(`Repo Load Error: ${e.message}`);
+          if (e.message.includes('404')) {
               // Be silent on auto-load failure for private repo until user connects
           } else if (e.message.includes('401') || e.message.includes('Unauthorized')) {
               showToast("GitHub Token Expired or Invalid", "error");
@@ -352,13 +362,6 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
           });
       }
   }, [activeFile?.content, editorMode, activeFile?.name]);
-
-  const addDebugLog = (msg: string) => {
-      setDebugLogs(prev => {
-          const newLogs = [...prev, `[${new Date().toLocaleTimeString()}] ${msg}`];
-          return newLogs.slice(-20);
-      });
-  };
 
   const isLockedByOther = useMemo(() => {
       if (!project.activeClientId) return false;
@@ -425,17 +428,25 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
   const getOrRequestGithubToken = async (): Promise<string | null> => {
       if (githubToken) return githubToken;
       try {
+          addDebugLog("Starting GitHub Auth...");
           const { token } = await signInWithGitHub();
           if (token) {
               setGithubToken(token);
               showToast("GitHub Connected Successfully", "success");
+              addDebugLog("GitHub Auth Success. Token acquired.");
               return token;
           } else {
               throw new Error("No access token returned");
           }
       } catch (e: any) {
-          console.error(e);
-          showToast(e.message, "error");
+          console.error("GitHub Auth Failed", e);
+          const errorCode = e.code || 'unknown';
+          const errorMsg = e.message || 'Unknown error';
+          addDebugLog(`[AUTH ERROR] Code: ${errorCode}`);
+          addDebugLog(`[AUTH ERROR] Msg: ${errorMsg}`);
+          if (e.originalMessage) addDebugLog(`[AUTH ERROR] Orig: ${e.originalMessage}`);
+          
+          showToast(`Auth Failed: ${errorMsg}`, "error");
           setGithubToken(null);
           return null;
       }
