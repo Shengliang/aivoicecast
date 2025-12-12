@@ -4,7 +4,7 @@ import { CodeProject, CodeFile, UserProfile, Channel } from '../types';
 import { ArrowLeft, Save, Plus, Github, Cloud, HardDrive, Code, X, ChevronRight, ChevronDown, File, Folder, DownloadCloud, Loader2, CheckCircle, AlertTriangle, Info, FolderPlus, FileCode, RefreshCw, LogIn, CloudUpload, Trash2, ArrowUp, Edit2, FolderOpen, MoreVertical, Send, MessageSquare, Bot, Mic, Sparkles, SidebarClose, SidebarOpen, Users, Eye, FileText as FileTextIcon, Image as ImageIcon, StopCircle } from 'lucide-react';
 import { connectGoogleDrive } from '../services/authService';
 import { fetchPublicRepoInfo, fetchRepoContents, fetchFileContent, commitToRepo, fetchRepoSubTree } from '../services/githubService';
-import { listCloudDirectory, saveProjectToCloud, deleteCloudItem, createCloudFolder, CloudItem, subscribeToCodeProject, saveCodeProject } from '../services/firestoreService';
+import { listCloudDirectory, saveProjectToCloud, deleteCloudItem, createCloudFolder, CloudItem, subscribeToCodeProject, saveCodeProject, updateCodeFile } from '../services/firestoreService';
 import { ensureCodeStudioFolder, listDriveFiles, readDriveFile, saveToDrive, deleteDriveFile, createDriveFolder, DriveFile } from '../services/googleDriveService';
 import { GoogleGenAI, FunctionDeclaration, Type } from '@google/genai';
 import { GeminiLiveService } from '../services/geminiLive';
@@ -465,7 +465,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
   const cloudTree = useMemo(() => {
       const root: TreeNode[] = [];
       const map = new Map<string, TreeNode>();
-      cloudItems.forEach(item => map.set(item.fullPath, { id: item.fullPath, name: item.name, type: item.isFolder ? 'folder' : 'file', data: item, children: [] }));
+      cloudItems.forEach(item => map.set(item.fullPath, { id: item.fullPath, name: item.name, type: item.isFolder ? 'folder' : 'file', data: item, children: [], isLoaded: true }));
       cloudItems.forEach(item => {
           const node = map.get(item.fullPath)!;
           const parts = item.fullPath.split('/');
@@ -639,14 +639,23 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
       const updatedFile = { ...activeFile, content: val, isModified: true };
       setActiveFile(updatedFile);
       setSaveStatus('modified');
-      if (!activeFile.path?.startsWith('drive://') && !activeFile.path?.startsWith('cloud://')) {
+      
+      const isRemote = activeFile.path?.startsWith('drive://') || activeFile.path?.startsWith('cloud://');
+
+      if (!isRemote) {
+          // Update local state immediately for UI responsiveness
           setProject(prev => ({
               ...prev,
               files: prev.files.map(f => (f.path || f.name) === activeFile.path ? updatedFile : f)
           }));
-      }
-      if (isSharedSession && sessionId && !activeFile.path?.startsWith('drive://') && !activeFile.path?.startsWith('cloud://')) {
-          saveCodeProject({ ...project, files: project.files.map(f => (f.path || f.name) === activeFile.path ? updatedFile : f), lastModified: Date.now() });
+          
+          if (isSharedSession && sessionId) {
+              // Granular update to avoid overwriting other people's changes in the map
+              updateCodeFile(sessionId, updatedFile).catch(err => {
+                  console.error("Failed to sync file change:", err);
+                  setSaveStatus('error'); // Or some visual indicator of sync failure
+              });
+          }
       }
   };
   
