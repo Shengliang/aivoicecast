@@ -778,7 +778,17 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
   };
 
   // --- Cloud Logic ---
-  useEffect(() => { if (activeTab === 'cloud' && cloudItems.length === 0) listCloudDirectory('projects').then(setCloudItems).catch(console.error); }, [activeTab]);
+  useEffect(() => { 
+      if (activeTab === 'cloud') {
+          if (currentUser) {
+              const userProjectDir = `projects/${currentUser.uid}`;
+              listCloudDirectory(userProjectDir).then(setCloudItems).catch(console.error);
+          } else {
+              // Clear items if logged out to avoid confusion
+              setCloudItems([]);
+          }
+      } 
+  }, [activeTab, currentUser]);
   
   const handleCloudSelect = async (node: TreeNode) => {
       const item = node.data as CloudItem;
@@ -1060,14 +1070,36 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
               await saveToDrive(driveToken, driveRootId || 'root', activeFile.name, activeFile.content);
               showNotification("Saved to Drive", "success");
           } else if (activeFile.path?.startsWith('cloud://')) {
-              await saveProjectToCloud('projects', activeFile.name, activeFile.content); 
+              // Fix: correctly parse directory from cloud path or default to user folder
+              // activeFile.path is "cloud://projects/uid/filename"
+              const fullStoragePath = activeFile.path.substring(8); // remove 'cloud://'
+              const lastSlash = fullStoragePath.lastIndexOf('/');
+              const dir = lastSlash > -1 ? fullStoragePath.substring(0, lastSlash) : `projects/${currentUser?.uid}`;
+              
+              await saveProjectToCloud(dir, activeFile.name, activeFile.content); 
               showNotification("Saved to Cloud", "success");
-          } else if (project.github) {
+          } else if (project.github && activeTab === 'github' && activeFile.path) { // explicit check for github context
               const ghToken = localStorage.getItem('github_token');
               if (ghToken) { await commitToRepo(ghToken, project, "Update from CodeStudio"); showNotification("Pushed to GitHub", "success"); }
               else showNotification("No GitHub token found", "error");
           } else {
-              showNotification("Saved locally", "success");
+              // Fallback for local files ("new.js")
+              if (activeTab === 'cloud' && currentUser) {
+                  // If we are in Cloud tab, save new file to Cloud
+                  const userDir = `projects/${currentUser.uid}`;
+                  await saveProjectToCloud(userDir, activeFile.name, activeFile.content);
+                  
+                  // Update active file to point to cloud now
+                  const newPath = `cloud://${userDir}/${activeFile.name}`;
+                  setActiveFile({ ...activeFile, path: newPath, isModified: false });
+                  
+                  // Refresh list
+                  listCloudDirectory(userDir).then(setCloudItems);
+                  
+                  showNotification("Saved to Cloud", "success");
+              } else {
+                  showNotification("Saved locally (temporary)", "success");
+              }
           }
           setSaveStatus('saved');
       } catch (e: any) { showNotification("Save failed: " + e.message, "error"); setSaveStatus('modified'); }
@@ -1169,15 +1201,23 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
                   {/* Cloud View */}
                   {activeTab === 'cloud' && (
                       <div className="p-2">
-                          {cloudTree.map(node => (
-                              <FileTreeItem 
-                                  key={node.id} node={node} depth={0} 
-                                  onSelect={handleCloudSelect} 
-                                  onToggle={()=>{}} 
-                                  expandedIds={expandedFolders} loadingIds={loadingFolders}
-                              />
-                          ))}
-                          {cloudTree.length===0 && <div className="p-4 text-xs text-slate-500">No cloud files.</div>}
+                          {!currentUser ? (
+                              <div className="text-center p-4">
+                                  <p className="text-xs text-slate-500 mb-2">Sign in to access your cloud projects.</p>
+                              </div>
+                          ) : (
+                              <>
+                                  {cloudTree.map(node => (
+                                      <FileTreeItem 
+                                          key={node.id} node={node} depth={0} 
+                                          onSelect={handleCloudSelect} 
+                                          onToggle={()=>{}} 
+                                          expandedIds={expandedFolders} loadingIds={loadingFolders}
+                                      />
+                                  ))}
+                                  {cloudTree.length===0 && <div className="p-4 text-xs text-slate-500">No cloud files found. Save files here to access them anywhere.</div>}
+                              </>
+                          )}
                       </div>
                   )}
                   
