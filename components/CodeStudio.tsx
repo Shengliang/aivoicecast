@@ -878,10 +878,13 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
       const isRemote = activeFile.path?.startsWith('drive://') || activeFile.path?.startsWith('cloud://');
 
       if (!isRemote) {
+          // Robust ID for matching: use path if available, otherwise name (for new files)
+          const fileId = activeFile.path || activeFile.name;
+
           // Update local state immediately for UI responsiveness
           setProject(prev => ({
               ...prev,
-              files: prev.files.map(f => (f.path || f.name) === activeFile.path ? updatedFile : f)
+              files: prev.files.map(f => (f.path || f.name) === fileId ? updatedFile : f)
           }));
           
           if (isSharedSession && sessionId) {
