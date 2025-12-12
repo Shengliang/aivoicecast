@@ -1,10 +1,10 @@
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { CodeProject, CodeFile, UserProfile, Channel } from '../types';
-import { ArrowLeft, Save, Plus, Github, Cloud, HardDrive, Code, X, ChevronRight, ChevronDown, File, Folder, DownloadCloud, Loader2, CheckCircle, AlertTriangle, Info, FolderPlus, FileCode, RefreshCw, LogIn, CloudUpload, Trash2, ArrowUp, Edit2, FolderOpen, MoreVertical, Send, MessageSquare, Bot, Mic, Sparkles, SidebarClose, SidebarOpen, Users, Eye, FileText as FileTextIcon, Image as ImageIcon, StopCircle } from 'lucide-react';
+import { CodeProject, CodeFile, UserProfile, Channel, CursorPosition } from '../types';
+import { ArrowLeft, Save, Plus, Github, Cloud, HardDrive, Code, X, ChevronRight, ChevronDown, File, Folder, DownloadCloud, Loader2, CheckCircle, AlertTriangle, Info, FolderPlus, FileCode, RefreshCw, LogIn, CloudUpload, Trash2, ArrowUp, Edit2, FolderOpen, MoreVertical, Send, MessageSquare, Bot, Mic, Sparkles, SidebarClose, SidebarOpen, Users, Eye, FileText as FileTextIcon, Image as ImageIcon, StopCircle, Lock, Unlock, Hand } from 'lucide-react';
 import { connectGoogleDrive } from '../services/authService';
 import { fetchPublicRepoInfo, fetchRepoContents, fetchFileContent, commitToRepo, fetchRepoSubTree } from '../services/githubService';
-import { listCloudDirectory, saveProjectToCloud, deleteCloudItem, createCloudFolder, CloudItem, subscribeToCodeProject, saveCodeProject, updateCodeFile } from '../services/firestoreService';
+import { listCloudDirectory, saveProjectToCloud, deleteCloudItem, createCloudFolder, CloudItem, subscribeToCodeProject, saveCodeProject, updateCodeFile, updateCursor, claimCodeProjectLock, requestEditAccess, grantEditAccess, denyEditAccess } from '../services/firestoreService';
 import { ensureCodeStudioFolder, listDriveFiles, readDriveFile, saveToDrive, deleteDriveFile, createDriveFolder, DriveFile } from '../services/googleDriveService';
 import { GoogleGenAI, FunctionDeclaration, Type } from '@google/genai';
 import { GeminiLiveService } from '../services/geminiLive';
@@ -73,6 +73,13 @@ function getLanguageFromExt(filename: string): any {
     if (['cpp', 'hpp', 'cc', 'cxx'].includes(ext || '')) return 'cpp';
     if (ext === 'java') return 'java';
     return 'text';
+}
+
+function getRandomColor(id: string) {
+    const colors = ['#ef4444', '#f97316', '#f59e0b', '#84cc16', '#10b981', '#06b6d4', '#3b82f6', '#8b5cf6', '#d946ef', '#f43f5e'];
+    let hash = 0;
+    for (let i = 0; i < id.length; i++) hash = id.charCodeAt(i) + ((hash << 5) - hash);
+    return colors[Math.abs(hash) % colors.length];
 }
 
 // Helper Component: File Icon
@@ -175,17 +182,20 @@ const FileTreeItem: React.FC<{
     );
 };
 
-// --- RICH EDITOR (With PrismJS) ---
+// --- RICH EDITOR (With PrismJS & Cursors) ---
 const RichCodeEditor: React.FC<{ 
     code: string; 
     onChange: (val: string) => void;
+    onCursorMove?: (line: number, col: number) => void;
     language: string;
     isShared?: boolean;
-}> = ({ code, onChange, language, isShared }) => {
+    readOnly?: boolean;
+    remoteCursors?: CursorPosition[];
+}> = ({ code, onChange, onCursorMove, language, isShared, readOnly, remoteCursors }) => {
     const [highlightedCode, setHighlightedCode] = useState('');
+    const textareaRef = useRef<HTMLTextAreaElement>(null);
     
     useEffect(() => {
-        // Use Prism if available globally
         if ((window as any).Prism) {
             const prismLang = (window as any).Prism.languages[language] || (window as any).Prism.languages.javascript;
             if (prismLang) {
@@ -194,10 +204,21 @@ const RichCodeEditor: React.FC<{
                 setHighlightedCode(code.replace(/</g, '&lt;').replace(/>/g, '&gt;'));
             }
         } else {
-            // Fallback
             setHighlightedCode(code.replace(/</g, '&lt;').replace(/>/g, '&gt;'));
         }
     }, [code, language]);
+
+    const handleInputEvents = (e: React.SyntheticEvent<HTMLTextAreaElement>) => {
+        if (onCursorMove) {
+            const target = e.target as HTMLTextAreaElement;
+            const { selectionStart } = target;
+            const textUpToCursor = target.value.substring(0, selectionStart);
+            const lines = textUpToCursor.split('\n');
+            const line = lines.length;
+            const col = lines[lines.length - 1].length;
+            onCursorMove(line, col);
+        }
+    };
 
     return (
         <div className="relative w-full h-full flex overflow-hidden">
@@ -219,11 +240,36 @@ const RichCodeEditor: React.FC<{
                     />
                 </pre>
                 
+                {/* Remote Cursors Layer */}
+                {remoteCursors && remoteCursors.map(cursor => (
+                    <div 
+                        key={cursor.clientId}
+                        className="absolute pointer-events-none transition-all duration-100"
+                        style={{
+                            top: `${(cursor.line - 1) * 21 + 16}px`, // 21px line height approx, 16px padding
+                            left: `${cursor.column * 8.4 + 16}px`, // 8.4px char width approx, 16px padding
+                            height: '21px'
+                        }}
+                    >
+                        <div className="w-0.5 h-full absolute top-0 left-0" style={{ backgroundColor: cursor.color }}></div>
+                        <div 
+                            className="absolute -top-5 left-0 text-[10px] px-1 rounded text-white whitespace-nowrap z-10"
+                            style={{ backgroundColor: cursor.color }}
+                        >
+                            {cursor.userName}
+                        </div>
+                    </div>
+                ))}
+
                 {/* Input Layer */}
                 <textarea 
+                    ref={textareaRef}
                     value={code} 
-                    onChange={(e) => onChange(e.target.value)} 
-                    className="absolute top-0 left-0 w-full h-full p-4 font-mono text-sm bg-transparent text-transparent caret-white outline-none resize-none overflow-hidden"
+                    onChange={(e) => onChange(e.target.value)}
+                    onKeyUp={handleInputEvents}
+                    onClick={handleInputEvents}
+                    disabled={readOnly}
+                    className={`absolute top-0 left-0 w-full h-full p-4 font-mono text-sm bg-transparent text-transparent caret-white outline-none resize-none overflow-hidden ${readOnly ? 'cursor-not-allowed opacity-50' : ''}`}
                     style={{ fontFamily: '"JetBrains Mono", monospace', lineHeight: '1.5' }}
                     spellCheck={false}
                     autoCapitalize="off"
@@ -385,6 +431,19 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
 
   // Shared Session
   const [isSharedSession, setIsSharedSession] = useState(!!sessionId);
+  const clientId = useRef(crypto.randomUUID()).current;
+  const [localCursor, setLocalCursor] = useState<{line: number, col: number} | null>(null);
+  
+  // Computed Properties for Locking
+  const activeWriterId = project.activeClientId;
+  const isLocked = !!activeWriterId && activeWriterId !== clientId;
+  const isWriter = activeWriterId === clientId;
+  
+  // Remote Cursors filtered by current file
+  const activeRemoteCursors = useMemo(() => {
+      if (!project.cursors || !activeFile) return [];
+      return (Object.values(project.cursors) as CursorPosition[]).filter(c => c.clientId !== clientId && c.fileName === activeFile.name);
+  }, [project.cursors, activeFile, clientId]);
 
   // Auto-switch view mode for markdown/plantuml
   useEffect(() => {
@@ -421,18 +480,41 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
                   if (remoteProject.lastModified > prev.lastModified) {
                       return remoteProject;
                   }
-                  return prev;
+                  // Merge cursors even if file content hasn't changed
+                  return { ...prev, cursors: remoteProject.cursors, activeClientId: remoteProject.activeClientId, activeWriterName: remoteProject.activeWriterName, editRequest: remoteProject.editRequest };
               });
+              
               if (activeFile && activeFile.path && !activeFile.path.startsWith('drive://') && !activeFile.path.startsWith('cloud://')) {
                   const remoteFile = remoteProject.files.find(f => f.path === activeFile.path);
                   if (remoteFile && remoteFile.content !== activeFile.content) {
-                      setActiveFile(remoteFile);
+                      // Only update if we are NOT the writer to avoid overwriting our own pending edits?
+                      // Actually, if we are writer, we are source of truth. If we are reader, we take remote.
+                      if (remoteProject.activeClientId !== clientId) {
+                          setActiveFile(remoteFile);
+                      }
                   }
               }
           });
           return () => unsubscribe();
       }
-  }, [sessionId, activeFile]);
+  }, [sessionId, activeFile, clientId]);
+
+  // --- Cursor Handler ---
+  const handleCursorMove = (line: number, col: number) => {
+      setLocalCursor({ line, col });
+      if (isSharedSession && sessionId && currentUser && activeFile) {
+          updateCursor(sessionId, {
+              clientId,
+              userId: currentUser.uid,
+              userName: currentUser.displayName || 'Anonymous',
+              fileName: activeFile.name,
+              line,
+              column: col,
+              color: getRandomColor(clientId),
+              updatedAt: Date.now()
+          });
+      }
+  };
 
   // --- Tree Builders ---
   const workspaceTree = useMemo(() => {
@@ -635,7 +717,8 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
 
   // Editor Logic
   const handleCodeChange = (val: string) => {
-      if (!activeFile) return;
+      if (!activeFile || isLocked) return; // Prevent local update if locked
+      
       const updatedFile = { ...activeFile, content: val, isModified: true };
       setActiveFile(updatedFile);
       setSaveStatus('modified');
@@ -643,6 +726,11 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
       const isRemote = activeFile.path?.startsWith('drive://') || activeFile.path?.startsWith('cloud://');
 
       if (!isRemote) {
+          // If no lock, auto-claim
+          if (!activeWriterId && sessionId) {
+              claimCodeProjectLock(sessionId, clientId, currentUser?.displayName || 'Anonymous');
+          }
+
           // Update local state immediately for UI responsiveness
           setProject(prev => ({
               ...prev,
@@ -653,7 +741,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
               // Granular update to avoid overwriting other people's changes in the map
               updateCodeFile(sessionId, updatedFile).catch(err => {
                   console.error("Failed to sync file change:", err);
-                  setSaveStatus('error'); // Or some visual indicator of sync failure
+                  setSaveStatus('error'); 
               });
           }
       }
@@ -851,6 +939,14 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
                   {n.type === 'error' ? <AlertTriangle size={14}/> : <Info size={14}/>} <span>{n.message}</span>
               </div>
           ))}
+          {/* Debug Info */}
+          {activeFile && (
+              <div className="pointer-events-none flex flex-col items-center bg-black/60 text-xs text-white p-2 rounded">
+                  <div>Writer: {activeWriterId ? (isWriter ? "ME" : project.activeWriterName) : "None"}</div>
+                  <div>Line: {localCursor?.line || 0}, Col: {localCursor?.col || 0}</div>
+                  <div>Remote Cursors: {activeRemoteCursors.length}</div>
+              </div>
+          )}
       </div>
 
       {/* Header */}
@@ -864,6 +960,54 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
             </div>
             
             <div className="flex items-center space-x-2">
+               {/* Lock Status */}
+               {isSharedSession && (
+                   <div className="flex items-center gap-2 mr-4">
+                       {isWriter ? (
+                           <span className="text-xs text-emerald-400 font-bold flex items-center gap-1 bg-emerald-900/20 px-2 py-1 rounded border border-emerald-500/30">
+                               <Lock size={12}/> Editing
+                           </span>
+                       ) : activeWriterId ? (
+                           <div className="flex items-center gap-2">
+                               <span className="text-xs text-amber-400 font-bold flex items-center gap-1 bg-amber-900/20 px-2 py-1 rounded border border-amber-500/30">
+                                   <Lock size={12}/> Locked by {project.activeWriterName}
+                               </span>
+                               <button 
+                                   onClick={() => sessionId && requestEditAccess(sessionId, clientId, currentUser?.displayName || 'Anon')}
+                                   className="text-[10px] bg-slate-800 hover:bg-indigo-600 text-white px-2 py-1 rounded transition-colors"
+                               >
+                                   Request Access
+                               </button>
+                           </div>
+                       ) : (
+                           <span className="text-xs text-slate-500 flex items-center gap-1">
+                               <Unlock size={12}/> Unlocked
+                           </span>
+                       )}
+                       
+                       {/* Grant Request UI */}
+                       {isWriter && project.editRequest && (
+                           <div className="absolute top-16 right-4 bg-slate-800 border border-indigo-500 p-3 rounded-lg shadow-xl flex items-center gap-3 animate-bounce z-50">
+                               <span className="text-xs text-white"><strong>{project.editRequest.userName}</strong> requests access.</span>
+                               <div className="flex gap-2">
+                                   <button 
+                                      onClick={() => sessionId && grantEditAccess(sessionId, project.editRequest!.clientId, project.editRequest!.userName)}
+                                      className="bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] px-2 py-1 rounded font-bold"
+                                   >
+                                       Grant
+                                   </button>
+                                   <button 
+                                      onClick={() => sessionId && denyEditAccess(sessionId)}
+                                      className="bg-slate-700 hover:bg-red-600 text-white text-[10px] px-2 py-1 rounded"
+                                   >
+                                       Deny
+                                   </button>
+                               </div>
+                           </div>
+                       )}
+                   </div>
+               )}
+
                {/* Voice Button */}
                {activeFile && (
                    <button onClick={handleVoiceToggle} className={`flex items-center space-x-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors border ${isVoiceActive ? 'bg-red-500 text-white border-red-600 animate-pulse' : 'bg-pink-900/30 text-pink-400 border-pink-500/30 hover:bg-pink-900/50'}`}>
@@ -1000,9 +1144,23 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
                             <RichCodeEditor 
                                 code={activeFile.content} 
                                 onChange={handleCodeChange} 
+                                onCursorMove={handleCursorMove}
                                 language={activeFile.language}
                                 isShared={isSharedSession}
+                                readOnly={isLocked}
+                                remoteCursors={activeRemoteCursors}
                             />
+                        )}
+                        
+                        {/* Lock Overlay */}
+                        {isLocked && (
+                            <div className="absolute inset-0 bg-black/10 pointer-events-none flex items-center justify-center">
+                                <div className="bg-slate-900/80 border border-amber-500/50 p-4 rounded-xl shadow-2xl flex flex-col items-center">
+                                    <Lock size={32} className="text-amber-500 mb-2"/>
+                                    <p className="text-white font-bold">Locked by {project.activeWriterName}</p>
+                                    <p className="text-slate-400 text-xs mt-1">Read-Only Mode</p>
+                                </div>
+                            </div>
                         )}
                     </div>
                   </>
