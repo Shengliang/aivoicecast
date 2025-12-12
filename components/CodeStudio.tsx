@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { CodeProject, CodeFile, UserProfile, Channel, CursorPosition } from '../types';
-import { ArrowLeft, Save, Plus, Github, Cloud, HardDrive, Code, X, ChevronRight, ChevronDown, File, Folder, DownloadCloud, Loader2, CheckCircle, AlertTriangle, Info, FolderPlus, FileCode, RefreshCw, LogIn, CloudUpload, Trash2, ArrowUp, Edit2, FolderOpen, MoreVertical, Send, MessageSquare, Bot, Mic, Sparkles, SidebarClose, SidebarOpen, Users, Eye, FileText as FileTextIcon, Image as ImageIcon, StopCircle, Minus, Maximize2, Lock, Unlock } from 'lucide-react';
+import { ArrowLeft, Save, Plus, Github, Cloud, HardDrive, Code, X, ChevronRight, ChevronDown, File, Folder, DownloadCloud, Loader2, CheckCircle, AlertTriangle, Info, FolderPlus, FileCode, RefreshCw, LogIn, CloudUpload, Trash2, ArrowUp, Edit2, FolderOpen, MoreVertical, Send, MessageSquare, Bot, Mic, Sparkles, SidebarClose, SidebarOpen, Users, Eye, FileText as FileTextIcon, Image as ImageIcon, StopCircle, Minus, Maximize2, Lock, Unlock, Share2 } from 'lucide-react';
 import { connectGoogleDrive } from '../services/authService';
 import { fetchPublicRepoInfo, fetchRepoContents, fetchFileContent, commitToRepo, fetchRepoSubTree } from '../services/githubService';
 import { listCloudDirectory, saveProjectToCloud, deleteCloudItem, createCloudFolder, CloudItem, subscribeToCodeProject, saveCodeProject, updateCodeFile, updateCursor, claimCodeProjectLock } from '../services/firestoreService';
@@ -441,6 +441,28 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
       setTimeout(() => setNotifications(prev => prev.filter(n => n.id !== id)), 3000);
   };
 
+  const handleShare = async () => {
+        const idToShare = sessionId || crypto.randomUUID();
+        
+        if (!sessionId) {
+            // Create initial cloud instance if local
+            const newProject: CodeProject = {
+                id: idToShare,
+                name: project.name || 'Shared Project',
+                files: project.files,
+                lastModified: Date.now(),
+                ownerId: currentUser?.uid
+            };
+            await saveCodeProject(newProject);
+            if (onSessionStart) onSessionStart(idToShare);
+        }
+
+        const url = new URL(window.location.href);
+        url.searchParams.set('session', idToShare);
+        await navigator.clipboard.writeText(url.toString());
+        showNotification("Session Link Copied!", "success");
+  };
+
   const handleSmartSave = async () => {
       if (!activeFile) return;
       setSaveStatus('saving');
@@ -620,6 +642,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
          </div>
          <div className="flex items-center space-x-2">
             {isLockedByOther && <button onClick={handleTakeControl} className="px-3 py-1.5 bg-amber-600 hover:bg-amber-500 text-white rounded-lg text-xs font-bold flex items-center gap-1"><Unlock size={12}/> Take Control</button>}
+            <button onClick={handleShare} className="flex items-center space-x-2 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-bold shadow-md"><Share2 size={14}/><span>Share</span></button>
             <button onClick={handleSmartSave} className="flex items-center space-x-2 px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold shadow-md"><Save size={14}/><span>Save</span></button>
             <button onClick={() => setIsAIChatOpen(!isAIChatOpen)} className="p-2 rounded-lg text-slate-400 hover:text-white"><SidebarOpen size={18}/></button>
          </div>
