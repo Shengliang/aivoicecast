@@ -1,10 +1,10 @@
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { CodeProject, CodeFile, UserProfile, Channel, CursorPosition } from '../types';
-import { ArrowLeft, Save, Plus, Github, Cloud, HardDrive, Code, X, ChevronRight, ChevronDown, File, Folder, DownloadCloud, Loader2, CheckCircle, AlertTriangle, Info, FolderPlus, FileCode, RefreshCw, LogIn, CloudUpload, Trash2, ArrowUp, Edit2, FolderOpen, MoreVertical, Send, MessageSquare, Bot, Mic, Sparkles, SidebarClose, SidebarOpen, Users, Eye, FileText as FileTextIcon, Image as ImageIcon, StopCircle, Lock, Unlock, Hand } from 'lucide-react';
+import { ArrowLeft, Save, Plus, Github, Cloud, HardDrive, Code, X, ChevronRight, ChevronDown, File, Folder, DownloadCloud, Loader2, CheckCircle, AlertTriangle, Info, FolderPlus, FileCode, RefreshCw, LogIn, CloudUpload, Trash2, ArrowUp, Edit2, FolderOpen, MoreVertical, Send, MessageSquare, Bot, Mic, Sparkles, SidebarClose, SidebarOpen, Users, Eye, FileText as FileTextIcon, Image as ImageIcon, StopCircle, Minus, Maximize2 } from 'lucide-react';
 import { connectGoogleDrive } from '../services/authService';
 import { fetchPublicRepoInfo, fetchRepoContents, fetchFileContent, commitToRepo, fetchRepoSubTree } from '../services/githubService';
-import { listCloudDirectory, saveProjectToCloud, deleteCloudItem, createCloudFolder, CloudItem, subscribeToCodeProject, saveCodeProject, updateCodeFile, updateCursor, claimCodeProjectLock, requestEditAccess, grantEditAccess, denyEditAccess } from '../services/firestoreService';
+import { listCloudDirectory, saveProjectToCloud, deleteCloudItem, createCloudFolder, CloudItem, subscribeToCodeProject, saveCodeProject, updateCodeFile, updateCursor } from '../services/firestoreService';
 import { ensureCodeStudioFolder, listDriveFiles, readDriveFile, saveToDrive, deleteDriveFile, createDriveFolder, DriveFile } from '../services/googleDriveService';
 import { GoogleGenAI, FunctionDeclaration, Type } from '@google/genai';
 import { GeminiLiveService } from '../services/geminiLive';
@@ -189,9 +189,8 @@ const RichCodeEditor: React.FC<{
     onCursorMove?: (line: number, col: number) => void;
     language: string;
     isShared?: boolean;
-    readOnly?: boolean;
     remoteCursors?: CursorPosition[];
-}> = ({ code, onChange, onCursorMove, language, isShared, readOnly, remoteCursors }) => {
+}> = ({ code, onChange, onCursorMove, language, isShared, remoteCursors }) => {
     const [highlightedCode, setHighlightedCode] = useState('');
     const textareaRef = useRef<HTMLTextAreaElement>(null);
     
@@ -215,13 +214,13 @@ const RichCodeEditor: React.FC<{
             const textUpToCursor = target.value.substring(0, selectionStart);
             const lines = textUpToCursor.split('\n');
             const line = lines.length;
-            const col = lines[lines.length - 1].length;
+            const col = lines[lines.length - 1].length + 1; // 1-based column
             onCursorMove(line, col);
         }
     };
 
     return (
-        <div className="relative w-full h-full flex overflow-hidden">
+        <div className="relative w-full h-full flex overflow-hidden group">
             {/* Line Numbers */}
             <div className="w-10 bg-slate-900 text-slate-600 text-right pr-2 select-none text-sm font-mono pt-4 border-r border-slate-800 shrink-0">
                 {code.split('\n').map((_, i) => <div key={i}>{i + 1}</div>)}
@@ -247,13 +246,13 @@ const RichCodeEditor: React.FC<{
                         className="absolute pointer-events-none transition-all duration-100"
                         style={{
                             top: `${(cursor.line - 1) * 21 + 16}px`, // 21px line height approx, 16px padding
-                            left: `${cursor.column * 8.4 + 16}px`, // 8.4px char width approx, 16px padding
+                            left: `${(cursor.column) * 8.4 + 16}px`, // 8.4px char width approx, 16px padding
                             height: '21px'
                         }}
                     >
-                        <div className="w-0.5 h-full absolute top-0 left-0" style={{ backgroundColor: cursor.color }}></div>
+                        <div className="w-0.5 h-full absolute top-0 left-0 animate-pulse" style={{ backgroundColor: cursor.color }}></div>
                         <div 
-                            className="absolute -top-5 left-0 text-[10px] px-1 rounded text-white whitespace-nowrap z-10"
+                            className="absolute -top-5 left-0 text-[10px] px-1.5 rounded text-white whitespace-nowrap z-10 shadow-md font-bold"
                             style={{ backgroundColor: cursor.color }}
                         >
                             {cursor.userName}
@@ -268,13 +267,75 @@ const RichCodeEditor: React.FC<{
                     onChange={(e) => onChange(e.target.value)}
                     onKeyUp={handleInputEvents}
                     onClick={handleInputEvents}
-                    disabled={readOnly}
-                    className={`absolute top-0 left-0 w-full h-full p-4 font-mono text-sm bg-transparent text-transparent caret-white outline-none resize-none overflow-hidden ${readOnly ? 'cursor-not-allowed opacity-50' : ''}`}
+                    className="absolute top-0 left-0 w-full h-full p-4 font-mono text-sm bg-transparent text-transparent caret-white outline-none resize-none overflow-hidden"
                     style={{ fontFamily: '"JetBrains Mono", monospace', lineHeight: '1.5' }}
                     spellCheck={false}
                     autoCapitalize="off"
                     autoComplete="off"
                 />
+            </div>
+        </div>
+    );
+};
+
+// --- Debug Cursor Window ---
+const DebugCursorPanel: React.FC<{ localCursor: {line: number, col: number} | null, remoteCursors: CursorPosition[] }> = ({ localCursor, remoteCursors }) => {
+    const [minimized, setMinimized] = useState(false);
+
+    if (minimized) {
+        return (
+            <button 
+                onClick={() => setMinimized(false)}
+                className="absolute bottom-4 right-4 bg-slate-900/90 hover:bg-slate-800 text-slate-300 border border-slate-700 rounded-lg shadow-xl p-2 z-50 flex items-center gap-2 transition-all hover:scale-105"
+                title="Show Debug Info"
+            >
+                <Maximize2 size={14} />
+                <span className="text-xs font-bold">Debug ({remoteCursors.length})</span>
+            </button>
+        );
+    }
+
+    return (
+        <div className="absolute bottom-4 right-4 bg-slate-900/95 border border-slate-700 rounded-xl shadow-2xl p-0 z-50 text-xs text-slate-300 font-mono w-72 backdrop-blur-md overflow-hidden animate-fade-in-up">
+            <div className="flex justify-between items-center bg-slate-950/80 p-2 border-b border-slate-800">
+                <span className="font-bold text-slate-400 flex items-center gap-2">
+                    <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
+                    Cursor Debug
+                </span>
+                <button onClick={() => setMinimized(true)} className="hover:text-white p-1 rounded hover:bg-slate-800 transition-colors">
+                    <Minus size={14}/>
+                </button>
+            </div>
+            
+            <div className="p-3 space-y-3">
+                <div className="flex justify-between items-center bg-slate-800/50 p-2 rounded">
+                    <span className="text-emerald-400 font-bold">Local (Me)</span>
+                    <span className="bg-slate-950 px-2 py-0.5 rounded text-slate-400">Ln {localCursor?.line || 1}, Col {localCursor?.col || 1}</span>
+                </div>
+                
+                <div>
+                    <div className="flex justify-between items-center mb-1">
+                        <span className="text-slate-500 font-bold uppercase text-[10px] tracking-wider">Remote Writers ({remoteCursors.length})</span>
+                    </div>
+                    
+                    <div className="max-h-40 overflow-y-auto space-y-1 pr-1 scrollbar-thin scrollbar-thumb-slate-700">
+                        {remoteCursors.length === 0 ? (
+                            <div className="text-slate-600 italic text-[10px] py-2 text-center">No other users connected.</div>
+                        ) : (
+                            remoteCursors.map(rc => (
+                                <div key={rc.clientId} className="flex justify-between items-center bg-slate-800/30 p-1.5 rounded hover:bg-slate-800/50 transition-colors">
+                                    <div className="flex items-center gap-2 min-w-0">
+                                        <div className="w-2 h-2 rounded-full shrink-0" style={{background: rc.color}}></div>
+                                        <span className="truncate text-white font-medium" title={rc.userName}>{rc.userName}</span>
+                                    </div>
+                                    <span className="text-slate-500 text-[10px] whitespace-nowrap font-mono">
+                                        Ln {rc.line}, Col {rc.column}
+                                    </span>
+                                </div>
+                            ))
+                        )}
+                    </div>
+                </div>
             </div>
         </div>
     );
@@ -434,11 +495,6 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
   const clientId = useRef(crypto.randomUUID()).current;
   const [localCursor, setLocalCursor] = useState<{line: number, col: number} | null>(null);
   
-  // Computed Properties for Locking
-  const activeWriterId = project.activeClientId;
-  const isLocked = !!activeWriterId && activeWriterId !== clientId;
-  const isWriter = activeWriterId === clientId;
-  
   // Remote Cursors filtered by current file
   const activeRemoteCursors = useMemo(() => {
       if (!project.cursors || !activeFile) return [];
@@ -481,17 +537,16 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
                       return remoteProject;
                   }
                   // Merge cursors even if file content hasn't changed
-                  return { ...prev, cursors: remoteProject.cursors, activeClientId: remoteProject.activeClientId, activeWriterName: remoteProject.activeWriterName, editRequest: remoteProject.editRequest };
+                  return { ...prev, cursors: remoteProject.cursors };
               });
               
               if (activeFile && activeFile.path && !activeFile.path.startsWith('drive://') && !activeFile.path.startsWith('cloud://')) {
                   const remoteFile = remoteProject.files.find(f => f.path === activeFile.path);
                   if (remoteFile && remoteFile.content !== activeFile.content) {
-                      // Only update if we are NOT the writer to avoid overwriting our own pending edits?
-                      // Actually, if we are writer, we are source of truth. If we are reader, we take remote.
-                      if (remoteProject.activeClientId !== clientId) {
-                          setActiveFile(remoteFile);
-                      }
+                      // Simple merge: Remote update wins if it's newer (handled by lastModified check above mostly, but direct file content check here)
+                      // In a real N-user concurrent system with no locking, we accept the incoming change.
+                      // This might overwrite mid-typing if latency is high, but "Last Writer Wins" was requested.
+                      setActiveFile(remoteFile);
                   }
               }
           });
@@ -717,7 +772,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
 
   // Editor Logic
   const handleCodeChange = (val: string) => {
-      if (!activeFile || isLocked) return; // Prevent local update if locked
+      if (!activeFile) return; 
       
       const updatedFile = { ...activeFile, content: val, isModified: true };
       setActiveFile(updatedFile);
@@ -726,11 +781,6 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
       const isRemote = activeFile.path?.startsWith('drive://') || activeFile.path?.startsWith('cloud://');
 
       if (!isRemote) {
-          // If no lock, auto-claim
-          if (!activeWriterId && sessionId) {
-              claimCodeProjectLock(sessionId, clientId, currentUser?.displayName || 'Anonymous');
-          }
-
           // Update local state immediately for UI responsiveness
           setProject(prev => ({
               ...prev,
@@ -939,13 +989,9 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
                   {n.type === 'error' ? <AlertTriangle size={14}/> : <Info size={14}/>} <span>{n.message}</span>
               </div>
           ))}
-          {/* Debug Info */}
-          {activeFile && (
-              <div className="pointer-events-none flex flex-col items-center bg-black/60 text-xs text-white p-2 rounded">
-                  <div>Writer: {activeWriterId ? (isWriter ? "ME" : project.activeWriterName) : "None"}</div>
-                  <div>Line: {localCursor?.line || 0}, Col: {localCursor?.col || 0}</div>
-                  <div>Remote Cursors: {activeRemoteCursors.length}</div>
-              </div>
+          {/* Debug Overlay */}
+          {activeFile && isSharedSession && (
+              <DebugCursorPanel localCursor={localCursor} remoteCursors={activeRemoteCursors} />
           )}
       </div>
 
@@ -960,54 +1006,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
             </div>
             
             <div className="flex items-center space-x-2">
-               {/* Lock Status */}
-               {isSharedSession && (
-                   <div className="flex items-center gap-2 mr-4">
-                       {isWriter ? (
-                           <span className="text-xs text-emerald-400 font-bold flex items-center gap-1 bg-emerald-900/20 px-2 py-1 rounded border border-emerald-500/30">
-                               <Lock size={12}/> Editing
-                           </span>
-                       ) : activeWriterId ? (
-                           <div className="flex items-center gap-2">
-                               <span className="text-xs text-amber-400 font-bold flex items-center gap-1 bg-amber-900/20 px-2 py-1 rounded border border-amber-500/30">
-                                   <Lock size={12}/> Locked by {project.activeWriterName}
-                               </span>
-                               <button 
-                                   onClick={() => sessionId && requestEditAccess(sessionId, clientId, currentUser?.displayName || 'Anon')}
-                                   className="text-[10px] bg-slate-800 hover:bg-indigo-600 text-white px-2 py-1 rounded transition-colors"
-                               >
-                                   Request Access
-                               </button>
-                           </div>
-                       ) : (
-                           <span className="text-xs text-slate-500 flex items-center gap-1">
-                               <Unlock size={12}/> Unlocked
-                           </span>
-                       )}
-                       
-                       {/* Grant Request UI */}
-                       {isWriter && project.editRequest && (
-                           <div className="absolute top-16 right-4 bg-slate-800 border border-indigo-500 p-3 rounded-lg shadow-xl flex items-center gap-3 animate-bounce z-50">
-                               <span className="text-xs text-white"><strong>{project.editRequest.userName}</strong> requests access.</span>
-                               <div className="flex gap-2">
-                                   <button 
-                                      onClick={() => sessionId && grantEditAccess(sessionId, project.editRequest!.clientId, project.editRequest!.userName)}
-                                      className="bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] px-2 py-1 rounded font-bold"
-                                   >
-                                       Grant
-                                   </button>
-                                   <button 
-                                      onClick={() => sessionId && denyEditAccess(sessionId)}
-                                      className="bg-slate-700 hover:bg-red-600 text-white text-[10px] px-2 py-1 rounded"
-                                   >
-                                       Deny
-                                   </button>
-                               </div>
-                           </div>
-                       )}
-                   </div>
-               )}
-
+               
                {/* Voice Button */}
                {activeFile && (
                    <button onClick={handleVoiceToggle} className={`flex items-center space-x-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors border ${isVoiceActive ? 'bg-red-500 text-white border-red-600 animate-pulse' : 'bg-pink-900/30 text-pink-400 border-pink-500/30 hover:bg-pink-900/50'}`}>
@@ -1147,20 +1146,8 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
                                 onCursorMove={handleCursorMove}
                                 language={activeFile.language}
                                 isShared={isSharedSession}
-                                readOnly={isLocked}
                                 remoteCursors={activeRemoteCursors}
                             />
-                        )}
-                        
-                        {/* Lock Overlay */}
-                        {isLocked && (
-                            <div className="absolute inset-0 bg-black/10 pointer-events-none flex items-center justify-center">
-                                <div className="bg-slate-900/80 border border-amber-500/50 p-4 rounded-xl shadow-2xl flex flex-col items-center">
-                                    <Lock size={32} className="text-amber-500 mb-2"/>
-                                    <p className="text-white font-bold">Locked by {project.activeWriterName}</p>
-                                    <p className="text-slate-400 text-xs mt-1">Read-Only Mode</p>
-                                </div>
-                            </div>
                         )}
                     </div>
                   </>
