@@ -1,5 +1,6 @@
 
 
+
 export type AttachmentType = 'image' | 'audio' | 'video' | 'file';
 
 export interface Attachment {
@@ -313,7 +314,7 @@ export interface JobPosting {
 
 // Whiteboard Types
 export type ToolType = 'select' | 'pen' | 'eraser' | 'rect' | 'circle' | 'line' | 'arrow' | 'text' | 'pan';
-export type LineStyle = 'solid' | 'dashed' | 'dotted';
+export type LineStyle = 'solid' | 'dashed' | 'dotted' | 'dash-dot' | 'long-dash';
 export type BrushType = 'standard' | 'pencil' | 'marker' | 'calligraphy-pen' | 'writing-brush' | 'airbrush' | 'oil' | 'watercolor' | 'crayon';
 
 export interface WhiteboardElement {

@@ -452,11 +452,71 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({
           if (textInput && el.id === textInput.id) return;
           ctx.save(); ctx.beginPath(); ctx.strokeStyle = el.color; ctx.lineWidth = el.strokeWidth / scale;
           ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.globalAlpha = 1.0; ctx.shadowBlur = 0;
-          if (el.brushType === 'pencil') { ctx.lineWidth = 1 / scale; ctx.globalAlpha = 0.85; }
-          else if (el.brushType === 'marker') { ctx.globalAlpha = 0.6; ctx.lineCap = 'square'; ctx.lineJoin = 'bevel'; ctx.lineWidth = Math.max(el.strokeWidth, 8) / scale; }
-          else if (el.brushType === 'airbrush') { ctx.lineCap = 'round'; ctx.shadowBlur = 15; ctx.shadowColor = el.color; ctx.globalAlpha = 0.6; }
+          ctx.globalCompositeOperation = 'source-over'; // Default
+
+          // Enhanced Brush Styles
+          if (el.brushType === 'pencil') { 
+              ctx.lineWidth = 1 / scale; 
+              ctx.globalAlpha = 0.7; 
+              ctx.shadowBlur = 0;
+          }
+          else if (el.brushType === 'marker') { 
+              ctx.globalAlpha = 0.5; 
+              ctx.lineCap = 'square'; 
+              ctx.lineJoin = 'bevel'; 
+              ctx.lineWidth = Math.max(el.strokeWidth, 8) / scale; 
+              ctx.globalCompositeOperation = 'multiply'; // Blends like a highlighter (if supported, else source-over)
+          }
+          else if (el.brushType === 'calligraphy-pen') { 
+              ctx.lineCap = 'square'; 
+              ctx.lineJoin = 'bevel'; 
+              // Simulate flat nib by drawing wide
+              ctx.lineWidth = Math.max(el.strokeWidth, 4) / scale;
+          }
+          else if (el.brushType === 'writing-brush') { 
+              // Chinese Brush style: soft edges, varying pressure look
+              ctx.lineCap = 'round'; 
+              ctx.shadowBlur = 10; 
+              ctx.shadowColor = el.color; 
+              ctx.lineWidth = Math.max(el.strokeWidth, 5) / scale;
+          }
+          else if (el.brushType === 'airbrush') { 
+              ctx.lineCap = 'round'; 
+              ctx.shadowBlur = 20; 
+              ctx.shadowColor = el.color; 
+              ctx.globalAlpha = 0.5; 
+              ctx.lineWidth = Math.max(el.strokeWidth, 10) / scale;
+          }
+          else if (el.brushType === 'oil') {
+              ctx.globalAlpha = 1.0;
+              ctx.shadowBlur = 0;
+              ctx.lineWidth = Math.max(el.strokeWidth, 6) / scale;
+              ctx.lineCap = 'round';
+          }
+          else if (el.brushType === 'watercolor') {
+              ctx.globalAlpha = 0.3;
+              ctx.shadowBlur = 5;
+              ctx.shadowColor = el.color;
+              ctx.lineWidth = Math.max(el.strokeWidth, 8) / scale;
+              // Note: 'multiply' composite works best on white background, might need 'screen' or 'lighter' on dark bg
+              // But standard watercolor on paper is subtractive. On dark bg, maybe 'screen' is better.
+              // Let's stick to standard blending for visibility on slate-950.
+          }
+          else if (el.brushType === 'crayon') {
+              ctx.setLineDash([2, 4]); // Stippled look
+              ctx.lineCap = 'round';
+              ctx.lineWidth = Math.max(el.strokeWidth, 4) / scale;
+              ctx.globalAlpha = 0.8;
+          }
           
-          if (el.lineStyle === 'dashed') ctx.setLineDash([15, 10]); else if (el.lineStyle === 'dotted') ctx.setLineDash([3, 8]); else ctx.setLineDash([]);
+          // Line Styles (Override dash if not crayon)
+          if (el.brushType !== 'crayon') {
+              if (el.lineStyle === 'dashed') ctx.setLineDash([15, 10]); 
+              else if (el.lineStyle === 'dotted') ctx.setLineDash([3, 8]); 
+              else if (el.lineStyle === 'dash-dot') ctx.setLineDash([15, 5, 3, 5]); 
+              else if (el.lineStyle === 'long-dash') ctx.setLineDash([30, 10]); 
+              else ctx.setLineDash([]);
+          }
 
           if (el.type === 'pen' || el.type === 'eraser') {
               if (el.points && el.points.length > 0) {
@@ -572,7 +632,7 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({
             </div>
             
             <div className="flex items-center gap-1 px-2 bg-slate-800 rounded-lg">
-                {['#ffffff', '#ef4444', '#22c55e', '#3b82f6'].map(c => (
+                {['#ffffff', '#ef4444', '#22c55e', '#3b82f6', '#f59e0b', '#8b5cf6'].map(c => (
                     <button key={c} onClick={() => { setColor(c); if(tool==='eraser') setTool('pen'); updateSelectedElements({ color: c }); }} className={`w-4 h-4 rounded-full border ${color === c && tool !== 'eraser' ? 'border-white scale-110' : 'border-transparent'}`} style={{ backgroundColor: c }} />
                 ))}
             </div>
@@ -597,14 +657,24 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({
                    <div className="w-2.5 h-2.5 rounded-full bg-slate-400"></div>
                 </div>
 
-                {/* Line Style */}
-                <div className="flex bg-slate-800 rounded-lg p-0.5 border border-slate-700">
-                    <button onClick={() => { setLineStyle('solid'); updateSelectedElements({ lineStyle: 'solid' }); }} className={`p-1.5 rounded-md transition-colors ${lineStyle === 'solid' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-400 hover:bg-slate-700 hover:text-white'}`} title="Solid">
-                        <Minus size={14} />
-                    </button>
-                    <button onClick={() => { setLineStyle('dashed'); updateSelectedElements({ lineStyle: 'dashed' }); }} className={`p-1.5 rounded-md transition-colors ${lineStyle === 'dashed' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-400 hover:bg-slate-700 hover:text-white'}`} title="Dashed">
-                        <MoreHorizontal size={14} />
-                    </button>
+                {/* Line Style Dropdown */}
+                <div className="relative group">
+                    <select 
+                        value={lineStyle} 
+                        onChange={(e) => { 
+                            const val = e.target.value as LineStyle; 
+                            setLineStyle(val); 
+                            updateSelectedElements({ lineStyle: val }); 
+                        }}
+                        className="bg-slate-800 border border-slate-700 text-slate-300 text-xs rounded-lg px-2 py-1.5 outline-none focus:border-indigo-500 appearance-none pr-6 cursor-pointer"
+                    >
+                        <option value="solid">Solid</option>
+                        <option value="dashed">Dashed</option>
+                        <option value="dotted">Dotted</option>
+                        <option value="dash-dot">Dash-Dot</option>
+                        <option value="long-dash">Long Dash</option>
+                    </select>
+                    <MoreHorizontal size={12} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none"/>
                 </div>
                 
                 {/* Brush Type (Only for Pen) */}
@@ -616,12 +686,17 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({
                             setBrushType(val); 
                             updateSelectedElements({ brushType: val }); 
                         }}
-                        className="bg-slate-800 border border-slate-700 text-slate-300 text-xs rounded-lg px-2 py-1.5 outline-none focus:border-indigo-500"
+                        className="bg-slate-800 border border-slate-700 text-slate-300 text-xs rounded-lg px-2 py-1.5 outline-none focus:border-indigo-500 cursor-pointer"
                      >
-                        <option value="standard">Standard</option>
-                        <option value="pencil">Pencil</option>
+                        <option value="standard">Standard Pen</option>
+                        <option value="pencil">Natural Pencil</option>
                         <option value="marker">Marker</option>
+                        <option value="calligraphy-pen">Calligraphy Pen</option>
+                        <option value="writing-brush">Chinese Brush</option>
                         <option value="airbrush">Airbrush</option>
+                        <option value="oil">Oil Brush</option>
+                        <option value="watercolor">Watercolor</option>
+                        <option value="crayon">Crayon</option>
                      </select>
                 )}
 
