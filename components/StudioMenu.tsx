@@ -1,8 +1,9 @@
 
-import React, { useState } from 'react';
-import { UserProfile, SubscriptionTier } from '../types';
-import { getUserProfile } from '../services/firestoreService';
-import { Sparkles, BarChart2, Plus, Wand2, Key, Database, Crown, Settings, Book } from 'lucide-react';
+
+import React, { useState, useEffect } from 'react';
+import { UserProfile, SubscriptionTier, GlobalStats } from '../types';
+import { getUserProfile, getGlobalStats } from '../services/firestoreService';
+import { Sparkles, BarChart2, Plus, Wand2, Key, Database, Crown, Settings, Book, Users, LogIn } from 'lucide-react';
 import { VOICES } from '../utils/initialData';
 import { PricingModal } from './PricingModal';
 
@@ -20,7 +21,7 @@ interface StudioMenuProps {
   setIsApiKeyModalOpen: (open: boolean) => void;
   setIsSyncModalOpen: (open: boolean) => void;
   setIsSettingsModalOpen: (open: boolean) => void;
-  onOpenUserGuide: () => void; // New prop for navigating to guide
+  onOpenUserGuide: () => void;
   t: any;
 }
 
@@ -30,7 +31,14 @@ export const StudioMenu: React.FC<StudioMenuProps> = ({
   setIsCreateModalOpen, setIsVoiceCreateOpen, setIsApiKeyModalOpen, setIsSyncModalOpen, setIsSettingsModalOpen, onOpenUserGuide, t
 }) => {
   const [isPricingOpen, setIsPricingOpen] = useState(false);
+  const [globalStats, setGlobalStats] = useState<GlobalStats>({ totalLogins: 0, uniqueUsers: 0 });
   
+  useEffect(() => {
+      if (isUserMenuOpen) {
+          getGlobalStats().then(setGlobalStats).catch(console.error);
+      }
+  }, [isUserMenuOpen]);
+
   if (!isUserMenuOpen || !currentUser) return null;
 
   const handleUpgradeSuccess = async (newTier: SubscriptionTier) => {
@@ -56,6 +64,15 @@ export const StudioMenu: React.FC<StudioMenuProps> = ({
 
   const tierInfo = getTierLabel();
 
+  // Helper for stat boxes
+  const StatBox = ({ icon: Icon, label, value }: { icon: any, label: string, value: number | string }) => (
+      <div className="flex flex-col items-center bg-slate-800/50 p-2 rounded-lg border border-slate-800">
+          <Icon size={14} className="text-indigo-400 mb-1" />
+          <span className="text-[10px] text-slate-500 uppercase font-bold">{label}</span>
+          <span className="text-sm font-bold text-white">{value}</span>
+      </div>
+  );
+
   return (
     <>
       <div className="fixed inset-0 z-40" onClick={() => setIsUserMenuOpen(false)}></div>
@@ -70,15 +87,11 @@ export const StudioMenu: React.FC<StudioMenuProps> = ({
             </span>
          </div>
          
-         {/* Stats Banner */}
-         <div className="bg-slate-800/50 p-3 flex items-center justify-between border-b border-slate-800">
-            <div className="flex items-center space-x-2 text-indigo-300">
-               <BarChart2 size={16} />
-               <span className="text-xs font-medium">API Usage</span>
-            </div>
-            <span className="text-sm font-bold text-white bg-indigo-900/50 px-2 py-0.5 rounded-md">
-               {userProfile?.apiUsageCount || 0} calls
-            </span>
+         {/* Stats Grid */}
+         <div className="grid grid-cols-3 gap-2 p-2 border-b border-slate-800 bg-slate-900/30">
+            <StatBox icon={BarChart2} label="API Usage" value={userProfile?.apiUsageCount || 0} />
+            <StatBox icon={Users} label="Members" value={globalStats.uniqueUsers} />
+            <StatBox icon={LogIn} label="Logins" value={globalStats.totalLogins} />
          </div>
 
          <div className="p-2 space-y-1">

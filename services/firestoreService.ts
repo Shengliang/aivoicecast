@@ -1,11 +1,12 @@
 
+
 import { db, auth, storage } from './firebaseConfig';
 import firebase from 'firebase/compat/app';
 import { 
   Channel, UserProfile, CommunityDiscussion, GeneratedLecture, Chapter, 
   Booking, Invitation, Group, RecordingSession, Attachment, Comment, 
   BlogPost, Blog, RealTimeMessage, ChatChannel, CareerApplication, 
-  JobPosting, CodeProject, WhiteboardElement, CodeFile, SubscriptionTier, CursorPosition, CloudItem
+  JobPosting, CodeProject, WhiteboardElement, CodeFile, SubscriptionTier, CursorPosition, CloudItem, GlobalStats
 } from '../types';
 import { HANDCRAFTED_CHANNELS } from '../utils/initialData';
 
@@ -14,6 +15,12 @@ import { HANDCRAFTED_CHANNELS } from '../utils/initialData';
 export async function getUserProfile(uid: string): Promise<UserProfile | null> {
   const doc = await db.collection('users').doc(uid).get();
   return doc.exists ? (doc.data() as UserProfile) : null;
+}
+
+export async function getGlobalStats(): Promise<GlobalStats> {
+  const doc = await db.collection('stats').doc('global').get();
+  if (!doc.exists) return { totalLogins: 0, uniqueUsers: 0 };
+  return doc.data() as GlobalStats;
 }
 
 export async function syncUserProfile(user: firebase.User): Promise<void> {
@@ -36,6 +43,13 @@ export async function syncUserProfile(user: firebase.User): Promise<void> {
       apiUsageCount: 0,
       subscriptionTier: 'free'
     });
+    
+    // Increment Unique Users Count Global Stats
+    const statsRef = db.collection('stats').doc('global');
+    await statsRef.set({
+        uniqueUsers: firebase.firestore.FieldValue.increment(1)
+    }, { merge: true });
+
   } else {
     await userRef.update(userData);
   }
@@ -66,6 +80,14 @@ export async function logUserActivity(type: string, data: any): Promise<void> {
     timestamp: Date.now(),
     userId: auth.currentUser?.uid || 'anonymous'
   });
+
+  // Increment Total Logins Global Stats
+  if (type === 'login') {
+      const statsRef = db.collection('stats').doc('global');
+      await statsRef.set({
+          totalLogins: firebase.firestore.FieldValue.increment(1)
+      }, { merge: true });
+  }
 }
 
 export function setupSubscriptionListener(uid: string, callback: (tier: SubscriptionTier) => void): () => void {

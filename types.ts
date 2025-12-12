@@ -1,4 +1,5 @@
 
+
 export type AttachmentType = 'image' | 'audio' | 'video' | 'file';
 
 export interface Attachment {
@@ -343,4 +344,9 @@ export interface CloudItem {
   size?: number;
   timeCreated?: string;
   contentType?: string;
+}
+
+export interface GlobalStats {
+  totalLogins: number;
+  uniqueUsers: number;
 }
