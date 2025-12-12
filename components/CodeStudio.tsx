@@ -2,15 +2,177 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { CodeProject, CodeFile, UserProfile, Channel, CursorPosition, CloudItem } from '../types';
 import { ArrowLeft, Save, Plus, Github, Cloud, HardDrive, Code, X, ChevronRight, ChevronDown, File, Folder, DownloadCloud, Loader2, CheckCircle, AlertTriangle, Info, FolderPlus, FileCode, RefreshCw, LogIn, CloudUpload, Trash2, ArrowUp, Edit2, FolderOpen, MoreVertical, Send, MessageSquare, Bot, Mic, Sparkles, SidebarClose, SidebarOpen, Users, Eye, FileText as FileTextIcon, Image as ImageIcon, StopCircle, Minus, Maximize2, Lock, Unlock, Share2, Terminal, Copy, WifiOff, PanelRightClose, PanelRightOpen, Monitor, Laptop } from 'lucide-react';
-import { connectGoogleDrive } from '../services/authService';
-import { fetchPublicRepoInfo, fetchRepoContents, fetchFileContent, commitToRepo, fetchRepoSubTree } from '../services/githubService';
 import { listCloudDirectory, saveProjectToCloud, deleteCloudItem, createCloudFolder, subscribeToCodeProject, saveCodeProject, updateCodeFile, updateCursor, claimCodeProjectLock, updateProjectActiveFile, deleteCodeFile, moveCloudFile } from '../services/firestoreService';
 import { ensureCodeStudioFolder, listDriveFiles, readDriveFile, saveToDrive, deleteDriveFile, createDriveFolder, DriveFile, moveDriveFile } from '../services/googleDriveService';
-import { GoogleGenAI, FunctionDeclaration, Type } from '@google/genai';
-import { GeminiLiveService } from '../services/geminiLive';
-import { GEMINI_API_KEY } from '../services/private_keys';
+import { connectGoogleDrive } from '../services/authService';
+import { fetchPublicRepoInfo, fetchRepoContents, fetchFileContent } from '../services/githubService';
 import { MarkdownView } from './MarkdownView';
-import { encodePlantUML } from '../utils/plantuml';
+
+// --- Interfaces & Constants ---
+
+interface TreeNode {
+  id: string;
+  name: string;
+  type: 'file' | 'folder';
+  children?: TreeNode[];
+  data?: any;
+  isLoaded?: boolean;
+  status?: 'modified' | 'new' | 'deleted';
+}
+
+const PRESET_REPOS = [
+  { label: 'React (Facebook)', path: 'facebook/react' },
+  { label: 'Vue (Evan You)', path: 'vuejs/core' },
+  { label: 'VS Code', path: 'microsoft/vscode' },
+  { label: 'Linux', path: 'torvalds/linux' },
+  { label: 'Python', path: 'python/cpython' }
+];
+
+function getLanguageFromExt(filename: string): any {
+    const ext = filename.split('.').pop()?.toLowerCase();
+    if (['js', 'jsx'].includes(ext || '')) return 'javascript';
+    if (['ts', 'tsx'].includes(ext || '')) return 'typescript';
+    if (ext === 'py') return 'python';
+    if (['cpp', 'c', 'h', 'hpp'].includes(ext || '')) return 'c++';
+    if (ext === 'html') return 'html';
+    if (ext === 'css') return 'css';
+    if (ext === 'json') return 'json';
+    if (ext === 'md') return 'markdown';
+    return 'text';
+}
+
+// --- Helper Components ---
+
+const FileIcon = ({ filename }: { filename: string }) => {
+    const lang = getLanguageFromExt(filename);
+    if (lang === 'javascript' || lang === 'typescript') return <FileCode size={16} className="text-yellow-400" />;
+    if (lang === 'python') return <FileCode size={16} className="text-blue-400" />;
+    if (lang === 'c++') return <FileCode size={16} className="text-indigo-400" />;
+    if (lang === 'html') return <FileCode size={16} className="text-orange-400" />;
+    if (lang === 'css') return <FileCode size={16} className="text-blue-300" />;
+    if (lang === 'json') return <FileCode size={16} className="text-green-400" />;
+    if (lang === 'markdown') return <FileTextIcon size={16} className="text-slate-400" />;
+    return <File size={16} className="text-slate-500" />;
+};
+
+const FileTreeItem = ({ node, depth, activeId, onSelect, onToggle, onDelete, onShare, expandedIds, loadingIds, onDragStart, onDrop }: any) => {
+    const isExpanded = expandedIds[node.id];
+    const isLoading = loadingIds[node.id];
+    const isActive = activeId === node.id;
+    
+    return (
+        <div>
+            <div 
+                className={`flex items-center gap-1 py-1 px-2 cursor-pointer select-none hover:bg-slate-800 ${isActive ? 'bg-indigo-900/30 text-white' : 'text-slate-400'}`}
+                style={{ paddingLeft: `${depth * 12 + 8}px` }}
+                onClick={() => onSelect(node)}
+                draggable
+                onDragStart={(e) => onDragStart(e, node)}
+                onDragOver={(e) => e.preventDefault()}
+                onDrop={(e) => onDrop(e, node)}
+            >
+                {node.type === 'folder' && (
+                    <div onClick={(e) => { e.stopPropagation(); onToggle(node); }} className="p-0.5 hover:text-white">
+                        {isLoading ? <Loader2 size={12} className="animate-spin"/> : isExpanded ? <ChevronDown size={12}/> : <ChevronRight size={12}/>}
+                    </div>
+                )}
+                {node.type === 'folder' ? (
+                    isExpanded ? <FolderOpen size={16} className="text-indigo-400"/> : <Folder size={16} className="text-indigo-400"/>
+                ) : (
+                    <FileIcon filename={node.name} />
+                )}
+                <span className="text-xs truncate flex-1">{node.name}</span>
+                {node.status === 'modified' && <div className="w-1.5 h-1.5 rounded-full bg-amber-400 ml-1"></div>}
+                <div className="flex gap-1 opacity-0 group-hover:opacity-100">
+                    {onShare && <button onClick={(e) => { e.stopPropagation(); onShare(node); }} className="p-1 hover:text-white"><Share2 size={10}/></button>}
+                    {onDelete && <button onClick={(e) => { e.stopPropagation(); onDelete(node); }} className="p-1 hover:text-red-400"><Trash2 size={10}/></button>}
+                </div>
+            </div>
+            {isExpanded && node.children && (
+                <div>
+                    {node.children.map((child: any) => (
+                        <FileTreeItem 
+                            key={child.id} 
+                            node={child} 
+                            depth={depth + 1} 
+                            activeId={activeId} 
+                            onSelect={onSelect} 
+                            onToggle={onToggle} 
+                            onDelete={onDelete} 
+                            onShare={onShare}
+                            expandedIds={expandedIds} 
+                            loadingIds={loadingIds}
+                            onDragStart={onDragStart}
+                            onDrop={onDrop}
+                        />
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+};
+
+const RichCodeEditor = ({ code, onChange, onCursorMove, language, isShared, remoteCursors, localCursor, readOnly }: any) => {
+    return (
+        <div className="w-full h-full relative font-mono text-sm">
+            <textarea
+                className="w-full h-full bg-[#1e1e1e] text-[#d4d4d4] p-4 resize-none outline-none leading-relaxed"
+                value={code}
+                onChange={(e) => onChange(e.target.value)}
+                onSelect={(e) => {
+                    const target = e.target as HTMLTextAreaElement;
+                    const val = target.value.substr(0, target.selectionStart);
+                    const lines = val.split('\n');
+                    if (onCursorMove) onCursorMove(lines.length, lines[lines.length - 1].length);
+                }}
+                spellCheck={false}
+                readOnly={readOnly}
+            />
+            {remoteCursors && remoteCursors.map((c: any) => (
+                <div key={c.clientId} className="absolute pointer-events-none px-1 rounded text-[9px] text-white" style={{ top: 8, right: 8, background: c.color }}>
+                    {c.userName} is editing
+                </div>
+            ))}
+        </div>
+    );
+};
+
+const AIChatPanel = ({ isOpen, onClose, messages, onSendMessage, isThinking, onApplyCode, onStartLive, isVoiceActive }: any) => {
+    const [input, setInput] = useState('');
+    return (
+        <div className="flex flex-col h-full bg-slate-900 border-l border-slate-800">
+            <div className="p-3 border-b border-slate-800 flex justify-between items-center bg-slate-950/50">
+                <span className="font-bold text-white text-sm flex items-center gap-2"><Bot size={16} className="text-indigo-400"/> AI Assistant</span>
+                <button onClick={onClose}><PanelRightClose size={16} className="text-slate-400 hover:text-white"/></button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-4 space-y-4">
+                {messages.map((m: any, i: number) => (
+                    <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                        <div className={`max-w-[90%] rounded-lg p-3 text-xs leading-relaxed ${m.role === 'user' ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-300'}`}>
+                            {m.text}
+                        </div>
+                    </div>
+                ))}
+                {isThinking && <div className="text-slate-500 text-xs flex items-center gap-2 justify-center"><Loader2 className="animate-spin" size={12}/> AI is thinking...</div>}
+            </div>
+            <div className="p-3 border-t border-slate-800 bg-slate-900">
+                <div className="flex gap-2">
+                    <input 
+                        type="text" 
+                        value={input} 
+                        onChange={e => setInput(e.target.value)} 
+                        onKeyDown={e => { if(e.key === 'Enter') { onSendMessage(input); setInput(''); } }}
+                        className="flex-1 bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500"
+                        placeholder="Ask AI..."
+                    />
+                    <button onClick={() => { onSendMessage(input); setInput(''); }} className="p-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg transition-colors"><Send size={16}/></button>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+// --- Main Component ---
 
 interface CodeStudioProps {
   onBack: () => void;
@@ -23,341 +185,7 @@ interface CodeStudioProps {
   onStartLiveSession?: (channel: Channel, context?: string) => void;
 }
 
-const PRESET_REPOS = [
-  { label: 'CodeStudio (Demo)', path: 'Shengliang/codestudio' },
-  { label: 'Linux Kernel', path: 'torvalds/linux' },
-  { label: 'React', path: 'facebook/react' },
-  { label: 'Node.js', path: 'nodejs/node' }
-];
-
-function getLanguageFromExt(filename: string): any {
-    const ext = filename.split('.').pop()?.toLowerCase();
-    if (['js', 'jsx'].includes(ext || '')) return 'javascript';
-    if (['ts', 'tsx'].includes(ext || '')) return 'typescript';
-    if (ext === 'py') return 'python';
-    if (ext === 'html') return 'html';
-    if (ext === 'css') return 'css';
-    if (ext === 'json') return 'json';
-    if (ext === 'md') return 'markdown';
-    if (['puml', 'plantuml'].includes(ext || '')) return 'plantuml';
-    if (['cpp', 'c', 'h', 'hpp', 'cc', 'hh', 'cxx'].includes(ext || '')) return 'c++';
-    return 'text';
-}
-
-const FileIcon: React.FC<{ filename: string }> = ({ filename }) => {
-    const ext = filename.split('.').pop()?.toLowerCase();
-    if (['js', 'ts', 'jsx', 'tsx'].includes(ext || '')) return <FileCode size={14} className="text-yellow-400" />;
-    if (['html', 'css'].includes(ext || '')) return <Code size={14} className="text-orange-400" />;
-    if (['py'].includes(ext || '')) return <FileCode size={14} className="text-blue-400" />;
-    if (['json'].includes(ext || '')) return <FileCode size={14} className="text-green-400" />;
-    if (ext === 'md') return <Info size={14} className="text-indigo-400" />;
-    if (['puml', 'plantuml'].includes(ext || '')) return <ImageIcon size={14} className="text-pink-400" />;
-    if (['cpp', 'c', 'h', 'hpp'].includes(ext || '')) return <FileCode size={14} className="text-blue-500" />;
-    return <File size={14} className="text-slate-400" />;
-};
-
-interface TreeNode {
-    id: string; 
-    name: string;
-    type: 'file' | 'folder';
-    data: any; 
-    children: TreeNode[];
-    isLoaded?: boolean; 
-    status?: 'modified' | 'new' | 'sync' | 'error';
-    parentId?: string; // Add parentId to track source folder
-}
-
-const FileTreeItem: React.FC<{
-    node: TreeNode;
-    depth: number;
-    activeId?: string; // Currently highlighted node (file or folder)
-    onSelect: (node: TreeNode) => void;
-    onToggle: (node: TreeNode) => void;
-    onDelete?: (node: TreeNode) => void;
-    onShare?: (node: TreeNode) => void;
-    onDragStart: (e: React.DragEvent, node: TreeNode) => void;
-    onDrop: (e: React.DragEvent, targetNode: TreeNode) => void;
-    expandedIds: Record<string, boolean>;
-    loadingIds: Record<string, boolean>;
-}> = ({ node, depth, activeId, onSelect, onToggle, onDelete, onShare, onDragStart, onDrop, expandedIds, loadingIds }) => {
-    const isOpen = expandedIds[node.id];
-    const isLoading = loadingIds[node.id];
-    const isActive = activeId === node.id;
-    const [showMenu, setShowMenu] = useState(false);
-    const [isDragOver, setIsDragOver] = useState(false);
-
-    const handleDragOver = (e: React.DragEvent) => {
-        if (node.type === 'folder') {
-            e.preventDefault(); // Allow drop
-            e.stopPropagation();
-            if (!isDragOver) setIsDragOver(true);
-        }
-    };
-
-    const handleDragLeave = (e: React.DragEvent) => {
-        e.preventDefault();
-        e.stopPropagation();
-        if (node.type === 'folder') {
-            setIsDragOver(false);
-        }
-    };
-
-    const handleDrop = (e: React.DragEvent) => {
-        if (node.type === 'folder') {
-            e.preventDefault();
-            e.stopPropagation();
-            setIsDragOver(false);
-            onDrop(e, node);
-        }
-    };
-
-    return (
-        <div className="select-none relative group">
-            <div 
-                className={`flex items-center justify-between py-1 px-2 cursor-pointer transition-colors ${isActive ? 'bg-slate-800/80 text-white border-l-2 border-indigo-500' : 'text-slate-400 border-l-2 border-transparent'} ${isDragOver ? 'bg-indigo-900/50 border-indigo-400 border-l-2' : 'hover:bg-slate-800'}`}
-                style={{ paddingLeft: `${depth * 12 + 8}px` }}
-                onClick={() => node.type === 'folder' ? onToggle(node) : onSelect(node)}
-                onMouseEnter={() => setShowMenu(true)}
-                onMouseLeave={() => setShowMenu(false)}
-                draggable={true}
-                onDragStart={(e) => onDragStart(e, node)}
-                onDragOver={handleDragOver}
-                onDragLeave={handleDragLeave}
-                onDrop={handleDrop}
-            >
-                <div className="flex items-center gap-2 min-w-0 flex-1 overflow-hidden">
-                    {node.type === 'folder' ? (
-                        <div className="flex items-center gap-1.5 shrink-0">
-                            <button className="p-0.5 hover:text-white" onClick={(e) => { e.stopPropagation(); onToggle(node); }}>
-                                {isLoading ? <Loader2 size={12} className="animate-spin"/> : 
-                                 isOpen ? <ChevronDown size={12}/> : <ChevronRight size={12}/>}
-                            </button>
-                            {isOpen ? <FolderOpen size={14} className="text-indigo-400"/> : <Folder size={14} className="text-indigo-400"/>}
-                        </div>
-                    ) : (
-                        <div className="pl-4 shrink-0">
-                            <FileIcon filename={node.name} />
-                        </div>
-                    )}
-                    <span className={`text-xs truncate ${isActive ? 'font-bold' : ''} ${node.status === 'modified' ? 'text-amber-400' : ''}`}>
-                        {node.name} {node.status === 'modified' && '*'} {node.status === 'new' && <span className="text-[9px] bg-emerald-500/20 text-emerald-400 px-1 rounded ml-1">U</span>}
-                    </span>
-                </div>
-
-                {/* Context Menu Trigger */}
-                {(onDelete || onShare) && (showMenu || isActive) && (
-                    <div className="flex items-center gap-1 bg-slate-900/80 rounded px-1" onClick={(e) => e.stopPropagation()}>
-                        {onShare && (
-                            <button onClick={() => onShare(node)} className="p-1 text-slate-400 hover:text-blue-400" title="Share Link">
-                                <Share2 size={12} />
-                            </button>
-                        )}
-                        {onDelete && (
-                            <button onClick={() => onDelete(node)} className="p-1 text-slate-400 hover:text-red-400" title="Delete">
-                                <Trash2 size={12} />
-                            </button>
-                        )}
-                    </div>
-                )}
-            </div>
-            
-            {node.type === 'folder' && isOpen && (
-                <div>
-                    {node.children.length > 0 ? (
-                        node.children.map((child) => (
-                            <FileTreeItem 
-                                key={child.id} 
-                                node={child} 
-                                depth={depth + 1}
-                                activeId={activeId}
-                                onSelect={onSelect}
-                                onToggle={onToggle}
-                                onDelete={onDelete}
-                                onShare={onShare}
-                                onDragStart={onDragStart}
-                                onDrop={onDrop}
-                                expandedIds={expandedIds}
-                                loadingIds={loadingIds}
-                            />
-                        ))
-                    ) : (
-                        !isLoading && <div className="text-[10px] text-slate-600 py-1 italic" style={{ paddingLeft: `${(depth + 1) * 12 + 24}px` }}>Empty</div>
-                    )}
-                </div>
-            )}
-        </div>
-    );
-};
-
-// ... RichCodeEditor ...
-const RichCodeEditor: React.FC<{ 
-    code: string; 
-    onChange: (val: string) => void;
-    onCursorMove?: (line: number, col: number) => void;
-    language: string;
-    isShared?: boolean;
-    remoteCursors?: CursorPosition[];
-    localCursor?: { line: number, col: number } | null;
-    readOnly?: boolean;
-}> = ({ code, onChange, onCursorMove, language, isShared, remoteCursors, localCursor, readOnly }) => {
-    const [highlightedCode, setHighlightedCode] = useState('');
-    const textareaRef = useRef<HTMLTextAreaElement>(null);
-    const lineNumbersRef = useRef<HTMLPreElement>(null);
-    const preRef = useRef<HTMLPreElement>(null);
-    
-    useEffect(() => {
-        if ((window as any).Prism) {
-            const prismLang = (window as any).Prism.languages[language] || (window as any).Prism.languages.javascript;
-            if (prismLang) {
-                setHighlightedCode((window as any).Prism.highlight(code, prismLang, language));
-            } else {
-                setHighlightedCode(code.replace(/</g, '&lt;').replace(/>/g, '&gt;'));
-            }
-        } else {
-            setHighlightedCode(code.replace(/</g, '&lt;').replace(/>/g, '&gt;'));
-        }
-    }, [code, language]);
-
-    const handleInputEvents = (e: React.SyntheticEvent<HTMLTextAreaElement>) => {
-        if (onCursorMove) {
-            const target = e.target as HTMLTextAreaElement;
-            const { selectionStart } = target;
-            const textUpToCursor = target.value.substring(0, selectionStart);
-            const lines = textUpToCursor.split('\n');
-            const col = lines[lines.length - 1].length; // 0-based column
-            onCursorMove(lines.length, col);
-        }
-    };
-
-    const handleScroll = (e: React.UIEvent<HTMLTextAreaElement>) => {
-        const { scrollTop, scrollLeft } = e.currentTarget;
-        if (lineNumbersRef.current) lineNumbersRef.current.scrollTop = scrollTop;
-        if (preRef.current) {
-            preRef.current.scrollTop = scrollTop;
-            preRef.current.scrollLeft = scrollLeft;
-        }
-    };
-
-    const lineCount = code.split('\n').length;
-    const lineNumbers = Array.from({ length: lineCount }, (_, i) => i + 1).join('\n');
-    const EDITOR_FONT = { fontFamily: '"JetBrains Mono", monospace', fontSize: '14px', lineHeight: '1.5', tabSize: 4 };
-    const PADDING = 16; 
-
-    return (
-        <div className={`relative w-full h-full flex bg-[#1e1e1e] overflow-hidden ${readOnly ? 'opacity-90' : ''}`}>
-            <pre ref={lineNumbersRef} className="w-12 bg-[#1e1e1e] text-slate-600 text-right pr-3 select-none border-r border-slate-800 shrink-0 overflow-hidden" style={{ ...EDITOR_FONT, paddingTop: `${PADDING}px`, paddingBottom: `${PADDING}px`, margin: 0 }}>
-                {lineNumbers}
-            </pre>
-            <div className="relative flex-1 h-full overflow-hidden">
-                <pre ref={preRef} className="absolute inset-0 m-0 w-full h-full pointer-events-none overflow-hidden" style={{ ...EDITOR_FONT, padding: `${PADDING}px`, margin: 0, whiteSpace: 'pre' }}>
-                    <code className={`language-${language}`} dangerouslySetInnerHTML={{ __html: highlightedCode + '<br/>' }} />
-                </pre>
-                
-                {/* Remote Cursors */}
-                <div className="absolute inset-0 w-full h-full pointer-events-none overflow-hidden">
-                    {remoteCursors && remoteCursors.map(cursor => (
-                        <div key={cursor.clientId} className="absolute pointer-events-none transition-all duration-75" style={{ top: `${(cursor.line - 1) * 21 + PADDING}px`, left: `calc(${(cursor.column)}ch + ${PADDING}px)`, height: '21px', ...EDITOR_FONT }}>
-                            <div className="w-0.5 h-full absolute top-0 left-0 animate-pulse" style={{ backgroundColor: cursor.color }}></div>
-                            <div className="absolute -top-5 left-0 text-[10px] px-1.5 rounded text-white whitespace-nowrap z-10 shadow-md font-bold" style={{ backgroundColor: cursor.color, fontFamily: 'sans-serif', lineHeight: 'normal' }}>
-                                {cursor.userName}
-                            </div>
-                        </div>
-                    ))}
-                </div>
-
-                <textarea 
-                    ref={textareaRef}
-                    value={code} 
-                    onChange={(e) => onChange(e.target.value)}
-                    onKeyUp={handleInputEvents}
-                    onClick={handleInputEvents}
-                    onScroll={handleScroll}
-                    readOnly={readOnly}
-                    className={`absolute inset-0 w-full h-full bg-transparent text-transparent caret-white outline-none resize-none overflow-auto z-10 custom-scrollbar ${readOnly ? 'cursor-not-allowed' : ''}`}
-                    style={{ ...EDITOR_FONT, padding: `${PADDING}px`, whiteSpace: 'pre', border: 'none', margin: 0 }}
-                    spellCheck={false}
-                    autoCapitalize="off"
-                    autoComplete="off"
-                />
-            </div>
-        </div>
-    );
-};
-
-// ... AIChatPanel ...
-const AIChatPanel: React.FC<{ 
-    isOpen: boolean; 
-    onClose: () => void; 
-    messages: Array<{role: 'user' | 'ai', text: string}>;
-    onSendMessage: (text: string) => void;
-    isThinking: boolean;
-    onApplyCode: (newCode: string) => void;
-    onStartLive: () => void;
-    isVoiceActive: boolean;
-}> = ({ isOpen, onClose, messages, onSendMessage, isThinking, onApplyCode, onStartLive, isVoiceActive }) => {
-    const [input, setInput] = useState('');
-    const messagesEndRef = useRef<HTMLDivElement>(null);
-
-    useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
-
-    const handleSend = async (e?: React.FormEvent) => {
-        e?.preventDefault();
-        if (!input.trim()) return;
-        onSendMessage(input);
-        setInput('');
-    };
-
-    const extractCode = (text: string) => {
-        const match = text.match(/```(?:code|javascript|typescript|python|cpp|c\+\+)?\n([\s\S]*?)```/);
-        return match ? match[1] : null;
-    };
-
-    if (!isOpen) return null;
-
-    return (
-        <div className="h-full flex flex-col bg-slate-900 border-l border-slate-800">
-            <div className="p-3 border-b border-slate-800 flex justify-between items-center bg-slate-950">
-                <h3 className="font-bold text-white flex items-center gap-2 text-sm">
-                    {isVoiceActive ? <Mic size={14} className="text-red-500 animate-pulse"/> : <Bot size={14} className="text-indigo-400"/>}
-                    AI Assistant
-                </h3>
-                <div className="flex items-center gap-1">
-                    <button onClick={onStartLive} className={`p-1 rounded ${isVoiceActive ? 'bg-red-500 text-white' : 'text-pink-400 hover:bg-slate-800'}`}>
-                        {isVoiceActive ? <StopCircle size={14} /> : <Mic size={14} />}
-                    </button>
-                    <button onClick={onClose}><X size={14} className="text-slate-400 hover:text-white"/></button>
-                </div>
-            </div>
-            
-            <div className="flex-1 overflow-y-auto p-4 space-y-4">
-                {messages.map((m, i) => (
-                    <div key={i} className={`flex flex-col ${m.role === 'user' ? 'items-end' : 'items-start'}`}>
-                        <div className={`px-3 py-2 rounded-lg text-xs max-w-[90%] whitespace-pre-wrap ${m.role === 'user' ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-300 border border-slate-700'}`}>
-                            {m.text}
-                            {m.role === 'ai' && extractCode(m.text) && (
-                                <button onClick={() => onApplyCode(extractCode(m.text)!)} className="mt-2 w-full flex items-center justify-center gap-1 bg-emerald-900/30 text-emerald-400 border border-emerald-500/30 rounded py-1 font-bold">
-                                    <Code size={12}/> Apply Code
-                                </button>
-                            )}
-                        </div>
-                    </div>
-                ))}
-                {(isThinking || isVoiceActive) && <div className="text-slate-500 text-xs italic flex items-center gap-2"><Loader2 size={12} className="animate-spin"/> Processing...</div>}
-                <div ref={messagesEndRef} />
-            </div>
-
-            <form onSubmit={handleSend} className="p-3 border-t border-slate-800 bg-slate-950 shrink-0">
-                <div className="flex gap-2">
-                    <input value={input} onChange={e => setInput(e.target.value)} placeholder="Ask AI..." className="flex-1 bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white outline-none"/>
-                    <button type="submit" disabled={!input || isThinking} className="p-2 bg-indigo-600 text-white rounded-lg"><Send size={14} /></button>
-                </div>
-            </form>
-        </div>
-    );
-};
-
 export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, userProfile, sessionId, accessKey, onSessionStart, onSessionStop }) => {
-  // Default Hello World C++ File
   const defaultFile: CodeFile = {
       name: 'hello.cpp',
       path: 'cloud://hello.cpp',
@@ -365,32 +193,24 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
       content: `#include <iostream>\n\nint main() {\n    std::cout << "Hello, World!" << std::endl;\n    return 0;\n}`,
       loaded: true,
       isDirectory: false,
-      isModified: true // Mark as new so it encourages saving
+      isModified: true
   };
 
   const [project, setProject] = useState<CodeProject>({ id: 'init', name: 'New Project', files: [defaultFile], lastModified: Date.now() });
   const [activeFile, setActiveFile] = useState<CodeFile | null>(defaultFile);
   const [activeTab, setActiveTab] = useState<'cloud' | 'drive' | 'github' | 'session'>('cloud');
   
-  // Selection State
   const [selectedExplorerNode, setSelectedExplorerNode] = useState<TreeNode | null>(null);
-  
-  // Drag and Drop State
   const [draggedNode, setDraggedNode] = useState<TreeNode | null>(null);
-
-  // Layout State
   const [isLeftOpen, setIsLeftOpen] = useState(true);
   const [isRightOpen, setIsRightOpen] = useState(true);
-  
   const [chatMessages, setChatMessages] = useState<Array<{role: 'user' | 'ai', text: string}>>([{ role: 'ai', text: "Hello! I'm your coding assistant." }]);
   const [isChatThinking, setIsChatThinking] = useState(false);
   const [isVoiceActive, setIsVoiceActive] = useState(false);
-  const liveService = useRef<GeminiLiveService | null>(null);
-
+  
   const [cloudItems, setCloudItems] = useState<CloudItem[]>([]); 
   const [driveItems, setDriveItems] = useState<(DriveFile & { parentId?: string, isLoaded?: boolean })[]>([]); 
   const [driveRootId, setDriveRootId] = useState<string | null>(null);
-
   const [expandedFolders, setExpandedFolders] = useState<Record<string, boolean>>({});
   const [loadingFolders, setLoadingFolders] = useState<Record<string, boolean>>({});
   const [notifications, setNotifications] = useState<Array<{id: string, type: 'success' | 'error' | 'info', message: string}>>([]);
@@ -399,14 +219,11 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
   const [isLoadingPublic, setIsLoadingPublic] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
   const [driveToken, setDriveToken] = useState<string | null>(null);
-  const [isDriveLoading, setIsDriveLoading] = useState(false);
   const [saveStatus, setSaveStatus] = useState<'saved' | 'modified' | 'saving'>('saved');
-
   const [isSharedSession, setIsSharedSession] = useState(!!sessionId);
   const clientId = useRef(crypto.randomUUID()).current;
   const [localCursor, setLocalCursor] = useState<{line: number, col: number} | null>(null);
   
-  // ... (Debug & Lock Logic same as before) ...
   const [showDebug, setShowDebug] = useState(false);
   const [debugLogs, setDebugLogs] = useState<string[]>([]);
   const debugRef = useRef<HTMLDivElement>(null);
@@ -414,18 +231,16 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
   const addDebugLog = (msg: string) => {
       setDebugLogs(prev => {
           const newLogs = [...prev, `[${new Date().toLocaleTimeString()}] ${msg}`];
-          return newLogs.slice(-20); // Keep last 20 logs
+          return newLogs.slice(-20);
       });
   };
 
-  const handleCopyDebug = () => {
-      if (debugRef.current) {
-          const text = debugRef.current.innerText;
-          navigator.clipboard.writeText(text);
-          showToast("Debug info copied to clipboard", "success");
-      }
+  const showToast = (message: string, type: 'success' | 'error' | 'info' = 'info') => {
+      const id = crypto.randomUUID();
+      setNotifications(prev => [...prev, { id, type, message }]);
+      setTimeout(() => setNotifications(prev => prev.filter(n => n.id !== id)), 3000);
   };
-  
+
   const isLockedByOther = useMemo(() => {
       if (!project.activeClientId) return false;
       if (project.activeClientId === clientId) return false;
@@ -433,13 +248,6 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
   }, [project.activeClientId, project.lastModified, clientId]);
 
   const activeWriterName = isLockedByOther ? (project.activeWriterName || "Unknown") : (project.activeClientId === clientId ? "You" : null);
-  const iAmWriter = project.activeClientId === clientId || (!isLockedByOther && !project.activeClientId);
-
-  const showToast = (message: string, type: 'success' | 'error' | 'info' = 'info') => {
-      const id = crypto.randomUUID();
-      setNotifications(prev => [...prev, { id, type, message }]);
-      setTimeout(() => setNotifications(prev => prev.filter(n => n.id !== id)), 3000);
-  };
 
   const activeRemoteCursors = useMemo(() => {
       if (!project.cursors) return [];
@@ -466,47 +274,69 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
           const newId = project.id === 'init' ? crypto.randomUUID() : project.id;
           onSessionStart(newId);
       }
-      
       const url = new URL(window.location.href);
       if (sessionId) url.searchParams.set('session', sessionId);
-      
       navigator.clipboard.writeText(url.toString());
       showToast("Session link copied!", "success");
+  };
+
+  const handleCopyDebug = () => {
+      if (debugRef.current) {
+          navigator.clipboard.writeText(debugRef.current.innerText);
+          showToast("Debug info copied", "success");
+      }
+  };
+
+  const refreshExplorer = async () => {
+      if (activeTab === 'cloud' && currentUser) {
+          const path = `projects/${currentUser.uid}`;
+          await refreshCloudPath(path);
+      } else if (activeTab === 'drive' && driveToken && driveRootId) {
+          const files = await listDriveFiles(driveToken, driveRootId);
+          setDriveItems([{ id: driveRootId, name: 'CodeStudio', mimeType: 'application/vnd.google-apps.folder', isLoaded: true }, ...files.map(f => ({ ...f, parentId: driveRootId, isLoaded: false }))]);
+      }
+      showToast("Explorer Refreshed", "success");
   };
 
   const handleSmartSave = async () => {
       setSaveStatus('saving');
       try {
           if (activeTab === 'cloud' && currentUser && activeFile) {
-               // Calculate directory path from file path to prevent saving to root
-               let parentPath = `projects/${currentUser.uid}`;
+               const rootPrefix = `projects/${currentUser.uid}`;
+               let targetPath = activeFile.path || '';
                let filename = activeFile.name;
 
-               // If it's a real cloud file (not the default 'cloud://' template), extract its actual dir
-               if (activeFile.path && !activeFile.path.startsWith('cloud://')) {
-                   // Robustly handle paths with or without project root prefix
-                   const normalizedPath = activeFile.path.replace(/\/+/g, '/');
-                   const lastSlash = normalizedPath.lastIndexOf('/');
-                   if (lastSlash > -1) {
-                       parentPath = normalizedPath.substring(0, lastSlash);
-                       filename = normalizedPath.substring(lastSlash + 1);
-                   }
+               // Case 1: New File Template (cloud://)
+               if (!targetPath || targetPath.startsWith('cloud://')) {
+                   // Save to root if no specific folder logic (CodeStudio often works at root)
+                   // But better to use the user's project root
+                   targetPath = `${rootPrefix}/${filename}`;
+               } 
+               // Case 2: Existing File (or navigated into folder)
+               else if (!targetPath.startsWith(rootPrefix)) {
+                   // CRITICAL FIX: If path is relative or malformed, prepend user root
+                   // Remove any leading slashes first
+                   const cleanPath = targetPath.replace(/^\/+/, '');
+                   targetPath = `${rootPrefix}/${cleanPath}`;
                }
+
+               // Extract proper parent directory and filename from the Full Path
+               const lastSlash = targetPath.lastIndexOf('/');
+               const parentPath = lastSlash > -1 ? targetPath.substring(0, lastSlash) : rootPrefix;
+               const finalFilename = lastSlash > -1 ? targetPath.substring(lastSlash + 1) : filename;
+
+               await saveProjectToCloud(parentPath, finalFilename, activeFile.content);
                
-               await saveProjectToCloud(parentPath, filename, activeFile.content);
+               // Update state with the confirmed absolute path
+               const updatedFile = { ...activeFile, path: targetPath, name: finalFilename };
+               setActiveFile(updatedFile);
+               setProject(prev => ({
+                   ...prev,
+                   files: prev.files.map(f => (f.path === activeFile.path || f.name === activeFile.name) ? updatedFile : f)
+               }));
                
-               // Update the file path in state if it was a new save (e.g. from template)
-               if (activeFile.path && activeFile.path.startsWith('cloud://')) {
-                   const newPath = `${parentPath}/${filename}`;
-                   const updatedFile = { ...activeFile, path: newPath, name: filename };
-                   setActiveFile(updatedFile);
-                   setProject(prev => ({
-                       ...prev,
-                       files: prev.files.map(f => f.path === activeFile.path ? updatedFile : f)
-                   }));
-                   // Trigger refresh to show new file in tree
-                   refreshCloudPath(parentPath);
-               }
+               // Refresh the directory we just saved to
+               await refreshCloudPath(parentPath);
 
                showToast("Saved to Cloud", "success");
           } else if (activeTab === 'drive' && driveToken && driveRootId && activeFile) {
@@ -522,19 +352,21 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
           setSaveStatus('saved');
       } catch(e: any) {
           setSaveStatus('modified');
+          console.error("Save Error:", e);
           showToast("Save failed: " + e.message, "error");
       }
   };
 
-  const handleExplorerSelect = (node: TreeNode) => {
-      setSelectedExplorerNode(node);
-      if (node.type === 'file') {
-          // If file, handle opening logic based on tab
-          if (activeTab === 'cloud') handleCloudSelect(node);
-          else if (activeTab === 'drive') handleDriveSelect(node);
-          else if (activeTab === 'github') handleWorkspaceSelect(node);
-          else setActiveFile(node.data);
-      }
+  const refreshCloudPath = async (path: string) => {
+      if (!currentUser) return;
+      try {
+          const items = await listCloudDirectory(path);
+          setCloudItems(prev => {
+              const existingMap = new Map(prev.map(i => [i.fullPath, i]));
+              items.forEach(i => existingMap.set(i.fullPath, i));
+              return Array.from(existingMap.values());
+          });
+      } catch(e) { console.error(e); }
   };
 
   const handleCloudSelect = async (node: TreeNode) => {
@@ -560,34 +392,23 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
           } catch(e) { showToast("Failed to load file", "error"); }
       }
   };
-  
-  const refreshCloudPath = async (path: string) => {
-      if (!currentUser) return;
-      try {
-          const items = await listCloudDirectory(path);
-          setCloudItems(prev => {
-              const existingMap = new Map(prev.map(i => [i.fullPath, i]));
-              items.forEach(i => existingMap.set(i.fullPath, i));
-              return Array.from(existingMap.values());
-          });
-      } catch(e) { console.error(e); }
+
+  const handleExplorerSelect = (node: TreeNode) => {
+      setSelectedExplorerNode(node);
+      if (node.type === 'file') {
+          if (activeTab === 'cloud') handleCloudSelect(node);
+          else if (activeTab === 'drive') handleDriveSelect(node);
+          else if (activeTab === 'github') handleWorkspaceSelect(node);
+          else setActiveFile(node.data);
+      }
   };
 
   const handleCloudToggle = async (node: TreeNode) => {
       const isExpanded = expandedFolders[node.id];
       setExpandedFolders(prev => ({ ...prev, [node.id]: !isExpanded }));
-
       if (!isExpanded) {
           setLoadingFolders(prev => ({ ...prev, [node.id]: true }));
-          try {
-             // node.id is fullPath
-             await refreshCloudPath(node.id);
-          } catch(e) {
-             console.error(e);
-             showToast("Failed to load folder", "error");
-          } finally {
-             setLoadingFolders(prev => ({ ...prev, [node.id]: false }));
-          }
+          try { await refreshCloudPath(node.id); } catch(e) { console.error(e); } finally { setLoadingFolders(prev => ({ ...prev, [node.id]: false })); }
       }
   };
 
@@ -597,21 +418,16 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
           setDriveToken(token);
           const rootId = await ensureCodeStudioFolder(token);
           setDriveRootId(rootId);
-          // Initial list
           const files = await listDriveFiles(token, rootId);
           setDriveItems([{ id: rootId, name: 'CodeStudio', mimeType: 'application/vnd.google-apps.folder', isLoaded: true }, ...files.map(f => ({ ...f, parentId: rootId, isLoaded: false }))]);
           showToast("Google Drive Connected", "success");
-      } catch(e: any) {
-          showToast("Drive connection failed: " + e.message, "error");
-      }
+      } catch(e: any) { showToast(e.message, "error"); }
   };
 
   const handleDriveToggle = async (node: TreeNode) => {
       const driveFile = node.data as DriveFile;
       const isExpanded = expandedFolders[node.id];
-      
       setExpandedFolders(prev => ({ ...prev, [node.id]: !isExpanded }));
-      
       if (!isExpanded && driveToken && (!node.children || node.children.length === 0)) {
           setLoadingFolders(prev => ({ ...prev, [node.id]: true }));
           try {
@@ -619,80 +435,49 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
               setDriveItems(prev => {
                   const newItems = files.map(f => ({ ...f, parentId: node.id, isLoaded: false }));
                   const combined = [...prev, ...newItems];
-                  // Deduplicate
-                  const unique = Array.from(new Map(combined.map(item => [item.id, item])).values());
-                  return unique;
+                  return Array.from(new Map(combined.map(item => [item.id, item])).values());
               });
-          } catch(e) { console.error(e); } 
-          finally { setLoadingFolders(prev => ({ ...prev, [node.id]: false })); }
+          } catch(e) { console.error(e); } finally { setLoadingFolders(prev => ({ ...prev, [node.id]: false })); }
       }
   };
 
-  // --- DRAG AND DROP HANDLERS ---
+  const handleDriveSelect = async (node: TreeNode) => {
+      const driveFile = node.data as DriveFile;
+      if (!driveToken) return;
+      setLoadingFolders(prev => ({ ...prev, [node.id]: true }));
+      try {
+          const text = await readDriveFile(driveToken, driveFile.id);
+          const newFile: CodeFile = { name: driveFile.name, path: `drive://${driveFile.id}`, content: text, language: getLanguageFromExt(driveFile.name), loaded: true, isDirectory: false };
+          setActiveFile(newFile);
+      } catch (e: any) { showToast("Failed to read Drive file", "error"); } finally { setLoadingFolders(prev => ({ ...prev, [node.id]: false })); }
+  };
+
   const handleDragStart = (e: React.DragEvent, node: TreeNode) => {
       setDraggedNode(node);
       e.dataTransfer.effectAllowed = 'move';
-      // Set visual drag image if needed, default is usually fine
   };
 
   const handleDrop = async (e: React.DragEvent, targetNode: TreeNode) => {
       e.preventDefault();
       if (!draggedNode) return;
       if (draggedNode.id === targetNode.id) return;
-      if (targetNode.type !== 'folder') return; // Should be handled by FileTreeItem logic but double check
-
-      // Prevent moving parent into child (basic cycle check)
-      if (activeTab !== 'session') {
-          // Check if dragging logic is valid for backend
-      }
+      if (targetNode.type !== 'folder') return; 
 
       try {
-          if (activeTab === 'session') {
-              // Local Session Move
-              // Construct new path
-              const newPath = targetNode.id + '/' + draggedNode.name.split('/').pop();
-              
-              setProject(prev => {
-                  const newFiles = prev.files.map(f => {
-                      if ((f.path || f.name) === draggedNode.id) {
-                          return { ...f, path: newPath, name: newPath }; // Update both for consistency in simplified model
-                      }
-                      return f;
-                  });
-                  return { ...prev, files: newFiles };
-              });
-              
-              if (activeFile && (activeFile.path || activeFile.name) === draggedNode.id) {
-                  setActiveFile(prev => prev ? ({ ...prev, path: newPath, name: newPath }) : null);
-              }
-              
-              if (isSharedSession && sessionId) {
-                  // In shared session, delete old and create new is safest pattern without complex atomic move
-                  await deleteCodeFile(sessionId, draggedNode.id);
-                  const fileData = project.files.find(f => (f.path || f.name) === draggedNode.id);
-                  if (fileData) {
-                      await updateCodeFile(sessionId, { ...fileData, path: newPath, name: newPath });
-                  }
-              }
-              showToast(`Moved to ${targetNode.name}`, "success");
-
-          } else if (activeTab === 'cloud') {
+          if (activeTab === 'cloud') {
               if (draggedNode.type === 'folder') {
                   alert("Moving folders is not supported in Cloud mode yet.");
                   return;
               }
-              // Cloud Move
               const item = draggedNode.data as CloudItem;
               const targetPath = (targetNode.data as CloudItem).fullPath;
-              const newFullPath = targetPath + '/' + item.name;
+              const newFullPath = targetPath.replace(/\/+$/, '') + '/' + item.name;
               
               await moveCloudFile(item.fullPath, newFullPath);
               
-              // Refresh View
               setCloudItems(prev => prev.filter(i => i.fullPath !== item.fullPath));
               await refreshCloudPath(targetPath);
               
-              // CRITICAL: Update active file if we moved the currently open file
               if (activeFile && activeFile.path === item.fullPath) {
                   const updatedFile = { ...activeFile, path: newFullPath };
                   setActiveFile(updatedFile);
@@ -701,47 +486,198 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
                        files: prev.files.map(f => f.path === activeFile.path ? updatedFile : f)
                    }));
               }
-
               showToast("File moved in Cloud", "success");
-
-          } else if (activeTab === 'drive') {
-              if (!driveToken) return;
-              // Drive Move
-              const file = draggedNode.data as DriveFile;
-              const targetId = (targetNode.data as DriveFile).id;
-              
-              // We need current parent ID. It is tracked in driveItems state as 'parentId'.
-              const currentItem = driveItems.find(i => i.id === file.id);
-              const currentParentId = currentItem?.parentId;
-              
-              if (currentParentId && currentParentId !== targetId) {
-                  await moveDriveFile(driveToken, file.id, currentParentId, targetId);
-                  showToast("File moved in Drive", "success");
-                  
-                  // Update local state to reflect move without full reload
-                  setDriveItems(prev => prev.map(i => {
-                      if (i.id === file.id) return { ...i, parentId: targetId };
-                      return i;
-                  }));
-              } else {
-                  console.warn("Could not determine parent ID or moving to same folder.");
-              }
           }
       } catch (err: any) {
-          console.error("Move failed", err);
           showToast("Move failed: " + err.message, "error");
       } finally {
           setDraggedNode(null);
       }
   };
 
-  // -- FILESYSTEM SYNC --
+  const handleCreateFolder = async () => {
+      const name = prompt("Folder Name:");
+      if (!name) return;
+      try {
+          if (activeTab === 'cloud' && currentUser) {
+              const parentPath = selectedExplorerNode?.type === 'folder' ? selectedExplorerNode.id : `projects/${currentUser.uid}`;
+              await createCloudFolder(parentPath, name);
+              showToast("Folder created", "success");
+              await refreshCloudPath(parentPath);
+          } 
+      } catch(e: any) { showToast(e.message, "error"); }
+  };
+
+  const handleCreateFile = async () => {
+      const name = prompt("File Name (e.g. main.py):");
+      if (!name) return;
+
+      try {
+          if (activeTab === 'cloud' && currentUser) {
+              let parentPath = `projects/${currentUser.uid}`;
+              if (selectedExplorerNode) {
+                  if (selectedExplorerNode.type === 'folder') {
+                      parentPath = selectedExplorerNode.id;
+                  } else {
+                      const parts = selectedExplorerNode.id.split('/');
+                      parts.pop(); 
+                      if (parts.length > 0) parentPath = parts.join('/');
+                  }
+              }
+              
+              const cleanParent = parentPath.replace(/\/+$/, '');
+              // Ensure we don't save to root if we are supposed to be in user project
+              if (!cleanParent.startsWith(`projects/${currentUser.uid}`)) {
+                  // This handles cases where selection is root or weird
+                  // Note: parentPath logic above should already cover it if selectedExplorerNode is correct
+              }
+
+              await saveProjectToCloud(cleanParent, name, "// New File");
+              const fullPath = `${cleanParent}/${name}`;
+              await refreshCloudPath(cleanParent);
+              
+              const newFile: CodeFile = {
+                  name: name,
+                  path: fullPath,
+                  language: getLanguageFromExt(name),
+                  content: '// New File',
+                  loaded: true,
+                  isDirectory: false,
+                  isModified: false
+              };
+              
+              setActiveFile(newFile);
+              setProject(prev => {
+                  const exists = prev.files.some(f => f.path === fullPath);
+                  if (exists) return prev;
+                  return { ...prev, files: [...prev.files, newFile] };
+              });
+              
+              showToast("File created", "success");
+          } else if (activeTab === 'session') {
+              let prefix = '';
+              if (selectedExplorerNode) {
+                  if (selectedExplorerNode.type === 'folder') {
+                      prefix = selectedExplorerNode.id + '/';
+                  } else {
+                      const parts = selectedExplorerNode.id.split('/');
+                      parts.pop();
+                      if (parts.length > 0) prefix = parts.join('/') + '/';
+                  }
+              }
+              const fullName = prefix + name;
+              const newFile: CodeFile = {
+                  name: fullName,
+                  path: fullName,
+                  language: getLanguageFromExt(name),
+                  content: '// New File',
+                  loaded: true,
+                  isDirectory: false,
+                  isModified: true
+              };
+              setProject(prev => ({ ...prev, files: [...prev.files, newFile] }));
+              setActiveFile(newFile);
+              if (isSharedSession && sessionId) await updateCodeFile(sessionId, newFile);
+          }
+      } catch(e: any) { showToast(e.message, "error"); }
+  };
+
+  const handleDeleteItem = async (node: TreeNode) => {
+      if (!confirm(`Delete ${node.name}?`)) return;
+      try {
+          if (activeTab === 'cloud') {
+              await deleteCloudItem(node.data as CloudItem);
+              setCloudItems(prev => prev.filter(i => i.fullPath !== node.id));
+          } else if (activeTab === 'session') {
+              setProject(prev => ({ ...prev, files: prev.files.filter(f => (f.path || f.name) !== node.id) }));
+              if (activeFile && (activeFile.path || activeFile.name) === node.id) setActiveFile(null);
+              if (isSharedSession && sessionId) await deleteCodeFile(sessionId, node.name);
+          }
+          showToast("Item deleted", "success");
+      } catch(e: any) { showToast(e.message, "error"); }
+  };
+
+  const handleShareItem = (node: TreeNode) => {
+      let link = "";
+      if (activeTab === 'cloud') link = (node.data as CloudItem).url || "";
+      if (link) {
+          navigator.clipboard.writeText(link);
+          showToast("Link copied!", "success");
+      }
+  };
+
+  const handleCodeChange = (val: string) => {
+      if (isLockedByOther) return;
+      if (!activeFile) return;
+      refreshLock();
+      const updatedFile = { ...activeFile, content: val, isModified: true };
+      setActiveFile(updatedFile);
+      setSaveStatus('modified');
+      setProject(prev => ({
+          ...prev,
+          files: prev.files.map(f => (f.path || f.name) === (activeFile.path || activeFile.name) ? updatedFile : f)
+      }));
+      if (isSharedSession && sessionId) {
+          updateCodeFile(sessionId, updatedFile).catch(e => console.error(e));
+      }
+  };
+
+  const handleLoadPublicRepo = async () => {
+      if (!publicRepoPath.trim()) return;
+      setIsLoadingPublic(true);
+      try {
+          const [owner, repo] = publicRepoPath.split('/');
+          const info = await fetchPublicRepoInfo(owner, repo);
+          const { files, latestSha } = await fetchRepoContents(null, owner, repo, info.default_branch);
+          
+          const newProjectData: CodeProject = { 
+              id: sessionId || `gh-${info.id}`,
+              name: info.full_name, 
+              files, 
+              lastModified: Date.now(), 
+              github: { owner, repo, branch: info.default_branch, sha: latestSha },
+              ownerId: currentUser?.uid
+          };
+
+          setProject(newProjectData);
+          setActiveFile(null); 
+          setShowImportModal(false); 
+          setExpandedFolders({}); 
+          setActiveTab('github'); 
+          showToast("Repo opened", "success");
+          if (isSharedSession && sessionId) {
+              await saveCodeProject(newProjectData);
+              updateProjectActiveFile(sessionId, '');
+          }
+      } catch (e: any) { showToast(e.message, "error"); } finally { setIsLoadingPublic(false); }
+  };
+
+  const handleWorkspaceSelect = async (node: TreeNode) => {
+      const file = node.data as CodeFile;
+      if (!file.loaded && project.github) {
+          try {
+              const content = await fetchFileContent(null, project.github.owner, project.github.repo, file.path || file.name, project.github.branch);
+              const updatedFile = { ...file, content, loaded: true };
+              setProject(prev => ({ ...prev, files: prev.files.map(f => (f.path || f.name) === (file.path || file.name) ? updatedFile : f) }));
+              setActiveFile(updatedFile);
+              if (isSharedSession && sessionId) {
+                  updateCodeFile(sessionId, updatedFile);
+              }
+          } catch(e) { showToast("Load failed", "error"); }
+      } else {
+          setActiveFile(file);
+      }
+  };
+
+  useEffect(() => { 
+      if (activeTab === 'cloud' && currentUser) listCloudDirectory(`projects/${currentUser.uid}`).then(setCloudItems); 
+  }, [activeTab, currentUser]);
+
   useEffect(() => {
       if (sessionId) {
           setIsSharedSession(true);
           const unsubscribe = subscribeToCodeProject(sessionId, (remoteProject) => {
               setProject(remoteProject);
-              addDebugLog(`Received project update. Files: ${remoteProject.files.length}`);
           });
           return () => unsubscribe();
       } else {
@@ -749,13 +685,10 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
       }
   }, [sessionId]);
 
-  // -- TREE BUILDING --
   const workspaceTree = useMemo(() => {
       const root: TreeNode[] = [];
       const map = new Map<string, TreeNode>();
-      
       const repoFiles = project.files;
-      
       repoFiles.forEach(f => {
           const path = f.path || f.name;
           map.set(path, { id: path, name: f.name.split('/').pop()!, type: f.isDirectory ? 'folder' : 'file', data: f, children: [], isLoaded: f.childrenFetched, status: f.isModified ? 'modified' : undefined });
@@ -774,17 +707,23 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
   }, [project.files]);
 
   const cloudTree = useMemo(() => {
-      const root: TreeNode[] = [];
-      const map = new Map<string, TreeNode>();
-      cloudItems.forEach(item => map.set(item.fullPath, { id: item.fullPath, name: item.name, type: item.isFolder ? 'folder' : 'file', data: item, children: [], isLoaded: true }));
+      const freshRoot: TreeNode[] = [];
+      const freshMap = new Map<string, TreeNode>();
+      cloudItems.forEach(item => freshMap.set(item.fullPath, { id: item.fullPath, name: item.name, type: item.isFolder ? 'folder' : 'file', data: item, children: [], isLoaded: true }));
       cloudItems.forEach(item => {
-          const node = map.get(item.fullPath)!;
+          const node = freshMap.get(item.fullPath)!;
           const parts = item.fullPath.split('/');
-          const parent = map.get(parts.slice(0, -1).join('/'));
-          if (parent) parent.children.push(node); else root.push(node);
+          parts.pop();
+          const parentPath = parts.join('/');
+          
+          if (freshMap.has(parentPath)) {
+              freshMap.get(parentPath)!.children.push(node);
+          } else {
+              freshRoot.push(node);
+          }
       });
-      return root.filter(n => n.id.split('/').length === 1 || !map.has(n.id.split('/').slice(0, -1).join('/')));
-  }, [cloudItems]);
+      return freshRoot;
+  }, [cloudItems, currentUser]);
 
   const driveTree = useMemo(() => {
       const root: TreeNode[] = [];
@@ -796,224 +735,6 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
       });
       return root;
   }, [driveItems, driveRootId]);
-
-  const refreshExplorer = () => {
-      if (activeTab === 'cloud' && currentUser) {
-          listCloudDirectory(`projects/${currentUser.uid}`).then(setCloudItems);
-      } else if (activeTab === 'drive' && driveToken && driveRootId) {
-          // Re-list root for simplicity
-          listDriveFiles(driveToken, driveRootId).then(files => {
-              setDriveItems([{ id: driveRootId, name: 'CodeStudio', mimeType: 'application/vnd.google-apps.folder', isLoaded: true }, ...files.map(f => ({ ...f, parentId: driveRootId, isLoaded: false }))]);
-          });
-      }
-  };
-
-  const handleCreateFolder = async () => {
-      if (activeTab === 'github') return alert("Folder creation not supported in GitHub view.");
-      const name = prompt("Folder Name:");
-      if (!name) return;
-
-      try {
-          if (activeTab === 'cloud' && currentUser) {
-              const parentPath = selectedExplorerNode?.type === 'folder' ? selectedExplorerNode.id : `projects/${currentUser.uid}`;
-              await createCloudFolder(parentPath, name);
-              showToast("Folder created in Cloud", "success");
-              await refreshCloudPath(parentPath);
-          } else if (activeTab === 'drive' && driveToken) {
-              const parentId = (selectedExplorerNode?.type === 'folder' ? selectedExplorerNode.id : null) || driveRootId!;
-              await createDriveFolder(driveToken, parentId, name);
-              showToast("Folder created in Drive", "success");
-          } else if (activeTab === 'session') {
-              // Local logical folder not fully supported in this simplified model without path management
-              showToast("Folders in session are path-based. Create a file like 'folder/file.txt'", "info");
-          }
-          if (activeTab !== 'cloud') refreshExplorer();
-      } catch(e: any) { showToast(e.message, "error"); }
-  };
-
-  const handleCreateFile = async () => {
-      if (activeTab === 'github') return alert("File creation not supported in GitHub view.");
-      const name = prompt("File Name (e.g. main.py):");
-      if (!name) return;
-
-      try {
-          if (activeTab === 'cloud' && currentUser) {
-              const parentPath = selectedExplorerNode?.type === 'folder' ? selectedExplorerNode.id : `projects/${currentUser.uid}`;
-              // Ensure we don't double slash if parentPath ends with / or is root-like
-              const fullPath = parentPath.endsWith('/') ? `${parentPath}${name}` : `${parentPath}/${name}`;
-              await saveProjectToCloud(parentPath, name, "// New File");
-              showToast("File created in Cloud", "success");
-              await refreshCloudPath(parentPath);
-          } else if (activeTab === 'drive' && driveToken) {
-              const parentId = (selectedExplorerNode?.type === 'folder' ? selectedExplorerNode.id : null) || driveRootId!;
-              await saveToDrive(driveToken, parentId, name, "// New File");
-              showToast("File created in Drive", "success");
-          } else {
-              // Session / Local
-              // Get path prefix from selected node
-              let prefix = '';
-              if (selectedExplorerNode) {
-                  if (selectedExplorerNode.type === 'folder') {
-                      prefix = selectedExplorerNode.id + '/';
-                  } else {
-                      // If file selected, use its parent directory
-                      const parts = selectedExplorerNode.id.split('/');
-                      parts.pop();
-                      if (parts.length > 0) prefix = parts.join('/') + '/';
-                  }
-              }
-              const fullName = prefix + name;
-
-              const newFile: CodeFile = {
-                  name: fullName,
-                  path: fullName,
-                  language: getLanguageFromExt(name),
-                  content: '// New File',
-                  loaded: true,
-                  isDirectory: false,
-                  isModified: true
-              };
-              setProject(prev => ({ ...prev, files: [...prev.files, newFile] }));
-              setActiveFile(newFile);
-              if (isSharedSession && sessionId) await updateCodeFile(sessionId, newFile);
-          }
-          if (activeTab !== 'cloud') refreshExplorer();
-      } catch(e: any) { showToast(e.message, "error"); }
-  };
-
-  const handleDeleteItem = async (node: TreeNode) => {
-      if (!confirm(`Delete ${node.name}?`)) return;
-      try {
-          if (activeTab === 'cloud') {
-              await deleteCloudItem(node.data as CloudItem);
-              setCloudItems(prev => prev.filter(i => i.fullPath !== node.id));
-          } else if (activeTab === 'drive' && driveToken) {
-              await deleteDriveFile(driveToken, node.id);
-          } else if (activeTab === 'session') {
-              // Delete local
-              setProject(prev => ({ ...prev, files: prev.files.filter(f => (f.path || f.name) !== node.id) }));
-              if (activeFile && (activeFile.path || activeFile.name) === node.id) setActiveFile(null);
-              if (isSharedSession && sessionId) await deleteCodeFile(sessionId, node.name);
-          }
-          showToast("Item deleted", "success");
-          if (activeTab !== 'cloud') refreshExplorer();
-      } catch(e: any) { showToast(e.message, "error"); }
-  };
-
-  const handleShareItem = (node: TreeNode) => {
-      let link = "";
-      if (activeTab === 'cloud') link = (node.data as CloudItem).url || "";
-      else if (activeTab === 'github') link = `https://github.com/${project.github?.owner}/${project.github?.repo}/blob/${project.github?.branch}/${node.id}`;
-      
-      if (link) {
-          navigator.clipboard.writeText(link);
-          showToast("Link copied!", "success");
-      } else {
-          showToast("No shareable link available", "info");
-      }
-  };
-
-  const handleCodeChange = (val: string) => {
-      if (isLockedByOther) return;
-      if (!activeFile) return;
-      refreshLock();
-      const updatedFile = { ...activeFile, content: val, isModified: true };
-      setActiveFile(updatedFile);
-      setSaveStatus('modified');
-      
-      // Update local project state immediately for smooth typing
-      setProject(prev => ({
-          ...prev,
-          files: prev.files.map(f => (f.path || f.name) === (activeFile.path || activeFile.name) ? updatedFile : f)
-      }));
-
-      // Broadcast to shared session if active
-      if (isSharedSession && sessionId) {
-          updateCodeFile(sessionId, updatedFile)
-            .then(() => addDebugLog(`Sent update: ${activeFile.name}`))
-            .catch(e => addDebugLog(`Sync failed: ${e.message}`));
-      }
-  };
-
-  // --- Handlers for Loaders ---
-  const handleLoadPublicRepo = async () => {
-      if (!publicRepoPath.trim()) return;
-      setIsLoadingPublic(true);
-      try {
-          const [owner, repo] = publicRepoPath.split('/');
-          const info = await fetchPublicRepoInfo(owner, repo);
-          const { files, latestSha } = await fetchRepoContents(null, owner, repo, info.default_branch);
-          
-          const newProjectData: CodeProject = { 
-              id: sessionId || `gh-${info.id}`, // Use session ID if shared to maintain session
-              name: info.full_name, 
-              files, 
-              lastModified: Date.now(), 
-              github: { owner, repo, branch: info.default_branch, sha: latestSha },
-              ownerId: currentUser?.uid
-          };
-
-          setProject(newProjectData);
-          setActiveFile(null); 
-          setShowImportModal(false); 
-          setExpandedFolders({}); 
-          setActiveTab('github'); 
-          showToast("Repo opened", "success");
-          
-          if (isSharedSession && sessionId) {
-              await saveCodeProject(newProjectData);
-              updateProjectActiveFile(sessionId, '');
-          }
-
-      } catch (e: any) { showToast(e.message, "error"); } finally { setIsLoadingPublic(false); }
-  };
-
-  const handleWorkspaceSelect = async (node: TreeNode) => {
-      const file = node.data as CodeFile;
-      if (!file.loaded && project.github) {
-          try {
-              const content = await fetchFileContent(null, project.github.owner, project.github.repo, file.path || file.name, project.github.branch);
-              const updatedFile = { ...file, content, loaded: true };
-              
-              setProject(prev => ({ ...prev, files: prev.files.map(f => (f.path || f.name) === (file.path || file.name) ? updatedFile : f) }));
-              setActiveFile(updatedFile);
-              
-              // If we fetched content, sync it to shared session so readers can see it too
-              if (isSharedSession && sessionId) {
-                  updateCodeFile(sessionId, updatedFile);
-              }
-          } catch(e) { showToast("Load failed", "error"); }
-      } else {
-          setActiveFile(file);
-      }
-  };
-
-  const handleDriveSelect = async (node: TreeNode) => {
-      const driveFile = node.data as DriveFile;
-      if (!driveToken) return;
-
-      setLoadingFolders(prev => ({ ...prev, [node.id]: true }));
-      try {
-          const text = await readDriveFile(driveToken, driveFile.id);
-          const newFile: CodeFile = {
-              name: driveFile.name,
-              path: `drive://${driveFile.id}`, 
-              content: text,
-              language: getLanguageFromExt(driveFile.name),
-              loaded: true,
-              isDirectory: false
-          };
-          setActiveFile(newFile);
-      } catch (e: any) {
-          showToast("Failed to read Drive file", "error");
-      } finally {
-          setLoadingFolders(prev => ({ ...prev, [node.id]: false }));
-      }
-  };
-
-  useEffect(() => { 
-      if (activeTab === 'cloud' && currentUser) listCloudDirectory(`projects/${currentUser.uid}`).then(setCloudItems); 
-  }, [activeTab, currentUser]);
 
   return (
     <div className="flex flex-col h-screen bg-slate-950 text-slate-100 overflow-hidden relative">
@@ -1070,19 +791,10 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
               <div className="p-2 border-b border-slate-800 flex gap-2 justify-center bg-slate-900">
                   <button onClick={handleCreateFolder} className="p-1.5 hover:bg-slate-800 rounded text-slate-400 hover:text-white" title="New Folder"><FolderPlus size={16}/></button>
                   <button onClick={handleCreateFile} className="p-1.5 hover:bg-slate-800 rounded text-slate-400 hover:text-white" title="New File"><FileCode size={16}/></button>
-                  <button onClick={refreshExplorer} className="p-1.5 hover:bg-slate-800 rounded text-slate-400 hover:text-white" title="Refresh"><RefreshCw size={16}/></button>
+                  <button onClick={() => refreshExplorer()} className="p-1.5 hover:bg-slate-800 rounded text-slate-400 hover:text-white" title="Refresh"><RefreshCw size={16}/></button>
               </div>
 
               <div className="flex-1 overflow-y-auto">
-                  {activeTab === 'github' && (
-                      <div className="p-2">
-                          <div className="flex items-center justify-between px-2 mb-2">
-                              <span className="text-[10px] font-bold text-slate-500">REPOSITORY</span>
-                              <button onClick={() => setShowImportModal(true)} className="text-[10px] text-indigo-400 hover:underline">Change</button>
-                          </div>
-                          {workspaceTree.map(node => <FileTreeItem key={node.id} node={node} depth={0} activeId={selectedExplorerNode?.id} onSelect={handleExplorerSelect} onToggle={(n) => setExpandedFolders(p => ({...p, [n.id]: !p[n.id]}))} expandedIds={expandedFolders} loadingIds={loadingFolders} onShare={handleShareItem} onDragStart={handleDragStart} onDrop={handleDrop} />)}
-                      </div>
-                  )}
                   {activeTab === 'cloud' && (
                       <div className="p-2">
                           {!currentUser ? <p className="text-xs text-slate-500 p-4 text-center">Sign in to access your Private Cloud storage.</p> : cloudTree.map(node => <FileTreeItem key={node.id} node={node} depth={0} activeId={selectedExplorerNode?.id} onSelect={handleExplorerSelect} onToggle={handleCloudToggle} onDelete={handleDeleteItem} onShare={handleShareItem} expandedIds={expandedFolders} loadingIds={loadingFolders} onDragStart={handleDragStart} onDrop={handleDrop}/>)}
@@ -1090,31 +802,17 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
                   )}
                   {activeTab === 'drive' && (
                       <div className="p-2">
-                          {!driveToken ? (
-                              <div className="text-center p-4">
-                                  <p className="text-xs text-slate-500 mb-2">Access Google Drive.</p>
-                                  <button onClick={handleConnectDrive} className="w-full py-2 bg-indigo-600 hover:bg-indigo-500 text-xs text-white rounded font-bold transition-colors">Connect</button>
-                              </div>
-                          ) : (
-                              driveTree.map(node => (
-                                  <FileTreeItem 
-                                      key={node.id} node={node} depth={0} 
-                                      activeId={selectedExplorerNode?.id}
-                                      onSelect={handleExplorerSelect} 
-                                      onToggle={handleDriveToggle} 
-                                      onDelete={handleDeleteItem}
-                                      expandedIds={expandedFolders} loadingIds={loadingFolders}
-                                      onDragStart={handleDragStart}
-                                      onDrop={handleDrop}
-                                  />
-                              ))
-                          )}
+                          {!driveToken ? <div className="p-4 text-center"><button onClick={handleConnectDrive} className="px-4 py-2 bg-slate-800 text-white text-xs font-bold rounded-lg border border-slate-700 hover:bg-slate-700">Connect Drive</button></div> : driveTree.map(node => <FileTreeItem key={node.id} node={node} depth={0} activeId={selectedExplorerNode?.id} onSelect={handleExplorerSelect} onToggle={handleDriveToggle} expandedIds={expandedFolders} loadingIds={loadingFolders} onDragStart={handleDragStart} onDrop={handleDrop}/>)}
+                      </div>
+                  )}
+                  {activeTab === 'github' && (
+                      <div className="p-2">
+                          {!project.github ? <div className="p-4 text-center"><button onClick={() => setShowImportModal(true)} className="px-4 py-2 bg-slate-800 text-white text-xs font-bold rounded-lg border border-slate-700 hover:bg-slate-700">Open Repo</button></div> : workspaceTree.map(node => <FileTreeItem key={node.id} node={node} depth={0} activeId={selectedExplorerNode?.id} onSelect={handleExplorerSelect} onToggle={(n: any) => setExpandedFolders(prev => ({...prev, [n.id]: !expandedFolders[n.id]}))} expandedIds={expandedFolders} loadingIds={loadingFolders} onDragStart={handleDragStart} onDrop={handleDrop}/>)}
                       </div>
                   )}
                   {activeTab === 'session' && (
                       <div className="p-2">
-                          <p className="text-[10px] font-bold text-slate-500 px-2 mb-2">IN MEMORY / SESSION</p>
-                          {workspaceTree.map(node => <FileTreeItem key={node.id} node={node} depth={0} activeId={selectedExplorerNode?.id} onSelect={handleExplorerSelect} onToggle={(n) => setExpandedFolders(p => ({...p, [n.id]: !p[n.id]}))} onDelete={handleDeleteItem} expandedIds={expandedFolders} loadingIds={loadingFolders} onDragStart={handleDragStart} onDrop={handleDrop} />)}
+                          {workspaceTree.map(node => <FileTreeItem key={node.id} node={node} depth={0} activeId={selectedExplorerNode?.id} onSelect={handleExplorerSelect} onToggle={(n: any) => setExpandedFolders(prev => ({...prev, [n.id]: !expandedFolders[n.id]}))} onDelete={handleDeleteItem} expandedIds={expandedFolders} loadingIds={loadingFolders} onDragStart={handleDragStart} onDrop={handleDrop}/>)}
                       </div>
                   )}
               </div>
@@ -1137,41 +835,25 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
                         </div>
                     </div>
                     <div className="flex-1 overflow-hidden relative">
-                        <RichCodeEditor code={activeFile.content} onChange={handleCodeChange} onCursorMove={(l, c) => setLocalCursor({line: l, col: c})} language={activeFile.language} isShared={isSharedSession} remoteCursors={activeRemoteCursors} localCursor={localCursor} readOnly={isLockedByOther} />
+                        <RichCodeEditor code={activeFile.content} onChange={handleCodeChange} onCursorMove={(l: number, c: number) => setLocalCursor({line: l, col: c})} language={activeFile.language} isShared={isSharedSession} remoteCursors={activeRemoteCursors} localCursor={localCursor} readOnly={isLockedByOther} />
                     </div>
                   </>
               ) : <div className="flex-1 flex flex-col items-center justify-center text-slate-600"><Code size={48} className="mb-4 opacity-20" /><p className="text-sm">Select a file from the explorer.</p></div>}
               
-              {/* DEBUG WINDOW - INTERACTIVE & COPYABLE */}
               {showDebug && (
                   <div ref={debugRef} className="absolute bottom-4 right-4 w-96 max-h-64 bg-black/80 backdrop-blur-sm border border-green-900 rounded-lg p-3 font-mono text-[10px] text-green-400 overflow-hidden flex flex-col shadow-2xl z-50 pointer-events-auto select-text cursor-text">
                       <div className="flex justify-between items-center border-b border-green-900/50 pb-1 mb-1">
                           <span className="font-bold flex items-center gap-2"><Terminal size={12}/> SESSION DEBUG</span>
                           <div className="flex items-center gap-2">
-                              <span className={isSharedSession ? "text-green-400 animate-pulse" : "text-slate-500"}>●</span>
                               <button onClick={handleCopyDebug} className="bg-green-900/50 hover:bg-green-800 text-green-200 px-2 rounded border border-green-700/50 text-[9px] flex items-center gap-1 transition-colors">
                                   <Copy size={10} /> Copy
                               </button>
                           </div>
                       </div>
-                      <div className="space-y-1 mb-2">
-                          <p>Active Name: <span className="text-white break-all">{activeFile?.name || 'None'}</span></p>
-                          <p>Active Path: <span className="text-yellow-200 break-all">{activeFile?.path || 'None'}</span></p>
-                          {project.activeFilePath && <p>Host File: <span className="text-indigo-300 break-all">{project.activeFilePath}</span></p>}
-                          <p>Local Cursor: Ln {localCursor?.line || 0}, Col {localCursor?.col || 0}</p>
-                          <p>Remote Cursors: {activeRemoteCursors.length}</p>
-                          {activeRemoteCursors.map(c => (
-                              <p key={c.clientId} className="pl-2 text-slate-400 flex justify-between">
-                                  <span>- {c.userName}</span>
-                                  <span>({c.line}, {c.column})</span>
-                              </p>
-                          ))}
-                      </div>
                       <div className="flex-1 overflow-y-auto border-t border-green-900/30 pt-1 space-y-0.5 scrollbar-thin scrollbar-thumb-green-900">
                           {debugLogs.map((log, i) => (
                               <p key={i} className="opacity-80 break-words">{log}</p>
                           ))}
-                          {debugLogs.length === 0 && <p className="opacity-30 italic">No activity...</p>}
                       </div>
                   </div>
               )}
@@ -1183,7 +865,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
                   isOpen={true} // Always render content, hide by width 
                   onClose={() => setIsRightOpen(false)} 
                   messages={chatMessages} 
-                  onSendMessage={(txt) => setChatMessages(p => [...p, {role: 'user', text: txt}])} 
+                  onSendMessage={(txt: string) => setChatMessages(p => [...p, {role: 'user', text: txt}])} 
                   isThinking={isChatThinking} 
                   onApplyCode={handleCodeChange} 
                   onStartLive={()=>{}} 

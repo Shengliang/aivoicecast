@@ -147,7 +147,6 @@ export async function addCommentToChannel(channelId: string, comment: Comment): 
 }
 
 export async function updateCommentInChannel(channelId: string, comment: Comment): Promise<void> {
-  // Reading entire channel to update one comment (inefficient but simple for array storage)
   const ref = db.collection('channels').doc(channelId);
   const doc = await ref.get();
   if (doc.exists) {
@@ -238,21 +237,7 @@ export async function saveDiscussionDesignDoc(discussionId: string, docContent: 
 }
 
 export async function linkDiscussionToLectureSegment(channelId: string, lectureId: string, segmentIndex: number, discussionId: string): Promise<void> {
-  // This logic depends on where the segment link is stored. 
-  // For simplicity, we assume we update the discussion doc to point to the lecture.
-  // The UI handles the inverse (loading discussion for a lecture).
-  // If we need to update the Lecture document itself:
-  /*
-  const lectureRef = db.collection('lectures').doc(lectureId);
-  const doc = await lectureRef.get();
-  if (doc.exists) {
-      const lecture = doc.data() as GeneratedLecture;
-      if (lecture.sections[segmentIndex]) {
-          lecture.sections[segmentIndex].discussionId = discussionId;
-          await lectureRef.update({ sections: lecture.sections });
-      }
-  }
-  */
+  // Logic to link discussion to lecture segment
 }
 
 export async function getUserDesignDocs(uid: string): Promise<CommunityDiscussion[]> {
@@ -279,12 +264,9 @@ export async function createGroup(name: string): Promise<string> {
   };
   
   await groupRef.set(group);
-  
-  // Add group to user's profile
   await db.collection('users').doc(user.uid).update({
     groups: firebase.firestore.FieldValue.arrayUnion(groupRef.id)
   });
-  
   return groupRef.id;
 }
 
@@ -294,12 +276,10 @@ export async function getUserGroups(uid: string): Promise<Group[]> {
 }
 
 export async function getGroupMembers(memberIds: string[]): Promise<UserProfile[]> {
-  // Split into chunks of 10 for 'in' query
   const chunks = [];
   for (let i = 0; i < memberIds.length; i += 10) {
     chunks.push(memberIds.slice(i, i + 10));
   }
-  
   let members: UserProfile[] = [];
   for (const chunk of chunks) {
     const snapshot = await db.collection('users').where('uid', 'in', chunk).get();
@@ -336,63 +316,49 @@ export async function getPendingInvitations(email: string): Promise<Invitation[]
 
 export async function respondToInvitation(invitation: Invitation, accept: boolean): Promise<void> {
   const batch = db.batch();
-  
-  // Update invitation status
   const invRef = db.collection('invitations').doc(invitation.id);
   batch.update(invRef, { status: accept ? 'accepted' : 'rejected' });
-  
   if (accept) {
-    // Add user to group
     const user = auth.currentUser;
     if (user) {
         const groupRef = db.collection('groups').doc(invitation.groupId);
         batch.update(groupRef, {
             memberIds: firebase.firestore.FieldValue.arrayUnion(user.uid)
         });
-        
         const userRef = db.collection('users').doc(user.uid);
         batch.update(userRef, {
             groups: firebase.firestore.FieldValue.arrayUnion(invitation.groupId)
         });
     }
   }
-  
   await batch.commit();
 }
 
 export async function removeMemberFromGroup(groupId: string, memberId: string): Promise<void> {
   const batch = db.batch();
-  
   const groupRef = db.collection('groups').doc(groupId);
   batch.update(groupRef, {
     memberIds: firebase.firestore.FieldValue.arrayRemove(memberId)
   });
-  
   const userRef = db.collection('users').doc(memberId);
   batch.update(userRef, {
     groups: firebase.firestore.FieldValue.arrayRemove(groupId)
   });
-  
   await batch.commit();
 }
 
 export async function getUniqueGroupMembers(groupIds: string[]): Promise<UserProfile[]> {
     if (groupIds.length === 0) return [];
-    
-    // Fetch all groups to get member IDs
     const groupSnapshots = await Promise.all(groupIds.map(id => db.collection('groups').doc(id).get()));
     const allMemberIds = new Set<string>();
-    
     groupSnapshots.forEach(snap => {
         if (snap.exists) {
             const data = snap.data() as Group;
             data.memberIds.forEach(id => allMemberIds.add(id));
         }
     });
-    
     const ids = Array.from(allMemberIds);
     if (ids.length === 0) return [];
-    
     return getGroupMembers(ids);
 }
 
@@ -404,16 +370,12 @@ export async function createBooking(booking: Booking): Promise<void> {
 }
 
 export async function getUserBookings(uid: string, email: string): Promise<Booking[]> {
-  // Get bookings where user is the creator OR the invitee
   const creatorQuery = db.collection('bookings').where('userId', '==', uid);
   const inviteeQuery = db.collection('bookings').where('invitedEmail', '==', email);
-  
   const [creatorSnap, inviteeSnap] = await Promise.all([creatorQuery.get(), inviteeQuery.get()]);
-  
   const bookings = new Map<string, Booking>();
   creatorSnap.docs.forEach(doc => bookings.set(doc.id, doc.data() as Booking));
   inviteeSnap.docs.forEach(doc => bookings.set(doc.id, doc.data() as Booking));
-  
   return Array.from(bookings.values());
 }
 
@@ -460,13 +422,8 @@ export async function deleteBookingRecording(bookingId: string, mediaUrl?: strin
     recordingUrl: firebase.firestore.FieldValue.delete(),
     transcriptUrl: firebase.firestore.FieldValue.delete()
   });
-  
-  if (mediaUrl) {
-      try { await storage.refFromURL(mediaUrl).delete(); } catch(e) {}
-  }
-  if (transcriptUrl) {
-      try { await storage.refFromURL(transcriptUrl).delete(); } catch(e) {}
-  }
+  if (mediaUrl) try { await storage.refFromURL(mediaUrl).delete(); } catch(e) {}
+  if (transcriptUrl) try { await storage.refFromURL(transcriptUrl).delete(); } catch(e) {}
 }
 
 export async function updateBookingRecording(bookingId: string, mediaUrl: string, transcriptUrl: string) {
@@ -513,13 +470,30 @@ export async function moveCloudFile(oldPath: string, newPath: string, contentTyp
 }
 
 export async function saveProjectToCloud(path: string, filename: string, content: string | Blob, originalName?: string): Promise<void> {
-    const cleanPath = path.replace(/\/+$/, '');
-    const ref = storage.ref(`${cleanPath}/${filename}`);
+    // Sanitize path to prevent double slashes or leading/trailing slash issues that might cause permission errors.
+    // Ensure path doesn't start with / unless intended (Storage usually relative to bucket root).
+    const cleanPath = path.replace(/^\/+/, '').replace(/\/+$/, '');
+    const cleanFilename = filename.replace(/^\/+/, ''); // Remove leading slash from filename if present
+    const ref = storage.ref(`${cleanPath}/${cleanFilename}`);
+    
+    // Auto-detect content type based on extension if content is string
     let contentType = 'text/plain';
     if (typeof content !== 'string') {
         contentType = content.type || 'application/octet-stream';
+    } else {
+        const lower = filename.toLowerCase();
+        if (lower.endsWith('.js') || lower.endsWith('.jsx')) contentType = 'text/javascript';
+        else if (lower.endsWith('.ts') || lower.endsWith('.tsx')) contentType = 'application/x-typescript';
+        else if (lower.endsWith('.html')) contentType = 'text/html';
+        else if (lower.endsWith('.css')) contentType = 'text/css';
+        else if (lower.endsWith('.json')) contentType = 'application/json';
+        else if (lower.endsWith('.md')) contentType = 'text/markdown';
+        else if (lower.endsWith('.py')) contentType = 'text/x-python';
+        else if (lower.endsWith('.cpp') || lower.endsWith('.c') || lower.endsWith('.h')) contentType = 'text/x-c';
     }
+
     const metadata = { contentType, customMetadata: { originalName: originalName || filename, timestamp: String(Date.now()) } };
+    
     if (typeof content === 'string') {
         const blob = new Blob([content], { type: contentType });
         await ref.put(blob, metadata);
@@ -569,14 +543,13 @@ export async function listCloudDirectory(path: string): Promise<CloudItem[]> {
 }
 
 export async function createCloudFolder(path: string, folderName: string): Promise<void> {
-   // Create a placeholder file to establish the folder structure in Storage
-   const ref = storage.ref(`${path}/${folderName}/.keep`);
+   const cleanPath = path.replace(/\/+$/, '');
+   const ref = storage.ref(`${cleanPath}/${folderName}/.keep`);
    await ref.putString(''); 
 }
 
 export async function deleteCloudItem(item: CloudItem): Promise<void> {
     if (item.isFolder) {
-        // Simple recursive delete
         await deleteFolderRecursive(item.fullPath);
     } else {
         await storage.ref(item.fullPath).delete();
@@ -606,7 +579,6 @@ export async function sendMessage(channelId: string, text: string, collectionPat
     attachments: attachments || []
   });
   
-  // Update last message in channel metadata
   if (collectionPath.includes('chat_channels')) {
       await db.collection('chat_channels').doc(channelId).update({
           lastMessage: {
@@ -643,10 +615,8 @@ export async function createOrGetDMChannel(otherUserId: string): Promise<string>
   const doc = await docRef.get();
   
   if (!doc.exists) {
-      // Get other user's name
       const otherUser = await getUserProfile(otherUserId);
       const name = `${user.displayName} & ${otherUser?.displayName || 'User'}`;
-      
       await docRef.set({
           id: channelId,
           name,
@@ -655,7 +625,6 @@ export async function createOrGetDMChannel(otherUserId: string): Promise<string>
           createdAt: Date.now()
       });
   }
-  
   return channelId;
 }
 
@@ -676,7 +645,6 @@ export async function ensureUserBlog(user: any): Promise<Blog> {
   if (!snapshot.empty) {
       return snapshot.docs[0].data() as Blog;
   }
-  // Create
   const blogRef = db.collection('blogs').doc();
   const newBlog: Blog = {
       id: blogRef.id,
@@ -767,18 +735,12 @@ export async function getAllCareerApplications(): Promise<CareerApplication[]> {
 export async function saveWhiteboardSession(sessionId: string, elements: WhiteboardElement[]): Promise<void> {
   const batch = db.batch();
   const sessionRef = db.collection('whiteboards').doc(sessionId);
-  // We store elements in a subcollection to avoid document size limits
   const elementsRef = sessionRef.collection('elements');
   
-  // For simplicity in this demo, we might overwrite. 
-  // In production, we'd sync diffs.
-  // Here we just update timestamp on main doc to trigger listeners if needed
   batch.set(sessionRef, { updatedAt: Date.now() }, { merge: true });
-  
   elements.forEach(el => {
       batch.set(elementsRef.doc(el.id), el);
   });
-  
   await batch.commit();
 }
 
@@ -803,7 +765,7 @@ export async function deleteWhiteboardElements(sessionId: string, elementIds: st
   await batch.commit();
 }
 
-// --- CODE STUDIO (SHARED) ---
+// --- CODE STUDIO ---
 
 export async function saveCodeProject(project: CodeProject): Promise<void> {
   await db.collection('code_projects').doc(project.id).set(project);
@@ -818,24 +780,18 @@ export function subscribeToCodeProject(projectId: string, onUpdate: (project: Co
 }
 
 export async function updateCodeFile(projectId: string, file: CodeFile): Promise<void> {
-  // To update a single file in the array, we need to read, modify, write.
-  // Transaction is best for array updates in Firestore without arrayUnion/Remove on objects.
   const ref = db.collection('code_projects').doc(projectId);
-  
   await db.runTransaction(async (t) => {
       const doc = await t.get(ref);
       if (!doc.exists) return;
-      
       const project = doc.data() as CodeProject;
       const files = project.files || [];
       const index = files.findIndex(f => (f.path || f.name) === (file.path || file.name));
-      
       if (index > -1) {
           files[index] = file;
       } else {
           files.push(file);
       }
-      
       t.update(ref, { files, lastModified: Date.now() });
   });
 }
@@ -875,11 +831,10 @@ export async function updateProjectActiveFile(projectId: string, filePath: strin
 
 export async function createStripeCheckoutSession(uid: string): Promise<string> {
   const docRef = await db.collection('customers').doc(uid).collection('checkout_sessions').add({
-    price: 'price_12345', // Replace with real Stripe Price ID
+    price: 'price_12345',
     success_url: window.location.origin,
     cancel_url: window.location.origin,
   });
-  
   return new Promise((resolve, reject) => {
     docRef.onSnapshot(snap => {
       const { error, url } = snap.data() || {};
@@ -896,7 +851,6 @@ export async function createStripePortalSession(uid: string): Promise<string> {
 }
 
 export async function getBillingHistory(uid: string): Promise<any[]> {
-  // Mock for now, would query 'payments' subcollection
   return [];
 }
 
