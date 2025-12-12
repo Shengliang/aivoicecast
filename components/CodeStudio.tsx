@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { CodeProject, CodeFile, UserProfile, Channel, CursorPosition } from '../types';
 import { ArrowLeft, Save, Plus, Github, Cloud, HardDrive, Code, X, ChevronRight, ChevronDown, File, Folder, DownloadCloud, Loader2, CheckCircle, AlertTriangle, Info, FolderPlus, FileCode, RefreshCw, LogIn, CloudUpload, Trash2, ArrowUp, Edit2, FolderOpen, MoreVertical, Send, MessageSquare, Bot, Mic, Sparkles, SidebarClose, SidebarOpen, Users, Eye, FileText as FileTextIcon, Image as ImageIcon, StopCircle, Minus, Maximize2, Lock, Unlock, Share2, Terminal, Copy, WifiOff, PanelRightClose, PanelRightOpen, Monitor, Laptop } from 'lucide-react';
@@ -88,7 +87,7 @@ interface TreeNode {
 const FileTreeItem: React.FC<{
     node: TreeNode;
     depth: number;
-    activeId?: string;
+    activeId?: string; // Currently highlighted node (file or folder)
     onSelect: (node: TreeNode) => void;
     onToggle: (node: TreeNode) => void;
     onDelete?: (node: TreeNode) => void;
@@ -106,7 +105,7 @@ const FileTreeItem: React.FC<{
             <div 
                 className={`flex items-center justify-between py-1 px-2 cursor-pointer hover:bg-slate-800 transition-colors ${isActive ? 'bg-slate-800/80 text-white border-l-2 border-indigo-500' : 'text-slate-400 border-l-2 border-transparent'}`}
                 style={{ paddingLeft: `${depth * 12 + 8}px` }}
-                onClick={() => node.type === 'folder' ? onToggle(node) : onSelect(node)}
+                onClick={() => onSelect(node)}
                 onMouseEnter={() => setShowMenu(true)}
                 onMouseLeave={() => setShowMenu(false)}
             >
@@ -172,6 +171,7 @@ const FileTreeItem: React.FC<{
     );
 };
 
+// ... RichCodeEditor ...
 const RichCodeEditor: React.FC<{ 
     code: string; 
     onChange: (val: string) => void;
@@ -266,6 +266,7 @@ const RichCodeEditor: React.FC<{
     );
 };
 
+// ... AIChatPanel ...
 const AIChatPanel: React.FC<{ 
     isOpen: boolean; 
     onClose: () => void; 
@@ -353,6 +354,9 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
   const [activeFile, setActiveFile] = useState<CodeFile | null>(defaultFile);
   const [activeTab, setActiveTab] = useState<'cloud' | 'drive' | 'github' | 'session'>('cloud');
   
+  // Selection State
+  const [selectedExplorerNode, setSelectedExplorerNode] = useState<TreeNode | null>(null);
+
   // Layout State
   const [isLeftOpen, setIsLeftOpen] = useState(true);
   const [isRightOpen, setIsRightOpen] = useState(true);
@@ -381,7 +385,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
   const clientId = useRef(crypto.randomUUID()).current;
   const [localCursor, setLocalCursor] = useState<{line: number, col: number} | null>(null);
   
-  // Debug State
+  // ... (Debug & Lock Logic same as before) ...
   const [showDebug, setShowDebug] = useState(false);
   const [debugLogs, setDebugLogs] = useState<string[]>([]);
   const debugRef = useRef<HTMLDivElement>(null);
@@ -401,7 +405,6 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
       }
   };
   
-  // -- LOCK LOGIC --
   const isLockedByOther = useMemo(() => {
       if (!project.activeClientId) return false;
       if (project.activeClientId === clientId) return false;
@@ -419,7 +422,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
 
   const activeRemoteCursors = useMemo(() => {
       if (!project.cursors) return [];
-      return Object.values(project.cursors).filter(c => c.clientId !== clientId && c.fileName === activeFile?.name);
+      return (Object.values(project.cursors) as CursorPosition[]).filter(c => c.clientId !== clientId && c.fileName === activeFile?.name);
   }, [project.cursors, clientId, activeFile?.name]);
 
   const handleTakeControl = async () => {
@@ -441,11 +444,8 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
       if (onSessionStart && !sessionId) {
           const newId = project.id === 'init' ? crypto.randomUUID() : project.id;
           onSessionStart(newId);
-          // We rely on parent to update URL or we do it here if we want instant feedback?
-          // App.tsx handleSessionStart updates URL.
       }
       
-      // Construct link
       const url = new URL(window.location.href);
       if (sessionId) url.searchParams.set('session', sessionId);
       
@@ -467,13 +467,23 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
                await saveCodeProject(project);
                showToast("Synced to Session", "success");
           } else {
-               // Local only - assume saved in state
                showToast("Saved locally (Session)", "success");
           }
           setSaveStatus('saved');
       } catch(e: any) {
           setSaveStatus('modified');
           showToast("Save failed: " + e.message, "error");
+      }
+  };
+
+  const handleExplorerSelect = (node: TreeNode) => {
+      setSelectedExplorerNode(node);
+      if (node.type === 'file') {
+          // If file, handle opening logic based on tab
+          if (activeTab === 'cloud') handleCloudSelect(node);
+          else if (activeTab === 'drive') handleDriveSelect(node);
+          else if (activeTab === 'github') handleWorkspaceSelect(node);
+          else setActiveFile(node.data);
       }
   };
 
@@ -618,10 +628,12 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
 
       try {
           if (activeTab === 'cloud' && currentUser) {
-              await createCloudFolder(`projects/${currentUser.uid}`, name);
+              const parentPath = selectedExplorerNode?.type === 'folder' ? selectedExplorerNode.id : `projects/${currentUser.uid}`;
+              await createCloudFolder(parentPath, name);
               showToast("Folder created in Cloud", "success");
           } else if (activeTab === 'drive' && driveToken) {
-              await createDriveFolder(driveToken, driveRootId!, name);
+              const parentId = (selectedExplorerNode?.type === 'folder' ? selectedExplorerNode.id : null) || driveRootId!;
+              await createDriveFolder(driveToken, parentId, name);
               showToast("Folder created in Drive", "success");
           } else if (activeTab === 'session') {
               // Local logical folder not fully supported in this simplified model without path management
@@ -638,16 +650,34 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
 
       try {
           if (activeTab === 'cloud' && currentUser) {
-              await saveProjectToCloud(`projects/${currentUser.uid}`, name, "// New File");
+              const parentPath = selectedExplorerNode?.type === 'folder' ? selectedExplorerNode.id : `projects/${currentUser.uid}`;
+              // Ensure we don't double slash if parentPath ends with / or is root-like
+              const fullPath = parentPath.endsWith('/') ? `${parentPath}${name}` : `${parentPath}/${name}`;
+              await saveProjectToCloud(parentPath, name, "// New File");
               showToast("File created in Cloud", "success");
           } else if (activeTab === 'drive' && driveToken) {
-              await saveToDrive(driveToken, driveRootId!, name, "// New File");
+              const parentId = (selectedExplorerNode?.type === 'folder' ? selectedExplorerNode.id : null) || driveRootId!;
+              await saveToDrive(driveToken, parentId, name, "// New File");
               showToast("File created in Drive", "success");
           } else {
               // Session / Local
+              // Get path prefix from selected node
+              let prefix = '';
+              if (selectedExplorerNode) {
+                  if (selectedExplorerNode.type === 'folder') {
+                      prefix = selectedExplorerNode.id + '/';
+                  } else {
+                      // If file selected, use its parent directory
+                      const parts = selectedExplorerNode.id.split('/');
+                      parts.pop();
+                      if (parts.length > 0) prefix = parts.join('/') + '/';
+                  }
+              }
+              const fullName = prefix + name;
+
               const newFile: CodeFile = {
-                  name,
-                  path: name,
+                  name: fullName,
+                  path: fullName,
                   language: getLanguageFromExt(name),
                   content: '// New File',
                   loaded: true,
@@ -860,12 +890,12 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
                               <span className="text-[10px] font-bold text-slate-500">REPOSITORY</span>
                               <button onClick={() => setShowImportModal(true)} className="text-[10px] text-indigo-400 hover:underline">Change</button>
                           </div>
-                          {workspaceTree.map(node => <FileTreeItem key={node.id} node={node} depth={0} activeId={activeFile?.path || activeFile?.name} onSelect={handleWorkspaceSelect} onToggle={(n) => setExpandedFolders(p => ({...p, [n.id]: !p[n.id]}))} expandedIds={expandedFolders} loadingIds={loadingFolders} onShare={handleShareItem} />)}
+                          {workspaceTree.map(node => <FileTreeItem key={node.id} node={node} depth={0} activeId={selectedExplorerNode?.id} onSelect={handleExplorerSelect} onToggle={(n) => setExpandedFolders(p => ({...p, [n.id]: !p[n.id]}))} expandedIds={expandedFolders} loadingIds={loadingFolders} onShare={handleShareItem} />)}
                       </div>
                   )}
                   {activeTab === 'cloud' && (
                       <div className="p-2">
-                          {!currentUser ? <p className="text-xs text-slate-500 p-4 text-center">Sign in to access your Private Cloud storage.</p> : cloudTree.map(node => <FileTreeItem key={node.id} node={node} depth={0} onSelect={handleCloudSelect} onToggle={()=>{}} onDelete={handleDeleteItem} onShare={handleShareItem} expandedIds={expandedFolders} loadingIds={loadingFolders}/>)}
+                          {!currentUser ? <p className="text-xs text-slate-500 p-4 text-center">Sign in to access your Private Cloud storage.</p> : cloudTree.map(node => <FileTreeItem key={node.id} node={node} depth={0} activeId={selectedExplorerNode?.id} onSelect={handleExplorerSelect} onToggle={()=>{}} onDelete={handleDeleteItem} onShare={handleShareItem} expandedIds={expandedFolders} loadingIds={loadingFolders}/>)}
                       </div>
                   )}
                   {activeTab === 'drive' && (
@@ -879,8 +909,8 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
                               driveTree.map(node => (
                                   <FileTreeItem 
                                       key={node.id} node={node} depth={0} 
-                                      activeId={activeFile?.path}
-                                      onSelect={handleDriveSelect} 
+                                      activeId={selectedExplorerNode?.id}
+                                      onSelect={handleExplorerSelect} 
                                       onToggle={handleDriveToggle} 
                                       onDelete={handleDeleteItem}
                                       expandedIds={expandedFolders} loadingIds={loadingFolders}
@@ -892,7 +922,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
                   {activeTab === 'session' && (
                       <div className="p-2">
                           <p className="text-[10px] font-bold text-slate-500 px-2 mb-2">IN MEMORY / SESSION</p>
-                          {workspaceTree.map(node => <FileTreeItem key={node.id} node={node} depth={0} activeId={activeFile?.path || activeFile?.name} onSelect={(n) => setActiveFile(n.data)} onToggle={(n) => setExpandedFolders(p => ({...p, [n.id]: !p[n.id]}))} onDelete={handleDeleteItem} expandedIds={expandedFolders} loadingIds={loadingFolders} />)}
+                          {workspaceTree.map(node => <FileTreeItem key={node.id} node={node} depth={0} activeId={selectedExplorerNode?.id} onSelect={handleExplorerSelect} onToggle={(n) => setExpandedFolders(p => ({...p, [n.id]: !p[n.id]}))} onDelete={handleDeleteItem} expandedIds={expandedFolders} loadingIds={loadingFolders} />)}
                       </div>
                   )}
               </div>
