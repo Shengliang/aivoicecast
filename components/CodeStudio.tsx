@@ -279,8 +279,6 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
       
       const cleaned = cleanRepoPath(publicRepoPath);
       if (!cleaned) {
-          // If manually typed, show error. If auto-loaded, maybe silent or error.
-          // But here we just return to avoid crashing
           return; 
       }
       const { owner, repo } = cleaned;
@@ -311,9 +309,11 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
           }
       } catch (e: any) { 
           // If error is 404 and we don't have token, it might be private.
-          // The auto-load effect will retry when token becomes available (via Connect GitHub)
           if (!githubToken && e.message.includes('404')) {
               // Be silent on auto-load failure for private repo until user connects
+          } else if (e.message.includes('401') || e.message.includes('Unauthorized')) {
+              showToast("GitHub Token Expired or Invalid", "error");
+              setGithubToken(null);
           } else {
               showToast(e.message, "error"); 
           }
@@ -426,11 +426,17 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
       if (githubToken) return githubToken;
       try {
           const { token } = await signInWithGitHub();
-          setGithubToken(token);
-          return token;
+          if (token) {
+              setGithubToken(token);
+              showToast("GitHub Connected Successfully", "success");
+              return token;
+          } else {
+              throw new Error("No access token returned");
+          }
       } catch (e: any) {
           console.error(e);
-          showToast("GitHub Auth Failed: " + e.message, "error");
+          showToast(e.message, "error");
+          setGithubToken(null);
           return null;
       }
   };

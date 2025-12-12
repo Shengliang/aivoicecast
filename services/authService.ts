@@ -33,8 +33,7 @@ export async function connectGoogleDrive(): Promise<string> {
   if (!auth.currentUser) throw new Error("Must be logged in");
 
   try {
-    // We use linkWithPopup or reauthenticateWithPopup to get the OAuth credential
-    // containing the Google Access Token (needed for Drive API, distinct from Firebase ID Token)
+    // We use linkWithPopup or reauthenticateWithPopup to get the credential containing the Google Access Token
     const result = await auth.currentUser.reauthenticateWithPopup(provider);
     const credential = result.credential as firebase.auth.OAuthCredential;
     
@@ -64,65 +63,55 @@ export async function reauthenticateWithGitHub(): Promise<{ user: firebase.User 
 }
 
 export async function signInWithGitHub(): Promise<{ user: firebase.User | null, token: string | null }> {
-  try {
-    const provider = new firebase.auth.GithubAuthProvider();
-    // Request repo scope to allow reading and writing private/public repositories
-    provider.addScope('repo');
-    provider.addScope('user');
+  const provider = new firebase.auth.GithubAuthProvider();
+  // Request repo scope to allow reading and writing private/public repositories
+  provider.addScope('repo');
+  provider.addScope('user');
 
-    // SCENARIO 1: User is already logged in (e.g. with Google)
-    // We want to LINK GitHub to the existing account so they can access Repos.
+  try {
+    // SCENARIO 1: User is already logged in (Link Account)
     if (auth.currentUser) {
        try {
+         // Attempt to link first to associate GitHub with the current account
          const result = await auth.currentUser.linkWithPopup(provider);
          const credential = result.credential as firebase.auth.OAuthCredential;
          return { user: result.user, token: credential?.accessToken || null };
        } catch (linkError: any) {
          // Case A: GitHub account is ALREADY linked to THIS Firebase account.
-         // We just need to retrieve a fresh OAuth Access Token.
+         // We must retrieve a fresh OAuth Access Token. 
+         // Using signInWithPopup while logged in (with the same provider/account) effectively refreshes the credentials
+         // and returns the token we need without signing the user out.
          if (linkError.code === 'auth/provider-already-linked') {
              try {
-                // First try re-authenticating to get credentials
-                const result = await auth.currentUser.reauthenticateWithPopup(provider);
+                const result = await auth.signInWithPopup(provider);
                 const credential = result.credential as firebase.auth.OAuthCredential;
                 return { user: result.user, token: credential?.accessToken || null };
-             } catch (reAuthError: any) {
-                 console.warn("Re-auth failed, falling back to sign-in:", reAuthError);
-                 // Fallback: If reauth fails (sometimes happens with popup blockers or specific flows),
-                 // try generic signIn (which handles existing users)
-                 try {
-                    const result = await auth.signInWithPopup(provider);
-                    const credential = result.credential as firebase.auth.OAuthCredential;
-                    return { user: result.user, token: credential?.accessToken || null };
-                 } catch (signInError: any) {
-                    throw signInError;
-                 }
+             } catch (signInError: any) {
+                // If signIn fails here, bubble it up
+                throw signInError;
              }
          }
          
-         // Case B: GitHub account is linked to DIFFERENT Firebase account.
+         // Case B: GitHub account is linked to a DIFFERENT Firebase account.
          if (linkError.code === 'auth/credential-already-in-use') {
-            throw new Error("This GitHub account is already linked to another user. Please sign in with that account.");
+            throw new Error("This GitHub account is already linked to another user. Please sign out and sign in with GitHub directly.");
          }
          
          // Other linking errors
          throw linkError;
        }
     } 
-    // SCENARIO 2: User is NOT logged in
+    
+    // SCENARIO 2: Not logged in (Fresh Sign In)
     // Attempt to sign in with GitHub directly.
-    else {
-       const result = await auth.signInWithPopup(provider);
-       const credential = result.credential as firebase.auth.OAuthCredential;
-       return { user: result.user, token: credential?.accessToken || null };
-    }
+    const result = await auth.signInWithPopup(provider);
+    const credential = result.credential as firebase.auth.OAuthCredential;
+    return { user: result.user, token: credential?.accessToken || null };
 
   } catch (error: any) {
-    console.error("GitHub Login failed:", error);
-    // Ensure we return a helpful message for the toast
-    if (error.code === 'auth/popup-closed-by-user') {
-        throw new Error("Sign-in cancelled.");
-    }
+    console.error("GitHub Auth Error:", error);
+    if (error.code === 'auth/popup-closed-by-user') throw new Error("Sign-in cancelled.");
+    if (error.code === 'auth/popup-blocked') throw new Error("Popup blocked. Please allow popups for this site.");
     throw error;
   }
 }
