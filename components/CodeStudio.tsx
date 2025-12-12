@@ -1,12 +1,13 @@
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { CodeProject, CodeFile, UserProfile, Channel } from '../types';
-import { ArrowLeft, Save, Plus, Github, Cloud, HardDrive, Code, X, ChevronRight, ChevronDown, File, Folder, DownloadCloud, Loader2, CheckCircle, AlertTriangle, Info, FolderPlus, FileCode, RefreshCw, LogIn, CloudUpload, Trash2, ArrowUp, Edit2, FolderOpen, MoreVertical, Send, MessageSquare, Bot, Mic, Sparkles, SidebarClose, SidebarOpen, Users, Eye, FileText as FileTextIcon, Image as ImageIcon } from 'lucide-react';
+import { ArrowLeft, Save, Plus, Github, Cloud, HardDrive, Code, X, ChevronRight, ChevronDown, File, Folder, DownloadCloud, Loader2, CheckCircle, AlertTriangle, Info, FolderPlus, FileCode, RefreshCw, LogIn, CloudUpload, Trash2, ArrowUp, Edit2, FolderOpen, MoreVertical, Send, MessageSquare, Bot, Mic, Sparkles, SidebarClose, SidebarOpen, Users, Eye, FileText as FileTextIcon, Image as ImageIcon, StopCircle } from 'lucide-react';
 import { connectGoogleDrive } from '../services/authService';
 import { fetchPublicRepoInfo, fetchRepoContents, fetchFileContent, commitToRepo, fetchRepoSubTree } from '../services/githubService';
 import { listCloudDirectory, saveProjectToCloud, deleteCloudItem, createCloudFolder, CloudItem, subscribeToCodeProject, saveCodeProject } from '../services/firestoreService';
 import { ensureCodeStudioFolder, listDriveFiles, readDriveFile, saveToDrive, deleteDriveFile, createDriveFolder, DriveFile } from '../services/googleDriveService';
 import { GoogleGenAI } from '@google/genai';
+import { GeminiLiveService } from '../services/geminiLive';
 import { GEMINI_API_KEY } from '../services/private_keys';
 import { MarkdownView } from './MarkdownView';
 import { encodePlantUML } from '../utils/plantuml';
@@ -248,13 +249,14 @@ const AIChatPanel: React.FC<{
     isThinking: boolean;
     onApplyCode: (newCode: string) => void;
     onStartLive: () => void;
-}> = ({ isOpen, onClose, messages, onSendMessage, isThinking, onApplyCode, onStartLive }) => {
+    isVoiceActive: boolean;
+}> = ({ isOpen, onClose, messages, onSendMessage, isThinking, onApplyCode, onStartLive, isVoiceActive }) => {
     const [input, setInput] = useState('');
     const messagesEndRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-    }, [messages, isThinking]);
+    }, [messages, isThinking, isVoiceActive]);
 
     const handleSend = async (e?: React.FormEvent) => {
         e?.preventDefault();
@@ -273,10 +275,13 @@ const AIChatPanel: React.FC<{
     return (
         <div className="w-80 bg-slate-900 border-l border-slate-800 flex flex-col h-full absolute right-0 top-0 z-20 shadow-2xl">
             <div className="p-3 border-b border-slate-800 flex justify-between items-center bg-slate-950">
-                <h3 className="font-bold text-white flex items-center gap-2"><Bot size={16} className="text-indigo-400"/> AI Assistant</h3>
+                <h3 className="font-bold text-white flex items-center gap-2">
+                    {isVoiceActive ? <Mic size={16} className="text-red-500 animate-pulse"/> : <Bot size={16} className="text-indigo-400"/>}
+                    {isVoiceActive ? "Live Voice" : "AI Assistant"}
+                </h3>
                 <div className="flex items-center gap-1">
-                    <button onClick={onStartLive} className="p-1.5 hover:bg-slate-800 rounded text-pink-400 hover:text-pink-300" title="Start Live Voice Session">
-                        <Mic size={16} />
+                    <button onClick={onStartLive} className={`p-1.5 rounded transition-all ${isVoiceActive ? 'bg-red-500 text-white hover:bg-red-600' : 'hover:bg-slate-800 text-pink-400 hover:text-pink-300'}`} title={isVoiceActive ? "Stop Voice" : "Start Live Voice Session"}>
+                        {isVoiceActive ? <StopCircle size={16} /> : <Mic size={16} />}
                     </button>
                     <button onClick={onClose}><X size={16} className="text-slate-400 hover:text-white"/></button>
                 </div>
@@ -298,7 +303,11 @@ const AIChatPanel: React.FC<{
                         </div>
                     </div>
                 ))}
-                {isThinking && <div className="text-slate-500 text-xs italic flex items-center gap-2"><Loader2 size={12} className="animate-spin"/> AI is coding...</div>}
+                {(isThinking || isVoiceActive) && (
+                    <div className="text-slate-500 text-xs italic flex items-center gap-2">
+                        {isVoiceActive ? <span className="flex items-center gap-1 text-red-400"><Mic size={10} className="animate-bounce"/> Listening...</span> : <><Loader2 size={12} className="animate-spin"/> AI is coding...</>}
+                    </div>
+                )}
                 <div ref={messagesEndRef} />
             </div>
 
@@ -307,7 +316,7 @@ const AIChatPanel: React.FC<{
                     <input 
                         value={input} 
                         onChange={e => setInput(e.target.value)} 
-                        placeholder="Ask AI to edit..." 
+                        placeholder={isVoiceActive ? "Voice active (type to override)..." : "Ask AI to edit..."}
                         className="flex-1 bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white outline-none focus:border-indigo-500"
                     />
                     <button type="submit" disabled={!input || isThinking} className="p-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg disabled:opacity-50">
@@ -336,6 +345,9 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
       { role: 'ai', text: "Hello! I'm your coding assistant. I can help explain, debug, or rewrite your code." }
   ]);
   const [isChatThinking, setIsChatThinking] = useState(false);
+  const [isVoiceActive, setIsVoiceActive] = useState(false);
+  const liveService = useRef<GeminiLiveService | null>(null);
+  const [streamingMessage, setStreamingMessage] = useState<{role: 'user' | 'ai', text: string} | null>(null);
 
   // Remote Files State
   const [cloudItems, setCloudItems] = useState<CloudItem[]>([]); 
@@ -373,6 +385,13 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
           }
       }
   }, [activeFile?.name]); 
+
+  // Cleanup Voice on Unmount
+  useEffect(() => {
+      return () => {
+          liveService.current?.disconnect();
+      };
+  }, []);
 
   // --- Real-time Collaboration Hook ---
   useEffect(() => {
@@ -658,20 +677,76 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
       }
   };
 
-  // Replaces the old handleTeachMe with a direct voice launch logic
-  const handleStartVoice = () => {
-      if (!onStartLiveSession || !activeFile) return;
-      const channel: Channel = {
-          id: `voice-${Date.now()}`,
-          title: `Code Review: ${activeFile.name}`,
-          description: "Live Code Review",
-          author: "System",
-          voiceName: "Fenrir",
-          systemInstruction: `You are a senior engineer doing a code review of ${activeFile.name}. The user will ask questions or ask for explanation. Be strict but helpful.`,
-          likes: 0, dislikes: 0, comments: [], tags: [], imageUrl: "", createdAt: Date.now()
-      };
-      // Start the voice session passing the file content as initial context
-      onStartLiveSession(channel, activeFile.content);
+  // New Voice Handler: Starts a Voice Session inside the AI Panel
+  const handleVoiceToggle = async () => {
+      if (isVoiceActive) {
+          // Stop Voice
+          await liveService.current?.disconnect();
+          setIsVoiceActive(false);
+          setStreamingMessage(null);
+          return;
+      }
+
+      if (!activeFile) {
+          showNotification("Please open a file first to start Voice Mode.", "error");
+          return;
+      }
+
+      // Start Voice
+      setIsAIChatOpen(true);
+      setIsVoiceActive(true);
+      
+      if (!liveService.current) {
+          liveService.current = new GeminiLiveService();
+      }
+      liveService.current.initializeAudio();
+
+      const systemInstruction = `You are a Pair Programmer. 
+      The user is working on a file named "${activeFile.name}".
+      
+      File Content:
+      \`\`\`${activeFile.language}
+      ${activeFile.content}
+      \`\`\`
+      
+      Your goal is to help explain the code, debug issues, or suggest refactors. Be concise and conversational.`;
+
+      try {
+          await liveService.current.connect("Fenrir", systemInstruction, {
+              onOpen: () => {
+                  showNotification("Voice Connected", "success");
+              },
+              onClose: () => {
+                  setIsVoiceActive(false);
+                  setStreamingMessage(null);
+              },
+              onError: (e) => {
+                  console.error(e);
+                  showNotification("Voice Error: " + e.message, "error");
+                  setIsVoiceActive(false);
+                  setStreamingMessage(null);
+              },
+              onVolumeUpdate: () => {},
+              onTranscript: (text, isUser) => {
+                  setStreamingMessage(prev => {
+                      const role = isUser ? 'user' : 'ai';
+                      if (prev && prev.role !== role) {
+                          // Commit previous message to history
+                          setChatMessages(msgs => [...msgs, prev]);
+                          return { role, text };
+                      }
+                      return { role, text: (prev ? prev.text : '') + text };
+                  });
+              },
+              onToolCall: async (toolCall) => {
+                  console.log("Tool call received", toolCall);
+                  // Future: Implement code editing via voice tools here
+              }
+          });
+      } catch (e: any) {
+          showNotification("Connection Failed", "error");
+          setIsVoiceActive(false);
+      }
   };
 
   const handleSmartSave = async () => {
@@ -695,6 +770,14 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
       } catch (e: any) { showNotification("Save failed: " + e.message, "error"); setSaveStatus('modified'); }
   };
 
+  // Combine history + active streaming message
+  const displayMessages = useMemo(() => {
+      if (streamingMessage) {
+          return [...chatMessages, streamingMessage];
+      }
+      return chatMessages;
+  }, [chatMessages, streamingMessage]);
+
   return (
     <div className="flex flex-col h-screen bg-slate-950 text-slate-100 overflow-hidden relative">
       {/* Notifications */}
@@ -717,6 +800,14 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
             </div>
             
             <div className="flex items-center space-x-2">
+               {/* Voice Button */}
+               {activeFile && (
+                   <button onClick={handleVoiceToggle} className={`flex items-center space-x-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors border ${isVoiceActive ? 'bg-red-500 text-white border-red-600 animate-pulse' : 'bg-pink-900/30 text-pink-400 border-pink-500/30 hover:bg-pink-900/50'}`}>
+                       {isVoiceActive ? <StopCircle size={14} /> : <Mic size={14}/>} 
+                       <span>{isVoiceActive ? "Stop Voice" : "Voice Mode"}</span>
+                   </button>
+               )}
+               
                {/* Share Button */}
                <button onClick={handleShareSession} className={`flex items-center space-x-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors border ${isSharedSession ? 'bg-indigo-900/50 text-indigo-300 border-indigo-500/50' : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700'}`}>
                    <Users size={14}/> <span>{isSharedSession ? 'Shared' : 'Share'}</span>
@@ -863,11 +954,12 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
           <AIChatPanel 
               isOpen={isAIChatOpen} 
               onClose={() => setIsAIChatOpen(false)} 
-              messages={chatMessages}
+              messages={displayMessages}
               onSendMessage={handleChatSendMessage}
               isThinking={isChatThinking}
               onApplyCode={handleCodeChange}
-              onStartLive={handleStartVoice}
+              onStartLive={handleVoiceToggle}
+              isVoiceActive={isVoiceActive}
           />
       </div>
 
