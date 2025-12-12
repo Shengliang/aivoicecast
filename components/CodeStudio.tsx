@@ -1085,18 +1085,19 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
           } else {
               // Fallback for local files ("new.js")
               if (activeTab === 'cloud' && currentUser) {
-                  // If we are in Cloud tab, save new file to Cloud
+                  // If we are in Cloud tab, save copy to Cloud (Export)
                   const userDir = `projects/${currentUser.uid}`;
                   await saveProjectToCloud(userDir, activeFile.name, activeFile.content);
                   
-                  // Update active file to point to cloud now
-                  const newPath = `cloud://${userDir}/${activeFile.name}`;
-                  setActiveFile({ ...activeFile, path: newPath, isModified: false });
+                  // NOTE: We do NOT update the activeFile path to cloud:// here.
+                  // Keeping it as a local/workspace file ensures that real-time collaboration (via Firestore)
+                  // continues to work for other users in the session who don't have access to this user's private storage.
+                  // The file will appear in the sidebar list if the user wants to open the cloud version explicitly.
                   
-                  // Refresh list
+                  // Refresh list so the new file appears in the sidebar
                   listCloudDirectory(userDir).then(setCloudItems);
                   
-                  showNotification("Saved to Cloud", "success");
+                  showNotification("Saved copy to Cloud", "success");
               } else {
                   showNotification("Saved locally (temporary)", "success");
               }
