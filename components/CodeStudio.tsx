@@ -1,13 +1,14 @@
 
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { CodeProject, CodeFile, UserProfile, Channel, CursorPosition, CloudItem } from '../types';
-import { ArrowLeft, Save, Plus, Github, Cloud, HardDrive, Code, X, ChevronRight, ChevronDown, File, Folder, DownloadCloud, Loader2, CheckCircle, AlertTriangle, Info, FolderPlus, FileCode, RefreshCw, LogIn, CloudUpload, Trash2, ArrowUp, Edit2, FolderOpen, MoreVertical, Send, MessageSquare, Bot, Mic, Sparkles, SidebarClose, SidebarOpen, Users, Eye, FileText as FileTextIcon, Image as ImageIcon, StopCircle, Minus, Maximize2, Lock, Unlock, Share2, Terminal, Copy, WifiOff, PanelRightClose, PanelRightOpen, Monitor, Laptop } from 'lucide-react';
+import { ArrowLeft, Save, Plus, Github, Cloud, HardDrive, Code, X, ChevronRight, ChevronDown, File, Folder, DownloadCloud, Loader2, CheckCircle, AlertTriangle, Info, FolderPlus, FileCode, RefreshCw, LogIn, CloudUpload, Trash2, ArrowUp, Edit2, FolderOpen, MoreVertical, Send, MessageSquare, Bot, Mic, Sparkles, SidebarClose, SidebarOpen, Users, Eye, FileText as FileTextIcon, Image as ImageIcon, StopCircle, Minus, Maximize2, Lock, Unlock, Share2, Terminal, Copy, WifiOff, PanelRightClose, PanelRightOpen, Monitor, Laptop, PenTool } from 'lucide-react';
 import { listCloudDirectory, saveProjectToCloud, deleteCloudItem, createCloudFolder, subscribeToCodeProject, saveCodeProject, updateCodeFile, updateCursor, claimCodeProjectLock, updateProjectActiveFile, deleteCodeFile, moveCloudFile } from '../services/firestoreService';
 import { ensureCodeStudioFolder, listDriveFiles, readDriveFile, saveToDrive, deleteDriveFile, createDriveFolder, DriveFile, moveDriveFile } from '../services/googleDriveService';
 import { connectGoogleDrive } from '../services/authService';
 import { fetchPublicRepoInfo, fetchRepoContents, fetchFileContent } from '../services/githubService';
 import { MarkdownView } from './MarkdownView';
 import { encodePlantUML } from '../utils/plantuml';
+import { Whiteboard } from './Whiteboard';
 
 // --- Interfaces & Constants ---
 
@@ -40,6 +41,7 @@ function getLanguageFromExt(filename: string): any {
     if (ext === 'json') return 'json';
     if (ext === 'md') return 'markdown';
     if (['puml', 'plantuml'].includes(ext || '')) return 'plantuml';
+    if (['wb', 'draw', 'whiteboard'].includes(ext || '')) return 'whiteboard';
     return 'text';
 }
 
@@ -55,6 +57,7 @@ const FileIcon = ({ filename }: { filename: string }) => {
     if (lang === 'json') return <FileCode size={16} className="text-green-400" />;
     if (lang === 'markdown') return <FileTextIcon size={16} className="text-slate-400" />;
     if (lang === 'plantuml') return <ImageIcon size={16} className="text-pink-400" />;
+    if (lang === 'whiteboard') return <PenTool size={16} className="text-pink-500" />;
     return <File size={16} className="text-slate-500" />;
 };
 
@@ -347,14 +350,10 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
 
                // Case 1: New File Template (cloud://)
                if (!targetPath || targetPath.startsWith('cloud://')) {
-                   // Save to root if no specific folder logic (CodeStudio often works at root)
-                   // But better to use the user's project root
                    targetPath = `${rootPrefix}/${filename}`;
                } 
                // Case 2: Existing File (or navigated into folder)
                else if (!targetPath.startsWith(rootPrefix)) {
-                   // CRITICAL FIX: If path is relative or malformed, prepend user root
-                   // Remove any leading slashes first
                    const cleanPath = targetPath.replace(/^\/+/, '');
                    targetPath = `${rootPrefix}/${cleanPath}`;
                }
@@ -550,7 +549,17 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
   const handleCreateFile = async () => {
       const name = prompt("File Name (e.g. main.py):");
       if (!name) return;
+      await createFileInActiveContext(name, "// New File");
+  };
 
+  const handleCreateWhiteboard = async () => {
+      const name = prompt("Whiteboard Name (e.g. architecture.wb):");
+      if (!name) return;
+      const finalName = name.endsWith('.wb') ? name : name + '.wb';
+      await createFileInActiveContext(finalName, "[]");
+  };
+
+  const createFileInActiveContext = async (name: string, content: string) => {
       try {
           if (activeTab === 'cloud' && currentUser) {
               let parentPath = `projects/${currentUser.uid}`;
@@ -565,13 +574,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
               }
               
               const cleanParent = parentPath.replace(/\/+$/, '');
-              // Ensure we don't save to root if we are supposed to be in user project
-              if (!cleanParent.startsWith(`projects/${currentUser.uid}`)) {
-                  // This handles cases where selection is root or weird
-                  // Note: parentPath logic above should already cover it if selectedExplorerNode is correct
-              }
-
-              await saveProjectToCloud(cleanParent, name, "// New File");
+              await saveProjectToCloud(cleanParent, name, content);
               const fullPath = `${cleanParent}/${name}`;
               await refreshCloudPath(cleanParent);
               
@@ -579,7 +582,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
                   name: name,
                   path: fullPath,
                   language: getLanguageFromExt(name),
-                  content: '// New File',
+                  content: content,
                   loaded: true,
                   isDirectory: false,
                   isModified: false
@@ -592,7 +595,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
                   return { ...prev, files: [...prev.files, newFile] };
               });
               
-              showToast("File created", "success");
+              showToast("Created " + name, "success");
           } else if (activeTab === 'session') {
               let prefix = '';
               if (selectedExplorerNode) {
@@ -609,7 +612,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
                   name: fullName,
                   path: fullName,
                   language: getLanguageFromExt(name),
-                  content: '// New File',
+                  content: content,
                   loaded: true,
                   isDirectory: false,
                   isModified: true
@@ -830,6 +833,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
               <div className="p-2 border-b border-slate-800 flex gap-2 justify-center bg-slate-900">
                   <button onClick={handleCreateFolder} className="p-1.5 hover:bg-slate-800 rounded text-slate-400 hover:text-white" title="New Folder"><FolderPlus size={16}/></button>
                   <button onClick={handleCreateFile} className="p-1.5 hover:bg-slate-800 rounded text-slate-400 hover:text-white" title="New File"><FileCode size={16}/></button>
+                  <button onClick={handleCreateWhiteboard} className="p-1.5 hover:bg-slate-800 rounded text-pink-400 hover:text-pink-300" title="New Whiteboard"><PenTool size={16}/></button>
                   <button onClick={() => refreshExplorer()} className="p-1.5 hover:bg-slate-800 rounded text-slate-400 hover:text-white" title="Refresh"><RefreshCw size={16}/></button>
               </div>
 
@@ -881,7 +885,13 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
                         </div>
                     </div>
                     <div className="flex-1 overflow-hidden relative">
-                        {editorMode === 'preview' ? (
+                        {getLanguageFromExt(activeFile.name) === 'whiteboard' ? (
+                            <Whiteboard 
+                                initialData={activeFile.content}
+                                onDataChange={handleCodeChange}
+                                isReadOnly={isLockedByOther}
+                            />
+                        ) : editorMode === 'preview' ? (
                             <div className="w-full h-full overflow-y-auto bg-slate-900 p-8">
                                 {activeFile.name.endsWith('.md') || activeFile.name.endsWith('.markdown') ? (
                                     <div className="prose prose-invert max-w-none">
