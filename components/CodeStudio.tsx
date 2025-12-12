@@ -243,58 +243,27 @@ const PlantUMLPreview: React.FC<{ code: string }> = ({ code }) => {
 const AIChatPanel: React.FC<{ 
     isOpen: boolean; 
     onClose: () => void; 
-    codeContext: string; 
+    messages: Array<{role: 'user' | 'ai', text: string}>;
+    onSendMessage: (text: string) => void;
+    isThinking: boolean;
     onApplyCode: (newCode: string) => void;
-}> = ({ isOpen, onClose, codeContext, onApplyCode }) => {
-    const [messages, setMessages] = useState<Array<{role: 'user' | 'ai', text: string}>>([
-        { role: 'ai', text: "Hello! I'm your coding assistant. I can help explain, debug, or rewrite your code." }
-    ]);
+}> = ({ isOpen, onClose, messages, onSendMessage, isThinking, onApplyCode }) => {
     const [input, setInput] = useState('');
-    const [isThinking, setIsThinking] = useState(false);
+    const messagesEndRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }, [messages, isThinking]);
 
     const handleSend = async (e?: React.FormEvent) => {
         e?.preventDefault();
         if (!input.trim()) return;
-        
-        const userMsg = input;
-        setMessages(prev => [...prev, { role: 'user', text: userMsg }]);
+        onSendMessage(input);
         setInput('');
-        setIsThinking(true);
-
-        try {
-            const apiKey = localStorage.getItem('gemini_api_key') || GEMINI_API_KEY;
-            if (!apiKey) throw new Error("API Key missing");
-            
-            const ai = new GoogleGenAI({ apiKey });
-            const prompt = `
-                You are an expert Pair Programmer.
-                
-                Current File Context:
-                \`\`\`
-                ${codeContext}
-                \`\`\`
-                
-                User Request: "${userMsg}"
-                
-                If the user asks to modify the code, provide the FULL updated code block wrapped in \`\`\`code\`\`\`. 
-                Otherwise, explain or answer the question.
-            `;
-
-            const res = await ai.models.generateContent({
-                model: 'gemini-2.5-flash',
-                contents: prompt
-            });
-            
-            setMessages(prev => [...prev, { role: 'ai', text: res.text || "No response." }]);
-        } catch (e: any) {
-            setMessages(prev => [...prev, { role: 'ai', text: "Error: " + e.message }]);
-        } finally {
-            setIsThinking(false);
-        }
     };
 
     const extractCode = (text: string) => {
-        const match = text.match(/```(?:code|javascript|typescript|python|html|css)?\n([\s\S]*?)```/);
+        const match = text.match(/```(?:code|javascript|typescript|python|html|css|c\+\+|java)?\n([\s\S]*?)```/);
         return match ? match[1] : null;
     };
 
@@ -324,6 +293,7 @@ const AIChatPanel: React.FC<{
                     </div>
                 ))}
                 {isThinking && <div className="text-slate-500 text-xs italic flex items-center gap-2"><Loader2 size={12} className="animate-spin"/> AI is coding...</div>}
+                <div ref={messagesEndRef} />
             </div>
 
             <form onSubmit={handleSend} className="p-3 border-t border-slate-800 bg-slate-950">
@@ -353,8 +323,14 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
 
   const [activeTab, setActiveTab] = useState<'github' | 'cloud' | 'drive'>('github');
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
-  const [isAIChatOpen, setIsAIChatOpen] = useState(false);
+  const [isAIChatOpen, setIsAIChatOpen] = useState(true); // AI Window ON by default
   
+  // Chat State (Lifted from AIChatPanel)
+  const [chatMessages, setChatMessages] = useState<Array<{role: 'user' | 'ai', text: string}>>([
+      { role: 'ai', text: "Hello! I'm your coding assistant. I can help explain, debug, or rewrite your code." }
+  ]);
+  const [isChatThinking, setIsChatThinking] = useState(false);
+
   // Remote Files State
   const [cloudItems, setCloudItems] = useState<CloudItem[]>([]); 
   const [driveItems, setDriveItems] = useState<(DriveFile & { parentId?: string, isLoaded?: boolean })[]>([]); 
@@ -390,7 +366,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
               setViewMode('code');
           }
       }
-  }, [activeFile?.name]); // Depend on name change to trigger auto-switch
+  }, [activeFile?.name]); 
 
   // --- Real-time Collaboration Hook ---
   useEffect(() => {
@@ -403,7 +379,6 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
                   }
                   return prev;
               });
-              // If active file is part of project, update it
               if (activeFile && activeFile.path && !activeFile.path.startsWith('drive://') && !activeFile.path.startsWith('cloud://')) {
                   const remoteFile = remoteProject.files.find(f => f.path === activeFile.path);
                   if (remoteFile && remoteFile.content !== activeFile.content) {
@@ -420,7 +395,6 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
       const root: TreeNode[] = [];
       const map = new Map<string, TreeNode>();
       
-      // Filter out non-repo files if any crept in
       const repoFiles = project.files.filter(f => !f.path?.startsWith('drive://') && !f.path?.startsWith('cloud://'));
 
       repoFiles.forEach(f => {
@@ -493,14 +467,10 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
 
   const handleWorkspaceSelect = async (node: TreeNode) => {
       const file = node.data as CodeFile;
-      
-      // If content not loaded, fetch it
       if (!file.loaded && project.github) {
           try {
               const content = await fetchFileContent(null, project.github.owner, project.github.repo, file.path || file.name, project.github.branch);
               const updatedFile = { ...file, content, loaded: true };
-              
-              // Update project state
               setProject(prev => ({
                   ...prev,
                   files: prev.files.map(f => (f.path || f.name) === (file.path || file.name) ? updatedFile : f)
@@ -541,7 +511,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
           const text = await res.text();
           const newFile: CodeFile = {
               name: item.name,
-              path: `cloud://${item.fullPath}`, // Marker to know source
+              path: `cloud://${item.fullPath}`, 
               content: text,
               language: getLanguageFromExt(item.name),
               loaded: true,
@@ -605,7 +575,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
           const text = await readDriveFile(driveToken, driveFile.id);
           const newFile: CodeFile = {
               name: driveFile.name,
-              path: `drive://${driveFile.id}`, // Marker
+              path: `drive://${driveFile.id}`, 
               content: text,
               language: getLanguageFromExt(driveFile.name),
               loaded: true,
@@ -622,20 +592,15 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
   // Editor Logic
   const handleCodeChange = (val: string) => {
       if (!activeFile) return;
-      
       const updatedFile = { ...activeFile, content: val, isModified: true };
       setActiveFile(updatedFile);
       setSaveStatus('modified');
-      
-      // Update Project if it's a project file
       if (!activeFile.path?.startsWith('drive://') && !activeFile.path?.startsWith('cloud://')) {
           setProject(prev => ({
               ...prev,
               files: prev.files.map(f => (f.path || f.name) === activeFile.path ? updatedFile : f)
           }));
       }
-      
-      // Real-time sync hook
       if (isSharedSession && sessionId && !activeFile.path?.startsWith('drive://') && !activeFile.path?.startsWith('cloud://')) {
           saveCodeProject({ ...project, files: project.files.map(f => (f.path || f.name) === activeFile.path ? updatedFile : f), lastModified: Date.now() });
       }
@@ -645,7 +610,6 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
       if (!onSessionStart) return;
       const id = project.id !== 'init' ? project.id : crypto.randomUUID();
       if (project.id === 'init') {
-          // Save first
           await saveCodeProject({ ...project, id });
       }
       onSessionStart(id);
@@ -653,18 +617,45 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
       showNotification("Session shared! URL updated.", "success");
   };
 
-  const handleStartVoice = () => {
-      if (!onStartLiveSession || !activeFile) return;
-      const channel: Channel = {
-          id: `voice-${Date.now()}`,
-          title: `Code Review: ${activeFile.name}`,
-          description: "Live Code Review",
-          author: "System",
-          voiceName: "Fenrir",
-          systemInstruction: "You are a senior engineer doing a code review. Be strict but helpful.",
-          likes: 0, dislikes: 0, comments: [], tags: [], imageUrl: "", createdAt: Date.now()
-      };
-      onStartLiveSession(channel, activeFile.content);
+  const handleChatSendMessage = async (userMsg: string) => {
+      setChatMessages(prev => [...prev, { role: 'user', text: userMsg }]);
+      setIsChatThinking(true);
+      try {
+          const apiKey = localStorage.getItem('gemini_api_key') || GEMINI_API_KEY;
+          if (!apiKey) throw new Error("API Key missing");
+          
+          const ai = new GoogleGenAI({ apiKey });
+          const prompt = `
+              You are an expert Pair Programmer.
+              
+              Current File Context:
+              \`\`\`
+              ${activeFile?.content || ''}
+              \`\`\`
+              
+              User Request: "${userMsg}"
+              
+              If the user asks to modify the code, provide the FULL updated code block wrapped in \`\`\`code\`\`\`. 
+              Otherwise, explain or answer the question.
+          `;
+
+          const res = await ai.models.generateContent({
+              model: 'gemini-2.5-flash',
+              contents: prompt
+          });
+          
+          setChatMessages(prev => [...prev, { role: 'ai', text: res.text || "No response." }]);
+      } catch (e: any) {
+          setChatMessages(prev => [...prev, { role: 'ai', text: "Error: " + e.message }]);
+      } finally {
+          setIsChatThinking(false);
+      }
+  };
+
+  const handleTeachMe = () => {
+      if (!activeFile) return;
+      setIsAIChatOpen(true);
+      handleChatSendMessage(`Explain the code in ${activeFile.name} to me like I'm a junior engineer. Break it down step by step.`);
   };
 
   const handleSmartSave = async () => {
@@ -672,14 +663,9 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
       setSaveStatus('saving');
       try {
           if (activeFile.path?.startsWith('drive://') && driveToken) {
-              const fileId = activeFile.path.replace('drive://', '');
-              // We need folder ID for saveToDrive if it's new, but here we likely opened existing.
-              // If new, logic would be different. Assuming update here.
               await saveToDrive(driveToken, driveRootId || 'root', activeFile.name, activeFile.content);
               showNotification("Saved to Drive", "success");
           } else if (activeFile.path?.startsWith('cloud://')) {
-              const filename = activeFile.path.replace('cloud://', ''); // This might be full path
-              // Just save to projects folder for simplicity if modifying cloud file
               await saveProjectToCloud('projects', activeFile.name, activeFile.content); 
               showNotification("Saved to Cloud", "success");
           } else if (project.github) {
@@ -715,10 +701,10 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
             </div>
             
             <div className="flex items-center space-x-2">
-               {/* Teach Me Button */}
+               {/* Teach Me Button - Now triggers AI Chat Explanation */}
                {activeFile && (
-                   <button onClick={handleStartVoice} className="flex items-center space-x-2 px-3 py-1.5 bg-pink-900/30 hover:bg-pink-900/50 text-pink-400 border border-pink-500/30 rounded-lg text-xs font-bold transition-colors">
-                       <Mic size={14}/> <span>Teach Me</span>
+                   <button onClick={handleTeachMe} className="flex items-center space-x-2 px-3 py-1.5 bg-pink-900/30 hover:bg-pink-900/50 text-pink-400 border border-pink-500/30 rounded-lg text-xs font-bold transition-colors">
+                       <Bot size={14}/> <span>Teach Me</span>
                    </button>
                )}
                
@@ -868,7 +854,9 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
           <AIChatPanel 
               isOpen={isAIChatOpen} 
               onClose={() => setIsAIChatOpen(false)} 
-              codeContext={activeFile?.content || ''}
+              messages={chatMessages}
+              onSendMessage={handleChatSendMessage}
+              isThinking={isChatThinking}
               onApplyCode={handleCodeChange}
           />
       </div>
