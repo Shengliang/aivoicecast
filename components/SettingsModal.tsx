@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { UserProfile } from '../types';
 import { X, User, Shield, CreditCard, LogOut, CheckCircle, AlertTriangle, Bell, Lock, Database, Trash2, Edit2, Save, FileText, ExternalLink, Loader2, DollarSign, HelpCircle, ChevronDown, ChevronUp, Github } from 'lucide-react';
-import { logUserActivity, getBillingHistory, createStripePortalSession } from '../services/firestoreService';
+import { logUserActivity, getBillingHistory, createStripePortalSession, updateUserProfile } from '../services/firestoreService';
 import { clearAudioCache } from '../services/tts';
 
 interface SettingsModalProps {
@@ -58,12 +58,25 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     }
   };
 
-  const handleSaveProfile = () => {
-      if (onUpdateProfile) {
-          onUpdateProfile({ ...user, displayName, defaultRepoUrl: defaultRepo });
+  const handleSaveProfile = async () => {
+      try {
+          // Persist to Cloud first
+          await updateUserProfile(user.uid, { 
+              displayName: displayName, 
+              defaultRepoUrl: defaultRepo 
+          });
+
+          // Update Local State
+          const updatedProfile = { ...user, displayName, defaultRepoUrl: defaultRepo };
+          if (onUpdateProfile) {
+              onUpdateProfile(updatedProfile);
+          }
+          setIsEditingName(false);
+          logUserActivity('update_profile', { displayName, defaultRepo });
+      } catch(e: any) {
+          console.error("Save failed", e);
+          alert("Failed to save settings: " + e.message);
       }
-      setIsEditingName(false);
-      logUserActivity('update_profile', { displayName, defaultRepo });
   };
 
   const handleClearCache = () => {

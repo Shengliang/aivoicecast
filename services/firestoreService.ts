@@ -16,6 +16,10 @@ export async function getUserProfile(uid: string): Promise<UserProfile | null> {
   return doc.exists ? (doc.data() as UserProfile) : null;
 }
 
+export async function updateUserProfile(uid: string, updates: Partial<UserProfile>): Promise<void> {
+  await db.collection('users').doc(uid).update(updates);
+}
+
 export async function getGlobalStats(): Promise<GlobalStats> {
   const doc = await db.collection('stats').doc('global').get();
   if (!doc.exists) return { totalLogins: 0, uniqueUsers: 0 };
