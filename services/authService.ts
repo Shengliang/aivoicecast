@@ -78,11 +78,17 @@ export async function signInWithGitHub(): Promise<{ user: firebase.User | null, 
          const credential = result.credential as firebase.auth.OAuthCredential;
          return { user: result.user, token: credential?.accessToken || null };
        } catch (linkError: any) {
-         // If the account is ALREADY linked, we must NOT try to re-authenticate immediately
-         // because the browser will block the second popup.
-         // Instead, we throw a specific error so the UI can ask the user to click again.
+         // Case A: GitHub account is ALREADY linked to THIS Firebase account.
+         // We just need to re-authenticate to retrieve the OAuth Access Token.
+         if (linkError.code === 'auth/provider-already-linked') {
+             const result = await auth.currentUser.reauthenticateWithPopup(provider);
+             const credential = result.credential as firebase.auth.OAuthCredential;
+             return { user: result.user, token: credential?.accessToken || null };
+         }
+         
+         // Case B: GitHub account is linked to DIFFERENT Firebase account.
          if (linkError.code === 'auth/credential-already-in-use') {
-            throw new Error("github-account-already-linked");
+            throw new Error("This GitHub account is already linked to another user. Please sign in with that account.");
          }
          throw linkError;
        }
@@ -97,12 +103,6 @@ export async function signInWithGitHub(): Promise<{ user: firebase.User | null, 
 
   } catch (error: any) {
     console.error("GitHub Login failed:", error);
-    
-    // Handle the specific conflict error experienced by the user
-    if (error.code === 'auth/account-exists-with-different-credential') {
-       throw new Error("An account with this email already exists (likely via Google). Please Log In with Google first, then connect GitHub inside the Code Studio.");
-    }
-    
     throw error;
   }
 }
