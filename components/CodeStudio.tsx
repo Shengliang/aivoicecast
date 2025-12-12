@@ -4,7 +4,7 @@ import { CodeProject, CodeFile, UserProfile, Channel, CursorPosition } from '../
 import { ArrowLeft, Save, Plus, Github, Cloud, HardDrive, Code, X, ChevronRight, ChevronDown, File, Folder, DownloadCloud, Loader2, CheckCircle, AlertTriangle, Info, FolderPlus, FileCode, RefreshCw, LogIn, CloudUpload, Trash2, ArrowUp, Edit2, FolderOpen, MoreVertical, Send, MessageSquare, Bot, Mic, Sparkles, SidebarClose, SidebarOpen, Users, Eye, FileText as FileTextIcon, Image as ImageIcon, StopCircle, Minus, Maximize2, Lock, Unlock, Share2, Terminal, Copy } from 'lucide-react';
 import { connectGoogleDrive } from '../services/authService';
 import { fetchPublicRepoInfo, fetchRepoContents, fetchFileContent, commitToRepo, fetchRepoSubTree } from '../services/githubService';
-import { listCloudDirectory, saveProjectToCloud, deleteCloudItem, createCloudFolder, CloudItem, subscribeToCodeProject, saveCodeProject, updateCodeFile, updateCursor, claimCodeProjectLock } from '../services/firestoreService';
+import { listCloudDirectory, saveProjectToCloud, deleteCloudItem, createCloudFolder, CloudItem, subscribeToCodeProject, saveCodeProject, updateCodeFile, updateCursor, claimCodeProjectLock, updateProjectActiveFile } from '../services/firestoreService';
 import { ensureCodeStudioFolder, listDriveFiles, readDriveFile, saveToDrive, deleteDriveFile, createDriveFolder, DriveFile } from '../services/googleDriveService';
 import { GoogleGenAI, FunctionDeclaration, Type } from '@google/genai';
 import { GeminiLiveService } from '../services/geminiLive';
@@ -370,6 +370,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
   }, [project.activeClientId, project.lastModified, clientId]);
 
   const activeWriterName = isLockedByOther ? (project.activeWriterName || "Unknown") : (project.activeClientId === clientId ? "You" : null);
+  const iAmWriter = project.activeClientId === clientId || (!isLockedByOther && !project.activeClientId);
 
   const handleTakeControl = async () => {
       if (!isSharedSession || !sessionId || !currentUser) return;
@@ -397,6 +398,31 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
           return () => unsubscribe();
       }
   }, [sessionId]);
+
+  // AUTO-SYNC: If I am the writer, broadcast my active file
+  useEffect(() => {
+      if (isSharedSession && sessionId && iAmWriter && activeFile) {
+          const path = activeFile.path || activeFile.name;
+          if (project.activeFilePath !== path) {
+              updateProjectActiveFile(sessionId, path).catch(console.error);
+          }
+      }
+  }, [activeFile, iAmWriter, isSharedSession, sessionId, project.activeFilePath]);
+
+  // AUTO-SYNC: If I am a reader, jump to the writer's file
+  useEffect(() => {
+      if (isSharedSession && !iAmWriter && project.activeFilePath) {
+          const currentPath = activeFile?.path || activeFile?.name;
+          if (currentPath !== project.activeFilePath) {
+              const targetFile = project.files.find(f => (f.path || f.name) === project.activeFilePath);
+              if (targetFile) {
+                  setActiveFile(targetFile);
+                  addDebugLog(`Synced to Host File: ${targetFile.name}`);
+                  showNotification(`Jumped to Host's active file: ${targetFile.name}`, 'info');
+              }
+          }
+      }
+  }, [project.activeFilePath, isSharedSession, iAmWriter, project.files]);
 
   // Sync Active File with Remote Project Changes
   useEffect(() => {
@@ -515,7 +541,8 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
                 name: project.name || 'Shared Project',
                 files: project.files,
                 lastModified: Date.now(),
-                ownerId: currentUser?.uid
+                ownerId: currentUser?.uid,
+                activeFilePath: activeFile?.path || activeFile?.name
             };
             await saveCodeProject(newProject);
             if (onSessionStart) onSessionStart(idToShare);
@@ -839,6 +866,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
                       <div className="space-y-1 mb-2">
                           <p>Active Name: <span className="text-white break-all">{activeFile?.name || 'None'}</span></p>
                           <p>Active Path: <span className="text-yellow-200 break-all">{activeFile?.path || 'None'}</span></p>
+                          {project.activeFilePath && <p>Host File: <span className="text-indigo-300 break-all">{project.activeFilePath}</span></p>}
                           <p>Local Cursor: Ln {localCursor?.line || 0}, Col {localCursor?.col || 0}</p>
                           <p>Remote Cursors: {activeRemoteCursors.length}</p>
                           {activeRemoteCursors.map(c => (

@@ -134,6 +134,10 @@ export async function updateCodeFile(projectId: string, file: CodeFile): Promise
     await db.collection('code_projects').doc(projectId).update(path, safeFile, 'lastModified', Date.now());
 }
 
+export async function updateProjectActiveFile(projectId: string, filePath: string): Promise<void> {
+    await db.collection('code_projects').doc(projectId).update({ activeFilePath: filePath });
+}
+
 export async function deleteCodeFile(projectId: string, fileName: string): Promise<void> {
     const path = new firebase.firestore.FieldPath('files', fileName);
     await db.collection('code_projects').doc(projectId).update(path, firebase.firestore.FieldValue.delete(), 'lastModified', Date.now());
@@ -174,6 +178,7 @@ export async function denyEditAccess(projectId: string): Promise<void> {
     });
 }
 
+// ... (Rest of the file unchanged) ...
 // --- CLOUD STORAGE CODE STUDIO ---
 
 export interface CloudItem {
@@ -257,7 +262,6 @@ export async function saveProjectToCloud(path: string, filename: string, content
     }
 }
 
-// ... (keep whiteboards, jobs, profiles, etc. - rest of file unchanged) ...
 export function subscribeToWhiteboard(boardId: string, onUpdate: (elements: any[]) => void): () => void {
   return db.collection('whiteboards').doc(boardId).onSnapshot((doc) => {
     if (doc.exists) {
@@ -351,8 +355,6 @@ export async function getSavedWordForUser(userId: string, word: string): Promise
   }
 }
 
-// --- JOB BOARD & CAREER ---
-
 export async function createJobPosting(job: JobPosting): Promise<void> {
     const user = auth.currentUser;
     if (!user) throw new Error("Must be logged in");
@@ -402,7 +404,6 @@ export async function uploadResumeToStorage(userId: string, file: File): Promise
     return await ref.getDownloadURL();
 }
 
-// --- USER PROFILE ---
 export async function syncUserProfile(user: any): Promise<void> {
   if (!user) return;
   const userRef = db.collection('users').doc(user.uid);
@@ -477,7 +478,6 @@ export async function incrementApiUsage(uid: string): Promise<void> {
   }
 }
 
-// --- SUBSCRIPTIONS ---
 export async function createStripeCheckoutSession(uid: string): Promise<string> {
     if (!uid) throw new Error("User ID missing");
     if (!STRIPE_PRICE_ID || STRIPE_PRICE_ID.includes('placeholder')) {
@@ -590,7 +590,6 @@ export async function getBillingHistory(uid: string): Promise<any[]> {
     ];
 }
 
-// --- ACTIVITY LOGS ---
 export async function logUserActivity(type: string, metadata: any = {}): Promise<void> {
   const user = auth.currentUser;
   if (!user) return;
@@ -608,7 +607,6 @@ export async function logUserActivity(type: string, metadata: any = {}): Promise
   }
 }
 
-// --- GROUPS ---
 export async function createGroup(name: string): Promise<string> {
   const user = auth.currentUser;
   if (!user) throw new Error("Must be logged in");
