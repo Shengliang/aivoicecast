@@ -218,7 +218,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
   const [loadingFolders, setLoadingFolders] = useState<Record<string, boolean>>({});
   const [notifications, setNotifications] = useState<Array<{id: string, type: 'success' | 'error' | 'info', message: string}>>([]);
   
-  const [publicRepoPath, setPublicRepoPath] = useState('');
+  const [publicRepoPath, setPublicRepoPath] = useState(userProfile?.defaultRepoUrl || '');
   const [isLoadingPublic, setIsLoadingPublic] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
   const [driveToken, setDriveToken] = useState<string | null>(null);
@@ -235,6 +235,13 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
   const [editorMode, setEditorMode] = useState<'code' | 'preview'>('code');
   const [plantUmlUrl, setPlantUmlUrl] = useState<string | null>(null);
   const lastActivePathRef = useRef<string | null>(null);
+
+  // Sync default repo if profile loads late
+  useEffect(() => {
+      if (userProfile?.defaultRepoUrl && !publicRepoPath) {
+          setPublicRepoPath(userProfile.defaultRepoUrl);
+      }
+  }, [userProfile?.defaultRepoUrl]);
 
   useEffect(() => {
       const currentPath = activeFile ? (activeFile.path || activeFile.name) : null;
@@ -932,7 +939,12 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
               <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-lg shadow-2xl p-6">
                   <div className="flex justify-between items-center mb-6"><h3 className="text-xl font-bold text-white flex items-center gap-2"><Github size={24}/> Open Repository</h3><button onClick={() => setShowImportModal(false)}><X size={20} className="text-slate-400"/></button></div>
                   <div className="space-y-4">
-                      <select onChange={(e) => setPublicRepoPath(e.target.value)} className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white"><option value="">-- Presets --</option>{PRESET_REPOS.map(p => <option key={p.path} value={p.path}>{p.label}</option>)}</select>
+                      <select onChange={(e) => setPublicRepoPath(e.target.value)} className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white">
+                          <option value="">-- Select Repo --</option>
+                          {userProfile?.defaultRepoUrl && <option value={userProfile.defaultRepoUrl}>My Default: {userProfile.defaultRepoUrl}</option>}
+                          <option disabled>──────────</option>
+                          {PRESET_REPOS.map(p => <option key={p.path} value={p.path}>{p.label}</option>)}
+                      </select>
                       <input type="text" placeholder="owner/repo" value={publicRepoPath} onChange={e => setPublicRepoPath(e.target.value)} className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white"/>
                       <button onClick={handleLoadPublicRepo} disabled={isLoadingPublic || !publicRepoPath} className="w-full py-2 bg-indigo-600 text-white rounded-lg font-bold">{isLoadingPublic ? <Loader2 size={14} className="animate-spin inline"/> : 'Load'}</button>
                   </div>
