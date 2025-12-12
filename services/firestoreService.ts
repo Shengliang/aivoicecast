@@ -223,20 +223,20 @@ export async function addChannelAttachment(channelId: string, attachment: Attach
 // --- LECTURES & CURRICULUM ---
 
 export async function saveLectureToFirestore(channelId: string, lectureId: string, lecture: GeneratedLecture): Promise<void> {
-  await db.collection('lectures').doc(lectureId).set({
+  // Save as subcollection under channel to match security rules
+  await db.collection('channels').doc(channelId).collection('lectures').doc(lectureId).set({
     ...lecture,
-    channelId,
     updatedAt: Date.now()
   });
 }
 
 export async function getLectureFromFirestore(channelId: string, lectureId: string): Promise<GeneratedLecture | null> {
-  const doc = await db.collection('lectures').doc(lectureId).get();
+  const doc = await db.collection('channels').doc(channelId).collection('lectures').doc(lectureId).get();
   return doc.exists ? (doc.data() as GeneratedLecture) : null;
 }
 
 export async function deleteLectureFromFirestore(channelId: string, lectureId: string): Promise<void> {
-  await db.collection('lectures').doc(lectureId).delete();
+  await db.collection('channels').doc(channelId).collection('lectures').doc(lectureId).delete();
 }
 
 export async function saveCurriculumToFirestore(channelId: string, curriculum: Chapter[]): Promise<void> {

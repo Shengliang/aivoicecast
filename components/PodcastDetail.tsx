@@ -639,7 +639,12 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
             if (currentUser && subTopicId) await saveLectureToFirestore(channel.id, subTopicId, script);
           } else { alert("Could not generate content."); }
         } else { setGuestError(t.guestRestrict); }
-    } catch (e) { console.error(e); setIsGenerating(false); alert("Error loading lesson."); } finally { setIsLoadingLecture(false); }
+    } catch (e: any) { 
+        console.error(e); 
+        setIsGenerating(false); 
+        // Display actual error message
+        alert(`Error loading lesson: ${e.message}`); 
+    } finally { setIsLoadingLecture(false); }
   };
 
   const togglePlayback = () => {
