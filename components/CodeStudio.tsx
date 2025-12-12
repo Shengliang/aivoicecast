@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { CodeProject, CodeFile, UserProfile, Channel, CursorPosition } from '../types';
-import { ArrowLeft, Save, Plus, Github, Cloud, HardDrive, Code, X, ChevronRight, ChevronDown, File, Folder, DownloadCloud, Loader2, CheckCircle, AlertTriangle, Info, FolderPlus, FileCode, RefreshCw, LogIn, CloudUpload, Trash2, ArrowUp, Edit2, FolderOpen, MoreVertical, Send, MessageSquare, Bot, Mic, Sparkles, SidebarClose, SidebarOpen, Users, Eye, FileText as FileTextIcon, Image as ImageIcon, StopCircle, Minus, Maximize2, Lock, Unlock, Share2 } from 'lucide-react';
+import { ArrowLeft, Save, Plus, Github, Cloud, HardDrive, Code, X, ChevronRight, ChevronDown, File, Folder, DownloadCloud, Loader2, CheckCircle, AlertTriangle, Info, FolderPlus, FileCode, RefreshCw, LogIn, CloudUpload, Trash2, ArrowUp, Edit2, FolderOpen, MoreVertical, Send, MessageSquare, Bot, Mic, Sparkles, SidebarClose, SidebarOpen, Users, Eye, FileText as FileTextIcon, Image as ImageIcon, StopCircle, Minus, Maximize2, Lock, Unlock, Share2, Terminal } from 'lucide-react';
 import { connectGoogleDrive } from '../services/authService';
 import { fetchPublicRepoInfo, fetchRepoContents, fetchFileContent, commitToRepo, fetchRepoSubTree } from '../services/githubService';
 import { listCloudDirectory, saveProjectToCloud, deleteCloudItem, createCloudFolder, CloudItem, subscribeToCodeProject, saveCodeProject, updateCodeFile, updateCursor, claimCodeProjectLock } from '../services/firestoreService';
@@ -341,6 +341,17 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
   const clientId = useRef(crypto.randomUUID()).current;
   const [localCursor, setLocalCursor] = useState<{line: number, col: number} | null>(null);
   
+  // Debug State
+  const [showDebug, setShowDebug] = useState(true);
+  const [debugLogs, setDebugLogs] = useState<string[]>([]);
+
+  const addDebugLog = (msg: string) => {
+      setDebugLogs(prev => {
+          const newLogs = [...prev, `[${new Date().toLocaleTimeString()}] ${msg}`];
+          return newLogs.slice(-20); // Keep last 20 logs
+      });
+  };
+  
   // -- LOCK LOGIC --
   const isLockedByOther = useMemo(() => {
       if (!project.activeClientId) return false;
@@ -376,6 +387,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
           setIsSharedSession(true);
           const unsubscribe = subscribeToCodeProject(sessionId, (remoteProject) => {
               setProject(remoteProject);
+              addDebugLog(`Received project update. Files: ${remoteProject.files.length}`);
           });
           return () => unsubscribe();
       }
@@ -384,18 +396,14 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
   // Sync Active File with Remote Project Changes
   useEffect(() => {
       if (activeFile && !activeFile.path?.startsWith('drive') && !activeFile.path?.startsWith('cloud')) {
-          // Identify the file in the remote project
-          // Prefer path if available (Github), else name
           const identifier = activeFile.path || activeFile.name;
           const remoteFile = project.files.find(f => (f.path || f.name) === identifier);
           
           if (remoteFile) {
-              // Check if we need to update local active view
-              // Condition: Remote is different AND (We are not the writer OR we are explicitly read-only)
               if (remoteFile.content !== activeFile.content) {
-                  // If I am not the active writer (lock holder), I should accept updates
                   if (project.activeClientId !== clientId) {
                       setActiveFile(remoteFile);
+                      addDebugLog(`Synced content for ${identifier} from remote.`);
                   }
               }
           }
@@ -479,6 +487,18 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
   const handleSmartSave = async () => {
       if (!activeFile) return;
       setSaveStatus('saving');
+      
+      // Force sync to shared session if active, regardless of file origin
+      if (isSharedSession && sessionId) {
+          try {
+              await updateCodeFile(sessionId, activeFile);
+              addDebugLog(`Forced shared sync for ${activeFile.name}`);
+              showNotification("Synced to Shared Session", "success");
+          } catch(e) {
+              console.error("Shared sync failed", e);
+          }
+      }
+
       try {
           if (activeFile.path?.startsWith('drive://') && driveToken) {
               await saveToDrive(driveToken, driveRootId || 'root', activeFile.name, activeFile.content);
@@ -499,17 +519,14 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
               if (ghToken) { await commitToRepo(ghToken, project, "Update from CodeStudio"); showNotification("Pushed to GitHub", "success"); }
               else showNotification("No GitHub token found", "error");
           } 
-          // 4. Handle Shared Session / Local
+          // 4. Handle Shared Session / Local (already handled shared sync above)
           else {
-              if (isSharedSession && sessionId) {
-                  await updateCodeFile(sessionId, activeFile);
-                  showNotification("Synced to Shared Session", "success");
-              } else if (activeTab === 'cloud' && currentUser) {
+              if (activeTab === 'cloud' && currentUser) {
                   const userDir = `projects/${currentUser.uid}`;
                   await saveProjectToCloud(userDir, activeFile.name, activeFile.content);
                   listCloudDirectory(userDir).then(setCloudItems);
                   showNotification("Saved to Cloud", "success");
-              } else {
+              } else if (!isSharedSession) {
                   showNotification("Saved locally (temporary)", "success");
               }
           }
@@ -524,12 +541,50 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
       const updatedFile = { ...activeFile, content: val, isModified: true };
       setActiveFile(updatedFile);
       setSaveStatus('modified');
-      if (!activeFile.path?.startsWith('drive') && !activeFile.path?.startsWith('cloud')) {
-          setProject(prev => ({
-              ...prev,
-              files: prev.files.map(f => (f.path || f.name) === (activeFile.path || activeFile.name) ? updatedFile : f)
-          }));
-          if (isSharedSession && sessionId) updateCodeFile(sessionId, updatedFile).catch(console.error);
+      
+      // Update local project state immediately for smooth typing
+      setProject(prev => ({
+          ...prev,
+          files: prev.files.map(f => (f.path || f.name) === (activeFile.path || activeFile.name) ? updatedFile : f)
+      }));
+
+      // Broadcast to shared session if active - REMOVED CLOUD/DRIVE RESTRICTION
+      if (isSharedSession && sessionId) {
+          updateCodeFile(sessionId, updatedFile)
+            .then(() => addDebugLog(`Sent update: ${activeFile.name}`))
+            .catch(e => addDebugLog(`Sync failed: ${e.message}`));
+      }
+  };
+
+  const handleCreateFile = async () => {
+      if (isLockedByOther) return;
+      const filename = prompt("Enter file name (e.g. src/utils.ts):");
+      if (!filename) return;
+
+      const newFile: CodeFile = {
+          name: filename,
+          language: getLanguageFromExt(filename),
+          content: '// New file\n',
+          loaded: true,
+          isDirectory: false
+      };
+
+      // Check if exists
+      if (project.files.some(f => (f.path || f.name) === filename)) {
+          alert("File already exists.");
+          return;
+      }
+
+      refreshLock();
+
+      setProject(prev => {
+          const newFiles = [...prev.files, newFile];
+          return { ...prev, files: newFiles };
+      });
+      setActiveFile(newFile);
+
+      if (isSharedSession && sessionId) {
+         await updateCodeFile(sessionId, newFile);
       }
   };
 
@@ -655,6 +710,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
          </div>
          <div className="flex items-center space-x-2">
             {isLockedByOther && <button onClick={handleTakeControl} className="px-3 py-1.5 bg-amber-600 hover:bg-amber-500 text-white rounded-lg text-xs font-bold flex items-center gap-1"><Unlock size={12}/> Take Control</button>}
+            <button onClick={() => setShowDebug(!showDebug)} className={`p-2 rounded-lg transition-colors ${showDebug ? 'text-green-400 bg-green-900/20' : 'text-slate-400 hover:text-white'}`}><Terminal size={18}/></button>
             <button onClick={handleShare} className="flex items-center space-x-2 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-bold shadow-md"><Share2 size={14}/><span>Share</span></button>
             <button onClick={handleSmartSave} className="flex items-center space-x-2 px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold shadow-md"><Save size={14}/><span>Save</span></button>
             <button onClick={() => setIsAIChatOpen(!isAIChatOpen)} className="p-2 rounded-lg text-slate-400 hover:text-white"><SidebarOpen size={18}/></button>
@@ -671,7 +727,10 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
               <div className="flex-1 overflow-y-auto">
                   {activeTab === 'github' && (
                       <div className="p-2">
-                          <button onClick={() => setShowImportModal(true)} className="text-[10px] text-indigo-400 hover:underline px-2 mb-2">Open Repo</button>
+                          <div className="flex items-center justify-between px-2 mb-2">
+                              <button onClick={() => setShowImportModal(true)} className="text-[10px] text-indigo-400 hover:underline">Open Repo</button>
+                              <button onClick={handleCreateFile} className="text-[10px] text-emerald-400 hover:underline flex items-center gap-1"><Plus size={10}/> New File</button>
+                          </div>
                           {workspaceTree.map(node => <FileTreeItem key={node.id} node={node} depth={0} activeId={activeFile?.path || activeFile?.name} onSelect={handleWorkspaceSelect} onToggle={(n) => setExpandedFolders(p => ({...p, [n.id]: !p[n.id]}))} expandedIds={expandedFolders} loadingIds={loadingFolders}/>)}
                       </div>
                   )}
@@ -714,6 +773,30 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
                     </div>
                   </>
               ) : <div className="flex-1 flex flex-col items-center justify-center text-slate-600"><Code size={48} className="mb-4 opacity-20" /><p className="text-sm">Select a file.</p></div>}
+              
+              {/* DEBUG WINDOW */}
+              {showDebug && (
+                  <div className="absolute bottom-4 right-4 w-96 max-h-64 bg-black/80 backdrop-blur-sm border border-green-900 rounded-lg p-3 font-mono text-[10px] text-green-400 overflow-hidden flex flex-col shadow-2xl z-50 pointer-events-none select-none">
+                      <div className="flex justify-between items-center border-b border-green-900/50 pb-1 mb-1">
+                          <span className="font-bold flex items-center gap-2"><Terminal size={12}/> SESSION DEBUG</span>
+                          <span className={isSharedSession ? "text-green-400 animate-pulse" : "text-slate-500"}>●</span>
+                      </div>
+                      <div className="space-y-1 mb-2">
+                          <p>File: <span className="text-white">{activeFile?.path || activeFile?.name || 'None'}</span></p>
+                          <p>Local: Ln {localCursor?.line || 0}, Col {localCursor?.col || 0}</p>
+                          <p>Remote Cursors: {activeRemoteCursors.length}</p>
+                          {activeRemoteCursors.map(c => (
+                              <p key={c.clientId} className="pl-2 text-slate-400">- {c.userName}: {c.line}:{c.column}</p>
+                          ))}
+                      </div>
+                      <div className="flex-1 overflow-y-auto border-t border-green-900/30 pt-1 space-y-0.5">
+                          {debugLogs.map((log, i) => (
+                              <p key={i} className="opacity-80">{log}</p>
+                          ))}
+                          {debugLogs.length === 0 && <p className="opacity-30 italic">No activity...</p>}
+                      </div>
+                  </div>
+              )}
           </div>
 
           <AIChatPanel isOpen={isAIChatOpen} onClose={() => setIsAIChatOpen(false)} messages={chatMessages} onSendMessage={(txt) => setChatMessages(p => [...p, {role: 'user', text: txt}])} isThinking={isChatThinking} onApplyCode={handleCodeChange} onStartLive={()=>{}} isVoiceActive={isVoiceActive}/>
