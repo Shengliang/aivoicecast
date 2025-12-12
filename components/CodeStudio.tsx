@@ -181,7 +181,7 @@ const RichCodeEditor: React.FC<{
 }> = ({ code, onChange, onCursorMove, language, isShared, remoteCursors, localCursor }) => {
     const [highlightedCode, setHighlightedCode] = useState('');
     const textareaRef = useRef<HTMLTextAreaElement>(null);
-    const lineNumbersRef = useRef<HTMLDivElement>(null);
+    const lineNumbersRef = useRef<HTMLPreElement>(null);
     const preRef = useRef<HTMLPreElement>(null);
     const cursorLayerRef = useRef<HTMLDivElement>(null);
     
@@ -232,30 +232,38 @@ const RichCodeEditor: React.FC<{
         }
     };
 
-    // Strict alignment styles
+    // Use numbers array for line counts to avoid mismatch with split
+    const lineCount = code.split('\n').length;
+    const lineNumbers = Array.from({ length: lineCount }, (_, i) => i + 1).join('\n');
+
+    // Strict alignment styles shared by all layers
     const EDITOR_FONT = {
         fontFamily: '"JetBrains Mono", monospace',
         fontSize: '14px',
-        lineHeight: '24px',
+        lineHeight: '1.5', // Unitless 1.5 is safer than px for scaling
+        letterSpacing: '0px',
         tabSize: 4,
     };
     
-    const CONTAINER_PADDING = '16px';
+    // Explicit padding to ensure overlay matches
+    const PADDING_Y = 16; 
+    const PADDING_X = 16;
 
     return (
         <div className="relative w-full h-full flex bg-[#1e1e1e] overflow-hidden">
-            {/* Line Numbers */}
-            <div 
+            {/* Line Numbers - Using Pre to guarantee same font rendering as editor */}
+            <pre 
                 ref={lineNumbersRef}
                 className="w-12 bg-[#1e1e1e] text-slate-600 text-right pr-3 select-none border-r border-slate-800 shrink-0 overflow-hidden"
                 style={{
                     ...EDITOR_FONT,
-                    paddingTop: CONTAINER_PADDING,
-                    paddingBottom: CONTAINER_PADDING
+                    paddingTop: `${PADDING_Y}px`,
+                    paddingBottom: `${PADDING_Y}px`,
+                    margin: 0
                 }}
             >
-                {code.split('\n').map((_, i) => <div key={i}>{i + 1}</div>)}
-            </div>
+                {lineNumbers}
+            </pre>
             
             <div className="relative flex-1 h-full overflow-hidden">
                 {/* 1. Highlight Layer (Bottom) */}
@@ -264,10 +272,11 @@ const RichCodeEditor: React.FC<{
                     className="absolute inset-0 m-0 w-full h-full pointer-events-none overflow-hidden"
                     style={{
                         ...EDITOR_FONT,
-                        padding: CONTAINER_PADDING,
+                        padding: `${PADDING_Y}px ${PADDING_X}px`,
+                        margin: 0,
                         whiteSpace: 'pre',
                         border: 'none',
-                        margin: 0
+                        boxSizing: 'border-box'
                     }}
                     aria-hidden="true"
                 >
@@ -287,9 +296,10 @@ const RichCodeEditor: React.FC<{
                             key={cursor.clientId}
                             className="absolute pointer-events-none transition-all duration-75"
                             style={{
-                                top: `${(cursor.line - 1) * 24 + 16}px`, 
-                                left: `calc(${(cursor.column - 1)}ch + 16px)`, 
-                                height: '24px',
+                                // Calculating position based on 1.5 line height of 14px font (approx 21px)
+                                top: `${(cursor.line - 1) * 21 + PADDING_Y}px`, 
+                                left: `calc(${(cursor.column - 1)}ch + ${PADDING_X}px)`, 
+                                height: '21px',
                                 ...EDITOR_FONT
                             }}
                         >
@@ -308,9 +318,9 @@ const RichCodeEditor: React.FC<{
                         <div 
                             className="absolute pointer-events-none transition-all duration-75 z-20"
                             style={{
-                                top: `${(localCursor.line - 1) * 24 + 16}px`,
-                                left: `calc(${(localCursor.col - 1)}ch + 16px)`,
-                                height: '24px',
+                                top: `${(localCursor.line - 1) * 21 + PADDING_Y}px`,
+                                left: `calc(${(localCursor.col - 1)}ch + ${PADDING_X}px)`,
+                                height: '21px',
                                 ...EDITOR_FONT
                             }}
                         >
@@ -332,10 +342,11 @@ const RichCodeEditor: React.FC<{
                     className="absolute inset-0 w-full h-full bg-transparent text-transparent caret-white outline-none resize-none overflow-auto z-10 custom-scrollbar"
                     style={{
                         ...EDITOR_FONT,
-                        padding: CONTAINER_PADDING,
+                        padding: `${PADDING_Y}px ${PADDING_X}px`,
                         whiteSpace: 'pre',
                         border: 'none',
-                        margin: 0
+                        margin: 0,
+                        boxSizing: 'border-box'
                     }}
                     spellCheck={false}
                     autoCapitalize="off"
@@ -598,6 +609,10 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
       };
   }, []);
 
+  // Track active file path in ref to use in stable callback
+  const activeFileRef = useRef(activeFile);
+  useEffect(() => { activeFileRef.current = activeFile; }, [activeFile]);
+
   // --- Real-time Collaboration Hook ---
   useEffect(() => {
       if (sessionId) {
@@ -611,10 +626,11 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
                   return { ...prev, cursors: remoteProject.cursors };
               });
               
-              if (activeFile && activeFile.path && !activeFile.path.startsWith('drive://') && !activeFile.path.startsWith('cloud://')) {
-                  // FIX: Robust file matching by path OR name (for new files)
-                  const remoteFile = remoteProject.files.find(f => (f.path || f.name) === (activeFile.path || activeFile.name));
-                  if (remoteFile && remoteFile.content !== activeFile.content) {
+              const currentActive = activeFileRef.current;
+              // Check if the file we are currently viewing has been updated remotely
+              if (currentActive && currentActive.path && !currentActive.path.startsWith('drive://') && !currentActive.path.startsWith('cloud://')) {
+                  const remoteFile = remoteProject.files.find(f => (f.path || f.name) === (currentActive.path || currentActive.name));
+                  if (remoteFile && remoteFile.content !== currentActive.content) {
                       // Last Writer Wins: Always accept incoming content if it changed remotely
                       setActiveFile(remoteFile);
                   }
@@ -622,7 +638,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
           });
           return () => unsubscribe();
       }
-  }, [sessionId, activeFile, clientId]);
+  }, [sessionId, clientId]); // Stable dependency array
 
   // --- Cursor Handler ---
   const handleCursorMove = (line: number, col: number) => {
