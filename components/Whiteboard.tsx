@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { ArrowLeft, Share2, Trash2, Undo, PenTool, Eraser, Download, Square, Circle, Minus, ArrowRight, Type, ZoomIn, ZoomOut, MousePointer2, Move, MoreHorizontal, Lock, Eye, Edit3, GripHorizontal, Brush, ChevronDown } from 'lucide-react';
+import { ArrowLeft, Share2, Trash2, Undo, PenTool, Eraser, Download, Square, Circle, Minus, ArrowRight, Type, ZoomIn, ZoomOut, MousePointer2, Move, MoreHorizontal, Lock, Eye, Edit3, GripHorizontal, Brush, ChevronDown, Feather, Highlighter, Wind, Droplet, Cloud, Edit2, Pen } from 'lucide-react';
 import { auth } from '../services/firebaseConfig';
 import { saveWhiteboardSession, subscribeToWhiteboard, updateWhiteboardElement, deleteWhiteboardElements } from '../services/firestoreService';
 import { WhiteboardElement, ToolType, LineStyle, BrushType } from '../types';
@@ -474,9 +474,9 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({
               ctx.lineWidth = Math.max(el.strokeWidth, 4) / scale;
           }
           else if (el.brushType === 'writing-brush') { 
-              // Chinese Brush style: soft edges, varying pressure look
+              // Chinese Brush style: soft edges, NO SHADOW (User Request)
               ctx.lineCap = 'round'; 
-              // No shadow for Chinese brush as requested
+              ctx.shadowBlur = 0; // Removed shadow
               ctx.lineWidth = Math.max(el.strokeWidth, 5) / scale;
           }
           else if (el.brushType === 'airbrush') { 
@@ -570,6 +570,17 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({
   const handleDeleteSelected = () => { if(isReadOnly) return; if (selectedIds.length > 0) { const idsToDelete = [...selectedIds]; const next = elements.filter(el => !selectedIds.includes(el.id)); setElements(next); if (onDataChange) emitChange(next); setSelectedIds([]); if (isSharedSession) deleteWhiteboardElements(currentSessionIdRef.current, idsToDelete); } };
   const handleDownload = () => { const canvas = canvasRef.current; if(canvas) { const url = canvas.toDataURL('image/png'); const a = document.createElement('a'); a.href = url; a.download = 'whiteboard.png'; a.click(); } };
   const handleDoubleClick = (e: React.MouseEvent) => { if (isReadOnly || tool === 'pan') return; const { x, y } = getWorldCoordinates(e); let hitElement: WhiteboardElement | null = null; for (let i = elements.length - 1; i >= 0; i--) { if (elements[i].type === 'text' && isPointInElement(x, y, elements[i])) { hitElement = elements[i]; break; } } if (hitElement) { setTextInput({ id: hitElement.id, x: hitElement.x, y: hitElement.y, text: hitElement.text || '', width: hitElement.width, height: hitElement.height }); setColor(hitElement.color); if (hitElement.fontSize) setFontSize(hitElement.fontSize); if (hitElement.fontFamily) setFontFamily(hitElement.fontFamily); } else { const id = crypto.randomUUID(); setTool('text'); setTextInput({ id, x, y, text: '' }); } };
+
+  // Helper for brush selection buttons
+  const BrushButton = ({ type, icon: Icon, label }: { type: BrushType, icon: any, label: string }) => (
+      <button 
+          onClick={() => { setBrushType(type); updateSelectedElements({ brushType: type }); }}
+          className={`p-1.5 rounded-md transition-colors group relative ${brushType === type ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-700'}`}
+          title={label}
+      >
+          <Icon size={14} />
+      </button>
+  );
 
   return (
     <div className="flex flex-col h-full bg-slate-950 text-slate-100 overflow-hidden relative">
@@ -673,30 +684,18 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({
                     <MoreHorizontal size={12} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none"/>
                 </div>
                 
-                {/* Brush Type (Only for Pen) */}
+                {/* Brush Type Icons (Replacing Dropdown) */}
                 {(tool === 'pen' || (selectedIds.length === 1 && elements.find(e => e.id === selectedIds[0])?.type === 'pen')) && (
-                     <div className="relative flex items-center bg-slate-800 border border-slate-700 rounded-lg px-2 py-1.5 gap-2 group hover:border-indigo-500/50 transition-colors">
-                        <Brush size={14} className="text-slate-400" />
-                        <select 
-                            value={brushType} 
-                            onChange={(e) => { 
-                                const val = e.target.value as BrushType; 
-                                setBrushType(val); 
-                                updateSelectedElements({ brushType: val }); 
-                            }}
-                            className="bg-transparent border-none text-slate-300 text-xs outline-none focus:ring-0 cursor-pointer appearance-none pr-4"
-                        >
-                            <option value="standard">Standard Pen</option>
-                            <option value="pencil">Natural Pencil</option>
-                            <option value="marker">Marker</option>
-                            <option value="calligraphy-pen">Calligraphy Pen</option>
-                            <option value="writing-brush">Chinese Brush</option>
-                            <option value="airbrush">Airbrush</option>
-                            <option value="oil">Oil Brush</option>
-                            <option value="watercolor">Watercolor</option>
-                            <option value="crayon">Crayon</option>
-                        </select>
-                        <ChevronDown size={10} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none"/>
+                     <div className="flex items-center gap-1 bg-slate-800 border border-slate-700 rounded-lg p-1">
+                        <BrushButton type="standard" icon={Pen} label="Standard Pen" />
+                        <BrushButton type="pencil" icon={Edit2} label="Pencil" />
+                        <BrushButton type="marker" icon={Highlighter} label="Marker" />
+                        <BrushButton type="calligraphy-pen" icon={Feather} label="Calligraphy Pen" />
+                        <BrushButton type="writing-brush" icon={Brush} label="Chinese Brush" />
+                        <BrushButton type="airbrush" icon={Wind} label="Airbrush" />
+                        <BrushButton type="oil" icon={Droplet} label="Oil Brush" />
+                        <BrushButton type="watercolor" icon={Cloud} label="Watercolor" />
+                        <BrushButton type="crayon" icon={Edit3} label="Crayon" />
                      </div>
                 )}
 
