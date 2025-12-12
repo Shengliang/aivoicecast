@@ -446,7 +446,9 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
       const root: TreeNode[] = [];
       const map = new Map<string, TreeNode>();
       
-      // Changed: Include cloud/drive files in workspace tree so readers can see them
+      // CRITICAL FIX: Allow all files from the shared project to appear in the tree, 
+      // even if they are cloud:// or drive:// paths. This fixes the split-brain issue 
+      // where readers couldn't see files opened by writers from private storage.
       const repoFiles = project.files;
       
       repoFiles.forEach(f => {
@@ -582,7 +584,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
           files: prev.files.map(f => (f.path || f.name) === (activeFile.path || activeFile.name) ? updatedFile : f)
       }));
 
-      // Broadcast to shared session if active - REMOVED CLOUD/DRIVE RESTRICTION
+      // Broadcast to shared session if active
       if (isSharedSession && sessionId) {
           updateCodeFile(sessionId, updatedFile)
             .then(() => addDebugLog(`Sent update: ${activeFile.name}`))
@@ -753,6 +755,13 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
 
       <div className="flex-1 flex overflow-hidden relative">
           <div className={`${isSidebarOpen ? 'w-64' : 'w-0'} bg-slate-900 border-r border-slate-800 flex flex-col transition-all duration-300 overflow-hidden`}>
+              {/* RESTORED NEW FILE BUTTON GLOBALLY */}
+              <div className="p-3 border-b border-slate-800 bg-slate-950/50">
+                  <button onClick={handleCreateFile} className="w-full flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white py-2 rounded-lg text-xs font-bold shadow-md transition-colors">
+                      <Plus size={14}/> New File
+                  </button>
+              </div>
+
               <div className="flex border-b border-slate-800 bg-slate-950/50">
                   <button onClick={() => setActiveTab('github')} className={`flex-1 py-3 flex justify-center border-b-2 ${activeTab === 'github' ? 'border-indigo-500 text-white' : 'border-transparent text-slate-500'}`}><Github size={18}/></button>
                   <button onClick={() => setActiveTab('cloud')} className={`flex-1 py-3 flex justify-center border-b-2 ${activeTab === 'cloud' ? 'border-indigo-500 text-white' : 'border-transparent text-slate-500'}`}><Cloud size={18}/></button>
@@ -763,7 +772,6 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
                       <div className="p-2">
                           <div className="flex items-center justify-between px-2 mb-2">
                               <button onClick={() => setShowImportModal(true)} className="text-[10px] text-indigo-400 hover:underline">Open Repo</button>
-                              <button onClick={handleCreateFile} className="text-[10px] text-emerald-400 hover:underline flex items-center gap-1"><Plus size={10}/> New File</button>
                           </div>
                           {workspaceTree.map(node => <FileTreeItem key={node.id} node={node} depth={0} activeId={activeFile?.path || activeFile?.name} onSelect={handleWorkspaceSelect} onToggle={(n) => setExpandedFolders(p => ({...p, [n.id]: !p[n.id]}))} expandedIds={expandedFolders} loadingIds={loadingFolders}/>)}
                       </div>
