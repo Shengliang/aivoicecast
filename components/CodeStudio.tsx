@@ -1044,7 +1044,20 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
                                           <span className="text-xs">Loading {publicRepoPath || 'repo'}...</span>
                                       </div>
                                   ) : (
-                                      <button onClick={() => setShowImportModal(true)} className="px-4 py-2 bg-slate-800 text-white text-xs font-bold rounded-lg border border-slate-700 hover:bg-slate-700">Open Repo</button>
+                                      publicRepoPath ? (
+                                          <div className="flex flex-col gap-3">
+                                              <div className="text-xs text-slate-400">
+                                                  <p>Target: <span className="text-white font-mono">{publicRepoPath}</span></p>
+                                                  <p className="mt-1 text-red-400 opacity-80">Load failed. Check permissions or token.</p>
+                                              </div>
+                                              <div className="flex gap-2 justify-center">
+                                                  <button onClick={handleLoadPublicRepo} className="px-3 py-1.5 bg-indigo-600 text-white text-xs font-bold rounded-lg hover:bg-indigo-500 shadow-sm">Retry</button>
+                                                  <button onClick={() => setShowImportModal(true)} className="px-3 py-1.5 bg-slate-800 text-slate-300 text-xs font-bold rounded-lg border border-slate-700 hover:bg-slate-700">Change</button>
+                                              </div>
+                                          </div>
+                                      ) : (
+                                          <button onClick={() => setShowImportModal(true)} className="px-4 py-2 bg-slate-800 text-white text-xs font-bold rounded-lg border border-slate-700 hover:bg-slate-700">Open Repo</button>
+                                      )
                                   )}
                               </div>
                           ) : workspaceTree.map(node => <FileTreeItem key={node.id} node={node} depth={0} activeId={selectedExplorerNode?.id} onSelect={handleExplorerSelect} onToggle={(n: any) => setExpandedFolders(prev => ({...prev, [n.id]: !expandedFolders[n.id]}))} onDelete={handleDeleteItem} onRename={handleRenameItem} expandedIds={expandedFolders} loadingIds={loadingFolders} onDragStart={handleDragStart} onDrop={handleDrop}/>)}
