@@ -25,14 +25,12 @@ interface PodcastDetailProps {
 
 const GEMINI_VOICES = ['Puck', 'Charon', 'Kore', 'Fenrir', 'Zephyr'];
 const BLOCKLIST = ['Fred', 'Trinoids', 'Albert', 'Bad News', 'Bells', 'Cellos', 'Good News', 'Organ', 'Zarvox', 'Deranged', 'Hysterical', 'Boing', 'Bubbles', 'Bahh', 'Whisper', 'Wobble'];
-// Updated to include common iOS high-quality internal names
 const QUALITY_KEYWORDS = [
     'Google', 'Premium', 'Enhanced', 'Natural', 'Siri', 'Neural', 
     'Daniel', 'Samantha', 'Karen', 'Rishi', 'Moira', 'Tessa', 'Arthur', 'Martha', 
     'Ting-Ting', 'Meijia', 'Sin-ji', 'Alex'
 ];
 
-// ... (UI_TEXT kept same as original for brevity, no changes needed there) ...
 const UI_TEXT = {
   en: {
     back: "Back",
@@ -175,10 +173,7 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
   
   const [chapters, setChapters] = useState<Chapter[]>(channel.chapters || []);
   const [isGeneratingCurriculum, setIsGeneratingCurriculum] = useState(false);
-  const [isExportingCourse, setIsExportingCourse] = useState(false);
   
-  const [isSidebarOpen, setIsSidebarOpen] = useState(false); 
-
   const staticReading = STATIC_READING_MATERIALS[channel.title];
   
   const [isPlaying, setIsPlaying] = useState(false);
@@ -190,14 +185,11 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
   const [useSystemVoice, setUseSystemVoice] = useState(true);
   const [systemVoices, setSystemVoices] = useState<SpeechSynthesisVoice[]>([]);
   const [allRawVoices, setAllRawVoices] = useState<SpeechSynthesisVoice[]>([]);
-  const [isVoiceDebugOpen, setIsVoiceDebugOpen] = useState(false);
-  const [voicePage, setVoicePage] = useState(1);
   const [sysTeacherVoiceURI, setSysTeacherVoiceURI] = useState('');
   const [sysStudentVoiceURI, setSysStudentVoiceURI] = useState('');
   const [expandedChapterId, setExpandedChapterId] = useState<string | null>(null);
   const [activeSubTopicId, setActiveSubTopicId] = useState<string | null>(null);
   const [guestError, setGuestError] = useState<string | null>(null);
-  const [showIOSHelp, setShowIOSHelp] = useState(false);
   
   const [voiceDebugStatus, setVoiceDebugStatus] = useState<string>('Scanning system voices...');
 
@@ -205,10 +197,6 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
   const [isAudioReady, setIsAudioReady] = useState(false);
   
   const [isSessionSetupOpen, setIsSessionSetupOpen] = useState(false);
-  const [sessionContext, setSessionContext] = useState('');
-  const [isRecordingEnabled, setIsRecordingEnabled] = useState(false);
-  const [isScreenRecordingEnabled, setIsScreenRecordingEnabled] = useState(false);
-  const [isCameraRecordingEnabled, setIsCameraRecordingEnabled] = useState(false);
   
   const [isLiveActive, setIsLiveActive] = useState(false);
   const [liveConfig, setLiveConfig] = useState<{
@@ -222,14 +210,7 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
       discussionId?: string;
   }>({});
 
-  const [viewDiscussionId, setViewDiscussionId] = useState<string | null>(null);
-  const [showDownloadMenu, setShowDownloadMenu] = useState(false);
-  
-  // Appendix Upload State
-  const [isUploadingFile, setIsUploadingFile] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  
-  // Membership State
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
 
   const sectionRefs = useRef<(HTMLDivElement | null)[]>([]);
@@ -246,7 +227,6 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
   const prefetchedIds = useRef<Set<string>>(new Set());
   
   const isMember = !!currentUser;
-  // Super admin check for shengliang.song@gmail.com
   const isOwner = currentUser && (channel.ownerId === currentUser.uid || currentUser.email === 'shengliang.song@gmail.com');
 
   useEffect(() => {
@@ -255,7 +235,6 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
       }
   }, [currentUser]);
 
-  // Force system voice if not pro
   useEffect(() => {
       if (userProfile && userProfile.subscriptionTier !== 'pro' && !useSystemVoice) {
           setUseSystemVoice(true);
@@ -272,16 +251,11 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
       return flatCurriculum.findIndex(item => item.id === activeSubTopicId);
   }, [activeSubTopicId, flatCurriculum]);
 
-  // ... (Keep existing useEffects for resize, cache clear, etc.) ...
   useEffect(() => {
       const handleResize = () => {
-          if (window.innerWidth >= 1024) {
-              setIsSidebarOpen(true);
-          } else {
-              setIsSidebarOpen(false);
-          }
+          stopAudio();
+          clearAudioCache();
       };
-      handleResize(); 
       window.addEventListener('resize', handleResize);
       return () => {
           window.removeEventListener('resize', handleResize);
@@ -302,14 +276,13 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
   useEffect(() => { prefetchedIds.current.clear(); }, [channel.id]);
 
   const loadVoices = useCallback(() => {
-    // ... (Keep existing voice loading logic from original file) ...
     const voices = window.speechSynthesis.getVoices();
     setAllRawVoices(voices); 
     const langCode = language === 'zh' ? 'zh' : 'en';
     
     let status = '';
     if (voices.length === 0) {
-        status = "Browser reported 0 voices. (System TTS may be initializing...)";
+        status = "Browser reported 0 voices.";
     } else {
         const exampleNames = voices.slice(0, 3).map(v => v.name).join(', ');
         status = `Detected ${voices.length} voices. (e.g. ${exampleNames}...)`;
@@ -366,12 +339,6 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
     return () => { clearInterval(intervalId); clearTimeout(timeoutId); };
   }, [loadVoices]);
 
-  // ... (keep audio context & helper functions) ...
-  const handleCopyVoices = () => {
-      const text = allRawVoices.map(v => `Name: ${v.name}\nLang: ${v.lang}\nURI: ${v.voiceURI}\nLocal: ${v.localService}\n---`).join('\n');
-      navigator.clipboard.writeText(text);
-  };
-
   const getAudioContext = useCallback(() => {
     if (!audioContextRef.current || audioContextRef.current.state === 'closed') {
         audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
@@ -406,7 +373,6 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
     playSessionIdRef.current++;
   }, []);
 
-  // ... (keep loadCurriculum & generateCurriculum logic) ...
   useEffect(() => {
     const loadCurriculum = async () => {
       if (channel.id === OFFLINE_CHANNEL_ID) { setChapters(OFFLINE_CURRICULUM); setExpandedChapterId(OFFLINE_CURRICULUM[0].id); return; }
@@ -427,6 +393,20 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
     loadCurriculum();
   }, [channel.id, channel.title, channel.description, channel.chapters, language, isMember, isOwner, staticReading]);
 
+  // AUTO-LOAD FIRST LECTURE IF AVAILABLE
+  useEffect(() => {
+      if (chapters.length > 0 && !activeSubTopicId && !isLoadingLecture && !activeLecture) {
+          const firstChapter = chapters[0];
+          if (firstChapter && firstChapter.subTopics.length > 0) {
+              const firstLesson = firstChapter.subTopics[0];
+              // Use slight timeout to let rendering settle
+              setTimeout(() => {
+                  handleTopicClick(firstLesson.title, firstLesson.id);
+              }, 100);
+          }
+      }
+  }, [chapters]);
+
   const handleRegenerateCurriculum = async (isAuto = false) => {
       if (!isOwner) { if (!isAuto) alert(t.guestRestrict); return; }
       const isEmpty = !chapters || chapters.length === 0;
@@ -444,8 +424,6 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
       } catch(e) { console.error(e); } finally { setIsGeneratingCurriculum(false); }
   };
 
-  const handleExportFullCourse = async () => { /* ...existing logic... */ };
-
   useEffect(() => {
     const checkStatus = async () => {
         if (!activeLecture) { setIsAudioReady(false); return; }
@@ -460,14 +438,11 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
     checkStatus();
   }, [activeLecture, teacherVoice, studentVoice]);
 
-  // MODIFIED: Gate Audio Generation
   const handleGenerateAudio = async () => {
     if (!activeLecture) return;
-    
-    // MEMBERSHIP CHECK
     if (userProfile?.subscriptionTier !== 'pro') {
         alert("High-Quality Neural Audio generation is a Pro feature. Please upgrade to Pro to unlock this.\n\nFree users can listen using the System Voice.");
-        setUseSystemVoice(true); // Force fallback
+        setUseSystemVoice(true); 
         return;
     }
 
@@ -502,9 +477,7 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
     setIsAudioReady(true);
   };
 
-  // ... (keep handleRegenerateLecture, handleDeleteLecture, getNextSubTopic, useEffect for playback loop) ...
   const handleRegenerateLecture = async () => {
-    // ... same as before
     if (!activeLecture) return;
     if (!isMember && !isOwner) { alert(t.guestRestrict); return; }
     if (!confirm("Regenerate?")) return;
@@ -528,14 +501,22 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
     } catch(e) { console.error(e); } finally { setIsGenerating(false); setIsLoadingLecture(false); }
   };
 
-  const handleDeleteLecture = async () => { /* ...same... */ };
-  const getNextSubTopic = useCallback(() => { /* ...same... */ return null; }, [currentLectureIndex, flatCurriculum]);
+  const handleDeleteLecture = async () => {
+      if(!activeSubTopicId || !activeLecture) return;
+      if (!confirm("Delete this lecture content?")) return;
+      try {
+          const cacheKey = `lecture_${channel.id}_${activeSubTopicId}_${language}`;
+          await deleteCachedLectureScript(cacheKey);
+          if (currentUser) await deleteLectureFromFirestore(channel.id, activeSubTopicId);
+          setActiveLecture(null);
+      } catch(e) {
+          alert("Failed to delete.");
+      }
+  };
 
-  // Audio Playback Effect (Large block - kept mostly same but ensure useSystemVoice respect)
   useEffect(() => {
     if (isPlaying) {
       if (!useSystemVoice) {
-        // ... Neural Logic ...
         const schedule = async () => {
           if (!isPlayingRef.current) return;
           const sessionId = playSessionIdRef.current;
@@ -584,7 +565,6 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
         isPlayingRef.current = true;
         schedule();
       } else {
-        // ... System Logic ...
         const playSystem = () => {
            const idx = schedulingCursorRef.current;
            if (!activeLecture || idx >= activeLecture.sections.length) { stopAudio(); setCurrentSectionIndex(0); return; }
@@ -607,7 +587,6 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
     return () => { if (schedulerTimerRef.current) clearTimeout(schedulerTimerRef.current); };
   }, [isPlaying, activeLecture, useSystemVoice, teacherVoice, studentVoice, sysTeacherVoiceURI, sysStudentVoiceURI]);
 
-  // ... (keep handleTopicClick, togglePlayback, etc.) ...
   const handleTopicClick = async (topicTitle: string, subTopicId?: string) => {
     if (isLiveActive) setIsLiveActive(false); 
     if (!topicTitle) return;
@@ -615,7 +594,6 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
     stopAudio(); setCurrentSectionIndex(0); schedulingCursorRef.current = 0; 
     setActiveLecture(null); setGuestError(null); setGenerationProgress(null);
     setIsLoadingLecture(true);
-    if (window.innerWidth < 1024) setIsSidebarOpen(false);
 
     try {
         if (OFFLINE_LECTURES[topicTitle]) { setActiveLecture(OFFLINE_LECTURES[topicTitle]); setIsLoadedFromCache(true); return; }
@@ -642,7 +620,6 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
     } catch (e: any) { 
         console.error(e); 
         setIsGenerating(false); 
-        // Display actual error message
         alert(`Error loading lesson: ${e.message}`); 
     } finally { setIsLoadingLecture(false); }
   };
@@ -671,9 +648,7 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
       }, 50); 
   };
 
-  // ... (keep downloads, prints, etc.) ...
   const handleVoiceSwitch = (isSystem: boolean) => {
-      // Pro check
       if (!isSystem && userProfile?.subscriptionTier !== 'pro') {
           alert("Neural voices are only available for Pro members.");
           return;
@@ -681,8 +656,6 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
       stopAudio();
       setUseSystemVoice(isSystem);
   };
-
-  // ... (keep remainder of handlers) ...
 
   const liveSessionChannel = useMemo(() => {
     if (!channel) return null;
@@ -695,18 +668,26 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
     return channel;
   }, [channel, language]);
 
+  const handleDownload = () => {
+    if (!activeLecture) return;
+    const content = activeLecture.sections.map(s => `[${s.speaker}]: ${s.text}`).join('\n\n');
+    const blob = new Blob([content], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${activeLecture.topic.replace(/[^a-z0-9]/gi, '_')}.txt`;
+    a.click();
+  };
+
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col pb-24 relative overflow-hidden">
       
-      {/* ... (Keep Header / Sidebar Layout) ... */}
+      {/* Header */}
       <div className="relative h-64 md:h-80 w-full flex-shrink-0">
         <div className="absolute inset-0"><img src={channel.imageUrl} alt={channel.title} className="w-full h-full object-cover opacity-60"/><div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/60 to-transparent" /></div>
         <div className="absolute top-4 left-4 z-20 flex items-center gap-3">
             <button onClick={() => { stopAudio(); onBack(); }} className="flex items-center space-x-2 px-4 py-2 bg-black/40 backdrop-blur-md rounded-full hover:bg-white/10 transition-colors border border-white/10 text-sm font-medium">
                 <ArrowLeft size={16} /><span>{t.back}</span>
-            </button>
-            <button onClick={() => setIsSidebarOpen(true)} className="lg:hidden flex items-center space-x-2 px-4 py-2 bg-indigo-600/80 backdrop-blur-md rounded-full hover:bg-indigo-500 transition-colors text-white text-sm font-bold shadow-lg">
-                <List size={16} /><span>{t.curriculum}</span>
             </button>
         </div>
         {isOwner && onEditChannel && (<div className="absolute top-4 right-4 z-20"><button onClick={onEditChannel} className="flex items-center space-x-2 px-4 py-2 bg-indigo-600/80 backdrop-blur-md rounded-full hover:bg-indigo-500 transition-colors text-white text-sm font-bold shadow-lg"><Edit size={16} /><span>{t.edit}</span></button></div>)}
@@ -725,20 +706,17 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
         </div>
       </div>
 
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 grid grid-cols-1 lg:grid-cols-12 gap-8 relative">
-        {/* ... (Keep Sidebar same) ... */}
-        {isSidebarOpen && <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-30 lg:hidden" onClick={() => setIsSidebarOpen(false)} />}
-        <div className={`fixed lg:relative inset-y-0 left-0 z-40 w-80 lg:w-auto lg:z-auto transform transition-transform duration-300 ease-in-out bg-slate-900 lg:bg-transparent border-r lg:border-none border-slate-800 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'} lg:col-span-4 h-full lg:h-[calc(100vh-24rem)] lg:sticky lg:top-8 overflow-y-auto`}>
-          <div className="bg-slate-900 border border-slate-800 rounded-none lg:rounded-xl shadow-xl overflow-hidden h-full lg:h-auto flex flex-col">
-             <div className="lg:hidden p-4 border-b border-slate-800 flex justify-between items-center bg-slate-950">
-                 <h3 className="font-bold text-white flex items-center gap-2"><BookOpen size={18} className="text-indigo-400"/> {t.curriculum}</h3>
-                 <button onClick={() => setIsSidebarOpen(false)}><X size={20} className="text-slate-400"/></button>
-             </div>
+      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 flex flex-col-reverse lg:grid lg:grid-cols-12 gap-8 relative">
+        
+        {/* Sidebar (Curriculum) - Child 1 (Left on Desktop, Bottom on Mobile) */}
+        <div className="w-full lg:col-span-4 h-full lg:h-[calc(100vh-24rem)] lg:sticky lg:top-8 overflow-y-auto">
+          <div className="bg-slate-900 border border-slate-800 rounded-xl shadow-xl overflow-hidden h-full flex flex-col">
              <div className="flex border-b border-slate-800 shrink-0 overflow-x-auto scrollbar-hide">
                  <button onClick={() => setActiveTab('curriculum')} className={`flex-1 py-3 text-sm font-bold flex items-center justify-center space-x-2 whitespace-nowrap px-4 ${activeTab === 'curriculum' ? 'bg-slate-800 text-white' : 'text-slate-500 hover:text-slate-300'}`}><BookOpen size={16}/><span>{t.curriculum}</span></button>
                  {staticReading && <button onClick={() => setActiveTab('reading')} className={`flex-1 py-3 text-sm font-bold flex items-center justify-center space-x-2 whitespace-nowrap px-4 ${activeTab === 'reading' ? 'bg-slate-800 text-emerald-400' : 'text-slate-500 hover:text-slate-300'}`}><FileText size={16}/><span>{t.reading}</span></button>}
                  <button onClick={() => setActiveTab('appendix')} className={`flex-1 py-3 text-sm font-bold flex items-center justify-center space-x-2 whitespace-nowrap px-4 ${activeTab === 'appendix' ? 'bg-slate-800 text-amber-400' : 'text-slate-500 hover:text-slate-300'}`}><Paperclip size={16}/><span>{t.appendix}</span></button>
              </div>
+             
              <div className="flex-1 overflow-y-auto scrollbar-thin scrollbar-thumb-slate-800">
              {activeTab === 'curriculum' && (
                  <>
@@ -773,7 +751,7 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
                     ) : <div className="p-8 text-center space-y-4"><p className="text-slate-500 text-sm italic">No curriculum.</p></div>}
                  </>
              )}
-             {/* ... (Reading / Appendix logic same) ... */}
+             
              {activeTab === 'appendix' && (
                  <div className="p-4 space-y-4">
                      <div className="space-y-2">
@@ -794,22 +772,16 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
              )}
              </div>
           </div>
-          <div className="md:hidden flex space-x-3 w-full p-4 bg-slate-900 border-t border-slate-800">
-             {onViewComments && <button onClick={onViewComments} className="flex-1 bg-slate-800 hover:bg-slate-700 text-white py-3 rounded-xl font-bold flex items-center justify-center border border-slate-700"><MessageSquare size={20} /></button>}
-             <button onClick={() => setIsSessionSetupOpen(true)} className="flex-[3] flex items-center justify-center space-x-2 bg-indigo-600 text-white px-6 py-3 rounded-xl font-bold shadow-lg"><Play size={20} fill="currentColor" /><span>{t.startFree}</span></button>
-          </div>
         </div>
 
-        <div className={`lg:col-span-8 transition-all duration-300 ${!isSidebarOpen && window.innerWidth >= 1024 ? 'lg:col-span-12' : ''}`}>
-          <div className="hidden lg:block absolute top-0 -left-6 z-10"><button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="p-1 bg-slate-800 rounded-l-md text-slate-400 hover:text-white border border-r-0 border-slate-700">{isSidebarOpen ? <PanelLeftClose size={16} /> : <PanelLeftOpen size={16} />}</button></div>
-
-          {/* ... (Keep Live Session / Reading / Loading views) ... */}
+        {/* Main Content (Player) - Child 2 (Right on Desktop, Top on Mobile) */}
+        <div className="lg:col-span-8 transition-all duration-300">
           {isLiveActive && liveSessionChannel ? (
               <div className="h-[calc(100vh-20rem)] min-h-[500px] w-full bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-2xl relative">
                   <LiveSession channel={liveSessionChannel} initialContext={liveConfig.context} lectureId={liveConfig.lectureId} recordingEnabled={liveConfig.recording} videoEnabled={liveConfig.video} cameraEnabled={liveConfig.camera} activeSegment={liveConfig.segment} initialTranscript={liveConfig.initialTranscript} existingDiscussionId={liveConfig.discussionId} language={language} onEndSession={async () => { setIsLiveActive(false); if (liveConfig.segment && liveConfig.lectureId) { const cacheKey = `lecture_${channel.id}_${liveConfig.lectureId}_${language}`; const updated = await getCachedLectureScript(cacheKey); if (updated) setActiveLecture(updated); } }} />
               </div>
           ) : activeLecture ? (
-            <div className="space-y-8">
+            <div className="space-y-8 animate-fade-in">
                 <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl sticky top-8 z-20 backdrop-blur-md bg-slate-900/90">
                     <div className="flex items-center justify-between mb-4">
                         <div>
@@ -836,7 +808,37 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
                                     <button onClick={() => handleVoiceSwitch(true)} className={`px-3 py-1 text-xs font-bold rounded-md transition-all ${useSystemVoice ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:text-slate-300'}`}>System</button>
                                 </div>
                             </div>
-                            {/* ... (Voices Dropdowns same) ... */}
+                            
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className="text-[10px] text-slate-500 uppercase font-bold mb-1 block">Teacher</label>
+                                    {useSystemVoice ? (
+                                        <select value={sysTeacherVoiceURI} onChange={e => setSysTeacherVoiceURI(e.target.value)} className="w-full bg-slate-900 text-white text-xs p-2 rounded border border-slate-600">
+                                            {systemVoices.map(v => <option key={v.voiceURI} value={v.voiceURI}>{v.name}</option>)}
+                                        </select>
+                                    ) : (
+                                        <div className="flex gap-1 flex-wrap">
+                                            {GEMINI_VOICES.map(v => (
+                                                <button key={v} onClick={() => setTeacherVoice(v)} className={`px-2 py-1 text-xs rounded border ${teacherVoice === v ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-slate-900 border-slate-700 text-slate-400'}`}>{v}</button>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                                <div>
+                                    <label className="text-[10px] text-slate-500 uppercase font-bold mb-1 block">Student</label>
+                                    {useSystemVoice ? (
+                                        <select value={sysStudentVoiceURI} onChange={e => setSysStudentVoiceURI(e.target.value)} className="w-full bg-slate-900 text-white text-xs p-2 rounded border border-slate-600">
+                                            {systemVoices.map(v => <option key={v.voiceURI} value={v.voiceURI}>{v.name}</option>)}
+                                        </select>
+                                    ) : (
+                                        <div className="flex gap-1 flex-wrap">
+                                            {GEMINI_VOICES.map(v => (
+                                                <button key={v} onClick={() => setStudentVoice(v)} className={`px-2 py-1 text-xs rounded border ${studentVoice === v ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-slate-900 border-slate-700 text-slate-400'}`}>{v}</button>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
                         </div>
                     )}
 
@@ -855,7 +857,7 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
                         <button onClick={() => {}} disabled={currentLectureIndex === -1 || currentLectureIndex >= flatCurriculum.length - 1} className="text-slate-400 hover:text-white disabled:opacity-30 flex items-center space-x-2 text-sm font-bold transition-colors"><span className="hidden sm:inline">{t.next}</span><SkipForward size={20} /></button>
                     </div>
                 </div>
-                {/* ... (Transcript lines same) ... */}
+                
                 <div className="space-y-6 max-w-4xl mx-auto px-2">
                     {activeLecture.sections.map((section, idx) => (
                         <div key={idx} ref={(el) => { sectionRefs.current[idx] = el; }} onDoubleClick={() => handleSegmentDoubleClick(idx)} title={t.jump} className={`p-4 rounded-xl transition-all duration-500 cursor-pointer ${currentSectionIndex === idx ? 'bg-indigo-900/40 border border-indigo-500/50 shadow-lg scale-[1.01]' : 'hover:bg-slate-800/30 border border-transparent'}`}>
@@ -873,13 +875,13 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
           ) : (
             <div className="h-full flex flex-col items-center justify-center text-slate-500 space-y-4 p-8">
                <div className="w-20 h-20 bg-slate-800/50 rounded-full flex items-center justify-center animate-pulse"><BookOpen size={40} className="opacity-50" /></div>
-               <div className="text-center"><h3 className="text-xl font-bold text-slate-300 mb-2">{guestError || t.noLesson}</h3><p className="text-sm max-w-md">{guestError ? "Sign in to access AI features." : t.chooseChapter}</p></div>
+               <div className="text-center"><h3 className="text-xl font-bold text-slate-300 mb-2">{guestError || t.generating}</h3><p className="text-sm max-w-md">{guestError ? "Sign in to access AI features." : t.genDesc}</p></div>
             </div>
           )}
         </div>
       </main>
       
-      {/* Session Setup Modal (keep existing) */}
+      {/* Session Setup Modal */}
       {isSessionSetupOpen && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
               <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-md shadow-2xl p-6 animate-fade-in-up">
@@ -887,7 +889,62 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
                       <h3 className="text-xl font-bold text-white flex items-center gap-2"><Mic className="text-indigo-500"/> {t.sessionSetup}</h3>
                       <button onClick={() => setIsSessionSetupOpen(false)}><X size={20} className="text-slate-400 hover:text-white"/></button>
                   </div>
-                  {/* ... (Keep form) ... */}
+                  <div className="space-y-4">
+                      <div>
+                          <label className="text-xs font-bold text-slate-500 uppercase mb-1">Topic Context</label>
+                          <textarea 
+                              className="w-full bg-slate-800 border border-slate-700 rounded-lg p-3 text-white text-sm focus:outline-none focus:border-indigo-500 resize-none" 
+                              rows={3} 
+                              placeholder="What do you want to discuss?"
+                              onChange={(e) => setLiveConfig(prev => ({ ...prev, context: e.target.value }))}
+                          />
+                      </div>
+                      
+                      <div className="space-y-2">
+                          <div 
+                              onClick={() => setLiveConfig(prev => ({ ...prev, recording: !prev.recording }))}
+                              className={`p-3 rounded-xl border cursor-pointer transition-all flex items-center justify-between ${liveConfig.recording ? 'bg-red-900/20 border-red-500/50' : 'bg-slate-800/50 border-slate-700 hover:bg-slate-800'}`}
+                          >
+                              <div className="flex items-center gap-3">
+                                  <div className={`p-1.5 rounded-full ${liveConfig.recording ? 'bg-red-500 text-white' : 'bg-slate-700 text-slate-400'}`}>
+                                      {liveConfig.recording ? <Video size={16} /> : <Mic size={16} />}
+                                  </div>
+                                  <div>
+                                      <p className={`font-bold text-sm ${liveConfig.recording ? 'text-red-400' : 'text-slate-300'}`}>{t.recordSession}</p>
+                                      <p className="text-[10px] text-slate-500">{t.recordDesc}</p>
+                                  </div>
+                              </div>
+                              <div className={`w-5 h-5 rounded-full border flex items-center justify-center ${liveConfig.recording ? 'border-red-500 bg-red-500 text-white' : 'border-slate-500'}`}>
+                                  {liveConfig.recording && <Check size={12} />}
+                              </div>
+                          </div>
+
+                          {liveConfig.recording && (
+                              <div className="flex gap-2 ml-4">
+                                  <button 
+                                      onClick={() => setLiveConfig(prev => ({ ...prev, video: !prev.video }))}
+                                      className={`flex-1 py-2 rounded-lg text-xs font-bold border transition-colors ${liveConfig.video ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-slate-800 border-slate-700 text-slate-400 hover:bg-slate-700'}`}
+                                  >
+                                      <Monitor size={14} className="inline mr-1"/> Screen
+                                  </button>
+                                  <button 
+                                      onClick={() => setLiveConfig(prev => ({ ...prev, camera: !prev.camera }))}
+                                      className={`flex-1 py-2 rounded-lg text-xs font-bold border transition-colors ${liveConfig.camera ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-slate-800 border-slate-700 text-slate-400 hover:bg-slate-700'}`}
+                                  >
+                                      <Video size={14} className="inline mr-1"/> Camera
+                                  </button>
+                              </div>
+                          )}
+                      </div>
+
+                      <button 
+                          onClick={() => { setIsSessionSetupOpen(false); setIsLiveActive(true); }}
+                          className="w-full py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl shadow-lg flex items-center justify-center gap-2 mt-4"
+                      >
+                          <Play size={18} fill="currentColor"/>
+                          <span>{t.start}</span>
+                      </button>
+                  </div>
               </div>
           </div>
       )}
