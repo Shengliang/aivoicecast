@@ -1,10 +1,10 @@
 
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { CodeProject, CodeFile, UserProfile, Channel, CursorPosition } from '../types';
+import { CodeProject, CodeFile, UserProfile, Channel, CursorPosition, CloudItem } from '../types';
 import { ArrowLeft, Save, Plus, Github, Cloud, HardDrive, Code, X, ChevronRight, ChevronDown, File, Folder, DownloadCloud, Loader2, CheckCircle, AlertTriangle, Info, FolderPlus, FileCode, RefreshCw, LogIn, CloudUpload, Trash2, ArrowUp, Edit2, FolderOpen, MoreVertical, Send, MessageSquare, Bot, Mic, Sparkles, SidebarClose, SidebarOpen, Users, Eye, FileText as FileTextIcon, Image as ImageIcon, StopCircle, Minus, Maximize2, Lock, Unlock, Share2, Terminal, Copy, WifiOff, PanelRightClose, PanelRightOpen, Monitor, Laptop } from 'lucide-react';
 import { connectGoogleDrive } from '../services/authService';
 import { fetchPublicRepoInfo, fetchRepoContents, fetchFileContent, commitToRepo, fetchRepoSubTree } from '../services/githubService';
-import { listCloudDirectory, saveProjectToCloud, deleteCloudItem, createCloudFolder, CloudItem, subscribeToCodeProject, saveCodeProject, updateCodeFile, updateCursor, claimCodeProjectLock, updateProjectActiveFile, deleteCodeFile, moveCloudFile } from '../services/firestoreService';
+import { listCloudDirectory, saveProjectToCloud, deleteCloudItem, createCloudFolder, subscribeToCodeProject, saveCodeProject, updateCodeFile, updateCursor, claimCodeProjectLock, updateProjectActiveFile, deleteCodeFile, moveCloudFile } from '../services/firestoreService';
 import { ensureCodeStudioFolder, listDriveFiles, readDriveFile, saveToDrive, deleteDriveFile, createDriveFolder, DriveFile, moveDriveFile } from '../services/googleDriveService';
 import { GoogleGenAI, FunctionDeclaration, Type } from '@google/genai';
 import { GeminiLiveService } from '../services/geminiLive';
@@ -30,18 +30,6 @@ const PRESET_REPOS = [
   { label: 'Node.js', path: 'nodejs/node' }
 ];
 
-const updateCodeTool: FunctionDeclaration = {
-  name: "update_code",
-  description: "Update the code in the current active file.",
-  parameters: {
-    type: Type.OBJECT,
-    properties: {
-      code: { type: Type.STRING, description: "The full new code content." }
-    },
-    required: ["code"]
-  }
-};
-
 function getLanguageFromExt(filename: string): any {
     const ext = filename.split('.').pop()?.toLowerCase();
     if (['js', 'jsx'].includes(ext || '')) return 'javascript';
@@ -54,13 +42,6 @@ function getLanguageFromExt(filename: string): any {
     if (['puml', 'plantuml'].includes(ext || '')) return 'plantuml';
     if (['cpp', 'c', 'h', 'hpp', 'cc', 'hh', 'cxx'].includes(ext || '')) return 'c++';
     return 'text';
-}
-
-function getRandomColor(id: string) {
-    const colors = ['#ef4444', '#f97316', '#f59e0b', '#84cc16', '#10b981', '#06b6d4', '#3b82f6', '#8b5cf6', '#d946ef', '#f43f5e'];
-    let hash = 0;
-    for (let i = 0; i < id.length; i++) hash = id.charCodeAt(i) + ((hash << 5) - hash);
-    return colors[Math.abs(hash) % colors.length];
 }
 
 const FileIcon: React.FC<{ filename: string }> = ({ filename }) => {
@@ -499,15 +480,34 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
           if (activeTab === 'cloud' && currentUser && activeFile) {
                // Calculate directory path from file path to prevent saving to root
                let parentPath = `projects/${currentUser.uid}`;
-               if (activeFile.path) {
-                   // activeFile.path is full path like "projects/uid/folder/file.txt"
-                   const lastSlash = activeFile.path.lastIndexOf('/');
+               let filename = activeFile.name;
+
+               // If it's a real cloud file (not the default 'cloud://' template), extract its actual dir
+               if (activeFile.path && !activeFile.path.startsWith('cloud://')) {
+                   // Robustly handle paths with or without project root prefix
+                   const normalizedPath = activeFile.path.replace(/\/+/g, '/');
+                   const lastSlash = normalizedPath.lastIndexOf('/');
                    if (lastSlash > -1) {
-                       parentPath = activeFile.path.substring(0, lastSlash);
+                       parentPath = normalizedPath.substring(0, lastSlash);
+                       filename = normalizedPath.substring(lastSlash + 1);
                    }
                }
                
-               await saveProjectToCloud(parentPath, activeFile.name, activeFile.content);
+               await saveProjectToCloud(parentPath, filename, activeFile.content);
+               
+               // Update the file path in state if it was a new save (e.g. from template)
+               if (activeFile.path && activeFile.path.startsWith('cloud://')) {
+                   const newPath = `${parentPath}/${filename}`;
+                   const updatedFile = { ...activeFile, path: newPath, name: filename };
+                   setActiveFile(updatedFile);
+                   setProject(prev => ({
+                       ...prev,
+                       files: prev.files.map(f => f.path === activeFile.path ? updatedFile : f)
+                   }));
+                   // Trigger refresh to show new file in tree
+                   refreshCloudPath(parentPath);
+               }
+
                showToast("Saved to Cloud", "success");
           } else if (activeTab === 'drive' && driveToken && driveRootId && activeFile) {
                await saveToDrive(driveToken, driveRootId, activeFile.name, activeFile.content);
@@ -691,6 +691,17 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
               // Refresh View
               setCloudItems(prev => prev.filter(i => i.fullPath !== item.fullPath));
               await refreshCloudPath(targetPath);
+              
+              // CRITICAL: Update active file if we moved the currently open file
+              if (activeFile && activeFile.path === item.fullPath) {
+                  const updatedFile = { ...activeFile, path: newFullPath };
+                  setActiveFile(updatedFile);
+                  setProject(prev => ({
+                       ...prev,
+                       files: prev.files.map(f => f.path === activeFile.path ? updatedFile : f)
+                   }));
+              }
+
               showToast("File moved in Cloud", "success");
 
           } else if (activeTab === 'drive') {

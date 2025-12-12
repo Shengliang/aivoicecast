@@ -3,35 +3,13 @@ import React, { useState, useEffect, useRef } from 'react';
 import { ArrowLeft, Share2, Trash2, Undo, PenTool, Eraser, Download, Square, Circle, Minus, ArrowRight, Type, ZoomIn, ZoomOut, MousePointer2, Move, Highlighter, Brush, BoxSelect, Lock, Eye, Edit3, Feather, SprayCan, Droplet, Pencil } from 'lucide-react';
 import { auth } from '../services/firebaseConfig';
 import { saveWhiteboardSession, subscribeToWhiteboard, updateWhiteboardElement, deleteWhiteboardElements } from '../services/firestoreService';
+import { WhiteboardElement, ToolType, LineStyle, BrushType } from '../types';
 
 interface WhiteboardProps {
   onBack: () => void;
   sessionId?: string;
   accessKey?: string; // Secret write token from URL
   onSessionStart?: (id: string) => void;
-}
-
-type ToolType = 'select' | 'pen' | 'eraser' | 'rect' | 'circle' | 'line' | 'arrow' | 'text' | 'pan';
-type LineStyle = 'solid' | 'dashed' | 'dotted';
-type BrushType = 'standard' | 'pencil' | 'marker' | 'calligraphy-pen' | 'writing-brush' | 'airbrush' | 'oil' | 'watercolor' | 'crayon';
-
-interface WhiteboardElement {
-  id: string;
-  type: ToolType;
-  points?: { x: number; y: number }[]; // For pen
-  x: number;
-  y: number;
-  width?: number;
-  height?: number;
-  endX?: number; // For line/arrow
-  endY?: number;
-  text?: string;
-  color: string;
-  strokeWidth: number;
-  lineStyle?: LineStyle;
-  brushType?: BrushType;
-  fontSize?: number;
-  fontFamily?: string;
 }
 
 export const Whiteboard: React.FC<WhiteboardProps> = ({ onBack, sessionId, accessKey, onSessionStart }) => {

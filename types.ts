@@ -309,3 +309,38 @@ export interface JobPosting {
   postedBy: string; // userId
   postedAt: number;
 }
+
+// Whiteboard Types
+export type ToolType = 'select' | 'pen' | 'eraser' | 'rect' | 'circle' | 'line' | 'arrow' | 'text' | 'pan';
+export type LineStyle = 'solid' | 'dashed' | 'dotted';
+export type BrushType = 'standard' | 'pencil' | 'marker' | 'calligraphy-pen' | 'writing-brush' | 'airbrush' | 'oil' | 'watercolor' | 'crayon';
+
+export interface WhiteboardElement {
+  id: string;
+  type: ToolType;
+  points?: { x: number; y: number }[]; // For pen
+  x: number;
+  y: number;
+  width?: number;
+  height?: number;
+  endX?: number; // For line/arrow
+  endY?: number;
+  text?: string;
+  color: string;
+  strokeWidth: number;
+  lineStyle?: LineStyle;
+  brushType?: BrushType;
+  fontSize?: number;
+  fontFamily?: string;
+}
+
+// Cloud Storage Type
+export interface CloudItem {
+  name: string;
+  fullPath: string;
+  url?: string;
+  isFolder: boolean;
+  size?: number;
+  timeCreated?: string;
+  contentType?: string;
+}
