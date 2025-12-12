@@ -179,7 +179,8 @@ const RichCodeEditor: React.FC<{
             const { selectionStart } = target;
             const textUpToCursor = target.value.substring(0, selectionStart);
             const lines = textUpToCursor.split('\n');
-            onCursorMove(lines.length, lines[lines.length - 1].length + 1);
+            const col = lines[lines.length - 1].length; // 0-based column
+            onCursorMove(lines.length, col);
         }
     };
 
@@ -210,7 +211,7 @@ const RichCodeEditor: React.FC<{
                 {/* Remote Cursors */}
                 <div className="absolute inset-0 w-full h-full pointer-events-none overflow-hidden">
                     {remoteCursors && remoteCursors.map(cursor => (
-                        <div key={cursor.clientId} className="absolute pointer-events-none transition-all duration-75" style={{ top: `${(cursor.line - 1) * 21 + PADDING}px`, left: `calc(${(cursor.column - 1)}ch + ${PADDING}px)`, height: '21px', ...EDITOR_FONT }}>
+                        <div key={cursor.clientId} className="absolute pointer-events-none transition-all duration-75" style={{ top: `${(cursor.line - 1) * 21 + PADDING}px`, left: `calc(${(cursor.column)}ch + ${PADDING}px)`, height: '21px', ...EDITOR_FONT }}>
                             <div className="w-0.5 h-full absolute top-0 left-0 animate-pulse" style={{ backgroundColor: cursor.color }}></div>
                             <div className="absolute -top-5 left-0 text-[10px] px-1.5 rounded text-white whitespace-nowrap z-10 shadow-md font-bold" style={{ backgroundColor: cursor.color, fontFamily: 'sans-serif', lineHeight: 'normal' }}>
                                 {cursor.userName}
@@ -376,11 +377,6 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
       }
   }, [isSharedSession, sessionId, currentUser, project.activeClientId, isLockedByOther, clientId]);
 
-  const activeRemoteCursors = useMemo(() => {
-      if (!project.cursors || !activeFile) return [];
-      return (Object.values(project.cursors) as CursorPosition[]).filter(c => c.clientId !== clientId && c.fileName === activeFile.name);
-  }, [project.cursors, activeFile, clientId]);
-
   // -- FILESYSTEM --
   useEffect(() => {
       if (sessionId) {
@@ -395,11 +391,14 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
 
   // Sync Active File with Remote Project Changes
   useEffect(() => {
-      if (activeFile && !activeFile.path?.startsWith('drive') && !activeFile.path?.startsWith('cloud')) {
+      if (activeFile) {
+          // Identify the file in the remote project
+          // Prefer path if available (Github/Cloud), else name
           const identifier = activeFile.path || activeFile.name;
           const remoteFile = project.files.find(f => (f.path || f.name) === identifier);
           
           if (remoteFile) {
+              // Condition: Remote is different AND (We are not the writer OR we are explicitly read-only)
               if (remoteFile.content !== activeFile.content) {
                   if (project.activeClientId !== clientId) {
                       setActiveFile(remoteFile);
@@ -410,11 +409,46 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
       }
   }, [project, activeFile, clientId]);
 
+  // Cursor Sync Effect: Broadcast local cursor to Firestore
+  useEffect(() => {
+      if (isSharedSession && sessionId && localCursor && activeFile && currentUser) {
+          // Identify file by path if possible, else name. 
+          // This must match what is used in activeRemoteCursors filter.
+          const fileId = activeFile.path || activeFile.name;
+          
+          updateCursor(sessionId, {
+              clientId,
+              userId: currentUser.uid,
+              userName: currentUser.displayName || 'Anonymous',
+              fileName: fileId,
+              line: localCursor.line,
+              column: localCursor.col,
+              color: getRandomColor(clientId),
+              updatedAt: Date.now()
+          }).catch(e => console.error("Cursor sync failed", e));
+      }
+  }, [localCursor, isSharedSession, sessionId, activeFile, currentUser]);
+
+  const activeRemoteCursors = useMemo(() => {
+      if (!project.cursors || !activeFile) return [];
+      const currentFileId = activeFile.path || activeFile.name;
+      
+      return (Object.values(project.cursors) as CursorPosition[]).filter(c => {
+          // Filter out own cursor
+          if (c.clientId === clientId) return false;
+          // Match file
+          return c.fileName === currentFileId;
+      });
+  }, [project.cursors, activeFile, clientId]);
+
   // -- TREE BUILDING --
   const workspaceTree = useMemo(() => {
       const root: TreeNode[] = [];
       const map = new Map<string, TreeNode>();
-      const repoFiles = project.files.filter(f => !f.path?.startsWith('drive://') && !f.path?.startsWith('cloud://'));
+      
+      // Changed: Include cloud/drive files in workspace tree so readers can see them
+      const repoFiles = project.files;
+      
       repoFiles.forEach(f => {
           const path = f.path || f.name;
           map.set(path, { id: path, name: f.name.split('/').pop()!, type: f.isDirectory ? 'folder' : 'file', data: f, children: [], isLoaded: f.childrenFetched });
@@ -782,11 +816,14 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
                           <span className={isSharedSession ? "text-green-400 animate-pulse" : "text-slate-500"}>●</span>
                       </div>
                       <div className="space-y-1 mb-2">
-                          <p>File: <span className="text-white">{activeFile?.path || activeFile?.name || 'None'}</span></p>
-                          <p>Local: Ln {localCursor?.line || 0}, Col {localCursor?.col || 0}</p>
+                          <p>File Path: <span className="text-white break-all">{activeFile?.path || activeFile?.name || 'None'}</span></p>
+                          <p>Local Cursor: Ln {localCursor?.line || 0}, Col {localCursor?.col || 0}</p>
                           <p>Remote Cursors: {activeRemoteCursors.length}</p>
                           {activeRemoteCursors.map(c => (
-                              <p key={c.clientId} className="pl-2 text-slate-400">- {c.userName}: {c.line}:{c.column}</p>
+                              <p key={c.clientId} className="pl-2 text-slate-400 flex justify-between">
+                                  <span>- {c.userName}</span>
+                                  <span>({c.line}, {c.column})</span>
+                              </p>
                           ))}
                       </div>
                       <div className="flex-1 overflow-y-auto border-t border-green-900/30 pt-1 space-y-0.5">
