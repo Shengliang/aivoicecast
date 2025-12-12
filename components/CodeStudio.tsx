@@ -375,19 +375,32 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
       if (sessionId) {
           setIsSharedSession(true);
           const unsubscribe = subscribeToCodeProject(sessionId, (remoteProject) => {
-              setProject(prev => {
-                  if (remoteProject.lastModified > prev.lastModified) return remoteProject;
-                  return { ...prev, cursors: remoteProject.cursors, activeClientId: remoteProject.activeClientId, activeWriterName: remoteProject.activeWriterName };
-              });
-              
-              if (activeFile && !activeFile.path?.startsWith('drive') && !activeFile.path?.startsWith('cloud')) {
-                  const remoteFile = remoteProject.files.find(f => (f.path || f.name) === (activeFile.path || activeFile.name));
-                  if (remoteFile && remoteFile.content !== activeFile.content) setActiveFile(remoteFile);
-              }
+              setProject(remoteProject);
           });
           return () => unsubscribe();
       }
-  }, [sessionId, clientId, activeFile]);
+  }, [sessionId]);
+
+  // Sync Active File with Remote Project Changes
+  useEffect(() => {
+      if (activeFile && !activeFile.path?.startsWith('drive') && !activeFile.path?.startsWith('cloud')) {
+          // Identify the file in the remote project
+          // Prefer path if available (Github), else name
+          const identifier = activeFile.path || activeFile.name;
+          const remoteFile = project.files.find(f => (f.path || f.name) === identifier);
+          
+          if (remoteFile) {
+              // Check if we need to update local active view
+              // Condition: Remote is different AND (We are not the writer OR we are explicitly read-only)
+              if (remoteFile.content !== activeFile.content) {
+                  // If I am not the active writer (lock holder), I should accept updates
+                  if (project.activeClientId !== clientId) {
+                      setActiveFile(remoteFile);
+                  }
+              }
+          }
+      }
+  }, [project, activeFile, clientId]);
 
   // -- TREE BUILDING --
   const workspaceTree = useMemo(() => {
