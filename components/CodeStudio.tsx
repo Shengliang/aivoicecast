@@ -424,6 +424,17 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
       return root.filter(n => n.id.split('/').length === 1 || !map.has(n.id.split('/').slice(0, -1).join('/')));
   }, [cloudItems]);
 
+  const driveTree = useMemo(() => {
+      const root: TreeNode[] = [];
+      const map = new Map<string, TreeNode>();
+      driveItems.forEach(item => map.set(item.id, { id: item.id, name: item.name, type: item.mimeType === 'application/vnd.google-apps.folder' ? 'folder' : 'file', data: item, children: [], isLoaded: item.isLoaded }));
+      driveItems.forEach(item => {
+          const node = map.get(item.id)!;
+          if (item.parentId && map.has(item.parentId)) map.get(item.parentId)!.children.push(node); else if (item.id === driveRootId || !item.parentId) root.push(node);
+      });
+      return root;
+  }, [driveItems, driveRootId]);
+
   const showNotification = (message: string, type: 'success' | 'error' | 'info' = 'info') => {
       const id = crypto.randomUUID();
       setNotifications(prev => [...prev, { id, type, message }]);
@@ -525,6 +536,70 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
       } catch (e) { showNotification("Download failed", "error"); } finally { setLoadingFolders(prev => ({ ...prev, [item.fullPath]: false })); }
   };
 
+  // --- Drive Logic ---
+  const handleConnectDrive = async () => {
+      try { 
+          const token = await connectGoogleDrive(); 
+          setDriveToken(token); 
+          setIsDriveLoading(true); 
+          const rootId = await ensureCodeStudioFolder(token); 
+          setDriveRootId(rootId); 
+          const files = await listDriveFiles(token, rootId); 
+          setDriveItems([{ id: rootId, name: 'CodeStudio', mimeType: 'application/vnd.google-apps.folder', isLoaded: true }, ...files.map(f => ({ ...f, parentId: rootId, isLoaded: false }))]); 
+      } catch(e: any) { 
+          showNotification(e.message, "error"); 
+      } finally { 
+          setIsDriveLoading(false); 
+      }
+  };
+
+  const handleDriveToggle = async (node: TreeNode) => {
+      const driveFile = node.data as (DriveFile & { isLoaded?: boolean });
+      if (driveFile.isLoaded || !driveToken) {
+          setExpandedFolders(prev => ({ ...prev, [node.id]: !prev[node.id] }));
+          return;
+      }
+
+      setLoadingFolders(prev => ({ ...prev, [node.id]: true }));
+      try {
+          const files = await listDriveFiles(driveToken, driveFile.id);
+          const newItems = files.map(f => ({ ...f, parentId: driveFile.id, isLoaded: false }));
+          setDriveItems(prev => {
+              const updated = prev.map(i => i.id === driveFile.id ? { ...i, isLoaded: true } : i);
+              const uniqueNew = newItems.filter(n => !prev.some(p => p.id === n.id));
+              return [...updated, ...uniqueNew];
+          });
+          setExpandedFolders(prev => ({ ...prev, [node.id]: true }));
+      } catch (e: any) {
+          showNotification("Failed to list Drive folder", "error");
+      } finally {
+          setLoadingFolders(prev => ({ ...prev, [node.id]: false }));
+      }
+  };
+
+  const handleDriveSelect = async (node: TreeNode) => {
+      const driveFile = node.data as DriveFile;
+      if (!driveToken) return;
+
+      setLoadingFolders(prev => ({ ...prev, [node.id]: true }));
+      try {
+          const text = await readDriveFile(driveToken, driveFile.id);
+          const newFile: CodeFile = {
+              name: driveFile.name,
+              path: `drive://${driveFile.id}`, 
+              content: text,
+              language: getLanguageFromExt(driveFile.name),
+              loaded: true,
+              isDirectory: false
+          };
+          setActiveFile(newFile);
+      } catch (e: any) {
+          showNotification("Failed to read Drive file", "error");
+      } finally {
+          setLoadingFolders(prev => ({ ...prev, [node.id]: false }));
+      }
+  };
+
   useEffect(() => { 
       if (activeTab === 'cloud' && currentUser) listCloudDirectory(`projects/${currentUser.uid}`).then(setCloudItems); 
   }, [activeTab, currentUser]);
@@ -555,6 +630,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
               <div className="flex border-b border-slate-800 bg-slate-950/50">
                   <button onClick={() => setActiveTab('github')} className={`flex-1 py-3 flex justify-center border-b-2 ${activeTab === 'github' ? 'border-indigo-500 text-white' : 'border-transparent text-slate-500'}`}><Github size={18}/></button>
                   <button onClick={() => setActiveTab('cloud')} className={`flex-1 py-3 flex justify-center border-b-2 ${activeTab === 'cloud' ? 'border-indigo-500 text-white' : 'border-transparent text-slate-500'}`}><Cloud size={18}/></button>
+                  <button onClick={() => setActiveTab('drive')} className={`flex-1 py-3 flex justify-center border-b-2 ${activeTab === 'drive' ? 'border-indigo-500 text-white' : 'border-transparent text-slate-500'}`}><HardDrive size={18}/></button>
               </div>
               <div className="flex-1 overflow-y-auto">
                   {activeTab === 'github' && (
@@ -566,6 +642,26 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
                   {activeTab === 'cloud' && (
                       <div className="p-2">
                           {!currentUser ? <p className="text-xs text-slate-500 p-2">Sign in required.</p> : cloudTree.map(node => <FileTreeItem key={node.id} node={node} depth={0} onSelect={handleCloudSelect} onToggle={()=>{}} expandedIds={expandedFolders} loadingIds={loadingFolders}/>)}
+                      </div>
+                  )}
+                  {activeTab === 'drive' && (
+                      <div className="p-2">
+                          {!driveToken ? (
+                              <div className="text-center p-4">
+                                  <p className="text-xs text-slate-500 mb-2">Access Google Drive.</p>
+                                  <button onClick={handleConnectDrive} className="w-full py-2 bg-indigo-600 hover:bg-indigo-500 text-xs text-white rounded font-bold transition-colors">Connect Drive</button>
+                              </div>
+                          ) : (
+                              driveTree.map(node => (
+                                  <FileTreeItem 
+                                      key={node.id} node={node} depth={0} 
+                                      activeId={activeFile?.path}
+                                      onSelect={handleDriveSelect} 
+                                      onToggle={handleDriveToggle} 
+                                      expandedIds={expandedFolders} loadingIds={loadingFolders}
+                                  />
+                              ))
+                          )}
                       </div>
                   )}
               </div>
