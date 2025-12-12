@@ -22,19 +22,6 @@ interface CodeStudioProps {
   onStartLiveSession?: (channel: Channel, context?: string) => void;
 }
 
-const LANGUAGES = [
-  { id: 'javascript', label: 'JavaScript' },
-  { id: 'typescript', label: 'TypeScript' },
-  { id: 'python', label: 'Python' },
-  { id: 'html', label: 'HTML' },
-  { id: 'css', label: 'CSS' },
-  { id: 'json', label: 'JSON' },
-  { id: 'markdown', label: 'Markdown' },
-  { id: 'plantuml', label: 'PlantUML' },
-  { id: 'cpp', label: 'C++' },
-  { id: 'java', label: 'Java' }
-];
-
 const PRESET_REPOS = [
   { label: 'CodeStudio (Demo)', path: 'Shengliang/codestudio' },
   { label: 'Linux Kernel', path: 'torvalds/linux' },
@@ -190,9 +177,12 @@ const RichCodeEditor: React.FC<{
     language: string;
     isShared?: boolean;
     remoteCursors?: CursorPosition[];
-}> = ({ code, onChange, onCursorMove, language, isShared, remoteCursors }) => {
+    localCursor?: { line: number, col: number } | null;
+}> = ({ code, onChange, onCursorMove, language, isShared, remoteCursors, localCursor }) => {
     const [highlightedCode, setHighlightedCode] = useState('');
     const textareaRef = useRef<HTMLTextAreaElement>(null);
+    const lineNumbersRef = useRef<HTMLDivElement>(null);
+    const scrollContainerRef = useRef<HTMLDivElement>(null);
     
     useEffect(() => {
         if ((window as any).Prism) {
@@ -219,18 +209,49 @@ const RichCodeEditor: React.FC<{
         }
     };
 
+    const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
+        if (lineNumbersRef.current) {
+            lineNumbersRef.current.scrollTop = e.currentTarget.scrollTop;
+        }
+    };
+
+    // Shared Styles for critical alignment
+    const EDITOR_FONT = {
+        fontFamily: '"JetBrains Mono", monospace',
+        fontSize: '14px',
+        lineHeight: '24px', // Explicit line height for alignment
+    };
+    
+    const CONTAINER_PADDING = '16px';
+
     return (
-        <div className="relative w-full h-full flex overflow-hidden group">
+        <div className="relative w-full h-full flex overflow-hidden group bg-[#1e1e1e]">
             {/* Line Numbers */}
-            <div className="w-10 bg-slate-900 text-slate-600 text-right pr-2 select-none text-sm font-mono pt-4 border-r border-slate-800 shrink-0" style={{lineHeight: '21px'}}>
+            <div 
+                ref={lineNumbersRef}
+                className="w-12 bg-[#1e1e1e] text-slate-600 text-right pr-3 select-none border-r border-slate-800 shrink-0 overflow-hidden"
+                style={{
+                    ...EDITOR_FONT,
+                    paddingTop: CONTAINER_PADDING,
+                    paddingBottom: CONTAINER_PADDING
+                }}
+            >
                 {code.split('\n').map((_, i) => <div key={i}>{i + 1}</div>)}
             </div>
             
-            <div className="relative flex-1 h-full overflow-auto bg-[#1e1e1e]">
+            <div 
+                ref={scrollContainerRef}
+                className="relative flex-1 h-full overflow-auto custom-scrollbar"
+                onScroll={handleScroll}
+            >
                 {/* Highlight Layer */}
                 <pre 
-                    className="absolute top-0 left-0 m-0 p-4 font-mono text-sm pointer-events-none w-full min-h-full"
-                    style={{ fontFamily: '"JetBrains Mono", monospace', lineHeight: '21px' }} // Strict 21px line height
+                    className="absolute top-0 left-0 min-w-full min-h-full m-0 pointer-events-none"
+                    style={{
+                        ...EDITOR_FONT,
+                        padding: CONTAINER_PADDING,
+                        whiteSpace: 'pre' // Force no-wrap to align exactly
+                    }}
                     aria-hidden="true"
                 >
                     <code 
@@ -245,24 +266,38 @@ const RichCodeEditor: React.FC<{
                         key={cursor.clientId}
                         className="absolute pointer-events-none transition-all duration-75"
                         style={{
-                            // Fix: Use 21px hardcoded step. Padding 16px.
-                            top: `${(cursor.line - 1) * 21 + 16}px`, 
-                            // Fix: Use ch units to match font width exactly. Padding 16px.
-                            left: `calc(${(cursor.column - 1)}ch + 16px)`, 
-                            height: '21px',
-                            fontFamily: '"JetBrains Mono", monospace',
-                            fontSize: '0.875rem' // 14px
+                            top: `${(cursor.line - 1) * 24 + 16}px`, // 24px line height, 16px padding top
+                            left: `calc(${(cursor.column - 1)}ch + 16px)`, // 1ch per char (monospace), 16px padding left
+                            height: '24px',
+                            ...EDITOR_FONT
                         }}
                     >
                         <div className="w-0.5 h-full absolute top-0 left-0 animate-pulse" style={{ backgroundColor: cursor.color }}></div>
                         <div 
                             className="absolute -top-5 left-0 text-[10px] px-1.5 rounded text-white whitespace-nowrap z-10 shadow-md font-bold"
-                            style={{ backgroundColor: cursor.color }}
+                            style={{ backgroundColor: cursor.color, fontFamily: 'sans-serif', lineHeight: 'normal' }}
                         >
                             {cursor.userName}
                         </div>
                     </div>
                 ))}
+
+                {/* Local Cursor Label "You" */}
+                {localCursor && (
+                    <div 
+                        className="absolute pointer-events-none transition-all duration-75 z-20"
+                        style={{
+                            top: `${(localCursor.line - 1) * 24 + 16}px`,
+                            left: `calc(${(localCursor.col - 1)}ch + 16px)`,
+                            height: '24px',
+                            ...EDITOR_FONT
+                        }}
+                    >
+                        <div className="absolute -top-5 left-0 text-[10px] px-1.5 rounded bg-emerald-600 text-white font-bold shadow-sm whitespace-nowrap opacity-80" style={{ fontFamily: 'sans-serif', lineHeight: 'normal' }}>
+                            You
+                        </div>
+                    </div>
+                )}
 
                 {/* Input Layer */}
                 <textarea 
@@ -271,8 +306,12 @@ const RichCodeEditor: React.FC<{
                     onChange={(e) => onChange(e.target.value)}
                     onKeyUp={handleInputEvents}
                     onClick={handleInputEvents}
-                    className="absolute top-0 left-0 w-full h-full p-4 font-mono text-sm bg-transparent text-transparent caret-white outline-none resize-none overflow-hidden"
-                    style={{ fontFamily: '"JetBrains Mono", monospace', lineHeight: '21px' }} // Strict 21px line height
+                    className="absolute top-0 left-0 w-full h-full bg-transparent text-transparent caret-white outline-none resize-none overflow-hidden"
+                    style={{
+                        ...EDITOR_FONT,
+                        padding: CONTAINER_PADDING,
+                        whiteSpace: 'pre'
+                    }}
                     spellCheck={false}
                     autoCapitalize="off"
                     autoComplete="off"
@@ -1148,6 +1187,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
                                 language={activeFile.language}
                                 isShared={isSharedSession}
                                 remoteCursors={activeRemoteCursors}
+                                localCursor={localCursor}
                             />
                         )}
                         {/* Debug Overlay - Inside the Editor Container */}
