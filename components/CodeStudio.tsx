@@ -52,6 +52,7 @@ function getLanguageFromExt(filename: string): any {
     if (ext === 'json') return 'json';
     if (ext === 'md') return 'markdown';
     if (['puml', 'plantuml'].includes(ext || '')) return 'plantuml';
+    if (['cpp', 'c', 'h', 'hpp', 'cc', 'hh', 'cxx'].includes(ext || '')) return 'c++';
     return 'text';
 }
 
@@ -70,6 +71,7 @@ const FileIcon: React.FC<{ filename: string }> = ({ filename }) => {
     if (['json'].includes(ext || '')) return <FileCode size={14} className="text-green-400" />;
     if (ext === 'md') return <Info size={14} className="text-indigo-400" />;
     if (['puml', 'plantuml'].includes(ext || '')) return <ImageIcon size={14} className="text-pink-400" />;
+    if (['cpp', 'c', 'h', 'hpp'].includes(ext || '')) return <FileCode size={14} className="text-blue-500" />;
     return <File size={14} className="text-slate-400" />;
 };
 
@@ -263,7 +265,7 @@ const AIChatPanel: React.FC<{
     };
 
     const extractCode = (text: string) => {
-        const match = text.match(/```(?:code|javascript|typescript|python)?\n([\s\S]*?)```/);
+        const match = text.match(/```(?:code|javascript|typescript|python|cpp|c\+\+)?\n([\s\S]*?)```/);
         return match ? match[1] : null;
     };
 
@@ -312,10 +314,20 @@ const AIChatPanel: React.FC<{
 };
 
 export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, userProfile, sessionId, accessKey, onSessionStart, onSessionStop }) => {
-  const [project, setProject] = useState<CodeProject>({ id: 'init', name: 'New Project', files: [], lastModified: Date.now() });
-  const [activeFile, setActiveFile] = useState<CodeFile | null>(null);
+  // Default Hello World C++ File
+  const defaultFile: CodeFile = {
+      name: 'hello.cpp',
+      path: 'cloud://hello.cpp',
+      language: 'c++',
+      content: `#include <iostream>\n\nint main() {\n    std::cout << "Hello, World!" << std::endl;\n    return 0;\n}`,
+      loaded: true,
+      isDirectory: false
+  };
+
+  const [project, setProject] = useState<CodeProject>({ id: 'init', name: 'New Project', files: [defaultFile], lastModified: Date.now() });
+  const [activeFile, setActiveFile] = useState<CodeFile | null>(defaultFile);
   const [viewMode, setViewMode] = useState<'code' | 'preview'>('code');
-  const [activeTab, setActiveTab] = useState<'github' | 'cloud' | 'drive'>('github');
+  const [activeTab, setActiveTab] = useState<'github' | 'cloud' | 'drive'>('cloud');
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [isAIChatOpen, setIsAIChatOpen] = useState(true);
   
@@ -844,9 +856,9 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
               </div>
 
               <div className="flex border-b border-slate-800 bg-slate-950/50">
-                  <button onClick={() => setActiveTab('github')} className={`flex-1 py-3 flex justify-center border-b-2 ${activeTab === 'github' ? 'border-indigo-500 text-white' : 'border-transparent text-slate-500'}`}><Github size={18}/></button>
                   <button onClick={() => setActiveTab('cloud')} className={`flex-1 py-3 flex justify-center border-b-2 ${activeTab === 'cloud' ? 'border-indigo-500 text-white' : 'border-transparent text-slate-500'}`}><Cloud size={18}/></button>
                   <button onClick={() => setActiveTab('drive')} className={`flex-1 py-3 flex justify-center border-b-2 ${activeTab === 'drive' ? 'border-indigo-500 text-white' : 'border-transparent text-slate-500'}`}><HardDrive size={18}/></button>
+                  <button onClick={() => setActiveTab('github')} className={`flex-1 py-3 flex justify-center border-b-2 ${activeTab === 'github' ? 'border-indigo-500 text-white' : 'border-transparent text-slate-500'}`}><Github size={18}/></button>
               </div>
               <div className="flex-1 overflow-y-auto">
                   {activeTab === 'github' && (
