@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { CodeProject, CodeFile, UserProfile, Channel, CursorPosition } from '../types';
-import { ArrowLeft, Save, Plus, Github, Cloud, HardDrive, Code, X, ChevronRight, ChevronDown, File, Folder, DownloadCloud, Loader2, CheckCircle, AlertTriangle, Info, FolderPlus, FileCode, RefreshCw, LogIn, CloudUpload, Trash2, ArrowUp, Edit2, FolderOpen, MoreVertical, Send, MessageSquare, Bot, Mic, Sparkles, SidebarClose, SidebarOpen, Users, Eye, FileText as FileTextIcon, Image as ImageIcon, StopCircle, Minus, Maximize2, Lock, Unlock, Share2, Terminal } from 'lucide-react';
+import { ArrowLeft, Save, Plus, Github, Cloud, HardDrive, Code, X, ChevronRight, ChevronDown, File, Folder, DownloadCloud, Loader2, CheckCircle, AlertTriangle, Info, FolderPlus, FileCode, RefreshCw, LogIn, CloudUpload, Trash2, ArrowUp, Edit2, FolderOpen, MoreVertical, Send, MessageSquare, Bot, Mic, Sparkles, SidebarClose, SidebarOpen, Users, Eye, FileText as FileTextIcon, Image as ImageIcon, StopCircle, Minus, Maximize2, Lock, Unlock, Share2, Terminal, Copy } from 'lucide-react';
 import { connectGoogleDrive } from '../services/authService';
 import { fetchPublicRepoInfo, fetchRepoContents, fetchFileContent, commitToRepo, fetchRepoSubTree } from '../services/githubService';
 import { listCloudDirectory, saveProjectToCloud, deleteCloudItem, createCloudFolder, CloudItem, subscribeToCodeProject, saveCodeProject, updateCodeFile, updateCursor, claimCodeProjectLock } from '../services/firestoreService';
@@ -345,12 +345,21 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
   // Debug State
   const [showDebug, setShowDebug] = useState(true);
   const [debugLogs, setDebugLogs] = useState<string[]>([]);
+  const debugRef = useRef<HTMLDivElement>(null);
 
   const addDebugLog = (msg: string) => {
       setDebugLogs(prev => {
           const newLogs = [...prev, `[${new Date().toLocaleTimeString()}] ${msg}`];
           return newLogs.slice(-20); // Keep last 20 logs
       });
+  };
+
+  const handleCopyDebug = () => {
+      if (debugRef.current) {
+          const text = debugRef.current.innerText;
+          navigator.clipboard.writeText(text);
+          showNotification("Debug info copied to clipboard", "success");
+      }
   };
   
   // -- LOCK LOGIC --
@@ -446,9 +455,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
       const root: TreeNode[] = [];
       const map = new Map<string, TreeNode>();
       
-      // CRITICAL FIX: Allow all files from the shared project to appear in the tree, 
-      // even if they are cloud:// or drive:// paths. This fixes the split-brain issue 
-      // where readers couldn't see files opened by writers from private storage.
+      // Allow all files from the shared project to appear in the tree
       const repoFiles = project.files;
       
       repoFiles.forEach(f => {
@@ -599,6 +606,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
 
       const newFile: CodeFile = {
           name: filename,
+          path: filename, // Force path to be same as name for local files to avoid undefined
           language: getLanguageFromExt(filename),
           content: '// New file\n',
           loaded: true,
@@ -816,15 +824,21 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
                   </>
               ) : <div className="flex-1 flex flex-col items-center justify-center text-slate-600"><Code size={48} className="mb-4 opacity-20" /><p className="text-sm">Select a file.</p></div>}
               
-              {/* DEBUG WINDOW */}
+              {/* DEBUG WINDOW - INTERACTIVE & COPYABLE */}
               {showDebug && (
-                  <div className="absolute bottom-4 right-4 w-96 max-h-64 bg-black/80 backdrop-blur-sm border border-green-900 rounded-lg p-3 font-mono text-[10px] text-green-400 overflow-hidden flex flex-col shadow-2xl z-50 pointer-events-none select-none">
+                  <div ref={debugRef} className="absolute bottom-4 right-4 w-96 max-h-64 bg-black/80 backdrop-blur-sm border border-green-900 rounded-lg p-3 font-mono text-[10px] text-green-400 overflow-hidden flex flex-col shadow-2xl z-50 pointer-events-auto select-text cursor-text">
                       <div className="flex justify-between items-center border-b border-green-900/50 pb-1 mb-1">
                           <span className="font-bold flex items-center gap-2"><Terminal size={12}/> SESSION DEBUG</span>
-                          <span className={isSharedSession ? "text-green-400 animate-pulse" : "text-slate-500"}>●</span>
+                          <div className="flex items-center gap-2">
+                              <span className={isSharedSession ? "text-green-400 animate-pulse" : "text-slate-500"}>●</span>
+                              <button onClick={handleCopyDebug} className="bg-green-900/50 hover:bg-green-800 text-green-200 px-2 rounded border border-green-700/50 text-[9px] flex items-center gap-1 transition-colors">
+                                  <Copy size={10} /> Copy
+                              </button>
+                          </div>
                       </div>
                       <div className="space-y-1 mb-2">
-                          <p>File Path: <span className="text-white break-all">{activeFile?.path || activeFile?.name || 'None'}</span></p>
+                          <p>Active Name: <span className="text-white break-all">{activeFile?.name || 'None'}</span></p>
+                          <p>Active Path: <span className="text-yellow-200 break-all">{activeFile?.path || 'None'}</span></p>
                           <p>Local Cursor: Ln {localCursor?.line || 0}, Col {localCursor?.col || 0}</p>
                           <p>Remote Cursors: {activeRemoteCursors.length}</p>
                           {activeRemoteCursors.map(c => (
@@ -834,9 +848,9 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
                               </p>
                           ))}
                       </div>
-                      <div className="flex-1 overflow-y-auto border-t border-green-900/30 pt-1 space-y-0.5">
+                      <div className="flex-1 overflow-y-auto border-t border-green-900/30 pt-1 space-y-0.5 scrollbar-thin scrollbar-thumb-green-900">
                           {debugLogs.map((log, i) => (
-                              <p key={i} className="opacity-80">{log}</p>
+                              <p key={i} className="opacity-80 break-words">{log}</p>
                           ))}
                           {debugLogs.length === 0 && <p className="opacity-30 italic">No activity...</p>}
                       </div>
