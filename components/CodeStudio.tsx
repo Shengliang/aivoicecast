@@ -29,7 +29,9 @@ const LANGUAGES = [
   { id: 'css', label: 'CSS' },
   { id: 'json', label: 'JSON' },
   { id: 'markdown', label: 'Markdown' },
-  { id: 'plantuml', label: 'PlantUML' }
+  { id: 'plantuml', label: 'PlantUML' },
+  { id: 'cpp', label: 'C++' },
+  { id: 'java', label: 'Java' }
 ];
 
 const PRESET_REPOS = [
@@ -54,6 +56,9 @@ function getLanguageFromExt(filename: string): any {
     if (ext === 'json') return 'json';
     if (ext === 'md') return 'markdown';
     if (['puml', 'plantuml'].includes(ext || '')) return 'plantuml';
+    if (['c', 'h'].includes(ext || '')) return 'c';
+    if (['cpp', 'hpp', 'cc', 'cxx'].includes(ext || '')) return 'cpp';
+    if (ext === 'java') return 'java';
     return 'text';
 }
 
@@ -66,6 +71,8 @@ const FileIcon: React.FC<{ filename: string }> = ({ filename }) => {
     if (['json'].includes(ext || '')) return <FileCode size={14} className="text-green-400" />;
     if (ext === 'md') return <Info size={14} className="text-indigo-400" />;
     if (['puml', 'plantuml'].includes(ext || '')) return <ImageIcon size={14} className="text-pink-400" />;
+    if (['cpp', 'c', 'h', 'hpp', 'cc', 'cxx'].includes(ext || '')) return <FileCode size={14} className="text-blue-500" />;
+    if (ext === 'java') return <FileCode size={14} className="text-red-500" />;
     return <File size={14} className="text-slate-400" />;
 };
 
