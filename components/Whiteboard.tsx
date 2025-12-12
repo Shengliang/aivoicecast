@@ -664,24 +664,20 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({
                    <div className="w-2.5 h-2.5 rounded-full bg-slate-400"></div>
                 </div>
 
-                {/* Line Style Dropdown */}
-                <div className="relative group">
-                    <select 
-                        value={lineStyle} 
-                        onChange={(e) => { 
-                            const val = e.target.value as LineStyle; 
-                            setLineStyle(val); 
-                            updateSelectedElements({ lineStyle: val }); 
-                        }}
-                        className="bg-slate-800 border border-slate-700 text-slate-300 text-xs rounded-lg px-2 py-1.5 outline-none focus:border-indigo-500 appearance-none pr-6 cursor-pointer"
-                    >
-                        <option value="solid">Solid</option>
-                        <option value="dashed">Dashed</option>
-                        <option value="dotted">Dotted</option>
-                        <option value="dash-dot">Dash-Dot</option>
-                        <option value="long-dash">Long Dash</option>
-                    </select>
-                    <MoreHorizontal size={12} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none"/>
+                {/* Line Style Icons */}
+                <div className="flex items-center gap-1 bg-slate-800 border border-slate-700 rounded-lg p-1">
+                    <button onClick={() => { setLineStyle('solid'); updateSelectedElements({ lineStyle: 'solid' }); }} className={`p-1.5 rounded-md transition-colors ${lineStyle === 'solid' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-700'}`} title="Solid">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><line x1="2" y1="12" x2="22" y2="12" /></svg>
+                    </button>
+                    <button onClick={() => { setLineStyle('dashed'); updateSelectedElements({ lineStyle: 'dashed' }); }} className={`p-1.5 rounded-md transition-colors ${lineStyle === 'dashed' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-700'}`} title="Dashed">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><line x1="2" y1="12" x2="22" y2="12" strokeDasharray="6 4" /></svg>
+                    </button>
+                    <button onClick={() => { setLineStyle('dotted'); updateSelectedElements({ lineStyle: 'dotted' }); }} className={`p-1.5 rounded-md transition-colors ${lineStyle === 'dotted' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-700'}`} title="Dotted">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round"><line x1="2" y1="12" x2="22" y2="12" strokeDasharray="1 5" /></svg>
+                    </button>
+                    <button onClick={() => { setLineStyle('dash-dot'); updateSelectedElements({ lineStyle: 'dash-dot' }); }} className={`p-1.5 rounded-md transition-colors ${lineStyle === 'dash-dot' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-700'}`} title="Dash-Dot">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><line x1="2" y1="12" x2="22" y2="12" strokeDasharray="8 4 2 4" /></svg>
+                    </button>
                 </div>
                 
                 {/* Brush Type Icons (Replacing Dropdown) */}
