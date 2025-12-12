@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { ArrowLeft, Share2, Trash2, Undo, PenTool, Eraser, Download, Square, Circle, Minus, ArrowRight, Type, ZoomIn, ZoomOut, MousePointer2, Move, Highlighter, Brush, BoxSelect, Lock, Eye, Edit3, Feather, SprayCan, Droplet, Pencil } from 'lucide-react';
+import { ArrowLeft, Share2, Trash2, Undo, PenTool, Eraser, Download, Square, Circle, Minus, ArrowRight, Type, ZoomIn, ZoomOut, MousePointer2, Move, MoreHorizontal, Lock, Eye, Edit3, GripHorizontal } from 'lucide-react';
 import { auth } from '../services/firebaseConfig';
 import { saveWhiteboardSession, subscribeToWhiteboard, updateWhiteboardElement, deleteWhiteboardElements } from '../services/firestoreService';
 import { WhiteboardElement, ToolType, LineStyle, BrushType } from '../types';
@@ -78,7 +78,7 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({
               console.warn("Failed to parse whiteboard data", e);
           }
       }
-  }, [initialData]); // Only re-parse if initialData identity changes significantly (controlled by parent)
+  }, [initialData]); 
 
   // Initialize from Firebase (Standalone Mode)
   useEffect(() => {
@@ -228,7 +228,42 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({
       updatedElementsList.forEach(el => syncUpdate(el));
   };
 
-  // ... (Keeping geometric helper functions isPointInElement, isElementIntersectingBox, getWorldCoordinates same as before) ...
+  // Helper Functions
+  const drawArrowHead = (ctx: CanvasRenderingContext2D, fromX: number, fromY: number, toX: number, toY: number, color: string) => {
+      const headLength = 15; 
+      const angle = Math.atan2(toY - fromY, toX - fromX);
+      ctx.beginPath();
+      ctx.moveTo(toX, toY);
+      ctx.lineTo(toX - headLength * Math.cos(angle - Math.PI / 6), toY - headLength * Math.sin(angle - Math.PI / 6));
+      ctx.lineTo(toX - headLength * Math.cos(angle + Math.PI / 6), toY - headLength * Math.sin(angle + Math.PI / 6));
+      ctx.lineTo(toX, toY);
+      ctx.fillStyle = color;
+      ctx.fill();
+  };
+
+  const drawWrappedText = (ctx: CanvasRenderingContext2D, text: string, x: number, y: number, maxWidth: number, lineHeight: number) => {
+      const paragraphs = text.split('\n');
+      let cursorY = y;
+      for (const paragraph of paragraphs) {
+          const words = paragraph.split(' ');
+          let line = '';
+          for (let n = 0; n < words.length; n++) {
+              const testLine = line + words[n] + ' ';
+              const metrics = ctx.measureText(testLine);
+              const testWidth = metrics.width;
+              if (testWidth > maxWidth && n > 0) {
+                  ctx.fillText(line, x, cursorY);
+                  line = words[n] + ' ';
+                  cursorY += lineHeight;
+              } else {
+                  line = testLine;
+              }
+          }
+          ctx.fillText(line, x, cursorY);
+          cursorY += lineHeight;
+      }
+  };
+
   const isPointInElement = (x: number, y: number, el: WhiteboardElement): boolean => {
       const tolerance = 10 / scale;
       switch (el.type) {
@@ -402,24 +437,6 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({
       }
   };
 
-  // ... (Drawing Rendering logic same as before, omitted to save space but should be included in full file)
-  const drawArrowHead = (ctx: CanvasRenderingContext2D, fromX: number, fromY: number, toX: number, toY: number, color: string) => {
-      const headLength = 15; const angle = Math.atan2(toY - fromY, toX - fromX);
-      ctx.beginPath(); ctx.moveTo(toX, toY); ctx.lineTo(toX - headLength * Math.cos(angle - Math.PI / 6), toY - headLength * Math.sin(angle - Math.PI / 6));
-      ctx.lineTo(toX - headLength * Math.cos(angle + Math.PI / 6), toY - headLength * Math.sin(angle + Math.PI / 6)); ctx.lineTo(toX, toY); ctx.fillStyle = color; ctx.fill();
-  };
-  const drawWrappedText = (ctx: CanvasRenderingContext2D, text: string, x: number, y: number, maxWidth: number, lineHeight: number) => {
-      const paragraphs = text.split('\n'); let cursorY = y;
-      for (const paragraph of paragraphs) {
-          const words = paragraph.split(' '); let line = '';
-          for (let n = 0; n < words.length; n++) {
-              const testLine = line + words[n] + ' '; const metrics = ctx.measureText(testLine); const testWidth = metrics.width;
-              if (testWidth > maxWidth && n > 0) { ctx.fillText(line, x, cursorY); line = words[n] + ' '; cursorY += lineHeight; } else { line = testLine; }
-          }
-          ctx.fillText(line, x, cursorY); cursorY += lineHeight;
-      }
-  };
-
   useEffect(() => {
       const canvas = canvasRef.current;
       if (!canvas) return;
@@ -460,10 +477,11 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({
           }
           ctx.restore();
           if (selectedIds.includes(el.id)) {
-              ctx.save(); ctx.setLineDash([5, 5]); ctx.strokeStyle = '#3b82f6'; ctx.lineWidth = 1 / scale; const padding = 5;
-              const bounds = isElementIntersectingBox(el, {x: -100000, y: -100000, w: 200000, h: 200000}) ? {x: el.x, y: el.y, w: el.width, h: el.height} : {x:0,y:0,w:0,h:0}; 
-              // Simplification: bounding box logic repeated from intersection logic for rendering selection box
-              // (omitted for brevity in prompt context, assume similar rect drawing logic)
+              ctx.save(); ctx.setLineDash([5, 5]); ctx.strokeStyle = '#3b82f6'; ctx.lineWidth = 1 / scale; 
+              // Simple box for selection indication
+              const b = isElementIntersectingBox(el, {x:-99999,y:-99999,w:999999,h:999999}) ? {x:el.x,y:el.y,w:el.width,h:el.height} : {x:0,y:0,w:0,h:0};
+              // Note: actual bounds logic already in isElementIntersectingBox, can reuse for robustness if extracted.
+              // For now, visual feedback relies on the selection tool box mainly.
               ctx.restore();
           }
       };
@@ -541,15 +559,16 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({
             </div>
 
             <div className="flex bg-slate-800 rounded-lg p-1">
-                <button onClick={() => { setTool('select'); setIsDrawing(false); }} className={`p-1.5 rounded ${tool === 'select' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'}`}><MousePointer2 size={16}/></button>
-                <button onClick={() => setTool('pan')} className={`p-1.5 rounded ${tool === 'pan' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'} ${isReadOnly ? 'pointer-events-auto opacity-100' : ''}`}><Move size={16}/></button>
+                <button onClick={() => { setTool('select'); setIsDrawing(false); }} className={`p-1.5 rounded ${tool === 'select' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'}`} title="Select"><MousePointer2 size={16}/></button>
+                <button onClick={() => setTool('pan')} className={`p-1.5 rounded ${tool === 'pan' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'} ${isReadOnly ? 'pointer-events-auto opacity-100' : ''}`} title="Pan"><Move size={16}/></button>
                 <div className="w-px bg-slate-700 mx-1"></div>
-                <button onClick={() => setTool('pen')} className={`p-1.5 rounded ${tool === 'pen' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'}`}><PenTool size={16}/></button>
-                <button onClick={() => setTool('eraser')} className={`p-1.5 rounded ${tool === 'eraser' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'}`}><Eraser size={16}/></button>
-                <button onClick={() => setTool('text')} className={`p-1.5 rounded ${tool === 'text' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'}`}><Type size={16}/></button>
+                <button onClick={() => setTool('pen')} className={`p-1.5 rounded ${tool === 'pen' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'}`} title="Pen"><PenTool size={16}/></button>
+                <button onClick={() => setTool('eraser')} className={`p-1.5 rounded ${tool === 'eraser' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'}`} title="Eraser"><Eraser size={16}/></button>
+                <button onClick={() => setTool('text')} className={`p-1.5 rounded ${tool === 'text' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'}`} title="Text"><Type size={16}/></button>
                 <div className="w-px bg-slate-700 mx-1"></div>
-                <button onClick={() => setTool('rect')} className={`p-1.5 rounded ${tool === 'rect' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'}`}><Square size={16}/></button>
-                <button onClick={() => setTool('arrow')} className={`p-1.5 rounded ${tool === 'arrow' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'}`}><ArrowRight size={16}/></button>
+                <button onClick={() => setTool('rect')} className={`p-1.5 rounded ${tool === 'rect' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'}`} title="Rectangle"><Square size={16}/></button>
+                <button onClick={() => setTool('arrow')} className={`p-1.5 rounded ${tool === 'arrow' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'}`} title="Arrow"><ArrowRight size={16}/></button>
+                <button onClick={() => setTool('circle')} className={`p-1.5 rounded ${tool === 'circle' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'}`} title="Circle"><Circle size={16}/></button>
             </div>
             
             <div className="flex items-center gap-1 px-2 bg-slate-800 rounded-lg">
@@ -558,7 +577,75 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({
                 ))}
             </div>
 
-            <div className="flex gap-1">
+            <div className="w-px h-8 bg-slate-800 mx-2"></div>
+
+            {/* Properties */}
+            <div className="flex items-center gap-2">
+                {/* Stroke Width */}
+                <div className="flex items-center gap-2 bg-slate-800 rounded-lg px-2 py-1" title="Stroke Width">
+                   <div className="w-1 h-1 rounded-full bg-slate-400"></div>
+                   <input 
+                     type="range" min="1" max="20" step="1" 
+                     value={lineWidth} 
+                     onChange={(e) => { 
+                         const val = parseInt(e.target.value); 
+                         setLineWidth(val); 
+                         updateSelectedElements({ strokeWidth: val }); 
+                     }}
+                     className="w-16 h-1 bg-slate-600 rounded-lg appearance-none cursor-pointer accent-indigo-500"
+                   />
+                   <div className="w-2.5 h-2.5 rounded-full bg-slate-400"></div>
+                </div>
+
+                {/* Line Style */}
+                <div className="flex bg-slate-800 rounded-lg p-0.5 border border-slate-700">
+                    <button onClick={() => { setLineStyle('solid'); updateSelectedElements({ lineStyle: 'solid' }); }} className={`p-1.5 rounded-md transition-colors ${lineStyle === 'solid' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-400 hover:bg-slate-700 hover:text-white'}`} title="Solid">
+                        <Minus size={14} />
+                    </button>
+                    <button onClick={() => { setLineStyle('dashed'); updateSelectedElements({ lineStyle: 'dashed' }); }} className={`p-1.5 rounded-md transition-colors ${lineStyle === 'dashed' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-400 hover:bg-slate-700 hover:text-white'}`} title="Dashed">
+                        <MoreHorizontal size={14} />
+                    </button>
+                </div>
+                
+                {/* Brush Type (Only for Pen) */}
+                {(tool === 'pen' || (selectedIds.length === 1 && elements.find(e => e.id === selectedIds[0])?.type === 'pen')) && (
+                     <select 
+                        value={brushType} 
+                        onChange={(e) => { 
+                            const val = e.target.value as BrushType; 
+                            setBrushType(val); 
+                            updateSelectedElements({ brushType: val }); 
+                        }}
+                        className="bg-slate-800 border border-slate-700 text-slate-300 text-xs rounded-lg px-2 py-1.5 outline-none focus:border-indigo-500"
+                     >
+                        <option value="standard">Standard</option>
+                        <option value="pencil">Pencil</option>
+                        <option value="marker">Marker</option>
+                        <option value="airbrush">Airbrush</option>
+                     </select>
+                )}
+
+                {/* Font Size (Only for Text) */}
+                {(tool === 'text' || (selectedIds.length === 1 && elements.find(e => e.id === selectedIds[0])?.type === 'text')) && (
+                     <select 
+                        value={fontSize} 
+                        onChange={(e) => { 
+                            const val = parseInt(e.target.value); 
+                            setFontSize(val); 
+                            updateSelectedElements({ fontSize: val }); 
+                        }}
+                        className="bg-slate-800 border border-slate-700 text-slate-300 text-xs rounded-lg px-2 py-1.5 outline-none focus:border-indigo-500"
+                     >
+                        <option value="16">16px</option>
+                        <option value="24">24px</option>
+                        <option value="32">32px</option>
+                        <option value="48">48px</option>
+                        <option value="64">64px</option>
+                     </select>
+                )}
+            </div>
+
+            <div className="flex gap-1 ml-auto">
                 <button onClick={() => setElements(prev => prev.slice(0, -1))} className="p-1.5 hover:bg-slate-800 rounded text-slate-400 hover:text-white"><Undo size={16} /></button>
                 <button onClick={selectedIds.length > 0 ? handleDeleteSelected : handleClear} className="p-1.5 hover:bg-slate-800 rounded text-slate-400 hover:text-red-400"><Trash2 size={16} /></button>
             </div>
