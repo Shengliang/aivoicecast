@@ -176,7 +176,108 @@ export async function fetchRepoCommits(token: string | null, owner: string, repo
     return await res.json();
 }
 
-// Commit and Push changes
+// Update (Save) a single file
+export async function updateRepoFile(
+  token: string,
+  owner: string,
+  repo: string,
+  path: string,
+  content: string,
+  sha: string | undefined, // File SHA needed for update
+  message: string,
+  branch: string
+): Promise<{ sha: string }> {
+  const url = `${GITHUB_API_BASE}/repos/${owner}/${repo}/contents/${path}`;
+  
+  // If we don't have a SHA, try to get it first (in case it wasn't tracked or changed remotely)
+  let fileSha = sha;
+  if (!fileSha) {
+      try {
+          const check = await fetch(url + `?ref=${branch}`, { headers: { Authorization: `token ${token}` } });
+          if (check.ok) {
+              const data = await check.json();
+              fileSha = data.sha;
+          }
+      } catch(e) {}
+  }
+
+  const res = await fetch(url, {
+    method: 'PUT',
+    headers: {
+      Authorization: `token ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      message: message,
+      content: btoa(content),
+      sha: fileSha, // Required for updates, omitted for new files
+      branch: branch
+    })
+  });
+
+  if (!res.ok) {
+      const err = await res.json();
+      throw new Error(`GitHub Save Failed: ${err.message}`);
+  }
+  
+  const data = await res.json();
+  return { sha: data.content.sha };
+}
+
+// Delete a file
+export async function deleteRepoFile(
+  token: string,
+  owner: string,
+  repo: string,
+  path: string,
+  sha: string,
+  message: string,
+  branch: string
+): Promise<void> {
+  const url = `${GITHUB_API_BASE}/repos/${owner}/${repo}/contents/${path}`;
+  const res = await fetch(url, {
+    method: 'DELETE',
+    headers: {
+      Authorization: `token ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      message: message,
+      sha: sha,
+      branch: branch
+    })
+  });
+
+  if (!res.ok) {
+      const err = await res.json();
+      throw new Error(`GitHub Delete Failed: ${err.message}`);
+  }
+}
+
+// Move/Rename a file
+export async function renameRepoFile(
+  token: string,
+  owner: string,
+  repo: string,
+  oldPath: string,
+  newPath: string,
+  content: string, // Need content to recreate file
+  oldSha: string,
+  branch: string
+): Promise<{ newSha: string }> {
+    
+    // 1. Create new file
+    const createRes = await updateRepoFile(token, owner, repo, newPath, content, undefined, `Rename ${oldPath} to ${newPath}`, branch);
+    
+    // 2. Delete old file
+    // Note: This is not atomic. In a real-world scenario, you'd use the Git Tree API for atomic moves.
+    // For this simple implementation, we do it sequentially.
+    await deleteRepoFile(token, owner, repo, oldPath, oldSha, `Remove ${oldPath} (Renamed to ${newPath})`, branch);
+    
+    return { newSha: createRes.sha };
+}
+
+// Commit and Push changes (Batch - Legacy method for CodeStudio project sync)
 export async function commitToRepo(
   token: string, 
   project: CodeProject, 

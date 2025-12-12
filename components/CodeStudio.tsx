@@ -1,14 +1,16 @@
 
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { CodeProject, CodeFile, UserProfile, Channel, CursorPosition, CloudItem } from '../types';
-import { ArrowLeft, Save, Plus, Github, Cloud, HardDrive, Code, X, ChevronRight, ChevronDown, File, Folder, DownloadCloud, Loader2, CheckCircle, AlertTriangle, Info, FolderPlus, FileCode, RefreshCw, LogIn, CloudUpload, Trash2, ArrowUp, Edit2, FolderOpen, MoreVertical, Send, MessageSquare, Bot, Mic, Sparkles, SidebarClose, SidebarOpen, Users, Eye, FileText as FileTextIcon, Image as ImageIcon, StopCircle, Minus, Maximize2, Minimize2, Lock, Unlock, Share2, Terminal, Copy, WifiOff, PanelRightClose, PanelRightOpen, Monitor, Laptop, PenTool } from 'lucide-react';
+import { ArrowLeft, Save, Plus, Github, Cloud, HardDrive, Code, X, ChevronRight, ChevronDown, File, Folder, DownloadCloud, Loader2, CheckCircle, AlertTriangle, Info, FolderPlus, FileCode, RefreshCw, LogIn, CloudUpload, Trash2, ArrowUp, Edit2, FolderOpen, MoreVertical, Send, MessageSquare, Bot, Mic, Sparkles, SidebarClose, SidebarOpen, Users, Eye, FileText as FileTextIcon, Image as ImageIcon, StopCircle, Minus, Maximize2, Minimize2, Lock, Unlock, Share2, Terminal, Copy, WifiOff, PanelRightClose, PanelRightOpen, Monitor, Laptop, PenTool, Edit3 } from 'lucide-react';
 import { listCloudDirectory, saveProjectToCloud, deleteCloudItem, createCloudFolder, subscribeToCodeProject, saveCodeProject, updateCodeFile, updateCursor, claimCodeProjectLock, updateProjectActiveFile, deleteCodeFile, moveCloudFile } from '../services/firestoreService';
 import { ensureCodeStudioFolder, listDriveFiles, readDriveFile, saveToDrive, deleteDriveFile, createDriveFolder, DriveFile, moveDriveFile } from '../services/googleDriveService';
-import { connectGoogleDrive } from '../services/authService';
-import { fetchPublicRepoInfo, fetchRepoContents, fetchFileContent } from '../services/githubService';
+import { connectGoogleDrive, signInWithGitHub } from '../services/authService';
+import { fetchPublicRepoInfo, fetchRepoContents, fetchFileContent, updateRepoFile, deleteRepoFile, renameRepoFile } from '../services/githubService';
 import { MarkdownView } from './MarkdownView';
 import { encodePlantUML } from '../utils/plantuml';
 import { Whiteboard } from './Whiteboard';
+import { GoogleGenAI } from '@google/genai';
+import { GEMINI_API_KEY } from '../services/private_keys';
 
 // --- Interfaces & Constants ---
 
@@ -61,7 +63,7 @@ const FileIcon = ({ filename }: { filename: string }) => {
     return <File size={16} className="text-slate-500" />;
 };
 
-const FileTreeItem = ({ node, depth, activeId, onSelect, onToggle, onDelete, onShare, expandedIds, loadingIds, onDragStart, onDrop }: any) => {
+const FileTreeItem = ({ node, depth, activeId, onSelect, onToggle, onDelete, onRename, onShare, expandedIds, loadingIds, onDragStart, onDrop }: any) => {
     const isExpanded = expandedIds[node.id];
     const isLoading = loadingIds[node.id];
     const isActive = activeId === node.id;
@@ -69,7 +71,7 @@ const FileTreeItem = ({ node, depth, activeId, onSelect, onToggle, onDelete, onS
     return (
         <div>
             <div 
-                className={`flex items-center gap-1 py-1 px-2 cursor-pointer select-none hover:bg-slate-800/50 ${isActive ? 'bg-slate-800 text-white' : 'text-slate-400 hover:text-slate-200'}`}
+                className={`flex items-center gap-1 py-1 px-2 cursor-pointer select-none hover:bg-slate-800/50 group ${isActive ? 'bg-slate-800 text-white' : 'text-slate-400 hover:text-slate-200'}`}
                 style={{ paddingLeft: `${depth * 12 + 8}px` }}
                 onClick={() => onSelect(node)}
                 draggable
@@ -90,8 +92,9 @@ const FileTreeItem = ({ node, depth, activeId, onSelect, onToggle, onDelete, onS
                 <span className="text-xs truncate flex-1">{node.name}</span>
                 {node.status === 'modified' && <div className="w-1.5 h-1.5 rounded-full bg-amber-400 ml-1"></div>}
                 <div className="flex gap-1 opacity-0 group-hover:opacity-100">
-                    {onShare && <button onClick={(e) => { e.stopPropagation(); onShare(node); }} className="p-1 hover:text-white"><Share2 size={10}/></button>}
-                    {onDelete && <button onClick={(e) => { e.stopPropagation(); onDelete(node); }} className="p-1 hover:text-red-400"><Trash2 size={10}/></button>}
+                    {onRename && <button onClick={(e) => { e.stopPropagation(); onRename(node); }} className="p-1 hover:text-indigo-400" title="Rename"><Edit3 size={10}/></button>}
+                    {onShare && <button onClick={(e) => { e.stopPropagation(); onShare(node); }} className="p-1 hover:text-white" title="Copy Link"><Share2 size={10}/></button>}
+                    {onDelete && <button onClick={(e) => { e.stopPropagation(); onDelete(node); }} className="p-1 hover:text-red-400" title="Delete"><Trash2 size={10}/></button>}
                 </div>
             </div>
             {isExpanded && node.children && (
@@ -105,6 +108,7 @@ const FileTreeItem = ({ node, depth, activeId, onSelect, onToggle, onDelete, onS
                             onSelect={onSelect} 
                             onToggle={onToggle} 
                             onDelete={onDelete} 
+                            onRename={onRename}
                             onShare={onShare}
                             expandedIds={expandedIds} 
                             loadingIds={loadingIds}
@@ -225,6 +229,8 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
   const [isLoadingPublic, setIsLoadingPublic] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
   const [driveToken, setDriveToken] = useState<string | null>(null);
+  const [githubToken, setGithubToken] = useState<string | null>(null);
+  
   const [saveStatus, setSaveStatus] = useState<'saved' | 'modified' | 'saving'>('saved');
   const [isSharedSession, setIsSharedSession] = useState(!!sessionId);
   const clientId = useRef(crypto.randomUUID()).current;
@@ -248,6 +254,15 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
           setPublicRepoPath(userProfile.defaultRepoUrl);
       }
   }, [userProfile?.defaultRepoUrl]);
+
+  // Auto-Load Default Repo logic
+  useEffect(() => {
+      // If user switches to GitHub tab, and no repo is loaded, and they have a default
+      if (activeTab === 'github' && !project.github && publicRepoPath) {
+          // Trigger a load only if we haven't already
+          handleLoadPublicRepo(); 
+      }
+  }, [activeTab]);
 
   useEffect(() => {
       const currentPath = activeFile ? (activeFile.path || activeFile.name) : null;
@@ -339,8 +354,46 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
       } else if (activeTab === 'drive' && driveToken && driveRootId) {
           const files = await listDriveFiles(driveToken, driveRootId);
           setDriveItems([{ id: driveRootId, name: 'CodeStudio', mimeType: 'application/vnd.google-apps.folder', isLoaded: true }, ...files.map(f => ({ ...f, parentId: driveRootId, isLoaded: false }))]);
+      } else if (activeTab === 'github' && project.github) {
+          // Re-fetch project root
+          const { files, latestSha } = await fetchRepoContents(githubToken, project.github.owner, project.github.repo, project.github.branch);
+          setProject(prev => ({ ...prev, files: files, github: { ...prev.github!, sha: latestSha } }));
       }
       showToast("Explorer Refreshed", "success");
+  };
+
+  const getOrRequestGithubToken = async (): Promise<string | null> => {
+      if (githubToken) return githubToken;
+      try {
+          const { token } = await signInWithGitHub();
+          setGithubToken(token);
+          return token;
+      } catch (e: any) {
+          console.error(e);
+          showToast("GitHub Auth Failed: " + e.message, "error");
+          return null;
+      }
+  };
+
+  const generateAICommitMessage = async (filename: string, code: string): Promise<string> => {
+      try {
+          const apiKey = localStorage.getItem('gemini_api_key') || GEMINI_API_KEY || process.env.API_KEY || '';
+          if (!apiKey) return `Update ${filename}`;
+          
+          const ai = new GoogleGenAI({ apiKey });
+          const prompt = `
+            You are a senior developer. Write a concise conventional commit message (max 50 chars) for saving the following file.
+            Filename: ${filename}
+            Code Snippet (First 20 lines):
+            ${code.substring(0, 500)}
+            
+            Return ONLY the message text. No quotes.
+          `;
+          const resp = await ai.models.generateContent({ model: 'gemini-2.5-flash', contents: prompt });
+          return resp.text?.trim() || `Update ${filename}`;
+      } catch (e) {
+          return `Update ${filename}`;
+      }
   };
 
   const handleSmartSave = async () => {
@@ -351,24 +404,19 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
                let targetPath = activeFile.path || '';
                let filename = activeFile.name;
 
-               // Case 1: New File Template (cloud://)
                if (!targetPath || targetPath.startsWith('cloud://')) {
                    targetPath = `${rootPrefix}/${filename}`;
-               } 
-               // Case 2: Existing File (or navigated into folder)
-               else if (!targetPath.startsWith(rootPrefix)) {
+               } else if (!targetPath.startsWith(rootPrefix)) {
                    const cleanPath = targetPath.replace(/^\/+/, '');
                    targetPath = `${rootPrefix}/${cleanPath}`;
                }
 
-               // Extract proper parent directory and filename from the Full Path
                const lastSlash = targetPath.lastIndexOf('/');
                const parentPath = lastSlash > -1 ? targetPath.substring(0, lastSlash) : rootPrefix;
                const finalFilename = lastSlash > -1 ? targetPath.substring(lastSlash + 1) : filename;
 
                await saveProjectToCloud(parentPath, finalFilename, activeFile.content);
                
-               // Update state with the confirmed absolute path
                const updatedFile = { ...activeFile, path: targetPath, name: finalFilename };
                setActiveFile(updatedFile);
                setProject(prev => ({
@@ -376,13 +424,42 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
                    files: prev.files.map(f => (f.path === activeFile.path || f.name === activeFile.name) ? updatedFile : f)
                }));
                
-               // Refresh the directory we just saved to
                await refreshCloudPath(parentPath);
-
                showToast("Saved to Cloud", "success");
+
           } else if (activeTab === 'drive' && driveToken && driveRootId && activeFile) {
                await saveToDrive(driveToken, driveRootId, activeFile.name, activeFile.content);
                showToast("Saved to Drive", "success");
+
+          } else if (activeTab === 'github' && project.github && activeFile) {
+               const token = await getOrRequestGithubToken();
+               if (!token) throw new Error("GitHub Token required to commit.");
+               
+               // Generate Commit Message
+               const message = await generateAICommitMessage(activeFile.name, activeFile.content);
+               
+               // Commit via API
+               const { sha } = await updateRepoFile(
+                   token, 
+                   project.github.owner, 
+                   project.github.repo, 
+                   activeFile.path || activeFile.name,
+                   activeFile.content,
+                   activeFile.sha,
+                   message,
+                   project.github.branch
+               );
+               
+               // Update local file state with new SHA
+               const updatedFile = { ...activeFile, sha, isModified: false };
+               setActiveFile(updatedFile);
+               setProject(prev => ({
+                   ...prev,
+                   files: prev.files.map(f => (f.path === activeFile.path || f.name === activeFile.name) ? updatedFile : f)
+               }));
+               
+               showToast(`Committed: ${message}`, "success");
+
           } else if (isSharedSession && sessionId) {
                if (activeFile) await updateCodeFile(sessionId, activeFile);
                await saveCodeProject(project);
@@ -637,9 +714,58 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
               setProject(prev => ({ ...prev, files: prev.files.filter(f => (f.path || f.name) !== node.id) }));
               if (activeFile && (activeFile.path || activeFile.name) === node.id) setActiveFile(null);
               if (isSharedSession && sessionId) await deleteCodeFile(sessionId, node.name);
+          } else if (activeTab === 'github' && project.github) {
+              const file = node.data as CodeFile;
+              const token = await getOrRequestGithubToken();
+              if (!token || !file.sha) { showToast("Cannot delete (Missing Token or SHA)", "error"); return; }
+              await deleteRepoFile(token, project.github.owner, project.github.repo, file.path || file.name, file.sha, `Delete ${file.name}`, project.github.branch);
+              // Optimistically update
+              setProject(prev => ({ ...prev, files: prev.files.filter(f => f.path !== file.path) }));
+              if (activeFile && activeFile.path === file.path) setActiveFile(null);
           }
           showToast("Item deleted", "success");
       } catch(e: any) { showToast(e.message, "error"); }
+  };
+
+  const handleRenameItem = async (node: TreeNode) => {
+      const newName = prompt("New Name:", node.name);
+      if (!newName || newName === node.name) return;
+      
+      try {
+          if (activeTab === 'github' && project.github) {
+              const file = node.data as CodeFile;
+              const token = await getOrRequestGithubToken();
+              if (!token || !file.sha) throw new Error("Missing Token or SHA");
+              
+              // Ensure we have content to recreate file
+              let content = file.content;
+              if (!file.loaded) {
+                  content = await fetchFileContent(token, project.github.owner, project.github.repo, file.path || file.name, project.github.branch);
+              }
+              
+              // Calculate new path (keep same directory)
+              const pathParts = (file.path || file.name).split('/');
+              pathParts.pop(); 
+              const newPath = pathParts.length > 0 ? `${pathParts.join('/')}/${newName}` : newName;
+              
+              const { newSha } = await renameRepoFile(token, project.github.owner, project.github.repo, file.path || file.name, newPath, content, file.sha, project.github.branch);
+              
+              // Update local state
+              const updatedFile = { ...file, name: newPath, path: newPath, sha: newSha, content, loaded: true };
+              setProject(prev => ({ 
+                  ...prev, 
+                  files: prev.files.map(f => (f.path === file.path ? updatedFile : f)) 
+              }));
+              if (activeFile && activeFile.path === file.path) setActiveFile(updatedFile);
+              
+              showToast("Renamed successfully", "success");
+          } else {
+              // TODO: Implement rename for Cloud/Session
+              alert("Rename currently supported for GitHub only.");
+          }
+      } catch(e: any) {
+          showToast("Rename failed: " + e.message, "error");
+      }
   };
 
   const handleShareItem = (node: TreeNode) => {
@@ -701,7 +827,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
       const file = node.data as CodeFile;
       if (!file.loaded && project.github) {
           try {
-              const content = await fetchFileContent(null, project.github.owner, project.github.repo, file.path || file.name, project.github.branch);
+              const content = await fetchFileContent(githubToken, project.github.owner, project.github.repo, file.path || file.name, project.github.branch);
               const updatedFile = { ...file, content, loaded: true };
               setProject(prev => ({ ...prev, files: prev.files.map(f => (f.path || f.name) === (file.path || file.name) ? updatedFile : f) }));
               setActiveFile(updatedFile);
@@ -875,7 +1001,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
                   )}
                   {activeTab === 'github' && (
                       <div className="p-2">
-                          {!project.github ? <div className="p-4 text-center"><button onClick={() => setShowImportModal(true)} className="px-4 py-2 bg-slate-800 text-white text-xs font-bold rounded-lg border border-slate-700 hover:bg-slate-700">Open Repo</button></div> : workspaceTree.map(node => <FileTreeItem key={node.id} node={node} depth={0} activeId={selectedExplorerNode?.id} onSelect={handleExplorerSelect} onToggle={(n: any) => setExpandedFolders(prev => ({...prev, [n.id]: !expandedFolders[n.id]}))} expandedIds={expandedFolders} loadingIds={loadingFolders} onDragStart={handleDragStart} onDrop={handleDrop}/>)}
+                          {!project.github ? <div className="p-4 text-center"><button onClick={() => setShowImportModal(true)} className="px-4 py-2 bg-slate-800 text-white text-xs font-bold rounded-lg border border-slate-700 hover:bg-slate-700">Open Repo</button></div> : workspaceTree.map(node => <FileTreeItem key={node.id} node={node} depth={0} activeId={selectedExplorerNode?.id} onSelect={handleExplorerSelect} onToggle={(n: any) => setExpandedFolders(prev => ({...prev, [n.id]: !expandedFolders[n.id]}))} onDelete={handleDeleteItem} onRename={handleRenameItem} expandedIds={expandedFolders} loadingIds={loadingFolders} onDragStart={handleDragStart} onDrop={handleDrop}/>)}
                       </div>
                   )}
                   {activeTab === 'session' && (
