@@ -140,7 +140,7 @@ const RichCodeEditor = ({ code, onChange, onCursorMove, language, isShared, remo
         <div className="w-full h-full relative font-mono text-sm">
             <textarea
                 className="w-full h-full bg-slate-950 text-slate-300 p-4 resize-none outline-none leading-relaxed"
-                value={code}
+                value={code || ''}
                 onChange={(e) => onChange(e.target.value)}
                 onSelect={(e) => {
                     const target = e.target as HTMLTextAreaElement;
@@ -359,7 +359,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
                 Current File: ${activeFile.name} (${activeFile.language})
                 
                 Code Context (First 2000 chars):
-                ${activeFile.content.substring(0, 2000)}...
+                ${(activeFile.content || '').substring(0, 2000)}...
                 
                 User Request: "${input}"
                 
@@ -1013,7 +1013,8 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
       if (sessionId) {
           setIsSharedSession(true);
           const unsubscribe = subscribeToCodeProject(sessionId, (remoteProject) => {
-              setProject(remoteProject);
+              // Safety check: ensure files is an array
+              setProject({ ...remoteProject, files: remoteProject.files || [] });
           });
           return () => unsubscribe();
       } else {
@@ -1024,7 +1025,8 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
   const workspaceTree = useMemo(() => {
       const root: TreeNode[] = [];
       const map = new Map<string, TreeNode>();
-      const repoFiles = project.files;
+      const repoFiles = project.files || []; // Fallback to empty array
+      
       repoFiles.forEach(f => {
           const path = f.path || f.name;
           map.set(path, { id: path, name: f.name.split('/').pop()!, type: f.isDirectory ? 'folder' : 'file', data: f, children: [], isLoaded: f.childrenFetched, status: f.isModified ? 'modified' : undefined });
@@ -1241,7 +1243,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
                             <div className="w-full h-full overflow-y-auto bg-slate-950 p-8">
                                 {activeFile.name.endsWith('.md') || activeFile.name.endsWith('.markdown') ? (
                                     <div className="prose prose-invert max-w-none">
-                                        <MarkdownView content={activeFile.content} />
+                                        <MarkdownView content={activeFile.content || ''} />
                                     </div>
                                 ) : (
                                     <div className="flex flex-col items-center">
@@ -1250,7 +1252,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
                                 )}
                             </div>
                         ) : (
-                            <RichCodeEditor code={activeFile.content} onChange={handleCodeChange} onCursorMove={(l: number, c: number) => setLocalCursor({line: l, col: c})} language={activeFile.language} isShared={isSharedSession} remoteCursors={activeRemoteCursors} localCursor={localCursor} readOnly={isLockedByOther} />
+                            <RichCodeEditor code={activeFile.content || ''} onChange={handleCodeChange} onCursorMove={(l: number, c: number) => setLocalCursor({line: l, col: c})} language={activeFile.language} isShared={isSharedSession} remoteCursors={activeRemoteCursors} localCursor={localCursor} readOnly={isLockedByOther} />
                         )}
                     </div>
                   </>

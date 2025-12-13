@@ -53,7 +53,7 @@ import { HANDCRAFTED_CHANNELS, CATEGORY_STYLES, TOPIC_CATEGORIES } from './utils
 import { OFFLINE_CHANNEL_ID } from './utils/offlineContent';
 import { GEMINI_API_KEY } from './services/private_keys';
 
-const APP_VERSION = "v3.63.0";
+const APP_VERSION = "v3.64.0";
 
 const UI_TEXT = {
   en: {
@@ -186,13 +186,18 @@ const App: React.FC = () => {
     const params = new URLSearchParams(window.location.search);
     const session = params.get('session');
     const keyParam = params.get('key'); // Secret Token for Write Access
+    const mode = params.get('mode'); // 'code' or 'whiteboard'
 
     if (session) {
         setSharedSessionId(session);
         if (keyParam) setAccessKey(keyParam);
         
-        // Default to Code Studio for shared sessions
-        setViewState('code_studio');
+        if (mode === 'whiteboard') {
+             setViewState('whiteboard');
+        } else {
+             // Default to Code Studio for shared sessions
+             setViewState('code_studio');
+        }
     }
 
     let unsubscribeAuth = () => {};
