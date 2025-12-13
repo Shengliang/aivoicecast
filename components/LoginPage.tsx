@@ -4,7 +4,11 @@ import { Podcast, ArrowRight, ShieldCheck, Loader2, AlertCircle } from 'lucide-r
 import { signInWithGoogle } from '../services/authService';
 import { logUserActivity } from '../services/firestoreService';
 
-export const LoginPage: React.FC = () => {
+interface LoginPageProps {
+  onPrivacyClick?: () => void;
+}
+
+export const LoginPage: React.FC<LoginPageProps> = ({ onPrivacyClick }) => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -48,7 +52,7 @@ export const LoginPage: React.FC = () => {
       </div>
 
       <div className="relative z-10 w-full max-w-md">
-        <div className="bg-slate-900/80 backdrop-blur-xl border border-slate-800 rounded-3xl shadow-2xl p-8 text-center">
+        <div className="bg-slate-900/80 backdrop-blur-xl border border-slate-800 rounded-3xl shadow-2xl p-8 text-center animate-fade-in-up">
           
           {/* Logo */}
           <div className="w-20 h-20 bg-gradient-to-br from-indigo-600 to-purple-600 rounded-2xl mx-auto flex items-center justify-center shadow-lg shadow-indigo-500/20 mb-6">
@@ -61,15 +65,6 @@ export const LoginPage: React.FC = () => {
           </p>
 
           <div className="space-y-6">
-            <div className="bg-indigo-900/20 border border-indigo-500/20 rounded-xl p-4 text-left">
-              <h3 className="text-indigo-300 font-bold text-sm flex items-center gap-2 mb-1">
-                <ShieldCheck size={16} /> Members Only
-              </h3>
-              <p className="text-xs text-indigo-200/70 leading-relaxed">
-                Guest access is disabled. You must register or sign in with a valid Gmail/Google account to access this platform.
-              </p>
-            </div>
-
             {error && (
               <div className="bg-red-900/20 border border-red-900/50 rounded-lg p-3 text-red-300 text-xs flex items-center gap-2 text-left">
                 <AlertCircle size={16} className="shrink-0" />
@@ -109,12 +104,15 @@ export const LoginPage: React.FC = () => {
                 </>
               )}
             </button>
-          </div>
-
-          <div className="mt-8 pt-6 border-t border-slate-800">
-            <p className="text-[10px] text-slate-500 uppercase tracking-widest font-semibold">
-              Restricted Access Area
-            </p>
+            
+            {onPrivacyClick && (
+                <button 
+                    onClick={onPrivacyClick}
+                    className="text-xs text-slate-500 hover:text-slate-300 underline transition-colors"
+                >
+                    Privacy Policy
+                </button>
+            )}
           </div>
         </div>
         

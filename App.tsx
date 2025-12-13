@@ -39,6 +39,7 @@ import { SettingsModal } from './components/SettingsModal';
 import { PricingModal } from './components/PricingModal'; 
 import { CareerCenter } from './components/CareerCenter';
 import { UserManual } from './components/UserManual'; 
+import { PrivacyPolicy } from './components/PrivacyPolicy';
 
 import { auth, isFirebaseConfigured } from './services/firebaseConfig';
 import { 
@@ -123,6 +124,9 @@ const App: React.FC = () => {
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [authLoading, setAuthLoading] = useState(true); // Loading state for initial auth check
+
+  // Privacy Policy Public View
+  const [isPrivacyOpen, setIsPrivacyOpen] = useState(false);
 
   const [activeTab, setActiveTab] = useState('categories');
   const [selectedCategory, setSelectedCategory] = useState('All');
@@ -508,8 +512,14 @@ const App: React.FC = () => {
       );
   }
 
+  // Handle Public Privacy Policy View
+  if (isPrivacyOpen) {
+      return <PrivacyPolicy onBack={() => setIsPrivacyOpen(false)} />;
+  }
+
+  // Login Gate
   if (!currentUser) {
-      return <LoginPage />;
+      return <LoginPage onPrivacyClick={() => setIsPrivacyOpen(true)} />;
   }
 
   return (
