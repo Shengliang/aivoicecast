@@ -33,6 +33,7 @@ const PRESET_REPOS = [
 ];
 
 function getLanguageFromExt(filename: string): any {
+    if (!filename) return 'text';
     const ext = filename.split('.').pop()?.toLowerCase();
     if (['js', 'jsx'].includes(ext || '')) return 'javascript';
     if (['ts', 'tsx'].includes(ext || '')) return 'typescript';
@@ -63,6 +64,7 @@ function cleanRepoPath(input: string) {
 // --- Helper Components ---
 
 const FileIcon = ({ filename }: { filename: string }) => {
+    if (!filename) return <File size={16} className="text-slate-500" />;
     const lang = getLanguageFromExt(filename);
     if (lang === 'javascript' || lang === 'typescript') return <FileCode size={16} className="text-yellow-400" />;
     if (lang === 'python') return <FileCode size={16} className="text-blue-400" />;
@@ -1014,7 +1016,8 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
           setIsSharedSession(true);
           const unsubscribe = subscribeToCodeProject(sessionId, (remoteProject) => {
               // Safety check: ensure files is an array
-              setProject({ ...remoteProject, files: remoteProject.files || [] });
+              const safeFiles = Array.isArray(remoteProject?.files) ? remoteProject.files : []; // SAFEGUARD
+              setProject({ ...remoteProject, files: safeFiles });
           });
           return () => unsubscribe();
       } else {
@@ -1025,7 +1028,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
   const workspaceTree = useMemo(() => {
       const root: TreeNode[] = [];
       const map = new Map<string, TreeNode>();
-      const repoFiles = project.files || []; // Fallback to empty array
+      const repoFiles = Array.isArray(project.files) ? project.files : []; // SAFEGUARD
       
       repoFiles.forEach(f => {
           const path = f.path || f.name;

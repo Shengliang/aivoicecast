@@ -192,11 +192,14 @@ const App: React.FC = () => {
         setSharedSessionId(session);
         if (keyParam) setAccessKey(keyParam);
         
-        if (mode === 'whiteboard') {
-             setViewState('whiteboard');
-        } else {
-             // Default to Code Studio for shared sessions
-             setViewState('code_studio');
+        // Prevent view state loop by checking current view state
+        if (viewState !== 'code_studio' && viewState !== 'whiteboard') {
+            if (mode === 'whiteboard') {
+                 setViewState('whiteboard');
+            } else {
+                 // Default to Code Studio for shared sessions
+                 setViewState('code_studio');
+            }
         }
     }
 
