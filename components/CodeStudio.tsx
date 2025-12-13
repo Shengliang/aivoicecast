@@ -432,34 +432,68 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
       if (project.activeClientId === clientId || !isLockedByOther) { try { await claimCodeProjectLock(sessionId, clientId, currentUser.displayName || 'Anonymous'); } catch(e) {} }
   }, [isSharedSession, sessionId, currentUser, project.activeClientId, isLockedByOther, clientId]);
 
-  const handleShare = () => {
-      if (onSessionStart && !sessionId) {
+  const handleShare = async () => {
+      let targetId = sessionId;
+      if (onSessionStart && !targetId) {
           const newId = project.id === 'init' ? crypto.randomUUID() : project.id;
+          targetId = newId;
           onSessionStart(newId);
-          // Set current project ID to ensure modal uses correct ID if just created
-          setProject(p => ({ ...p, id: newId, ownerId: currentUser?.uid }));
+          
+          const newProjectState = { ...project, id: newId, ownerId: currentUser?.uid };
+          setProject(newProjectState);
+          
+          // Create the document immediately so subsequent updates work
+          addDebugLog(`Creating new session doc: ${newId}`);
+          try {
+              await saveCodeProject(newProjectState);
+              addDebugLog("Session doc created successfully.");
+          } catch (e: any) {
+              addDebugLog(`Failed to create session doc: ${e.message}`);
+              showToast("Failed to initialize session", "error");
+              return; // Don't open modal if creation failed
+          }
       }
       setIsShareModalOpen(true);
   };
 
   const handleConfirmShare = async (selectedUids: string[], isPublic: boolean) => {
-      if (!sessionId) return;
+      const targetId = sessionId || project.id;
+      if (!targetId || targetId === 'init') {
+           addDebugLog("Error: No valid session ID for sharing.");
+           return;
+      }
+      
+      addDebugLog(`Updating access for ${targetId}. Public: ${isPublic}, Users: ${selectedUids.join(', ')}`);
       
       try {
-          // 1. Update Project Access in DB
-          await updateProjectAccess(sessionId, isPublic ? 'public' : 'restricted', selectedUids);
+          // 1. Update Project Access
+          // We use saveCodeProject to ensure we don't get "No such document" if the init save was slow/failed
+          // Updating local state first
+          const updatedProject = {
+              ...project,
+              id: targetId,
+              accessLevel: isPublic ? 'public' : 'restricted' as 'public' | 'restricted',
+              allowedUserIds: selectedUids
+          };
+          setProject(updatedProject);
           
-          // 2. Send Invites to Selected Users
+          await saveCodeProject(updatedProject);
+          addDebugLog("Access updated in Firestore.");
+          
+          // 2. Send Invites
           if (currentUser) {
               const sessionLink = window.location.href;
               const type = activeFile && getLanguageFromExt(activeFile.name) === 'whiteboard' ? 'Whiteboard' : 'Code';
               
               for (const uid of selectedUids) {
+                  addDebugLog(`Sending invite to ${uid}...`);
                   await sendShareNotification(uid, type, sessionLink, currentUser.displayName || 'A User');
               }
               showToast(`Shared with ${selectedUids.length} members!`, "success");
           }
       } catch(e: any) {
+          addDebugLog(`Share Failed: ${e.message}`);
+          console.error("Share error", e);
           showToast("Share failed: " + e.message, "error");
       }
   };
