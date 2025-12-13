@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { ArrowLeft, Share2, Trash2, Undo, PenTool, Eraser, Download, Square, Circle, Minus, ArrowRight, Type, ZoomIn, ZoomOut, MousePointer2, Move, MoreHorizontal, Lock, Eye, Edit3, GripHorizontal, Brush, ChevronDown, Feather, Highlighter, Wind, Droplet, Cloud, Edit2, Pen, Copy, Clipboard, BringToFront, SendToBack, Sparkles, Send, Loader2, X, RotateCw, Triangle, Star, Spline } from 'lucide-react';
+import { ArrowLeft, Share2, Trash2, Undo, PenTool, Eraser, Download, Square, Circle, Minus, ArrowRight, Type, ZoomIn, ZoomOut, MousePointer2, Move, MoreHorizontal, Lock, Eye, Edit3, GripHorizontal, Brush, ChevronDown, Feather, Highlighter, Wind, Droplet, Cloud, Edit2, Pen, Copy, Clipboard, BringToFront, SendToBack, Sparkles, Send, Loader2, X, RotateCw, Triangle, Star, Spline, Maximize } from 'lucide-react';
 import { auth } from '../services/firebaseConfig';
 import { saveWhiteboardSession, subscribeToWhiteboard, updateWhiteboardElement, deleteWhiteboardElements } from '../services/firestoreService';
 import { WhiteboardElement, ToolType, LineStyle, BrushType } from '../types';
@@ -16,6 +16,7 @@ interface WhiteboardProps {
   initialData?: string; 
   onDataChange?: (data: string) => void;
   isReadOnly?: boolean;
+  disableAI?: boolean; // New prop to hide internal AI if parent handles it
 }
 
 export const Whiteboard: React.FC<WhiteboardProps> = ({ 
@@ -25,7 +26,8 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({
   onSessionStart,
   initialData, 
   onDataChange,
-  isReadOnly: propReadOnly = false
+  isReadOnly: propReadOnly = false,
+  disableAI = false
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [elements, setElements] = useState<WhiteboardElement[]>([]);
@@ -81,7 +83,7 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({
 
   const [writeToken, setWriteToken] = useState<string | undefined>(undefined);
 
-  // AI Assistant State
+  // AI Assistant State (Internal)
   const [showAIPrompt, setShowAIPrompt] = useState(false);
   const [aiPromptText, setAiPromptText] = useState('');
   const [isAIGenerating, setIsAIGenerating] = useState(false);
@@ -137,6 +139,50 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({
           setTool('pan');
       }
   }, [isReadOnly, tool]);
+
+  // Recenter Viewport Function
+  const handleRecenter = () => {
+      if (elements.length === 0 || !canvasRef.current) {
+          setOffset({ x: 0, y: 0 });
+          setScale(1);
+          return;
+      }
+
+      // 1. Calculate Bounding Box of all elements
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+
+      elements.forEach(el => {
+          const bounds = getElementBounds(el);
+          minX = Math.min(minX, bounds.x);
+          minY = Math.min(minY, bounds.y);
+          maxX = Math.max(maxX, bounds.x + bounds.w);
+          maxY = Math.max(maxY, bounds.y + bounds.h);
+      });
+
+      // Add padding
+      const padding = 50;
+      minX -= padding;
+      minY -= padding;
+      maxX += padding;
+      maxY += padding;
+
+      const contentWidth = maxX - minX;
+      const contentHeight = maxY - minY;
+      const canvasWidth = canvasRef.current.parentElement?.clientWidth || 800;
+      const canvasHeight = canvasRef.current.parentElement?.clientHeight || 600;
+
+      // 2. Determine Scale to fit
+      const scaleX = canvasWidth / contentWidth;
+      const scaleY = canvasHeight / contentHeight;
+      const newScale = Math.min(scaleX, scaleY, 1); // Don't zoom in more than 100% automatically
+
+      // 3. Center it
+      const newOffsetX = (canvasWidth - contentWidth * newScale) / 2 - minX * newScale;
+      const newOffsetY = (canvasHeight - contentHeight * newScale) / 2 - minY * newScale;
+
+      setScale(newScale);
+      setOffset({ x: newOffsetX, y: newOffsetY });
+  };
 
   // Helper for Finalizing Curve (Needed for Keyboard Shortcut)
   const finalizeCurve = () => {
@@ -929,7 +975,7 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({
       ctx.lineTo(tlX + w, tlY + h - r);
       ctx.arcTo(tlX + w, tlY + h, tlX + w - r, tlY + h, r);
       ctx.lineTo(tlX + r, tlY + h);
-      ctx.arcTo(tlX, tlY + h, tlX, tlY + h - r, r);
+      ctx.arcTo(tlX, tlY, tlX, tlY + h - r, r);
       ctx.lineTo(tlX, tlY + r);
       ctx.arcTo(tlX, tlY, tlX + r, tlY, r);
       ctx.closePath();
@@ -1327,6 +1373,8 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({
         <div className={`bg-slate-900 border-b border-slate-800 p-2 flex flex-wrap justify-center gap-2 shrink-0 z-10 items-center ${isReadOnly ? 'opacity-50 pointer-events-none' : ''}`}>
             {/* Zoom Controls */}
             <div className="flex bg-slate-800 rounded-lg p-1 mr-2">
+                <button onClick={handleRecenter} className="p-1.5 hover:bg-slate-700 rounded text-slate-400" title="Zoom to Fit / Recenter"><Maximize size={16}/></button>
+                <div className="w-px bg-slate-700 mx-1"></div>
                 <button onClick={() => setScale(s => Math.min(s + 0.1, 3))} className="p-1.5 hover:bg-slate-700 rounded text-slate-400"><ZoomIn size={16}/></button>
                 <span className="text-[10px] flex items-center px-1 text-slate-400 font-mono w-8 justify-center">{Math.round(scale * 100)}%</span>
                 <button onClick={() => setScale(s => Math.max(s - 0.1, 0.5))} className="p-1.5 hover:bg-slate-700 rounded text-slate-400"><ZoomOut size={16}/></button>
@@ -1349,16 +1397,18 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({
                 <button onClick={() => setTool('star')} className={`p-1.5 rounded ${tool === 'star' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'}`} title="Star"><Star size={16}/></button>
             </div>
             
-            {/* AI Assistant Button */}
-            <div className="flex bg-gradient-to-r from-purple-900/50 to-pink-900/50 rounded-lg p-1 border border-purple-500/30">
-                <button 
-                    onClick={() => setShowAIPrompt(!showAIPrompt)} 
-                    className={`p-1.5 rounded transition-all ${showAIPrompt ? 'bg-pink-500 text-white shadow-lg shadow-pink-500/50' : 'text-pink-300 hover:text-white hover:bg-white/10'}`} 
-                    title="AI Assistant (Magic)"
-                >
-                    <Sparkles size={16} />
-                </button>
-            </div>
+            {/* AI Assistant Button - Only shown if not disabled by parent */}
+            {!disableAI && (
+                <div className="flex bg-gradient-to-r from-purple-900/50 to-pink-900/50 rounded-lg p-1 border border-purple-500/30">
+                    <button 
+                        onClick={() => setShowAIPrompt(!showAIPrompt)} 
+                        className={`p-1.5 rounded transition-all ${showAIPrompt ? 'bg-pink-500 text-white shadow-lg shadow-pink-500/50' : 'text-pink-300 hover:text-white hover:bg-white/10'}`} 
+                        title="AI Assistant (Magic)"
+                    >
+                        <Sparkles size={16} />
+                    </button>
+                </div>
+            )}
 
             <div className="flex items-center gap-1 px-2 bg-slate-800 rounded-lg">
                 {['#ffffff', '#ef4444', '#22c55e', '#3b82f6', '#f59e0b', '#8b5cf6'].map(c => (
@@ -1510,8 +1560,8 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({
                 </div>
             )}
             
-            {/* AI Prompt Input Overlay */}
-            {showAIPrompt && (
+            {/* AI Prompt Input Overlay (Only if not disabled) */}
+            {showAIPrompt && !disableAI && (
                 <div className="absolute bottom-8 left-1/2 -translate-x-1/2 w-full max-w-md bg-slate-900 border border-slate-700 rounded-xl shadow-2xl p-2 flex items-center gap-2 animate-fade-in-up z-50">
                     <div className="p-2 bg-pink-900/30 rounded-lg text-pink-400">
                         <Sparkles size={20} />

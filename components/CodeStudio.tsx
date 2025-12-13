@@ -160,7 +160,7 @@ const RichCodeEditor = ({ code, onChange, onCursorMove, language, isShared, remo
     );
 };
 
-const AIChatPanel = ({ isOpen, onClose, messages, onSendMessage, isThinking, onApplyCode, onStartLive, isVoiceActive }: any) => {
+const AIChatPanel = ({ isOpen, onClose, messages, onSendMessage, isThinking }: any) => {
     const [input, setInput] = useState('');
     return (
         <div className="flex flex-col h-full bg-slate-950 border-l border-slate-800">
@@ -227,7 +227,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
   const [draggedNode, setDraggedNode] = useState<TreeNode | null>(null);
   const [isLeftOpen, setIsLeftOpen] = useState(true);
   const [isRightOpen, setIsRightOpen] = useState(true);
-  const [chatMessages, setChatMessages] = useState<Array<{role: 'user' | 'ai', text: string}>>([{ role: 'ai', text: "Hello! I'm your coding assistant." }]);
+  const [chatMessages, setChatMessages] = useState<Array<{role: 'user' | 'ai', text: string}>>([{ role: 'ai', text: "Hello! I'm your coding assistant. Open a code file or whiteboard to begin." }]);
   const [isChatThinking, setIsChatThinking] = useState(false);
   const [isVoiceActive, setIsVoiceActive] = useState(false);
   
@@ -279,6 +279,124 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
       const id = crypto.randomUUID();
       setNotifications(prev => [...prev, { id, type, message }]);
       setTimeout(() => setNotifications(prev => prev.filter(n => n.id !== id)), 3000);
+  };
+
+  // --- UNIFIED AI ASSISTANT LOGIC ---
+  const handleSendMessage = async (input: string) => {
+      if (!input.trim()) return;
+      
+      const newMessages = [...chatMessages, { role: 'user' as const, text: input }];
+      setChatMessages(newMessages);
+      setIsChatThinking(true);
+
+      const isWhiteboard = activeFile && getLanguageFromExt(activeFile.name) === 'whiteboard';
+      const contextType = isWhiteboard ? "Whiteboard / System Design" : "Code Editor";
+      
+      try {
+          const apiKey = localStorage.getItem('gemini_api_key') || GEMINI_API_KEY || process.env.API_KEY || '';
+          if (!apiKey) throw new Error("API Key missing");
+          const ai = new GoogleGenAI({ apiKey });
+
+          if (isWhiteboard && activeFile) {
+              // --- WHITEBOARD AI LOGIC ---
+              const currentElements = JSON.parse(activeFile.content || "[]");
+              
+              // Only send essential props to save tokens (limit context size)
+              const contextSummary = currentElements.length > 20 
+                  ? currentElements.slice(-20) 
+                  : currentElements;
+
+              const prompt = `
+                You are an expert System Design Architect assisting a user on a digital whiteboard.
+                Current Context: ${contextType}
+                User Request: "${input}"
+                
+                Current Board Elements (JSON subset):
+                ${JSON.stringify(contextSummary)}
+                
+                Task:
+                1. Analyze the user request.
+                2. If they are asking a question, provide a textual answer.
+                3. If they want to modify/add to the drawing, generate a JSON array of NEW or UPDATED elements.
+                
+                Output Format:
+                Return a JSON object:
+                {
+                  "answer": "Your textual response here...",
+                  "newElements": [ ... array of WhiteboardElement objects ... ]
+                }
+                
+                IMPORTANT:
+                - Ensure 'id' for new elements is unique (e.g. use timestamps).
+                - Use 'type': 'rect', 'circle', 'text', 'line', 'arrow'.
+                - For 'text', provide 'text', 'x', 'y', 'fontSize'.
+                - For shapes, provide 'x', 'y', 'width', 'height', 'color'.
+              `;
+
+              const resp = await ai.models.generateContent({
+                  model: 'gemini-2.5-flash',
+                  contents: prompt,
+                  config: { responseMimeType: 'application/json' }
+              });
+              
+              const result = JSON.parse(resp.text || "{}");
+              
+              if (result.answer) {
+                  setChatMessages(prev => [...prev, { role: 'ai', text: result.answer }]);
+              }
+              
+              if (result.newElements && Array.isArray(result.newElements)) {
+                  // Merge new elements into current whiteboard content
+                  const merged = [...currentElements, ...result.newElements];
+                  handleCodeChange(JSON.stringify(merged));
+                  showToast("Whiteboard updated by AI", "success");
+              }
+
+          } else if (activeFile) {
+              // --- CODE EDITOR AI LOGIC ---
+              const prompt = `
+                You are a Senior Software Engineer acting as a pair programmer.
+                Current File: ${activeFile.name} (${activeFile.language})
+                
+                Code Context (First 2000 chars):
+                ${activeFile.content.substring(0, 2000)}...
+                
+                User Request: "${input}"
+                
+                Task:
+                1. Answer the question or provide the code solution.
+                2. If you provide code, wrap it in a code block.
+                3. If the user asks to *rewrite* or *fix* the code, provide the FULL updated code block for the file so I can replace it.
+              `;
+              
+              const resp = await ai.models.generateContent({
+                  model: 'gemini-2.5-flash',
+                  contents: prompt
+              });
+              
+              const responseText = resp.text || "I couldn't generate a response.";
+              setChatMessages(prev => [...prev, { role: 'ai', text: responseText }]);
+              
+              // Check if response contains a large code block that might be a replacement
+              if (input.toLowerCase().includes("fix") || input.toLowerCase().includes("rewrite") || input.toLowerCase().includes("replace")) {
+                  const match = responseText.match(/```(?:\w+)?\n([\s\S]*?)```/);
+                  if (match && match[1].length > 50) {
+                      // Heuristic: If prompt asked for fix and we got a code block, offer to apply it
+                      if (confirm("AI generated a code block. Replace current file content with it?")) {
+                          handleCodeChange(match[1]);
+                      }
+                  }
+              }
+          } else {
+              setChatMessages(prev => [...prev, { role: 'ai', text: "Please open a file or whiteboard first so I can help you." }]);
+          }
+
+      } catch (e: any) {
+          console.error("AI Error:", e);
+          setChatMessages(prev => [...prev, { role: 'ai', text: `Error: ${e.message}` }]);
+      } finally {
+          setIsChatThinking(false);
+      }
   };
 
   const handleLoadPublicRepo = useCallback(async () => {
@@ -1010,7 +1128,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
       <div className="flex-1 flex overflow-hidden relative">
           
           {/* LEFT PANE: EXPLORER */}
-          <div className={`${isZenMode ? 'hidden' : (isLeftOpen ? 'w-64' : 'w-0')} bg-slate-950 border-r border-slate-800 flex flex-col transition-all duration-300 overflow-hidden shrink-0`}>
+          <div className={`${isZenMode ? 'hidden' : (isLeftOpen ? 'w-64' : 'w-0')} bg-slate-900 border-r border-slate-800 flex flex-col transition-all duration-300 overflow-hidden shrink-0`}>
               {/* BACKEND TABS */}
               <div className="flex border-b border-slate-800 bg-slate-900">
                   <button onClick={() => setActiveTab('cloud')} className={`flex-1 py-3 flex justify-center border-b-2 transition-colors ${activeTab === 'cloud' ? 'border-indigo-500 text-white' : 'border-transparent text-slate-500 hover:text-slate-300'}`} title="Private Cloud"><Cloud size={16}/></button>
@@ -1020,7 +1138,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
               </div>
 
               {/* ACTION TOOLBAR - Improved Visibility */}
-              <div className="p-3 border-b border-slate-800 flex flex-wrap gap-2 bg-slate-950 justify-center">
+              <div className="p-3 border-b border-slate-800 flex flex-wrap gap-2 bg-slate-900 justify-center">
                   <button onClick={handleCreateFile} className="flex-1 flex items-center justify-center gap-1 bg-indigo-600 hover:bg-indigo-500 text-white py-1.5 px-2 rounded text-xs font-bold shadow-md transition-colors whitespace-nowrap" title="Create New Code File">
                       <FileCode size={14}/> <span>New File</span>
                   </button>
@@ -1117,6 +1235,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
                                 initialData={activeFile.content}
                                 onDataChange={handleCodeChange}
                                 isReadOnly={isLockedByOther}
+                                disableAI={true} // Disable internal AI, handled by parent
                             />
                         ) : editorMode === 'preview' ? (
                             <div className="w-full h-full overflow-y-auto bg-slate-950 p-8">
@@ -1162,7 +1281,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
                   isOpen={true} // Always render content, hide by width 
                   onClose={() => setIsRightOpen(false)} 
                   messages={chatMessages} 
-                  onSendMessage={(txt: string) => setChatMessages(p => [...p, {role: 'user', text: txt}])} 
+                  onSendMessage={handleSendMessage} 
                   isThinking={isChatThinking} 
                   onApplyCode={handleCodeChange} 
                   onStartLive={()=>{}} 
