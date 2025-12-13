@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { ArrowLeft, Share2, Trash2, Undo, PenTool, Eraser, Download, Square, Circle, Minus, ArrowRight, Type, ZoomIn, ZoomOut, MousePointer2, Move, MoreHorizontal, Lock, Eye, Edit3, GripHorizontal, Brush, ChevronDown, Feather, Highlighter, Wind, Droplet, Cloud, Edit2, Pen } from 'lucide-react';
+import { ArrowLeft, Share2, Trash2, Undo, PenTool, Eraser, Download, Square, Circle, Minus, ArrowRight, Type, ZoomIn, ZoomOut, MousePointer2, Move, MoreHorizontal, Lock, Eye, Edit3, GripHorizontal, Brush, ChevronDown, Feather, Highlighter, Wind, Droplet, Cloud, Edit2, Pen, Copy, Clipboard } from 'lucide-react';
 import { auth } from '../services/firebaseConfig';
 import { saveWhiteboardSession, subscribeToWhiteboard, updateWhiteboardElement, deleteWhiteboardElements } from '../services/firestoreService';
 import { WhiteboardElement, ToolType, LineStyle, BrushType } from '../types';
@@ -44,6 +44,7 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [isDraggingSelection, setIsDraggingSelection] = useState(false);
   const [selectionBox, setSelectionBox] = useState<{ startX: number, startY: number, currX: number, currY: number } | null>(null);
+  const [clipboard, setClipboard] = useState<WhiteboardElement[]>([]);
   
   const dragStartPos = useRef<{x: number, y: number} | null>(null);
   const initialSelectionStates = useRef<Map<string, WhiteboardElement>>(new Map());
@@ -117,6 +118,74 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({
           setTool('pan');
       }
   }, [isReadOnly, tool]);
+
+  // Keyboard Shortcuts (Copy/Paste)
+  useEffect(() => {
+      const handleKeyDown = (e: KeyboardEvent) => {
+          // Ignore if user is typing in a text area (like the whiteboard text tool)
+          if (e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLInputElement) return;
+
+          const isCtrl = e.ctrlKey || e.metaKey;
+
+          if (isCtrl && e.key === 'c') {
+              e.preventDefault();
+              copySelection();
+          }
+          if (isCtrl && e.key === 'v') {
+              e.preventDefault();
+              pasteFromClipboard();
+          }
+          if ((e.key === 'Delete' || e.key === 'Backspace') && selectedIds.length > 0) {
+              handleDeleteSelected();
+          }
+      };
+
+      window.addEventListener('keydown', handleKeyDown);
+      return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [selectedIds, elements, clipboard, isReadOnly]);
+
+  const copySelection = () => {
+      if (selectedIds.length === 0) return;
+      const toCopy = elements.filter(el => selectedIds.includes(el.id));
+      // Deep copy to disconnect reference
+      setClipboard(JSON.parse(JSON.stringify(toCopy)));
+  };
+
+  const pasteFromClipboard = () => {
+      if (clipboard.length === 0 || isReadOnly) return;
+
+      const offsetPx = 20;
+      const newIds: string[] = [];
+      const newElements: WhiteboardElement[] = [];
+
+      clipboard.forEach(item => {
+          const newId = crypto.randomUUID();
+          newIds.push(newId);
+          
+          const newItem: WhiteboardElement = {
+              ...item,
+              id: newId,
+              x: item.x + offsetPx,
+              y: item.y + offsetPx,
+              // Offset endpoints for lines/arrows
+              endX: item.endX !== undefined ? item.endX + offsetPx : undefined,
+              endY: item.endY !== undefined ? item.endY + offsetPx : undefined,
+              // Offset all points for pen strokes
+              points: item.points ? item.points.map(p => ({ x: p.x + offsetPx, y: p.y + offsetPx })) : undefined
+          };
+          newElements.push(newItem);
+      });
+
+      const nextElements = [...elements, ...newElements];
+      setElements(nextElements);
+      setSelectedIds(newIds);
+      
+      // Update clipboard to the newly pasted items (allows cascading paste)
+      setClipboard(newElements);
+
+      if (onDataChange) emitChange(nextElements);
+      newElements.forEach(el => syncUpdate(el));
+  };
 
   const emitChange = (newElements: WhiteboardElement[]) => {
       if (onDataChange) {
@@ -481,7 +550,7 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({
               ctx.lineCap = 'square'; 
               ctx.lineJoin = 'bevel'; 
               ctx.lineWidth = Math.max(el.strokeWidth, 8) / scale; 
-              ctx.globalCompositeOperation = 'source-over'; // Simple blending for dark mode visibility
+              ctx.globalCompositeOperation = 'source-over'; 
           }
           else if (el.brushType === 'calligraphy-pen') { 
               ctx.lineCap = 'square'; 
@@ -770,6 +839,9 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({
             </div>
 
             <div className="flex gap-1 ml-auto">
+                <button onClick={copySelection} className="p-1.5 hover:bg-slate-800 rounded text-slate-400 hover:text-white" title="Copy (Ctrl+C)"><Copy size={16} /></button>
+                <button onClick={pasteFromClipboard} className="p-1.5 hover:bg-slate-800 rounded text-slate-400 hover:text-white" title="Paste (Ctrl+V)"><Clipboard size={16} /></button>
+                <div className="w-px h-4 bg-slate-700 mx-1"></div>
                 <button onClick={() => setElements(prev => prev.slice(0, -1))} className="p-1.5 hover:bg-slate-800 rounded text-slate-400 hover:text-white"><Undo size={16} /></button>
                 <button onClick={selectedIds.length > 0 ? handleDeleteSelected : handleClear} className="p-1.5 hover:bg-slate-800 rounded text-slate-400 hover:text-red-400"><Trash2 size={16} /></button>
             </div>
