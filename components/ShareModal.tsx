@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { X, Search, Check, Globe, Lock, Copy, Send, User, Loader2, Users } from 'lucide-react';
 import { UserProfile } from '../types';
 import { getAllUsers } from '../services/firestoreService';
@@ -17,12 +17,16 @@ interface ShareModalProps {
 
 export const ShareModal: React.FC<ShareModalProps> = ({ 
   isOpen, onClose, onShare, link, title, 
-  currentAccess = 'public', currentAllowedUsers = [], currentUserUid 
+  currentAccess = 'public', currentAllowedUsers, currentUserUid 
 }) => {
   const [accessLevel, setAccessLevel] = useState<'public' | 'restricted'>(currentAccess);
   const [searchQuery, setSearchQuery] = useState('');
   const [allUsers, setAllUsers] = useState<UserProfile[]>([]);
-  const [selectedUids, setSelectedUids] = useState<Set<string>>(new Set(currentAllowedUsers));
+  
+  // Ensure we have a stable reference for allowed users to prevent unnecessary effect firing
+  const stableAllowedUsers = useMemo(() => currentAllowedUsers || [], [currentAllowedUsers]);
+  const [selectedUids, setSelectedUids] = useState<Set<string>>(new Set(stableAllowedUsers));
+  
   const [isLoading, setIsLoading] = useState(false);
   const [isSharing, setIsSharing] = useState(false);
   const [copyFeedback, setCopyFeedback] = useState(false);
@@ -37,13 +41,19 @@ export const ShareModal: React.FC<ShareModalProps> = ({
     }
   }, [isOpen, accessLevel, currentUserUid]);
 
-  // Sync prop changes
+  // Sync access level prop changes
   useEffect(() => {
       if (isOpen) {
           setAccessLevel(currentAccess);
-          setSelectedUids(new Set(currentAllowedUsers));
       }
-  }, [isOpen, currentAccess, currentAllowedUsers]);
+  }, [isOpen, currentAccess]);
+
+  // Sync allowed users prop changes
+  useEffect(() => {
+      if (isOpen) {
+          setSelectedUids(new Set(stableAllowedUsers));
+      }
+  }, [isOpen, stableAllowedUsers]);
 
   if (!isOpen) return null;
 
@@ -148,7 +158,7 @@ export const ShareModal: React.FC<ShareModalProps> = ({
                         />
                     </div>
 
-                    <div className="border border-slate-800 rounded-xl overflow-hidden max-h-48 overflow-y-auto bg-slate-950/30">
+                    <div className="border border-slate-800 rounded-xl overflow-hidden max-h-48 overflow-y-auto bg-slate-900/30">
                         {isLoading ? (
                             <div className="py-8 flex justify-center text-slate-500"><Loader2 className="animate-spin" size={20}/></div>
                         ) : filteredUsers.length === 0 ? (
