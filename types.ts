@@ -1,6 +1,4 @@
 
-
-
 export type AttachmentType = 'image' | 'audio' | 'video' | 'file';
 
 export interface Attachment {
@@ -334,6 +332,7 @@ export interface WhiteboardElement {
   brushType?: BrushType;
   fontSize?: number;
   fontFamily?: string;
+  borderRadius?: number; // For rect
 }
 
 // Cloud Storage Type

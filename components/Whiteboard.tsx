@@ -38,6 +38,7 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({
   const [brushType, setBrushType] = useState<BrushType>('standard');
   const [fontSize, setFontSize] = useState(24);
   const [fontFamily, setFontFamily] = useState('sans-serif');
+  const [borderRadius, setBorderRadius] = useState(0); // New State for Rounded Corners
   const [showShareDropdown, setShowShareDropdown] = useState(false);
   
   // Selection State
@@ -265,6 +266,9 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({
               if (el.type === 'pen') {
                   setBrushType(el.brushType || 'standard');
               }
+              if (el.type === 'rect') {
+                  setBorderRadius(el.borderRadius || 0);
+              }
           }
       }
   }, [selectedIds]);
@@ -453,7 +457,8 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({
       setIsDrawing(true); setSelectedIds([]); 
       const id = crypto.randomUUID();
       const newEl: WhiteboardElement = {
-          id, type: tool, x, y, color: tool === 'eraser' ? '#0f172a' : color, strokeWidth: tool === 'eraser' ? 20 : lineWidth, lineStyle: tool === 'eraser' ? 'solid' : lineStyle, brushType: brushType, points: tool === 'pen' || tool === 'eraser' ? [{ x, y }] : undefined, width: 0, height: 0, endX: x, endY: y
+          id, type: tool, x, y, color: tool === 'eraser' ? '#0f172a' : color, strokeWidth: tool === 'eraser' ? 20 : lineWidth, lineStyle: tool === 'eraser' ? 'solid' : lineStyle, brushType: brushType, points: tool === 'pen' || tool === 'eraser' ? [{ x, y }] : undefined, width: 0, height: 0, endX: x, endY: y,
+          borderRadius: tool === 'rect' ? borderRadius : undefined
       };
       setCurrentElement(newEl);
   };
@@ -605,7 +610,33 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({
                   for (let i = 1; i < el.points.length; i++) ctx.lineTo(el.points[i].x, el.points[i].y);
                   ctx.stroke();
               }
-          } else if (el.type === 'rect') ctx.strokeRect(el.x, el.y, el.width || 0, el.height || 0);
+          } else if (el.type === 'rect') {
+              const w = el.width || 0;
+              const h = el.height || 0;
+              if (el.borderRadius && el.borderRadius > 0) {
+                  ctx.beginPath();
+                  // Normalize geometry for roundRect (requires positive dims in some contexts, though spec says otherwise, good practice for path ops)
+                  let x = el.x;
+                  let y = el.y;
+                  let width = w;
+                  let height = h;
+                  
+                  if (width < 0) { x += width; width = Math.abs(width); }
+                  if (height < 0) { y += height; height = Math.abs(height); }
+                  
+                  const r = Math.min(el.borderRadius, Math.min(width, height) / 2);
+                  
+                  if (ctx.roundRect) {
+                      ctx.roundRect(x, y, width, height, r);
+                  } else {
+                      // fallback to standard rect
+                      ctx.rect(x, y, width, height);
+                  }
+                  ctx.stroke();
+              } else {
+                  ctx.strokeRect(el.x, el.y, w, h);
+              }
+          }
           else if (el.type === 'circle') {
               const w = el.width || 0; const h = el.height || 0; const centerX = el.x + w / 2; const centerY = el.y + h / 2;
               ctx.ellipse(centerX, centerY, Math.abs(w / 2), Math.abs(h / 2), 0, 0, 2 * Math.PI); ctx.stroke();
@@ -786,6 +817,23 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({
                    />
                    <div className="w-2.5 h-2.5 rounded-full bg-slate-400"></div>
                 </div>
+
+                {/* Corner Radius (Only for Rect) */}
+                {(tool === 'rect' || (selectedIds.length === 1 && elements.find(e => e.id === selectedIds[0])?.type === 'rect')) && (
+                    <div className="flex items-center gap-2 bg-slate-800 rounded-lg px-2 py-1" title="Corner Radius">
+                        <div className="w-4 h-4 border-2 border-slate-400 rounded-md"></div>
+                        <input
+                            type="range" min="0" max="50" step="1"
+                            value={borderRadius}
+                            onChange={(e) => {
+                                const val = parseInt(e.target.value);
+                                setBorderRadius(val);
+                                updateSelectedElements({ borderRadius: val });
+                            }}
+                            className="w-16 h-1 bg-slate-600 rounded-lg appearance-none cursor-pointer accent-indigo-500"
+                        />
+                    </div>
+                )}
 
                 {/* Line Style Icons */}
                 <div className="flex items-center gap-1 bg-slate-800 border border-slate-700 rounded-lg p-1">
