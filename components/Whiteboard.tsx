@@ -1,9 +1,11 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { ArrowLeft, Share2, Trash2, Undo, PenTool, Eraser, Download, Square, Circle, Minus, ArrowRight, Type, ZoomIn, ZoomOut, MousePointer2, Move, MoreHorizontal, Lock, Eye, Edit3, GripHorizontal, Brush, ChevronDown, Feather, Highlighter, Wind, Droplet, Cloud, Edit2, Pen, Copy, Clipboard, BringToFront, SendToBack } from 'lucide-react';
+import { ArrowLeft, Share2, Trash2, Undo, PenTool, Eraser, Download, Square, Circle, Minus, ArrowRight, Type, ZoomIn, ZoomOut, MousePointer2, Move, MoreHorizontal, Lock, Eye, Edit3, GripHorizontal, Brush, ChevronDown, Feather, Highlighter, Wind, Droplet, Cloud, Edit2, Pen, Copy, Clipboard, BringToFront, SendToBack, Sparkles, Send, Loader2, X } from 'lucide-react';
 import { auth } from '../services/firebaseConfig';
 import { saveWhiteboardSession, subscribeToWhiteboard, updateWhiteboardElement, deleteWhiteboardElements } from '../services/firestoreService';
 import { WhiteboardElement, ToolType, LineStyle, BrushType } from '../types';
+import { GoogleGenAI } from '@google/genai';
+import { GEMINI_API_KEY } from '../services/private_keys';
 
 interface WhiteboardProps {
   onBack?: () => void;
@@ -67,6 +69,11 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({
   const [textDragCurrent, setTextDragCurrent] = useState<{x: number, y: number} | null>(null);
 
   const [writeToken, setWriteToken] = useState<string | undefined>(undefined);
+
+  // AI Assistant State
+  const [showAIPrompt, setShowAIPrompt] = useState(false);
+  const [aiPromptText, setAiPromptText] = useState('');
+  const [isAIGenerating, setIsAIGenerating] = useState(false);
 
   // Initialize from Props (Embedded Mode)
   useEffect(() => {
@@ -320,6 +327,83 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({
       });
       
       updatedElementsList.forEach(el => syncUpdate(el));
+  };
+
+  // --- AI GENERATION LOGIC ---
+  const handleAIGenerate = async () => {
+      if (!aiPromptText.trim()) return;
+      setIsAIGenerating(true);
+
+      try {
+          const apiKey = localStorage.getItem('gemini_api_key') || GEMINI_API_KEY || process.env.API_KEY || '';
+          if (!apiKey) throw new Error("API Key missing. Please set it in Settings.");
+          
+          const ai = new GoogleGenAI({ apiKey });
+          
+          // Contextualize with current elements (limited to last 20 to avoid token limits, prioritizing text and shapes)
+          const contextElements = elements.length > 20 
+              ? elements.filter(e => e.type === 'text' || e.type === 'rect' || e.type === 'circle').slice(-20) 
+              : elements;
+
+          const prompt = `
+            You are an AI Assistant for an infinite canvas whiteboard.
+            
+            User Request: "${aiPromptText}"
+            
+            Context (Current Elements on Board):
+            ${JSON.stringify(contextElements)}
+            
+            Canvas Center Viewport: X=${-offset.x}, Y=${-offset.y} (Scale: ${scale})
+            
+            Task: Generate a JSON array of NEW WhiteboardElement objects to satisfy the user request.
+            - If the user asks to "fill in" or "label" something existing, assume the context elements provided are the target.
+            - Use relative coordinates near the existing elements or center of viewport.
+            - Ensure 'id' is a unique string (you can use 'gen-1', 'gen-2').
+            - 'type' can be: 'text', 'rect', 'circle', 'line', 'arrow'. (Avoid 'pen' points as they are heavy).
+            - For 'text', provide 'text', 'fontSize', 'color'.
+            - For shapes, provide 'x', 'y', 'width', 'height', 'color', 'strokeWidth'.
+            - For 'line'/'arrow', provide 'x', 'y', 'endX', 'endY'.
+            
+            Return ONLY valid JSON array. No markdown formatting.
+          `;
+
+          const response = await ai.models.generateContent({
+              model: 'gemini-2.5-flash',
+              contents: prompt,
+              config: { responseMimeType: 'application/json' }
+          });
+
+          const jsonStr = response.text || "[]";
+          const newItemsRaw = JSON.parse(jsonStr);
+          
+          if (Array.isArray(newItemsRaw)) {
+              const newElements: WhiteboardElement[] = newItemsRaw.map((item: any) => ({
+                  ...item,
+                  id: crypto.randomUUID(), // Regenerate ID to be safe
+                  strokeWidth: item.strokeWidth || 3,
+                  color: item.color || '#ffffff',
+                  fontSize: item.fontSize || 24,
+                  fontFamily: 'sans-serif'
+              }));
+
+              const next = [...elements, ...newElements];
+              setElements(next);
+              if (onDataChange) emitChange(next);
+              newElements.forEach(el => syncUpdate(el));
+              
+              // Select the new items
+              setSelectedIds(newElements.map(e => e.id));
+          }
+
+          setAiPromptText('');
+          setShowAIPrompt(false);
+
+      } catch (e: any) {
+          console.error("AI Gen Failed", e);
+          alert("AI Generation Failed: " + e.message);
+      } finally {
+          setIsAIGenerating(false);
+      }
   };
 
   // Helper Functions
@@ -823,6 +907,17 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({
                 <button onClick={() => setTool('circle')} className={`p-1.5 rounded ${tool === 'circle' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'}`} title="Circle"><Circle size={16}/></button>
             </div>
             
+            {/* AI Assistant Button */}
+            <div className="flex bg-gradient-to-r from-purple-900/50 to-pink-900/50 rounded-lg p-1 border border-purple-500/30">
+                <button 
+                    onClick={() => setShowAIPrompt(!showAIPrompt)} 
+                    className={`p-1.5 rounded transition-all ${showAIPrompt ? 'bg-pink-500 text-white shadow-lg shadow-pink-500/50' : 'text-pink-300 hover:text-white hover:bg-white/10'}`} 
+                    title="AI Assistant (Magic)"
+                >
+                    <Sparkles size={16} />
+                </button>
+            </div>
+
             <div className="flex items-center gap-1 px-2 bg-slate-800 rounded-lg">
                 {['#ffffff', '#ef4444', '#22c55e', '#3b82f6', '#f59e0b', '#8b5cf6'].map(c => (
                     <button key={c} onClick={() => { setColor(c); if(tool==='eraser') setTool('pen'); updateSelectedElements({ color: c }); }} className={`w-4 h-4 rounded-full border ${color === c && tool !== 'eraser' ? 'border-white scale-110' : 'border-transparent'}`} style={{ backgroundColor: c }} />
@@ -944,6 +1039,35 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({
             {textInput && !isReadOnly && (
                 <textarea autoFocus value={textInput.text} onChange={(e) => setTextInput(prev => prev ? ({ ...prev, text: e.target.value }) : null)} onBlur={handleTextComplete} onKeyDown={(e) => { if(e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleTextComplete(); } }}
                     style={{ position: 'absolute', left: textInput.x * scale + offset.x, top: textInput.y * scale + offset.y, fontSize: `${fontSize * scale}px`, fontFamily: fontFamily, color: color, background: 'transparent', border: '1px dashed #64748b', outline: 'none', width: textInput.width ? textInput.width * scale : 'auto', minWidth: '50px', height: textInput.height ? textInput.height * scale : 'auto', overflow: 'hidden', resize: 'both', whiteSpace: textInput.width ? 'pre-wrap' : 'pre', zIndex: 20, padding: 0, margin: 0, lineHeight: 1.2 }} placeholder="Type..." />
+            )}
+            
+            {/* AI Prompt Input Overlay */}
+            {showAIPrompt && (
+                <div className="absolute bottom-8 left-1/2 -translate-x-1/2 w-full max-w-md bg-slate-900 border border-slate-700 rounded-xl shadow-2xl p-2 flex items-center gap-2 animate-fade-in-up z-50">
+                    <div className="p-2 bg-pink-900/30 rounded-lg text-pink-400">
+                        <Sparkles size={20} />
+                    </div>
+                    <input 
+                        type="text" 
+                        autoFocus
+                        value={aiPromptText} 
+                        onChange={e => setAiPromptText(e.target.value)} 
+                        onKeyDown={e => e.key === 'Enter' && handleAIGenerate()}
+                        placeholder="Describe what to draw (e.g. 'Flowchart for login process')..." 
+                        className="flex-1 bg-transparent text-white outline-none text-sm placeholder-slate-500"
+                        disabled={isAIGenerating}
+                    />
+                    <button 
+                        onClick={handleAIGenerate} 
+                        disabled={!aiPromptText.trim() || isAIGenerating}
+                        className="p-2 bg-pink-600 hover:bg-pink-500 disabled:opacity-50 text-white rounded-lg transition-colors"
+                    >
+                        {isAIGenerating ? <Loader2 size={16} className="animate-spin"/> : <Send size={16}/>}
+                    </button>
+                    <button onClick={() => setShowAIPrompt(false)} className="p-2 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white">
+                        <X size={16} />
+                    </button>
+                </div>
             )}
         </div>
     </div>
