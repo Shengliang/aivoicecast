@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { ArrowLeft, Share2, Trash2, Undo, PenTool, Eraser, Download, Square, Circle, Minus, ArrowRight, Type, ZoomIn, ZoomOut, MousePointer2, Move, MoreHorizontal, Lock, Eye, Edit3, GripHorizontal, Brush, ChevronDown, Feather, Highlighter, Wind, Droplet, Cloud, Edit2, Pen, Copy, Clipboard } from 'lucide-react';
+import { ArrowLeft, Share2, Trash2, Undo, PenTool, Eraser, Download, Square, Circle, Minus, ArrowRight, Type, ZoomIn, ZoomOut, MousePointer2, Move, MoreHorizontal, Lock, Eye, Edit3, GripHorizontal, Brush, ChevronDown, Feather, Highlighter, Wind, Droplet, Cloud, Edit2, Pen, Copy, Clipboard, BringToFront, SendToBack } from 'lucide-react';
 import { auth } from '../services/firebaseConfig';
 import { saveWhiteboardSession, subscribeToWhiteboard, updateWhiteboardElement, deleteWhiteboardElements } from '../services/firestoreService';
 import { WhiteboardElement, ToolType, LineStyle, BrushType } from '../types';
@@ -38,7 +38,7 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({
   const [brushType, setBrushType] = useState<BrushType>('standard');
   const [fontSize, setFontSize] = useState(24);
   const [fontFamily, setFontFamily] = useState('sans-serif');
-  const [borderRadius, setBorderRadius] = useState(0); // New State for Rounded Corners
+  const [borderRadius, setBorderRadius] = useState(0); 
   const [showShareDropdown, setShowShareDropdown] = useState(false);
   
   // Selection State
@@ -186,6 +186,27 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({
 
       if (onDataChange) emitChange(nextElements);
       newElements.forEach(el => syncUpdate(el));
+  };
+
+  // Layer Management
+  const handleBringToFront = () => {
+      if (selectedIds.length === 0 || isReadOnly) return;
+      const selected = elements.filter(el => selectedIds.includes(el.id));
+      const others = elements.filter(el => !selectedIds.includes(el.id));
+      const next = [...others, ...selected];
+      setElements(next);
+      if (onDataChange) emitChange(next);
+      if (isSharedSession) saveWhiteboardSession(currentSessionIdRef.current, next);
+  };
+
+  const handleSendToBack = () => {
+      if (selectedIds.length === 0 || isReadOnly) return;
+      const selected = elements.filter(el => selectedIds.includes(el.id));
+      const others = elements.filter(el => !selectedIds.includes(el.id));
+      const next = [...selected, ...others];
+      setElements(next);
+      if (onDataChange) emitChange(next);
+      if (isSharedSession) saveWhiteboardSession(currentSessionIdRef.current, next);
   };
 
   const emitChange = (newElements: WhiteboardElement[]) => {
@@ -527,6 +548,34 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({
       }
   };
 
+  // Robust Rounded Rectangle Drawer
+  const drawRoundedRect = (ctx: CanvasRenderingContext2D, x: number, y: number, width: number, height: number, radius: number) => {
+      ctx.beginPath();
+      // Ensure radius is positive and doesn't exceed dimensions
+      const r = Math.min(radius, Math.min(Math.abs(width), Math.abs(height)) / 2);
+      
+      // Standardize coordinates to top-left
+      let tlX = x;
+      let tlY = y;
+      let w = width;
+      let h = height;
+      
+      if (w < 0) { tlX += w; w = Math.abs(w); }
+      if (h < 0) { tlY += h; h = Math.abs(h); }
+
+      ctx.moveTo(tlX + r, tlY);
+      ctx.lineTo(tlX + w - r, tlY);
+      ctx.arcTo(tlX + w, tlY, tlX + w, tlY + r, r);
+      ctx.lineTo(tlX + w, tlY + h - r);
+      ctx.arcTo(tlX + w, tlY + h, tlX + w - r, tlY + h, r);
+      ctx.lineTo(tlX + r, tlY + h);
+      ctx.arcTo(tlX, tlY + h, tlX, tlY + h - r, r);
+      ctx.lineTo(tlX, tlY + r);
+      ctx.arcTo(tlX, tlY, tlX + r, tlY, r);
+      ctx.closePath();
+      ctx.stroke();
+  };
+
   useEffect(() => {
       const canvas = canvasRef.current;
       if (!canvas) return;
@@ -614,25 +663,7 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({
               const w = el.width || 0;
               const h = el.height || 0;
               if (el.borderRadius && el.borderRadius > 0) {
-                  ctx.beginPath();
-                  // Normalize geometry for roundRect (requires positive dims in some contexts, though spec says otherwise, good practice for path ops)
-                  let x = el.x;
-                  let y = el.y;
-                  let width = w;
-                  let height = h;
-                  
-                  if (width < 0) { x += width; width = Math.abs(width); }
-                  if (height < 0) { y += height; height = Math.abs(height); }
-                  
-                  const r = Math.min(el.borderRadius, Math.min(width, height) / 2);
-                  
-                  if (ctx.roundRect) {
-                      ctx.roundRect(x, y, width, height, r);
-                  } else {
-                      // fallback to standard rect
-                      ctx.rect(x, y, width, height);
-                  }
-                  ctx.stroke();
+                  drawRoundedRect(ctx, el.x, el.y, w, h, el.borderRadius);
               } else {
                   ctx.strokeRect(el.x, el.y, w, h);
               }
@@ -885,6 +916,18 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({
                      </select>
                 )}
             </div>
+
+            {/* Layer Controls */}
+            {selectedIds.length > 0 && (
+                <div className="flex items-center gap-1 bg-slate-800 border border-slate-700 rounded-lg p-1 ml-2">
+                    <button onClick={handleBringToFront} className="p-1.5 hover:bg-slate-700 rounded text-slate-400 hover:text-white" title="Bring to Front">
+                        <BringToFront size={16} />
+                    </button>
+                    <button onClick={handleSendToBack} className="p-1.5 hover:bg-slate-700 rounded text-slate-400 hover:text-white" title="Send to Back">
+                        <SendToBack size={16} />
+                    </button>
+                </div>
+            )}
 
             <div className="flex gap-1 ml-auto">
                 <button onClick={copySelection} className="p-1.5 hover:bg-slate-800 rounded text-slate-400 hover:text-white" title="Copy (Ctrl+C)"><Copy size={16} /></button>
