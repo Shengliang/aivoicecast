@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { ArrowLeft, Share2, Trash2, Undo, PenTool, Eraser, Download, Square, Circle, Minus, ArrowRight, Type, ZoomIn, ZoomOut, MousePointer2, Move, MoreHorizontal, Lock, Eye, Edit3, GripHorizontal, Brush, ChevronDown, Feather, Highlighter, Wind, Droplet, Cloud, Edit2, Pen, Copy, Clipboard, BringToFront, SendToBack, Sparkles, Send, Loader2, X } from 'lucide-react';
+import { ArrowLeft, Share2, Trash2, Undo, PenTool, Eraser, Download, Square, Circle, Minus, ArrowRight, Type, ZoomIn, ZoomOut, MousePointer2, Move, MoreHorizontal, Lock, Eye, Edit3, GripHorizontal, Brush, ChevronDown, Feather, Highlighter, Wind, Droplet, Cloud, Edit2, Pen, Copy, Clipboard, BringToFront, SendToBack, Sparkles, Send, Loader2, X, RotateCw, Triangle, Star, Spline } from 'lucide-react';
 import { auth } from '../services/firebaseConfig';
 import { saveWhiteboardSession, subscribeToWhiteboard, updateWhiteboardElement, deleteWhiteboardElements } from '../services/firestoreService';
 import { WhiteboardElement, ToolType, LineStyle, BrushType } from '../types';
@@ -23,7 +23,7 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({
   sessionId, 
   accessKey, 
   onSessionStart,
-  initialData,
+  initialData, 
   onDataChange,
   isReadOnly: propReadOnly = false
 }) => {
@@ -32,6 +32,10 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({
   const [isDrawing, setIsDrawing] = useState(false);
   const [currentElement, setCurrentElement] = useState<WhiteboardElement | null>(null);
   
+  // Active Curve State (For "Click-Click" drawing)
+  const [activeCurvePoints, setActiveCurvePoints] = useState<{x: number, y: number}[]>([]);
+  const [curveMousePos, setCurveMousePos] = useState<{x: number, y: number} | null>(null);
+
   // Tool State
   const [tool, setTool] = useState<ToolType>('pen');
   const [color, setColor] = useState('#ffffff');
@@ -46,6 +50,9 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({
   // Selection State
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [isDraggingSelection, setIsDraggingSelection] = useState(false);
+  const [isResizing, setIsResizing] = useState(false);
+  const [isRotating, setIsRotating] = useState(false);
+  const [resizeHandle, setResizeHandle] = useState<string | null>(null);
   const [selectionBox, setSelectionBox] = useState<{ startX: number, startY: number, currX: number, currY: number } | null>(null);
   const [clipboard, setClipboard] = useState<WhiteboardElement[]>([]);
   
@@ -64,7 +71,7 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({
   const currentSessionIdRef = useRef<string>(sessionId || crypto.randomUUID());
 
   // Text Input State
-  const [textInput, setTextInput] = useState<{ id: string; x: number; y: number; text: string; width?: number; height?: number } | null>(null);
+  const [textInput, setTextInput] = useState<{ id: string; x: number; y: number; text: string; width?: number; height?: number; rotation?: number } | null>(null);
   const [textDragStart, setTextDragStart] = useState<{x: number, y: number} | null>(null);
   const [textDragCurrent, setTextDragCurrent] = useState<{x: number, y: number} | null>(null);
 
@@ -127,9 +134,42 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({
       }
   }, [isReadOnly, tool]);
 
-  // Keyboard Shortcuts (Copy/Paste)
+  // Helper for Finalizing Curve (Needed for Keyboard Shortcut)
+  const finalizeCurve = () => {
+      if (activeCurvePoints.length > 1) {
+          const id = crypto.randomUUID();
+          const newEl: WhiteboardElement = {
+              id,
+              type: 'curve',
+              x: 0, y: 0, // Points are absolute for curves/pens
+              width: 0, height: 0,
+              points: activeCurvePoints,
+              color: color,
+              strokeWidth: lineWidth,
+              lineStyle: lineStyle,
+              rotation: 0
+          };
+          const next = [...elements, newEl];
+          setElements(next);
+          if (onDataChange) emitChange(next);
+          syncUpdate(newEl);
+      }
+      setActiveCurvePoints([]);
+      setCurveMousePos(null);
+  };
+
+  // Keyboard Shortcuts (Copy/Paste + Curve Finish)
   useEffect(() => {
       const handleKeyDown = (e: KeyboardEvent) => {
+          // Finish Curve on Enter or Escape
+          if (tool === 'curve' && activeCurvePoints.length > 0) {
+              if (e.key === 'Enter' || e.key === 'Escape') {
+                  e.preventDefault();
+                  finalizeCurve();
+              }
+              return;
+          }
+
           // Ignore if user is typing in a text area (like the whiteboard text tool)
           if (e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLInputElement) return;
 
@@ -150,7 +190,7 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({
 
       window.addEventListener('keydown', handleKeyDown);
       return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedIds, elements, clipboard, isReadOnly]);
+  }, [selectedIds, elements, clipboard, isReadOnly, tool, activeCurvePoints]);
 
   const copySelection = () => {
       if (selectedIds.length === 0) return;
@@ -178,7 +218,7 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({
               // Offset endpoints for lines/arrows
               endX: item.endX !== undefined ? item.endX + offsetPx : undefined,
               endY: item.endY !== undefined ? item.endY + offsetPx : undefined,
-              // Offset all points for pen strokes
+              // Offset all points for pen/curve strokes
               points: item.points ? item.points.map(p => ({ x: p.x + offsetPx, y: p.y + offsetPx })) : undefined
           };
           newElements.push(newItem);
@@ -284,7 +324,7 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({
           if (el) {
               setColor(el.color);
               setLineWidth(el.strokeWidth);
-              if (el.type === 'line' || el.type === 'arrow' || el.type === 'rect' || el.type === 'circle') {
+              if (['line','arrow','rect','circle','triangle','star','curve'].includes(el.type)) {
                   setLineStyle(el.lineStyle || 'solid');
               }
               if (el.type === 'text') {
@@ -359,7 +399,7 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({
             - If the user asks to "fill in" or "label" something existing, assume the context elements provided are the target.
             - Use relative coordinates near the existing elements or center of viewport.
             - Ensure 'id' is a unique string (you can use 'gen-1', 'gen-2').
-            - 'type' can be: 'text', 'rect', 'circle', 'line', 'arrow'. (Avoid 'pen' points as they are heavy).
+            - 'type' can be: 'text', 'rect', 'circle', 'line', 'arrow', 'triangle', 'star'. (Avoid 'pen'/'curve' points as they are heavy).
             - For 'text', provide 'text', 'fontSize', 'color'.
             - For shapes, provide 'x', 'y', 'width', 'height', 'color', 'strokeWidth'.
             - For 'line'/'arrow', provide 'x', 'y', 'endX', 'endY'.
@@ -419,6 +459,34 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({
       ctx.fill();
   };
 
+  const drawStar = (ctx: CanvasRenderingContext2D, cx: number, cy: number, w: number, h: number) => {
+      const spikes = 5;
+      const outerRadius = Math.min(Math.abs(w), Math.abs(h)) / 2;
+      const innerRadius = outerRadius / 2.5;
+      let rot = Math.PI / 2 * 3;
+      let x = cx;
+      let y = cy;
+      const step = Math.PI / spikes;
+
+      ctx.beginPath();
+      ctx.moveTo(cx, cy - outerRadius); // Start top center relative to center
+      
+      for (let i = 0; i < spikes; i++) {
+          x = cx + Math.cos(rot) * outerRadius;
+          y = cy + Math.sin(rot) * outerRadius;
+          ctx.lineTo(x, y);
+          rot += step;
+
+          x = cx + Math.cos(rot) * innerRadius;
+          y = cy + Math.sin(rot) * innerRadius;
+          ctx.lineTo(x, y);
+          rot += step;
+      }
+      ctx.lineTo(cx, cy - outerRadius);
+      ctx.closePath();
+      ctx.stroke();
+  };
+
   const drawWrappedText = (ctx: CanvasRenderingContext2D, text: string, x: number, y: number, maxWidth: number, lineHeight: number) => {
       const paragraphs = text.split('\n');
       let cursorY = y;
@@ -442,8 +510,19 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({
       }
   };
 
+  // Calculate rotated point for hit detection
+  const rotatePoint = (x: number, y: number, cx: number, cy: number, angleDeg: number) => {
+      const rad = (angleDeg * Math.PI) / 180;
+      const cos = Math.cos(rad);
+      const sin = Math.sin(rad);
+      const nx = (cos * (x - cx)) + (sin * (y - cy)) + cx;
+      const ny = (cos * (y - cy)) - (sin * (x - cx)) + cy;
+      return { x: nx, y: ny };
+  };
+
+  // Improved bounds calculation for text wrapping
   const getElementBounds = (el: WhiteboardElement) => {
-      if (el.type === 'pen' || el.type === 'eraser') {
+      if (el.type === 'pen' || el.type === 'eraser' || el.type === 'curve') {
           if (!el.points || el.points.length === 0) return { x: el.x, y: el.y, w: 0, h: 0 };
           const xs = el.points.map(p => p.x); const ys = el.points.map(p => p.y);
           const minX = Math.min(...xs); const maxX = Math.max(...xs);
@@ -457,27 +536,77 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({
           return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
       } else if (el.type === 'text') {
           const fs = el.fontSize || 24; 
-          const w = el.width || ((el.text?.length || 1) * fs * 0.6);
-          const h = el.height || fs * 1.2;
+          
+          // Estimate dimensions
+          let w = el.width || 0;
+          let h = el.height || 0;
+
+          if (!w) {
+              // Estimate width if not fixed
+              const lines = (el.text || '').split('\n');
+              const maxLineLen = Math.max(...lines.map(l => l.length));
+              w = maxLineLen * fs * 0.6; // Approximation
+          }
+          
+          if (!h) {
+              const lines = (el.text || '').split('\n');
+              if (el.width) {
+                  // If fixed width, estimate wrapped lines
+                  // Simplified: char width approx fs * 0.6
+                  const charPerLine = Math.floor(el.width / (fs * 0.6));
+                  let totalLines = 0;
+                  lines.forEach(line => {
+                      totalLines += Math.ceil(line.length / charPerLine) || 1;
+                  });
+                  h = totalLines * fs * 1.2;
+              } else {
+                  h = lines.length * fs * 1.2;
+              }
+          }
+          
           return { x: el.x, y: el.y, w, h };
-      } else if (el.type === 'circle') {
-          return { x: el.x, y: el.y, w: el.width || 0, h: el.height || 0 };
       }
       return { x: el.x, y: el.y, w: el.width || 0, h: el.height || 0 };
   };
 
   const isPointInElement = (x: number, y: number, el: WhiteboardElement): boolean => {
       const tolerance = 10 / scale;
+      
+      let testX = x;
+      let testY = y;
+
+      // Handle Rotation for Point Check (except lines/pens/curves which are harder to reverse-map easily without bounds)
+      if (el.rotation && el.rotation !== 0 && ['rect', 'text', 'circle', 'triangle', 'star'].includes(el.type)) {
+          const bounds = getElementBounds(el); // Get unrotated bounds center
+          const cx = bounds.x + bounds.w / 2;
+          const cy = bounds.y + bounds.h / 2;
+          const rotated = rotatePoint(x, y, cx, cy, el.rotation); // Inverse rotate point
+          testX = rotated.x;
+          testY = rotated.y;
+      }
+
       switch (el.type) {
-          case 'rect': return x >= el.x && x <= el.x + (el.width || 0) && y >= el.y && y <= el.y + (el.height || 0);
+          case 'rect': return testX >= el.x && testX <= el.x + (el.width || 0) && testY >= el.y && testY <= el.y + (el.height || 0);
           case 'circle': {
               const rx = Math.abs(el.width || 0) / 2;
               const ry = Math.abs(el.height || 0) / 2;
               const cx = el.x + (el.width || 0) / 2;
               const cy = el.y + (el.height || 0) / 2;
-              const normX = (x - cx) / rx;
-              const normY = (y - cy) / ry;
+              const normX = (testX - cx) / rx;
+              const normY = (testY - cy) / ry;
               return (normX * normX + normY * normY) <= 1;
+          }
+          case 'triangle': {
+              // Bounding box approximation for click (Simpler) or point-in-polygon
+              // Using bounding box for now for simplicity/performance
+              return testX >= el.x && testX <= el.x + (el.width || 0) && testY >= el.y && testY <= el.y + (el.height || 0);
+          }
+          case 'star': {
+              return testX >= el.x && testX <= el.x + (el.width || 0) && testY >= el.y && testY <= el.y + (el.height || 0);
+          }
+          case 'text': {
+              const bounds = getElementBounds(el);
+              return testX >= bounds.x && testX <= bounds.x + bounds.w && testY >= bounds.y && testY <= bounds.y + bounds.h;
           }
           case 'line':
           case 'arrow': {
@@ -492,22 +621,20 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({
               return (dx * dx + dy * dy) < tolerance * tolerance;
           }
           case 'pen':
-          case 'eraser': {
+          case 'eraser': 
+          case 'curve': {
               if (!el.points) return false;
               const bounds = getElementBounds(el);
-              // Quick bounds check
               if (x < bounds.x - tolerance || x > bounds.x + bounds.w + tolerance || y < bounds.y - tolerance || y > bounds.y + bounds.h + tolerance) return false;
-              
+              // Simple dist check to any point
               return el.points.some(p => { const dist = Math.sqrt((p.x - x) ** 2 + (p.y - y) ** 2); return dist < tolerance; });
           }
-          case 'text':
-              const bounds = getElementBounds(el);
-              return x >= bounds.x && x <= bounds.x + bounds.w && y >= bounds.y && y <= bounds.y + bounds.h;
           default: return false;
       }
   };
 
   const isElementIntersectingBox = (el: WhiteboardElement, box: {x: number, y: number, w: number, h: number}): boolean => {
+      // Rotation ignores box select for simplicity, checks center approx or AABB
       const bx = Math.min(box.x, box.x + box.w);
       const by = Math.min(box.y, box.y + box.h);
       const bw = Math.abs(box.w);
@@ -541,6 +668,64 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({
       }
       if (isReadOnly) return;
       const { x, y } = getWorldCoordinates(e);
+
+      // --- Curve Tool Interaction (Click-to-Plot) ---
+      if (tool === 'curve') {
+          // If this is the start or continuation of a curve
+          const newPoints = [...activeCurvePoints, { x, y }];
+          setActiveCurvePoints(newPoints);
+          setCurveMousePos({ x, y }); // Update cursor hint
+          
+          // DO NOT set isDrawing=true for standard drag behavior
+          return;
+      }
+
+      // Check for Handles on Selected Element (Resize or Rotate)
+      if (selectedIds.length === 1) {
+          const el = elements.find(e => e.id === selectedIds[0]);
+          if (el) {
+              const bounds = getElementBounds(el);
+              const padding = 8 / scale;
+              const handleSize = 10 / scale;
+              
+              // Helper to transform handle check if rotated
+              const checkPoint = (targetX: number, targetY: number) => {
+                  if (el.rotation) {
+                      const cx = bounds.x + bounds.w/2;
+                      const cy = bounds.y + bounds.h/2;
+                      const p = rotatePoint(x, y, cx, cy, el.rotation);
+                      return Math.abs(p.x - targetX) < handleSize && Math.abs(p.y - targetY) < handleSize;
+                  }
+                  return Math.abs(x - targetX) < handleSize && Math.abs(y - targetY) < handleSize;
+              };
+
+              // Rotation Handle Check (Top Center + offset)
+              const rotX = bounds.x + bounds.w / 2;
+              const rotY = bounds.y - 30 / scale; // 30px above
+              if (checkPoint(rotX, rotY)) {
+                  setIsRotating(true);
+                  setIsDrawing(true); // Hijack drawing state for drag loop
+                  dragStartPos.current = { x, y };
+                  initialSelectionStates.current.clear();
+                  initialSelectionStates.current.set(el.id, JSON.parse(JSON.stringify(el)));
+                  return;
+              }
+
+              // Resize Handle Check (BR only for simplicity for now, or Width for text)
+              const brX = bounds.x + bounds.w;
+              const brY = bounds.y + bounds.h;
+              if (checkPoint(brX, brY)) {
+                  setIsResizing(true);
+                  setIsDrawing(true);
+                  setResizeHandle('br');
+                  dragStartPos.current = { x, y };
+                  initialSelectionStates.current.clear();
+                  initialSelectionStates.current.set(el.id, JSON.parse(JSON.stringify(el)));
+                  return;
+              }
+          }
+      }
+
       if (tool === 'text') { setIsDrawing(true); setTextDragStart({ x, y }); setTextDragCurrent({ x, y }); return; }
       if (tool === 'select') {
           let hitId = null;
@@ -563,7 +748,8 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({
       const id = crypto.randomUUID();
       const newEl: WhiteboardElement = {
           id, type: tool, x, y, color: tool === 'eraser' ? '#0f172a' : color, strokeWidth: tool === 'eraser' ? 20 : lineWidth, lineStyle: tool === 'eraser' ? 'solid' : lineStyle, brushType: brushType, points: tool === 'pen' || tool === 'eraser' ? [{ x, y }] : undefined, width: 0, height: 0, endX: x, endY: y,
-          borderRadius: tool === 'rect' ? borderRadius : undefined
+          borderRadius: tool === 'rect' ? borderRadius : undefined,
+          rotation: 0
       };
       setCurrentElement(newEl);
   };
@@ -577,8 +763,71 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({
       }
       if (isReadOnly) return;
       const { x, y } = getWorldCoordinates(e);
+      
+      // Curve Tool Ghost Line
+      if (tool === 'curve') {
+          setCurveMousePos({ x, y });
+          return;
+      }
+
       if (tool === 'text' && isDrawing && textDragStart) { setTextDragCurrent({ x, y }); return; }
       if (selectionBox) { setSelectionBox(prev => prev ? ({ ...prev, currX: x, currY: y }) : null); return; }
+      
+      // ROTATION LOGIC
+      if (isRotating && selectedIds.length === 1) {
+          const elId = selectedIds[0];
+          const initEl = initialSelectionStates.current.get(elId);
+          if (initEl) {
+              const bounds = getElementBounds(initEl);
+              const cx = bounds.x + bounds.w / 2;
+              const cy = bounds.y + bounds.h / 2;
+              const angleRad = Math.atan2(y - cy, x - cx);
+              let angleDeg = angleRad * (180 / Math.PI) + 90; // Adjust so top is 0
+              
+              setElements(prev => prev.map(el => {
+                  if (el.id === elId) {
+                      return { ...el, rotation: angleDeg };
+                  }
+                  return el;
+              }));
+          }
+          return;
+      }
+
+      // RESIZE LOGIC
+      if (isResizing && selectedIds.length === 1) {
+          const elId = selectedIds[0];
+          const initEl = initialSelectionStates.current.get(elId);
+          if (initEl && resizeHandle === 'br') {
+              // Rotate mouse point back to local space to calc width/height change
+              let lx = x;
+              let ly = y;
+              if (initEl.rotation) {
+                  const bounds = getElementBounds(initEl);
+                  const cx = bounds.x + bounds.w / 2;
+                  const cy = bounds.y + bounds.h / 2;
+                  const p = rotatePoint(x, y, cx, cy, initEl.rotation);
+                  lx = p.x;
+                  ly = p.y;
+              }
+
+              const newW = lx - initEl.x;
+              const newH = ly - initEl.y;
+              
+              setElements(prev => prev.map(el => {
+                  if (el.id === elId) {
+                      if (el.type === 'text') {
+                          // For text, resizing width is primary, height auto-adjusts or is irrelevant for wrapped
+                          return { ...el, width: Math.max(20, newW) }; 
+                      }
+                      return { ...el, width: newW, height: newH };
+                  }
+                  return el;
+              }));
+          }
+          return;
+      }
+
       if (isDraggingSelection && dragStartPos.current) {
           const dx = x - dragStartPos.current.x; const dy = y - dragStartPos.current.y;
           setElements(prev => prev.map(el => {
@@ -593,13 +842,30 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({
       }
       if (!isDrawing || !currentElement) return;
       if (tool === 'pen' || tool === 'eraser') { setCurrentElement(prev => prev ? ({ ...prev, points: [...(prev.points || []), { x, y }] }) : null); }
-      else if (tool === 'rect' || tool === 'circle') { setCurrentElement(prev => prev ? ({ ...prev, width: x - prev.x, height: y - prev.y }) : null); }
+      else if (tool === 'rect' || tool === 'circle' || tool === 'triangle' || tool === 'star') { setCurrentElement(prev => prev ? ({ ...prev, width: x - prev.x, height: y - prev.y }) : null); }
       else if (tool === 'line' || tool === 'arrow') { setCurrentElement(prev => prev ? ({ ...prev, endX: x, endY: y }) : null); }
   };
 
   const stopDrawing = () => {
       if (isPanning) { setIsPanning(false); return; }
       if (isReadOnly) return;
+      
+      // Special: Curve uses click-click interaction, so mouseUp doesn't stop it unless we force it (we don't here)
+      if (tool === 'curve') return;
+
+      if (isRotating || isResizing) {
+          setIsRotating(false);
+          setIsResizing(false);
+          setResizeHandle(null);
+          setIsDrawing(false);
+          if (onDataChange) emitChange(elements);
+          if (isSharedSession && selectedIds.length === 1) {
+              const el = elements.find(e => e.id === selectedIds[0]);
+              if (el) syncUpdate(el);
+          }
+          return;
+      }
+
       if (tool === 'text' && isDrawing && textDragStart && textDragCurrent) {
           setIsDrawing(false);
           const rawW = textDragCurrent.x - textDragStart.x; const rawH = textDragCurrent.y - textDragStart.y;
@@ -673,7 +939,19 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({
 
       const renderElement = (el: WhiteboardElement) => {
           if (textInput && el.id === textInput.id) return;
-          ctx.save(); ctx.beginPath(); ctx.strokeStyle = el.color; ctx.lineWidth = el.strokeWidth / scale;
+          ctx.save();
+          
+          // Rotation Support
+          if (el.rotation) {
+              const bounds = getElementBounds(el);
+              const cx = bounds.x + bounds.w / 2;
+              const cy = bounds.y + bounds.h / 2;
+              ctx.translate(cx, cy);
+              ctx.rotate(el.rotation * Math.PI / 180);
+              ctx.translate(-cx, -cy);
+          }
+
+          ctx.beginPath(); ctx.strokeStyle = el.color; ctx.lineWidth = el.strokeWidth / scale;
           ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.globalAlpha = 1.0; ctx.shadowBlur = 0;
           ctx.globalCompositeOperation = 'source-over'; // Default
 
@@ -743,6 +1021,19 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({
                   for (let i = 1; i < el.points.length; i++) ctx.lineTo(el.points[i].x, el.points[i].y);
                   ctx.stroke();
               }
+          } else if (el.type === 'curve') {
+              if (el.points && el.points.length > 1) {
+                  ctx.beginPath();
+                  ctx.moveTo(el.points[0].x, el.points[0].y);
+                  // Catmull-Rom like smoothing
+                  for (let i = 1; i < el.points.length - 1; i++) {
+                      const xc = (el.points[i].x + el.points[i+1].x) / 2;
+                      const yc = (el.points[i].y + el.points[i+1].y) / 2;
+                      ctx.quadraticCurveTo(el.points[i].x, el.points[i].y, xc, yc);
+                  }
+                  ctx.lineTo(el.points[el.points.length-1].x, el.points[el.points.length-1].y);
+                  ctx.stroke();
+              }
           } else if (el.type === 'rect') {
               const w = el.width || 0;
               const h = el.height || 0;
@@ -755,7 +1046,21 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({
           else if (el.type === 'circle') {
               const w = el.width || 0; const h = el.height || 0; const centerX = el.x + w / 2; const centerY = el.y + h / 2;
               ctx.ellipse(centerX, centerY, Math.abs(w / 2), Math.abs(h / 2), 0, 0, 2 * Math.PI); ctx.stroke();
-          } else if (el.type === 'line') { ctx.moveTo(el.x, el.y); ctx.lineTo(el.endX || el.x, el.endY || el.y); ctx.stroke(); }
+          }
+          else if (el.type === 'triangle') {
+              const w = el.width || 0; const h = el.height || 0;
+              ctx.beginPath();
+              ctx.moveTo(el.x + w/2, el.y); // Top Center
+              ctx.lineTo(el.x + w, el.y + h); // Bottom Right
+              ctx.lineTo(el.x, el.y + h); // Bottom Left
+              ctx.closePath();
+              ctx.stroke();
+          }
+          else if (el.type === 'star') {
+              const w = el.width || 0; const h = el.height || 0;
+              drawStar(ctx, el.x + w/2, el.y + h/2, w, h);
+          }
+          else if (el.type === 'line') { ctx.moveTo(el.x, el.y); ctx.lineTo(el.endX || el.x, el.endY || el.y); ctx.stroke(); }
           else if (el.type === 'arrow') { const ex = el.endX || el.x; const ey = el.endY || el.y; ctx.moveTo(el.x, el.y); ctx.lineTo(ex, ey); ctx.stroke(); ctx.setLineDash([]); drawArrowHead(ctx, el.x, el.y, ex, ey, el.color); }
           else if (el.type === 'text' && el.text) {
               ctx.font = `${el.fontSize || 24}px ${el.fontFamily || 'sans-serif'}`; ctx.textBaseline = 'top'; ctx.fillStyle = el.color;
@@ -769,16 +1074,69 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({
       elements.forEach(renderElement);
       if (currentElement) renderElement(currentElement);
 
-      // 2. Render Selection Overlay on TOP
+      // 2. Render Active Curve (Being Drawn)
+      if (tool === 'curve' && activeCurvePoints.length > 0) {
+          ctx.save();
+          ctx.beginPath();
+          ctx.strokeStyle = color;
+          ctx.lineWidth = lineWidth / scale;
+          ctx.lineCap = 'round';
+          ctx.lineJoin = 'round';
+          
+          if (lineStyle === 'dashed') ctx.setLineDash([15, 10]);
+          else if (lineStyle === 'dotted') ctx.setLineDash([3, 8]);
+          
+          ctx.moveTo(activeCurvePoints[0].x, activeCurvePoints[0].y);
+          
+          // Draw existing points
+          for (let i = 1; i < activeCurvePoints.length; i++) {
+              ctx.lineTo(activeCurvePoints[i].x, activeCurvePoints[i].y);
+          }
+          
+          // Draw ghost line to cursor
+          if (curveMousePos) {
+              ctx.lineTo(curveMousePos.x, curveMousePos.y);
+          }
+          
+          ctx.stroke();
+          
+          // Draw dots at points
+          ctx.fillStyle = '#3b82f6';
+          activeCurvePoints.forEach(p => {
+              ctx.beginPath();
+              ctx.arc(p.x, p.y, 4/scale, 0, 2 * Math.PI);
+              ctx.fill();
+          });
+          
+          if (curveMousePos) {
+              ctx.beginPath();
+              ctx.arc(curveMousePos.x, curveMousePos.y, 4/scale, 0, 2*Math.PI);
+              ctx.fillStyle = color;
+              ctx.fill();
+          }
+          ctx.restore();
+      }
+
+      // 3. Render Selection Overlay on TOP
       if (selectedIds.length > 0) {
           ctx.save();
           selectedIds.forEach(id => {
               const el = elements.find(e => e.id === id);
               if (el) {
                   const bounds = getElementBounds(el);
+                  
+                  // Apply rotation to selection context if needed
+                  if (el.rotation) {
+                      const cx = bounds.x + bounds.w / 2;
+                      const cy = bounds.y + bounds.h / 2;
+                      ctx.translate(cx, cy);
+                      ctx.rotate(el.rotation * Math.PI / 180);
+                      ctx.translate(-cx, -cy);
+                  }
+
                   const padding = 8 / scale;
                   
-                  // Handle negative width/height normalization for drawing
+                  // Handle negative width/height normalization for drawing selection
                   const bx = Math.min(bounds.x, bounds.x + bounds.w) - padding;
                   const by = Math.min(bounds.y, bounds.y + bounds.h) - padding;
                   const bw = Math.abs(bounds.w) + padding * 2;
@@ -790,23 +1148,35 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({
                   ctx.setLineDash([]); // Solid line
                   ctx.strokeRect(bx, by, bw, bh);
 
-                  // Draw Resize Handles (Corners)
+                  // Draw Resize Handle (Bottom Right)
                   const handleSize = 8 / scale;
                   const halfHandle = handleSize / 2;
                   ctx.fillStyle = '#ffffff';
                   ctx.strokeStyle = '#3b82f6';
                   ctx.lineWidth = 1 / scale;
 
-                  // TL, TR, BL, BR
-                  [
-                      { cx: bx, cy: by }, 
-                      { cx: bx + bw, cy: by }, 
-                      { cx: bx, cy: by + bh }, 
-                      { cx: bx + bw, cy: by + bh }
-                  ].forEach(({cx, cy}) => {
-                      ctx.fillRect(cx - halfHandle, cy - halfHandle, handleSize, handleSize);
-                      ctx.strokeRect(cx - halfHandle, cy - halfHandle, handleSize, handleSize);
-                  });
+                  // Only show resize for rect/text/circle for now
+                  if (['rect', 'text', 'circle', 'triangle', 'star'].includes(el.type)) {
+                      ctx.fillRect(bx + bw - halfHandle, by + bh - halfHandle, handleSize, handleSize);
+                      ctx.strokeRect(bx + bw - halfHandle, by + bh - halfHandle, handleSize, handleSize);
+                  }
+
+                  // Draw Rotation Handle (Top Center)
+                  if (['rect', 'text', 'circle', 'triangle', 'star'].includes(el.type)) {
+                      const rotY = by - 30 / scale;
+                      const rotX = bx + bw / 2;
+                      ctx.beginPath();
+                      ctx.moveTo(rotX, by);
+                      ctx.lineTo(rotX, rotY);
+                      ctx.strokeStyle = '#3b82f6';
+                      ctx.stroke();
+                      
+                      ctx.beginPath();
+                      ctx.arc(rotX, rotY, handleSize/1.5, 0, 2 * Math.PI);
+                      ctx.fillStyle = '#ffffff';
+                      ctx.fill();
+                      ctx.stroke();
+                  }
               }
           });
           ctx.restore();
@@ -815,14 +1185,27 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({
       if (selectionBox) { ctx.save(); ctx.setLineDash([5, 5]); ctx.fillStyle = 'rgba(59, 130, 246, 0.1)'; ctx.strokeStyle = '#3b82f6'; ctx.lineWidth = 1 / scale; const w = selectionBox.currX - selectionBox.startX; const h = selectionBox.currY - selectionBox.startY; ctx.fillRect(selectionBox.startX, selectionBox.startY, w, h); ctx.strokeRect(selectionBox.startX, selectionBox.startY, w, h); ctx.restore(); }
       if (tool === 'text' && isDrawing && textDragStart && textDragCurrent) { ctx.save(); ctx.setLineDash([5, 5]); ctx.strokeStyle = '#22c55e'; ctx.lineWidth = 1 / scale; const w = textDragCurrent.x - textDragStart.x; const h = textDragCurrent.y - textDragStart.y; ctx.strokeRect(textDragStart.x, textDragStart.y, w, h); ctx.restore(); }
       ctx.restore();
-  }, [elements, currentElement, scale, offset, selectedIds, selectionBox, tool, isDrawing, textDragStart, textDragCurrent, textInput]);
+  }, [elements, currentElement, scale, offset, selectedIds, selectionBox, tool, isDrawing, textDragStart, textDragCurrent, textInput, activeCurvePoints, curveMousePos]);
 
   const handleTextComplete = () => {
       if (isReadOnly) { setTextInput(null); return; }
       if (textInput) {
           if (textInput.text.trim()) {
               const fs = fontSize; const lineCount = textInput.text.split('\n').length;
-              const newEl: WhiteboardElement = { id: textInput.id, type: 'text', x: textInput.x, y: textInput.y, text: textInput.text, color: color, strokeWidth: 1, fontSize: fontSize, fontFamily: fontFamily, width: textInput.width, height: textInput.height || (fs * lineCount * 1.2) };
+              const newEl: WhiteboardElement = { 
+                  id: textInput.id, 
+                  type: 'text', 
+                  x: textInput.x, 
+                  y: textInput.y, 
+                  text: textInput.text, 
+                  color: color, 
+                  strokeWidth: 1, 
+                  fontSize: fontSize, 
+                  fontFamily: fontFamily, 
+                  width: textInput.width, 
+                  height: textInput.height || (fs * lineCount * 1.2),
+                  rotation: textInput.rotation || 0
+              };
               const next = [...elements];
               const idx = next.findIndex(e => e.id === newEl.id);
               if (idx >= 0) next[idx] = newEl; else next.push(newEl);
@@ -838,7 +1221,37 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({
   const handleClear = () => { if(isReadOnly) return; if(confirm("Clear whiteboard?")) { setElements([]); if (onDataChange) emitChange([]); if (isSharedSession) saveWhiteboardSession(currentSessionIdRef.current, []); } };
   const handleDeleteSelected = () => { if(isReadOnly) return; if (selectedIds.length > 0) { const idsToDelete = [...selectedIds]; const next = elements.filter(el => !selectedIds.includes(el.id)); setElements(next); if (onDataChange) emitChange(next); setSelectedIds([]); if (isSharedSession) deleteWhiteboardElements(currentSessionIdRef.current, idsToDelete); } };
   const handleDownload = () => { const canvas = canvasRef.current; if(canvas) { const url = canvas.toDataURL('image/png'); const a = document.createElement('a'); a.href = url; a.download = 'whiteboard.png'; a.click(); } };
-  const handleDoubleClick = (e: React.MouseEvent) => { if (isReadOnly || tool === 'pan') return; const { x, y } = getWorldCoordinates(e); let hitElement: WhiteboardElement | null = null; for (let i = elements.length - 1; i >= 0; i--) { if (elements[i].type === 'text' && isPointInElement(x, y, elements[i])) { hitElement = elements[i]; break; } } if (hitElement) { setTextInput({ id: hitElement.id, x: hitElement.x, y: hitElement.y, text: hitElement.text || '', width: hitElement.width, height: hitElement.height }); setColor(hitElement.color); if (hitElement.fontSize) setFontSize(hitElement.fontSize); if (hitElement.fontFamily) setFontFamily(hitElement.fontFamily); } else { const id = crypto.randomUUID(); setTool('text'); setTextInput({ id, x, y, text: '' }); } };
+  
+  const handleDoubleClick = (e: React.MouseEvent) => { 
+      if (isReadOnly || tool === 'pan') return; 
+      const { x, y } = getWorldCoordinates(e); 
+      let hitElement: WhiteboardElement | null = null; 
+      // Need to find text with rotation support
+      for (let i = elements.length - 1; i >= 0; i--) { 
+          if (elements[i].type === 'text' && isPointInElement(x, y, elements[i])) { 
+              hitElement = elements[i]; 
+              break; 
+          } 
+      } 
+      if (hitElement) { 
+          setTextInput({ 
+              id: hitElement.id, 
+              x: hitElement.x, 
+              y: hitElement.y, 
+              text: hitElement.text || '', 
+              width: hitElement.width, 
+              height: hitElement.height,
+              rotation: hitElement.rotation || 0
+          }); 
+          setColor(hitElement.color); 
+          if (hitElement.fontSize) setFontSize(hitElement.fontSize); 
+          if (hitElement.fontFamily) setFontFamily(hitElement.fontFamily); 
+      } else { 
+          const id = crypto.randomUUID(); 
+          setTool('text'); 
+          setTextInput({ id, x, y, text: '' }); 
+      } 
+  };
 
   // Helper for brush selection buttons
   const BrushButton = ({ type, icon: Icon, label }: { type: BrushType, icon: any, label: string }) => (
@@ -902,9 +1315,13 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({
                 <button onClick={() => setTool('eraser')} className={`p-1.5 rounded ${tool === 'eraser' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'}`} title="Eraser"><Eraser size={16}/></button>
                 <button onClick={() => setTool('text')} className={`p-1.5 rounded ${tool === 'text' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'}`} title="Text"><Type size={16}/></button>
                 <div className="w-px bg-slate-700 mx-1"></div>
-                <button onClick={() => setTool('rect')} className={`p-1.5 rounded ${tool === 'rect' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'}`} title="Rectangle"><Square size={16}/></button>
+                <button onClick={() => setTool('curve')} className={`p-1.5 rounded ${tool === 'curve' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'}`} title="Curve Line"><Spline size={16}/></button>
+                <button onClick={() => setTool('line')} className={`p-1.5 rounded ${tool === 'line' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'}`} title="Line"><Minus size={16}/></button>
                 <button onClick={() => setTool('arrow')} className={`p-1.5 rounded ${tool === 'arrow' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'}`} title="Arrow"><ArrowRight size={16}/></button>
+                <button onClick={() => setTool('rect')} className={`p-1.5 rounded ${tool === 'rect' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'}`} title="Rectangle"><Square size={16}/></button>
                 <button onClick={() => setTool('circle')} className={`p-1.5 rounded ${tool === 'circle' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'}`} title="Circle"><Circle size={16}/></button>
+                <button onClick={() => setTool('triangle')} className={`p-1.5 rounded ${tool === 'triangle' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'}`} title="Triangle"><Triangle size={16}/></button>
+                <button onClick={() => setTool('star')} className={`p-1.5 rounded ${tool === 'star' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'}`} title="Star"><Star size={16}/></button>
             </div>
             
             {/* AI Assistant Button */}
@@ -1038,7 +1455,14 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({
             <canvas ref={canvasRef} onMouseDown={startDrawing} onMouseMove={draw} onMouseUp={stopDrawing} onMouseLeave={stopDrawing} onDoubleClick={handleDoubleClick} onTouchStart={startDrawing} onTouchMove={draw} onTouchEnd={stopDrawing} className="block w-full h-full" style={{ cursor: tool === 'pan' ? (isPanning ? 'grabbing' : 'grab') : (isReadOnly ? 'default' : (tool === 'select' ? 'default' : 'crosshair')) }} />
             {textInput && !isReadOnly && (
                 <textarea autoFocus value={textInput.text} onChange={(e) => setTextInput(prev => prev ? ({ ...prev, text: e.target.value }) : null)} onBlur={handleTextComplete} onKeyDown={(e) => { if(e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleTextComplete(); } }}
-                    style={{ position: 'absolute', left: textInput.x * scale + offset.x, top: textInput.y * scale + offset.y, fontSize: `${fontSize * scale}px`, fontFamily: fontFamily, color: color, background: 'transparent', border: '1px dashed #64748b', outline: 'none', width: textInput.width ? textInput.width * scale : 'auto', minWidth: '50px', height: textInput.height ? textInput.height * scale : 'auto', overflow: 'hidden', resize: 'both', whiteSpace: textInput.width ? 'pre-wrap' : 'pre', zIndex: 20, padding: 0, margin: 0, lineHeight: 1.2 }} placeholder="Type..." />
+                    style={{ position: 'absolute', left: textInput.x * scale + offset.x, top: textInput.y * scale + offset.y, fontSize: `${fontSize * scale}px`, fontFamily: fontFamily, color: color, background: 'transparent', border: '1px dashed #64748b', outline: 'none', width: textInput.width ? textInput.width * scale : 'auto', minWidth: '50px', height: textInput.height ? textInput.height * scale : 'auto', overflow: 'hidden', resize: 'both', whiteSpace: textInput.width ? 'pre-wrap' : 'pre', zIndex: 20, padding: 0, margin: 0, lineHeight: 1.2, transform: textInput.rotation ? `rotate(${textInput.rotation}deg)` : undefined }} placeholder="Type..." />
+            )}
+            
+            {/* Helper Text for Curve Tool */}
+            {tool === 'curve' && !isReadOnly && (
+                <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-slate-800/80 backdrop-blur px-4 py-2 rounded-full text-xs text-white shadow-lg border border-slate-700 pointer-events-none">
+                    {activeCurvePoints.length === 0 ? "Click to start curve" : "Click to add points • Press Enter/Esc to finish"}
+                </div>
             )}
             
             {/* AI Prompt Input Overlay */}

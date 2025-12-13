@@ -311,14 +311,14 @@ export interface JobPosting {
 }
 
 // Whiteboard Types
-export type ToolType = 'select' | 'pen' | 'eraser' | 'rect' | 'circle' | 'line' | 'arrow' | 'text' | 'pan';
+export type ToolType = 'select' | 'pen' | 'eraser' | 'rect' | 'circle' | 'line' | 'arrow' | 'text' | 'pan' | 'triangle' | 'star' | 'curve';
 export type LineStyle = 'solid' | 'dashed' | 'dotted' | 'dash-dot' | 'long-dash';
 export type BrushType = 'standard' | 'pencil' | 'marker' | 'calligraphy-pen' | 'writing-brush' | 'airbrush' | 'oil' | 'watercolor' | 'crayon';
 
 export interface WhiteboardElement {
   id: string;
   type: ToolType;
-  points?: { x: number; y: number }[]; // For pen
+  points?: { x: number; y: number }[]; // For pen and curve
   x: number;
   y: number;
   width?: number;
@@ -333,6 +333,7 @@ export interface WhiteboardElement {
   fontSize?: number;
   fontFamily?: string;
   borderRadius?: number; // For rect
+  rotation?: number; // In degrees
 }
 
 // Cloud Storage Type
