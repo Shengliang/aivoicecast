@@ -240,7 +240,10 @@ export const GroupManager: React.FC = () => {
                                                     <span>{member.displayName}</span>
                                                     {member.uid === g.ownerId && <span className="text-[10px] text-indigo-400 border border-indigo-900 px-1 rounded">OWNER</span>}
                                                 </p>
-                                                <p className="text-[10px] text-slate-500">{member.email}</p>
+                                                {/* Privacy: Only Owner sees actual emails */}
+                                                <p className="text-[10px] text-slate-500">
+                                                    {g.ownerId === auth.currentUser?.uid ? member.email : 'Member (Email Hidden)'}
+                                                </p>
                                             </div>
                                         </div>
                                         

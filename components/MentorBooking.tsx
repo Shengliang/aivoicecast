@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { Channel, Booking, UserProfile } from '../types';
-import { Calendar, Clock, User, ArrowLeft, Search, Briefcase, Sparkles, CheckCircle, X, Loader2, Play, Users, Mail, Video, Mic, FileText, Download, Trash2, Monitor, UserPlus, Grid, List, ArrowDown, ArrowUp, Heart, Share2, Info } from 'lucide-react';
+import { Calendar, Clock, User, ArrowLeft, Search, Briefcase, Sparkles, CheckCircle, X, Loader2, Play, Users, Mail, Video, Mic, FileText, Download, Trash2, Monitor, UserPlus, Grid, List, ArrowDown, ArrowUp, Heart, Share2, Info, ShieldAlert } from 'lucide-react';
 import { auth } from '../services/firebaseConfig';
 import { createBooking, getUserBookings, cancelBooking, sendInvitation, getPendingInvitations, updateBookingInvite, deleteBookingRecording, getAllUsers, getUserProfileByEmail } from '../services/firestoreService';
 
@@ -54,6 +54,9 @@ export const MentorBooking: React.FC<MentorBookingProps> = ({ currentUser, chann
   // Filter AI mentors (handcrafted only to ensure quality, or high rated)
   const aiMentors = channels.filter(c => c.likes > 20 || !Number.isNaN(Number(c.id)) === false); 
 
+  // Privacy Check: Only super admin can see emails list or search by email
+  const isAdmin = currentUser?.email === 'shengliang.song@gmail.com';
+
   useEffect(() => {
     if (activeTab === 'my_bookings' && currentUser) {
       loadBookings();
@@ -66,7 +69,8 @@ export const MentorBooking: React.FC<MentorBookingProps> = ({ currentUser, chann
   // Server-side search debouncer
   useEffect(() => {
       const delayDebounceFn = setTimeout(async () => {
-        if (searchQuery.includes('@') && searchQuery.length > 5) {
+        // Privacy: Only admins can search by email to probe the database
+        if (isAdmin && searchQuery.includes('@') && searchQuery.length > 5) {
              // Check if already in list
              const exists = members.some(m => m.email.toLowerCase() === searchQuery.toLowerCase());
              if (!exists) {
@@ -84,7 +88,7 @@ export const MentorBooking: React.FC<MentorBookingProps> = ({ currentUser, chann
       }, 800);
 
       return () => clearTimeout(delayDebounceFn);
-  }, [searchQuery, members]);
+  }, [searchQuery, members, isAdmin]);
 
   const loadBookings = async () => {
     if (!currentUser) return;
@@ -123,7 +127,8 @@ export const MentorBooking: React.FC<MentorBookingProps> = ({ currentUser, chann
       const q = searchQuery.toLowerCase();
       result = result.filter(m => 
         (m.displayName && m.displayName.toLowerCase().includes(q)) || 
-        (m.email && m.email.toLowerCase().includes(q))
+        // Only search locally by email if admin, otherwise block it
+        (isAdmin && m.email && m.email.toLowerCase().includes(q))
       );
     }
     
@@ -137,7 +142,7 @@ export const MentorBooking: React.FC<MentorBookingProps> = ({ currentUser, chann
     });
     
     return result;
-  }, [members, searchQuery, sortConfig]);
+  }, [members, searchQuery, sortConfig, isAdmin]);
 
   const handleSort = (key: SortKey) => {
     setSortConfig(current => ({
@@ -204,6 +209,7 @@ export const MentorBooking: React.FC<MentorBookingProps> = ({ currentUser, chann
 
   const handleOpenBooking = (member: UserProfile) => {
       setBookingMember(member);
+      // We pass the email to state for booking logic, but UI might hide it
       setInviteEmail(member.email);
       setTopic('');
       setSelectedDate('');
@@ -489,13 +495,18 @@ export const MentorBooking: React.FC<MentorBookingProps> = ({ currentUser, chann
                         <Search className={`absolute left-3 top-1/2 -translate-y-1/2 ${isSearchingServer ? 'text-indigo-400 animate-pulse' : 'text-slate-500'}`} size={16}/>
                         <input 
                             type="text" 
-                            placeholder="Find member by name or email ID..." 
+                            placeholder="Find member by name..." 
                             value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}
                             className="w-full bg-slate-800 border border-slate-700 rounded-lg pl-10 pr-4 py-2 text-white focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
                         />
                         {isSearchingServer && <div className="absolute right-3 top-1/2 -translate-y-1/2"><Loader2 size={14} className="animate-spin text-indigo-400"/></div>}
                     </div>
+                    {!isAdmin && (
+                        <div className="text-[10px] text-slate-500 flex items-center gap-1 opacity-70">
+                            <ShieldAlert size={12} /> Privacy: Emails are hidden for safety.
+                        </div>
+                    )}
                 </div>
 
                 {loadingMembers && !isSearchingServer ? (
@@ -503,7 +514,6 @@ export const MentorBooking: React.FC<MentorBookingProps> = ({ currentUser, chann
                 ) : filteredMembers.length === 0 ? (
                     <div className="py-12 text-center text-slate-500 bg-slate-900/30 rounded-xl border border-dashed border-slate-800">
                         <p>No members found.</p>
-                        <p className="text-xs mt-2">Try searching for a specific Gmail ID.</p>
                     </div>
                 ) : (
                     // TABLE VIEW
@@ -514,9 +524,11 @@ export const MentorBooking: React.FC<MentorBookingProps> = ({ currentUser, chann
                                     <th className="px-6 py-4 cursor-pointer hover:text-white transition-colors" onClick={() => handleSort('displayName')}>
                                         <div className="flex items-center gap-1">Member {sortConfig.key === 'displayName' && (sortConfig.direction === 'asc' ? <ArrowUp size={12}/> : <ArrowDown size={12}/>)}</div>
                                     </th>
+                                    {isAdmin && (
                                     <th className="px-6 py-4 cursor-pointer hover:text-white transition-colors" onClick={() => handleSort('email')}>
                                         <div className="flex items-center gap-1">Email {sortConfig.key === 'email' && (sortConfig.direction === 'asc' ? <ArrowUp size={12}/> : <ArrowDown size={12}/>)}</div>
                                     </th>
+                                    )}
                                     <th className="px-6 py-4 cursor-pointer hover:text-white transition-colors hidden md:table-cell" onClick={() => handleSort('createdAt')}>
                                         <div className="flex items-center gap-1">Joined {sortConfig.key === 'createdAt' && (sortConfig.direction === 'asc' ? <ArrowUp size={12}/> : <ArrowDown size={12}/>)}</div>
                                     </th>
@@ -529,14 +541,16 @@ export const MentorBooking: React.FC<MentorBookingProps> = ({ currentUser, chann
                                         <td className="px-6 py-4">
                                             <div className="flex items-center gap-3">
                                                 {member.photoURL ? (
-                                                    <img src={member.photoURL} className="w-8 h-8 rounded-full border border-slate-700" />
+                                                    <img src={member.photoURL} alt={member.displayName} className="w-8 h-8 rounded-full border border-slate-700" />
                                                 ) : (
                                                     <div className="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center border border-slate-700"><User size={14} className="text-slate-400"/></div>
                                                 )}
                                                 <span className="font-bold text-slate-200 group-hover:text-white transition-colors">{member.displayName}</span>
                                             </div>
                                         </td>
+                                        {isAdmin && (
                                         <td className="px-6 py-4 text-sm text-slate-400 group-hover:text-indigo-300 transition-colors">{member.email}</td>
+                                        )}
                                         <td className="px-6 py-4 text-xs text-slate-500 font-mono hidden md:table-cell">
                                             {member.createdAt ? new Date(member.createdAt).toLocaleDateString() : '-'}
                                         </td>

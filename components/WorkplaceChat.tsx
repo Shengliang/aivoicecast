@@ -177,6 +177,7 @@ export const WorkplaceChat: React.FC<WorkplaceChatProps> = ({ onBack, currentUse
       }
   };
 
+  // Only filter by name/email but DO NOT display email in UI
   const filteredUsers = allUsers.filter(u => 
       u.displayName.toLowerCase().includes(userSearchQuery.toLowerCase()) || 
       u.email.toLowerCase().includes(userSearchQuery.toLowerCase())
@@ -230,11 +231,11 @@ export const WorkplaceChat: React.FC<WorkplaceChatProps> = ({ onBack, currentUse
                   {isSearchingUsers && (
                       <div className="mb-2 px-2 relative">
                           <input autoFocus type="text" placeholder="Find user..." value={userSearchQuery} onChange={e => setUserSearchQuery(e.target.value)} className="w-full bg-slate-950 border border-slate-700 rounded px-2 py-1 text-xs text-white outline-none"/>
-                          <div className="absolute top-full left-0 w-full bg-slate-800 border border-slate-700 rounded mt-1 max-h-40 overflow-y-auto z-20">
+                          <div className="absolute top-full left-0 w-full bg-slate-800 border border-slate-700 rounded mt-1 max-h-40 overflow-y-auto z-20 shadow-xl">
                               {filteredUsers.map(u => (
                                   <button key={u.uid} onClick={() => handleStartDM(u.uid, u.displayName)} className="w-full text-left px-2 py-1.5 text-xs text-slate-300 hover:bg-slate-700 hover:text-white flex items-center gap-2">
                                       <div className="w-4 h-4 rounded-full bg-indigo-500 flex items-center justify-center text-[8px] font-bold">{u.displayName[0]}</div>
-                                      {u.displayName}
+                                      <span>{u.displayName}</span> {/* Privacy: Do not show email here */}
                                   </button>
                               ))}
                           </div>
