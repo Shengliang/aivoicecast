@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { ArrowLeft, Shield, Lock, Eye, Database } from 'lucide-react';
+import { ArrowLeft, Shield, Lock, Eye, Database, Server, Cloud, HardDrive, Github } from 'lucide-react';
 
 interface PrivacyPolicyProps {
   onBack: () => void;
@@ -20,40 +20,106 @@ export const PrivacyPolicy: React.FC<PrivacyPolicyProps> = ({ onBack }) => {
       </div>
 
       <div className="flex-1 overflow-y-auto">
-        <div className="max-w-3xl mx-auto px-6 py-12 space-y-8 text-slate-300 leading-relaxed">
-            <section>
-                <h2 className="text-2xl font-bold text-white mb-4">1. Data Collection & Usage</h2>
-                <p>
-                    AIVoiceCast prioritizes your privacy. We minimize data collection and rely on client-side processing where possible.
+        <div className="max-w-4xl mx-auto px-6 py-12 space-y-10 text-slate-300 leading-relaxed">
+            
+            <div className="bg-slate-900/50 p-6 rounded-2xl border border-slate-800">
+                <p className="text-lg text-slate-200 font-medium">
+                    AIVoiceCast operates on a hybrid storage model to maximize user control and privacy. Your data resides in one of four distinct locations depending on the feature you use.
                 </p>
-                <ul className="list-disc pl-5 mt-4 space-y-2">
-                    <li><strong>Authentication:</strong> We use Google Firebase Authentication. We only store your email, display name, and photo URL to identify your account.</li>
-                    <li><strong>Audio Data:</strong> Voice inputs processed via the Gemini Live API are transient. We do not store raw audio recordings of your live sessions unless you explicitly click "Record". Recorded meetings are stored in your private Cloud Storage bucket.</li>
-                    <li><strong>Text Data:</strong> Chat messages, code files, and documents are stored in Google Firestore and Cloud Storage to provide sync functionality across devices.</li>
-                </ul>
+            </div>
+
+            <section>
+                <h2 className="text-2xl font-bold text-white mb-6 flex items-center gap-2"><Database className="text-indigo-400"/> 1. Storage Backends</h2>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    
+                    <div className="bg-slate-900 p-5 rounded-xl border border-slate-800">
+                        <h3 className="font-bold text-white flex items-center gap-2 mb-2"><HardDrive size={18} className="text-emerald-400"/> IndexedDB (Local Browser)</h3>
+                        <p className="text-sm text-slate-400">
+                            <strong>Scope:</strong> Private to your specific browser/device.<br/>
+                            <strong>Data:</strong> Audio cache (generated TTS files), offline lecture scripts, unsaved channel drafts.<br/>
+                            <strong>Privacy:</strong> Highest. This data never leaves your device unless you explicitly perform a "Cloud Sync" backup.
+                        </p>
+                    </div>
+
+                    <div className="bg-slate-900 p-5 rounded-xl border border-slate-800">
+                        <h3 className="font-bold text-white flex items-center gap-2 mb-2"><Cloud size={18} className="text-amber-400"/> Google Cloud (Firebase)</h3>
+                        <p className="text-sm text-slate-400">
+                            <strong>Scope:</strong> Centralized App Database.<br/>
+                            <strong>Data:</strong> User profiles, Public channels, Team Chat history, Whiteboards, Private Cloud projects.<br/>
+                            <strong>Privacy:</strong> Data is stored in the application owner's cloud account. While restricted from other users via security rules, it is visible to the application administrators for maintenance and moderation.
+                        </p>
+                    </div>
+
+                    <div className="bg-slate-900 p-5 rounded-xl border border-slate-800">
+                        <h3 className="font-bold text-white flex items-center gap-2 mb-2"><Server size={18} className="text-blue-400"/> Google Drive</h3>
+                        <p className="text-sm text-slate-400">
+                            <strong>Scope:</strong> Private to your Google Account.<br/>
+                            <strong>Data:</strong> Code files edited in Code Studio (Drive Tab).<br/>
+                            <strong>Privacy:</strong> High. We use the Google Drive API to read/write files *you* select. This data stays within your personal Google ecosystem; we do not copy it to our servers.
+                        </p>
+                    </div>
+
+                    <div className="bg-slate-900 p-5 rounded-xl border border-slate-800">
+                        <h3 className="font-bold text-white flex items-center gap-2 mb-2"><Github size={18} className="text-white"/> GitHub</h3>
+                        <p className="text-sm text-slate-400">
+                            <strong>Scope:</strong> Third-party Version Control.<br/>
+                            <strong>Data:</strong> Code repositories imported into Code Studio.<br/>
+                            <strong>Privacy:</strong> Determined by your GitHub repository settings (Public vs Private). We access this data using your personal access token, which is stored locally in your browser session.
+                        </p>
+                    </div>
+                </div>
             </section>
 
             <section>
-                <h2 className="text-2xl font-bold text-white mb-4">2. AI Processing</h2>
+                <h2 className="text-2xl font-bold text-white mb-6 flex items-center gap-2"><Lock className="text-indigo-400"/> 2. Feature-Specific Data Handling</h2>
+                
+                <div className="space-y-6">
+                    <div>
+                        <h3 className="text-lg font-bold text-white mb-2">Team Chat & Groups</h3>
+                        <ul className="list-disc pl-5 space-y-1 text-sm text-slate-400">
+                            <li><strong>Storage:</strong> Google Cloud (Firestore).</li>
+                            <li><strong>Visibility:</strong> Messages in public channels (#general) are visible to all members. Messages in private groups are visible only to group members and app administrators.</li>
+                            <li><strong>Direct Messages:</strong> Encrypted in transit and stored securely, but technically accessible by database administrators if required for legal compliance.</li>
+                        </ul>
+                    </div>
+
+                    <div>
+                        <h3 className="text-lg font-bold text-white mb-2">Blogs & Comments</h3>
+                        <ul className="list-disc pl-5 space-y-1 text-sm text-slate-400">
+                            <li><strong>Storage:</strong> Google Cloud (Firestore).</li>
+                            <li><strong>Visibility:</strong> Blog posts published to the "Community Blog" are <strong>Public</strong>. Comments are public. Drafts remain private to you (and admins).</li>
+                        </ul>
+                    </div>
+
+                    <div>
+                        <h3 className="text-lg font-bold text-white mb-2">Code Studio & Whiteboard</h3>
+                        <ul className="list-disc pl-5 space-y-1 text-sm text-slate-400">
+                            <li><strong>Code Files:</strong> Stored based on the selected tab (Private Cloud, Drive, or GitHub). Live Session code is transient and stored in Firestore for the duration of the session.</li>
+                            <li><strong>Whiteboards:</strong> Stored in Google Cloud (Firestore). If you generate a "Share Link", anyone with the link can access that specific whiteboard.</li>
+                        </ul>
+                    </div>
+
+                    <div>
+                        <h3 className="text-lg font-bold text-white mb-2">Podcast Content & Live Sessions</h3>
+                        <ul className="list-disc pl-5 space-y-1 text-sm text-slate-400">
+                            <li><strong>Generated Audio:</strong> Stored locally in your browser (IndexedDB) to save bandwidth.</li>
+                            <li><strong>Text Transcripts:</strong> Stored in Google Cloud (Firestore) to enable history and search.</li>
+                            <li><strong>Live Chat History:</strong> The text transcript of your voice conversations with AI is saved to your account history (Firestore). You can delete these sessions at any time.</li>
+                        </ul>
+                    </div>
+                </div>
+            </section>
+
+            <section>
+                <h2 className="text-2xl font-bold text-white mb-4">3. AI Processing</h2>
                 <p>
                     This application uses <strong>Google Gemini API</strong> for generative capabilities.
                 </p>
                 <div className="bg-slate-900 p-4 rounded-xl border border-slate-800 mt-4">
                     <p className="text-sm">
-                        <span className="text-indigo-400 font-bold">Note:</span> Data sent to the AI (prompts, context, code snippets) falls under Google's API Data Privacy Policy. We do not use your data to train our own models.
+                        <span className="text-indigo-400 font-bold">Note:</span> Data sent to the AI (prompts, context, code snippets, voice input) is processed by Google. It falls under Google's API Data Privacy Policy. We do not use your data to train our own models, but Google may retain data for abuse monitoring (typically 30 days) depending on their terms.
                     </p>
                 </div>
-            </section>
-
-            <section>
-                <h2 className="text-2xl font-bold text-white mb-4">3. Local Storage</h2>
-                <p>
-                    To improve performance and reduce costs, we heavily utilize your browser's <strong>IndexedDB</strong>.
-                </p>
-                <ul className="list-disc pl-5 mt-4 space-y-2">
-                    <li><strong>API Keys:</strong> Your Gemini API Key is stored locally in your browser. It is never sent to our servers, only directly to Google's API endpoints.</li>
-                    <li><strong>Cached Content:</strong> Generated audio lectures and transcripts are cached locally to enable offline playback.</li>
-                </ul>
             </section>
 
             <section>
@@ -71,7 +137,7 @@ export const PrivacyPolicy: React.FC<PrivacyPolicyProps> = ({ onBack }) => {
             </section>
             
             <div className="pt-8 border-t border-slate-800 text-center text-sm text-slate-500">
-                Last Updated: May 2025
+                Last Updated: 12/13/2025
             </div>
         </div>
       </div>
