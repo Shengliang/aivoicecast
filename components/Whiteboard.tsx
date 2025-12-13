@@ -47,6 +47,10 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({
   const [borderRadius, setBorderRadius] = useState(0); 
   const [showShareDropdown, setShowShareDropdown] = useState(false);
   
+  // Curve Arrow Settings
+  const [startArrow, setStartArrow] = useState(false);
+  const [endArrow, setEndArrow] = useState(false);
+  
   // Selection State
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [isDraggingSelection, setIsDraggingSelection] = useState(false);
@@ -147,7 +151,9 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({
               color: color,
               strokeWidth: lineWidth,
               lineStyle: lineStyle,
-              rotation: 0
+              rotation: 0,
+              startArrow: startArrow,
+              endArrow: endArrow
           };
           const next = [...elements, newEl];
           setElements(next);
@@ -190,7 +196,7 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({
 
       window.addEventListener('keydown', handleKeyDown);
       return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedIds, elements, clipboard, isReadOnly, tool, activeCurvePoints]);
+  }, [selectedIds, elements, clipboard, isReadOnly, tool, activeCurvePoints, startArrow, endArrow]);
 
   const copySelection = () => {
       if (selectedIds.length === 0) return;
@@ -336,6 +342,10 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({
               }
               if (el.type === 'rect') {
                   setBorderRadius(el.borderRadius || 0);
+              }
+              if (el.type === 'curve') {
+                  setStartArrow(!!el.startArrow);
+                  setEndArrow(!!el.endArrow);
               }
           }
       }
@@ -1033,6 +1043,21 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({
                   }
                   ctx.lineTo(el.points[el.points.length-1].x, el.points[el.points.length-1].y);
                   ctx.stroke();
+                  
+                  // Draw Arrows if enabled
+                  ctx.setLineDash([]); // Ensure arrows are solid
+                  if (el.startArrow) {
+                      const p0 = el.points[0];
+                      const p1 = el.points[1];
+                      // Arrow at p0, pointing backwards from p1 direction
+                      if (p0 && p1) drawArrowHead(ctx, p1.x, p1.y, p0.x, p0.y, el.color);
+                  }
+                  if (el.endArrow) {
+                      const pn = el.points[el.points.length - 1];
+                      const pn_1 = el.points[el.points.length - 2];
+                      // Arrow at pn, pointing forwards from pn_1 direction
+                      if (pn && pn_1) drawArrowHead(ctx, pn_1.x, pn_1.y, pn.x, pn.y, el.color);
+                  }
               }
           } else if (el.type === 'rect') {
               const w = el.width || 0;
@@ -1393,6 +1418,26 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><line x1="2" y1="12" x2="22" y2="12" strokeDasharray="8 4 2 4" /></svg>
                     </button>
                 </div>
+                
+                {/* Curve Arrow Options */}
+                {(tool === 'curve' || (selectedIds.length === 1 && elements.find(e => e.id === selectedIds[0])?.type === 'curve')) && (
+                    <div className="flex items-center gap-1 bg-slate-800 border border-slate-700 rounded-lg p-1" title="Arrow Heads">
+                        <button 
+                            onClick={() => { setStartArrow(!startArrow); updateSelectedElements({ startArrow: !startArrow }); }}
+                            className={`p-1.5 rounded-md transition-colors ${startArrow ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'}`}
+                            title="Start Arrow"
+                        >
+                            <ArrowLeft size={14} /> 
+                        </button>
+                        <button 
+                            onClick={() => { setEndArrow(!endArrow); updateSelectedElements({ endArrow: !endArrow }); }}
+                            className={`p-1.5 rounded-md transition-colors ${endArrow ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'}`}
+                            title="End Arrow"
+                        >
+                            <ArrowRight size={14} />
+                        </button>
+                    </div>
+                )}
                 
                 {/* Brush Type Icons (Replacing Dropdown) */}
                 {(tool === 'pen' || (selectedIds.length === 1 && elements.find(e => e.id === selectedIds[0])?.type === 'pen')) && (

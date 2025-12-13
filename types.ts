@@ -334,6 +334,8 @@ export interface WhiteboardElement {
   fontFamily?: string;
   borderRadius?: number; // For rect
   rotation?: number; // In degrees
+  startArrow?: boolean; // For curve
+  endArrow?: boolean; // For curve
 }
 
 // Cloud Storage Type
