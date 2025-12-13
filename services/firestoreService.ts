@@ -816,7 +816,7 @@ export async function deleteWhiteboardElements(sessionId: string, elementIds: st
   await batch.commit();
 }
 
-// --- CODE STUDIO ---
+// --- CODE STUDIO & PROJECT SHARING ---
 
 export async function saveCodeProject(project: CodeProject): Promise<void> {
   await db.collection('code_projects').doc(project.id).set(project);
@@ -876,6 +876,19 @@ export async function updateProjectActiveFile(projectId: string, filePath: strin
     await db.collection('code_projects').doc(projectId).update({
         activeFilePath: filePath
     });
+}
+
+export async function updateProjectAccess(projectId: string, accessLevel: 'public' | 'restricted', allowedUserIds: string[]): Promise<void> {
+    await db.collection('code_projects').doc(projectId).update({
+        accessLevel,
+        allowedUserIds
+    });
+}
+
+export async function sendShareNotification(toUserId: string, sessionType: 'Code' | 'Whiteboard', link: string, fromName: string): Promise<void> {
+    const channelId = await createOrGetDMChannel(toUserId);
+    const collectionPath = `chat_channels/${channelId}/messages`;
+    await sendMessage(channelId, `I've shared a ${sessionType} session with you. Click to join: ${link}`, collectionPath);
 }
 
 // --- BILLING & STRIPE ---

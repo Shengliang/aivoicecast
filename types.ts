@@ -1,4 +1,5 @@
 
+
 export type AttachmentType = 'image' | 'audio' | 'video' | 'file';
 
 export interface Attachment {
@@ -225,6 +226,8 @@ export interface CodeProject {
     userName: string;
     timestamp: number;
   };
+  accessLevel?: 'public' | 'restricted'; // Access control
+  allowedUserIds?: string[]; // Whitelist for restricted projects
 }
 
 export interface Blog {

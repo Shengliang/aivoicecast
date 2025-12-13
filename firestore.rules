@@ -115,7 +115,17 @@ service cloud.firestore {
     // ----------------------------------------------------------------------
     // COLLABORATION
     match /code_projects/{projectId} {
-      allow read, write: if true; 
+      // Allow if:
+      // 1. Project doesn't exist yet (create)
+      // 2. Project is Public (accessLevel != 'restricted')
+      // 3. User is Owner
+      // 4. User is in allowedUserIds list
+      allow read, write: if resource == null || 
+                            resource.data.accessLevel != 'restricted' || 
+                            (request.auth != null && (
+                                resource.data.ownerId == request.auth.uid || 
+                                (resource.data.allowedUserIds != null && request.auth.uid in resource.data.allowedUserIds)
+                            ));
     }
     match /whiteboards/{boardId} {
       allow read, write: if true;
