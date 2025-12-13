@@ -94,6 +94,18 @@ export async function signInWithGitHub(): Promise<{ user: firebase.User | null, 
          
          // Case B: GitHub account is linked to a DIFFERENT Firebase account.
          if (linkError.code === 'auth/credential-already-in-use') {
+            // RECOVERY STRATEGY:
+            // If the GitHub account is valid but linked to another user, we can still extract
+            // the OAuth Access Token from the error object to allow "Session-Only" access
+            // to GitHub features without formally linking the accounts in Firebase.
+            if (linkError.credential && (linkError.credential as any).accessToken) {
+                console.warn("GitHub account linked to another user. Using temporary session token.");
+                return { 
+                    user: auth.currentUser, 
+                    token: (linkError.credential as any).accessToken 
+                };
+            }
+
             const error: any = new Error("This GitHub account is already linked to another user. Please sign out and sign in with GitHub directly.");
             error.code = linkError.code;
             error.originalMessage = linkError.message;
