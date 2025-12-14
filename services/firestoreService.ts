@@ -1,3 +1,4 @@
+
 import { db, storage, auth } from './firebaseConfig';
 import firebase from 'firebase/compat/app';
 import { 
@@ -106,6 +107,9 @@ export async function claimSystemChannels(email: string) {
 export async function syncUserProfile(user: firebase.User) {
   const ref = db.collection(USERS_COLLECTION).doc(user.uid);
   const doc = await ref.get();
+  
+  const statsRef = db.collection(STATS_COLLECTION).doc('global');
+
   if (!doc.exists) {
     await ref.set({
       uid: user.uid,
@@ -117,10 +121,17 @@ export async function syncUserProfile(user: firebase.User) {
       groups: [],
       subscriptionTier: 'free'
     });
-    // Increment global stats
-    await db.collection(STATS_COLLECTION).doc('global').update({ uniqueUsers: firebase.firestore.FieldValue.increment(1) });
+    // Increment global stats (Using set with merge to ensure document creation)
+    await statsRef.set({ 
+        uniqueUsers: firebase.firestore.FieldValue.increment(1),
+        totalLogins: firebase.firestore.FieldValue.increment(1)
+    }, { merge: true });
   } else {
     await ref.update({ lastLogin: Date.now() });
+    // Increment total logins for returning users as well
+    await statsRef.set({ 
+        totalLogins: firebase.firestore.FieldValue.increment(1)
+    }, { merge: true });
   }
 }
 
