@@ -226,6 +226,8 @@ const MobileFeedCard = ({
                     const lecture = await fetchLectureData(lessonMeta);
                     if (!lecture || !lecture.sections || lecture.sections.length === 0) {
                         console.warn("Empty lecture content, skipping.");
+                        // Short delay before skip to prevent rapid looping on errors
+                        await new Promise(r => setTimeout(r, 1000));
                         currentIndex++;
                         continue; 
                     }
@@ -233,15 +235,19 @@ const MobileFeedCard = ({
                     setPlaybackState('playing');
                     setStatusMessage("Playing");
 
+                    // VOICE SELECTION FIX: Use same logic as Intro for the Teacher
+                    // If channel has voiceName, use it. If not, default to Puck (same as intro fallback)
+                    const hostVoice = channel.voiceName || 'Puck';
+                    
                     textParts = lecture.sections.map((s: any) => ({
                         speaker: s.speaker === 'Teacher' ? lecture.professorName : lecture.studentName,
                         text: s.text,
-                        voice: s.speaker === 'Teacher' ? (channel.voiceName || 'Fenrir') : 'Puck'
+                        voice: s.speaker === 'Teacher' ? hostVoice : 'Puck'
                     }));
                 } catch (e) {
                     console.error("Lecture Gen Failed", e);
                     setStatusMessage("Error (Skipping)");
-                    await new Promise(r => setTimeout(r, 1000));
+                    await new Promise(r => setTimeout(r, 2000)); // Longer delay on error
                     currentIndex++;
                     continue;
                 }

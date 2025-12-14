@@ -1,8 +1,24 @@
+
 import { GoogleGenAI } from '@google/genai';
 import { GeneratedLecture, SubTopic, TranscriptItem } from '../types';
 import { incrementApiUsage } from './firestoreService';
 import { auth } from './firebaseConfig';
 import { GEMINI_API_KEY } from './private_keys';
+
+// Helper to safely parse JSON from AI response
+function safeJsonParse(text: string): any {
+  try {
+    // Remove markdown code blocks if present
+    let clean = text.trim();
+    if (clean.startsWith('```')) {
+      clean = clean.replace(/^```(json)?/i, '').replace(/```$/, '');
+    }
+    return JSON.parse(clean);
+  } catch (e) {
+    console.error("JSON Parse Error:", e, "Input:", text);
+    return null;
+  }
+}
 
 export async function generateLectureScript(
   topic: string, 
@@ -59,7 +75,8 @@ export async function generateLectureScript(
     const text = response.text;
     if (!text) return null;
 
-    const parsed = JSON.parse(text);
+    const parsed = safeJsonParse(text);
+    if (!parsed) return null;
     
     // Track Usage if logged in
     if (auth.currentUser) {
@@ -142,7 +159,9 @@ export async function generateBatchLectures(
     const text = response.text;
     if (!text) return null;
 
-    const parsed = JSON.parse(text);
+    const parsed = safeJsonParse(text);
+    if (!parsed) return null;
+
     const resultMap: Record<string, GeneratedLecture> = {};
 
     if (parsed.results && Array.isArray(parsed.results)) {
@@ -219,8 +238,8 @@ export async function summarizeDiscussionAsSection(
     
     if (auth.currentUser) incrementApiUsage(auth.currentUser.uid);
 
-    const parsed = JSON.parse(text);
-    return parsed.sections || null;
+    const parsed = safeJsonParse(text);
+    return parsed ? parsed.sections : null;
   } catch (error) {
     console.error("Summarization failed", error);
     return null;
