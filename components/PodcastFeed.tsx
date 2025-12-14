@@ -1,7 +1,7 @@
 
 import React, { useMemo, useRef, useState, useEffect, useCallback } from 'react';
 import { Channel, UserProfile, GeneratedLecture } from '../types';
-import { Play, MessageSquare, Heart, Share2, Bookmark, Music, Plus, Pause, Loader2, Volume2, VolumeX, GraduationCap, ChevronRight, Mic } from 'lucide-react';
+import { Play, MessageSquare, Heart, Share2, Bookmark, Music, Plus, Pause, Loader2, Volume2, VolumeX, GraduationCap, ChevronRight, Mic, AlignLeft } from 'lucide-react';
 import { ChannelCard } from './ChannelCard';
 import { CreatorProfileModal } from './CreatorProfileModal';
 import { followUser, unfollowUser } from '../services/firestoreService';
@@ -48,27 +48,27 @@ const MobileFeedCard = ({
 }: any) => {
     // Playback State
     const [isPlaying, setIsPlaying] = useState(false);
-    const [status, setStatus] = useState<'idle' | 'intro' | 'buffering_lecture' | 'playing_lecture' | 'finished'>('idle');
-    const [loadingText, setLoadingText] = useState('');
-    const [needsInteraction, setNeedsInteraction] = useState(false); // For browser autoplay policy
-    
-    // Content Cursor
-    const [chapterIndex, setChapterIndex] = useState(0);
-    const [lessonIndex, setLessonIndex] = useState(0);
+    // Sequence: -1 = Intro, 0...N = Lectures
+    const [currentTrackIndex, setCurrentTrackIndex] = useState(-1); 
     const [sectionIndex, setSectionIndex] = useState(0);
     
-    // Current Data
-    const [currentLecture, setCurrentLecture] = useState<GeneratedLecture | null>(null);
+    const [status, setStatus] = useState<'idle' | 'loading' | 'playing' | 'error'>('idle');
+    const [loadingText, setLoadingText] = useState('');
+    
+    // Display Data
+    const [currentLectureTitle, setCurrentLectureTitle] = useState<string>('');
     const [currentTranscript, setCurrentTranscript] = useState<{speaker: string, text: string} | null>(null);
 
     // Refs for Audio Control
     const audioContextRef = useRef<AudioContext | null>(null);
     const sourceRef = useRef<AudioBufferSourceNode | null>(null);
     const mountedRef = useRef(true);
-    const nextLecturePromiseRef = useRef<Promise<GeneratedLecture | null> | null>(null);
     
+    // Cache for pre-fetching next track
+    const lectureCache = useRef<Map<string, GeneratedLecture>>(new Map());
+
     // Flatten Curriculum helper
-    const getFlattenedCurriculum = () => {
+    const flatCurriculum = useMemo(() => {
         if (!channel.chapters) return [];
         return channel.chapters.flatMap((ch: any, cIdx: number) => 
             (ch.subTopics || []).map((sub: any, lIdx: number) => ({
@@ -79,15 +79,9 @@ const MobileFeedCard = ({
                 chapterTitle: ch.title
             }))
         );
-    };
-
-    const flatCurriculum = useMemo(() => getFlattenedCurriculum(), [channel]);
+    }, [channel]);
 
     const totalLessons = flatCurriculum.length;
-    const currentFlatIndex = useMemo(() => {
-        const idx = flatCurriculum.findIndex(item => item.chapterIndex === chapterIndex && item.lessonIndex === lessonIndex);
-        return idx !== -1 ? idx + 1 : 1;
-    }, [flatCurriculum, chapterIndex, lessonIndex]);
 
     useEffect(() => {
         mountedRef.current = true;
@@ -97,24 +91,27 @@ const MobileFeedCard = ({
         };
     }, []);
 
-    // Master Auto-Play Watcher
+    // --- Master Control Effect ---
     useEffect(() => {
         if (isActive) {
-            // Give a small delay for scroll to settle, then start
-            const timer = setTimeout(() => {
-                if (mountedRef.current) startChannelSequence();
-            }, 800);
-            return () => clearTimeout(timer);
+            // Attempt to start immediately
+            initAudioAndStart();
         } else {
+            // Reset when swiping away
             stopAudio();
             setStatus('idle');
-            setChapterIndex(0);
-            setLessonIndex(0);
+            setCurrentTrackIndex(-1);
             setSectionIndex(0);
-            setCurrentLecture(null);
             setCurrentTranscript(null);
         }
     }, [isActive]);
+
+    // Handle track changes
+    useEffect(() => {
+        if (isActive && status !== 'idle') {
+            playCurrentTrack();
+        }
+    }, [currentTrackIndex]);
 
     const stopAudio = () => {
         if (sourceRef.current) {
@@ -124,261 +121,246 @@ const MobileFeedCard = ({
         setIsPlaying(false);
     };
 
-    const initAudioContext = async () => {
-        if (!audioContextRef.current || audioContextRef.current.state === 'closed') {
+    const initAudioAndStart = async () => {
+        if (!audioContextRef.current) {
             audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
         }
+        
+        // Aggressively try to resume. 
+        // Note: If user hasn't interacted with page at all, this might fail, 
+        // but typically they clicked "Feed" to get here.
         if (audioContextRef.current.state === 'suspended') {
             try {
                 await audioContextRef.current.resume();
             } catch(e) {
-                setNeedsInteraction(true);
-                throw new Error("Autoplay blocked");
+                console.warn("Autoplay blocked, waiting for interaction");
             }
         }
+
+        // Start sequence at Intro (-1)
+        setCurrentTrackIndex(-1);
+        setStatus('loading'); // Trigger the effect
     };
 
-    const playAudioBuffer = (buffer: AudioBuffer): Promise<void> => {
-        return new Promise((resolve, reject) => {
-            if (!audioContextRef.current) return reject("No Audio Context");
-            
-            const source = audioContextRef.current.createBufferSource();
-            source.buffer = buffer;
-            source.connect(audioContextRef.current.destination);
-            source.onended = () => resolve();
-            sourceRef.current = source;
-            source.start(0);
-            setIsPlaying(true);
-        });
-    };
+    const playCurrentTrack = async () => {
+        if (!mountedRef.current) return;
+        stopAudio(); // Ensure previous audio stops
 
-    // --- Core Logic: The Sequence ---
-
-    const startChannelSequence = async () => {
-        try {
-            await initAudioContext();
-            setNeedsInteraction(false);
-
-            // Phase 1: Intro (Summary)
-            setStatus('intro');
+        // --- 1. INTRO PHASE (-1) ---
+        if (currentTrackIndex === -1) {
             setLoadingText('Introduction...');
+            setCurrentLectureTitle('Channel Introduction');
             
-            const introText = `Welcome to ${channel.title}. ${channel.description || ''}`;
+            // Set Display Text for Intro
+            setCurrentTranscript({ 
+                speaker: 'Host', 
+                text: channel.welcomeMessage || channel.description || `Welcome to ${channel.title}. Let's begin.` 
+            });
+
+            const textToSpeak = channel.welcomeMessage || `Welcome to ${channel.title}. ${channel.description}`;
             const voice = channel.voiceName || 'Puck';
-            
-            // Start prefetching the first lecture while we prepare/play intro
+
+            // Prefetch first lecture while playing intro
             if (flatCurriculum.length > 0) {
-                const firstMeta = flatCurriculum[0];
-                console.log("Prefetching first lecture:", firstMeta.title);
-                nextLecturePromiseRef.current = fetchOrGenerateLecture(firstMeta);
+                fetchLectureData(flatCurriculum[0]);
             }
 
-            // Synthesize Intro
-            const introResult = await synthesizeSpeech(introText, voice, audioContextRef.current!);
+            await speakText(textToSpeak, voice);
             
-            if (introResult.buffer && mountedRef.current && isActive) {
-                setCurrentTranscript({ speaker: 'Host', text: channel.description });
-                await playAudioBuffer(introResult.buffer);
-            }
-
-            // Intro finished? Move to Lecture Loop
             if (mountedRef.current && isActive) {
-                processNextLesson();
+                // Move to first lecture
+                setCurrentTrackIndex(0); 
             }
-
-        } catch (e) {
-            console.warn("Auto-play sequence failed (likely interaction needed):", e);
-            setNeedsInteraction(true);
+            return;
         }
-    };
 
-    const processNextLesson = async () => {
-        if (!mountedRef.current || !isActive) return;
-
-        // Find current meta based on state indices
-        // Note: we use state refs or functional updates usually, but here we rely on the closure
-        // because we are in a recursive-like async loop. To be safe, we re-calculate from flat list.
+        // --- 2. LECTURE PHASE (0 to N) ---
+        const lessonMeta = flatCurriculum[currentTrackIndex];
         
-        // Actually, better to use a ref for the index cursor to avoid closure staleness, 
-        // but for simplicity, let's look at the flatCurriculum array.
-        
-        // For the very first call after intro, we are at 0,0.
-        // We need to loop.
-        
-        let currentMeta = flatCurriculum.find(item => item.chapterIndex === chapterIndex && item.lessonIndex === lessonIndex);
-        
-        if (!currentMeta) {
-            console.log("Channel finished.");
-            setStatus('finished');
+        // If we ran out of lessons, move to next channel
+        if (!lessonMeta) {
+            console.log("Channel complete. Requesting next...");
             if (onChannelFinish) onChannelFinish();
             return;
         }
 
-        setStatus('buffering_lecture');
-        setLoadingText(`Loading: ${currentMeta.title}`);
-        setCurrentTranscript(null);
+        setLoadingText(`Loading: ${lessonMeta.title}`);
+        setCurrentLectureTitle(lessonMeta.title);
+        setStatus('loading');
 
-        // Get the lecture (either from prefetch ref or new fetch)
-        let lecture: GeneratedLecture | null = null;
-        if (nextLecturePromiseRef.current) {
-            lecture = await nextLecturePromiseRef.current;
-            nextLecturePromiseRef.current = null; // Clear used promise
-        } else {
-            lecture = await fetchOrGenerateLecture(currentMeta);
+        // Fetch Data
+        let lecture = lectureCache.current.get(lessonMeta.id);
+        if (!lecture) {
+            lecture = await fetchLectureData(lessonMeta);
         }
 
-        if (lecture && lecture.sections.length > 0) {
-            setCurrentLecture(lecture);
-            setStatus('playing_lecture');
-            
-            // Prefetch NEXT lesson now
-            const nextMetaIdx = flatCurriculum.indexOf(currentMeta) + 1;
-            if (nextMetaIdx < flatCurriculum.length) {
-                console.log("Prefetching NEXT lecture:", flatCurriculum[nextMetaIdx].title);
-                nextLecturePromiseRef.current = fetchOrGenerateLecture(flatCurriculum[nextMetaIdx]);
+        if (lecture && lecture.sections && lecture.sections.length > 0) {
+            // Prefetch NEXT lesson
+            if (currentTrackIndex + 1 < flatCurriculum.length) {
+                fetchLectureData(flatCurriculum[currentTrackIndex + 1]);
             }
 
-            // Play all sections
+            setStatus('playing');
+            
+            // Play all sections in this lecture
             for (let i = 0; i < lecture.sections.length; i++) {
-                if (!mountedRef.current || !isActive) return;
-                setSectionIndex(i);
+                if (!mountedRef.current || !isActive) break;
+                // Check if user swiped away or track changed mid-loop
+                // (Though Effect cleanup should handle this, strict check helps)
                 
                 const section = lecture.sections[i];
+                
+                // UPDATE SCREEN CONTENT
                 setCurrentTranscript({
                     speaker: section.speaker === 'Teacher' ? lecture.professorName : lecture.studentName,
                     text: section.text
                 });
 
                 const voice = section.speaker === 'Teacher' ? (channel.voiceName || 'Fenrir') : 'Puck';
-                const result = await synthesizeSpeech(section.text, voice, audioContextRef.current!);
                 
-                if (result.buffer && mountedRef.current && isActive) {
-                    await playAudioBuffer(result.buffer);
-                }
+                // Speak and wait for finish
+                await speakText(section.text, voice);
                 
-                // Small pause between sections
-                await new Promise(r => setTimeout(r, 500));
+                // Small natural pause between speakers
+                await new Promise(r => setTimeout(r, 400));
             }
-            
-            // Lecture Finished -> Move Cursor
+
+            // Lecture finished, increment track
             if (mountedRef.current && isActive) {
-                advanceToNextMeta(currentMeta);
+                setCurrentTrackIndex(prev => prev + 1);
             }
         } else {
-            // Lecture generation failed? Skip.
-            advanceToNextMeta(currentMeta);
+            // Error or empty lecture, skip
+            setCurrentTrackIndex(prev => prev + 1);
         }
     };
 
-    const advanceToNextMeta = (currentMeta: any) => {
-        const flatIdx = flatCurriculum.indexOf(currentMeta);
-        if (flatIdx !== -1 && flatIdx < flatCurriculum.length - 1) {
-            const next = flatCurriculum[flatIdx + 1];
-            
-            // Update State
-            setChapterIndex(next.chapterIndex);
-            setLessonIndex(next.lessonIndex);
-            setSectionIndex(0);
-            
-            // Recursion (via useEffect or direct call? Direct call safer for loop continuity)
-            // But we need state to update for UI.
-            // We can rely on a small timeout to let React render the new Indices, then continue.
-            // However, closure 'currentMeta' is stale in the next call if we don't pass args.
-            // Let's rely on the fact that we updated state, but we call with the 'next' object implicitly by finding it again.
-            // Actually, best to just trigger the effect? No, infinite loops risk.
-            
-            // HACK: We will just call processNextLesson BUT we need to ensure the vars `chapterIndex` etc are updated.
-            // Since `processNextLesson` reads from state `chapterIndex`, we have a race condition if we call it immediately.
-            // SOLUTION: Use functional state updates to verify, OR pass the target indices to `processNextLesson`.
-            
-            // Let's refactor processNextLesson to take arguments.
-            // For now, let's just trigger a re-run via a ref-based cursor or just wait.
-            // Simplest: We just modify the state, and have a `useEffect` on `[chapterIndex, lessonIndex]` trigger `processNextLesson`?
-            // No, that triggers on initial render too.
-            
-            // Let's just use a timeout to restart the loop after state settles.
-            setTimeout(() => processLoopRef.current(), 100);
-        } else {
-            setStatus('finished');
-            if (onChannelFinish) onChannelFinish();
-        }
-    };
-    
-    // We need a ref to hold the function to call it from inside itself safely
-    const processLoopRef = useRef<() => void>(() => {});
-    processLoopRef.current = processNextLesson;
+    const fetchLectureData = async (meta: any) => {
+        if (lectureCache.current.has(meta.id)) return lectureCache.current.get(meta.id);
 
-
-    const fetchOrGenerateLecture = async (meta: any) => {
         const cacheKey = `lecture_${channel.id}_${meta.id}_en`;
         let data = await getCachedLectureScript(cacheKey);
+        
         if (!data) {
+            // Generate real-time
             data = await generateLectureScript(meta.title, `Podcast: ${channel.title}. ${channel.description}`, 'en');
             if (data) await cacheLectureScript(cacheKey, data);
         }
+        
+        if (data) lectureCache.current.set(meta.id, data);
         return data;
     };
 
-    const handleManualPlay = () => {
-        startChannelSequence();
+    const speakText = async (text: string, voice: string): Promise<void> => {
+        return new Promise(async (resolve) => {
+            if (!audioContextRef.current) resolve();
+
+            try {
+                // Ensure context is running (fixes some mobile autoplay blocks)
+                if (audioContextRef.current?.state === 'suspended') {
+                    await audioContextRef.current.resume();
+                }
+
+                setIsPlaying(true);
+                const result = await synthesizeSpeech(text, voice, audioContextRef.current!);
+                
+                if (result.buffer && mountedRef.current && isActive) {
+                    const source = audioContextRef.current!.createBufferSource();
+                    source.buffer = result.buffer;
+                    source.connect(audioContextRef.current!.destination);
+                    source.onended = () => {
+                        setIsPlaying(false);
+                        resolve();
+                    };
+                    sourceRef.current = source;
+                    source.start(0);
+                } else {
+                    // Fallback or error
+                    setIsPlaying(false);
+                    // Add a small delay so it doesn't loop infinitely fast on error
+                    setTimeout(resolve, 1000); 
+                }
+            } catch (e) {
+                console.error("Speech error", e);
+                setIsPlaying(false);
+                setTimeout(resolve, 1000);
+            }
+        });
     };
+
+    // Manual toggle mainly for pausing
+    const handleToggle = (e: React.MouseEvent) => {
+        e.stopPropagation();
+        if (isPlaying) {
+            audioContextRef.current?.suspend();
+            setIsPlaying(false);
+        } else {
+            audioContextRef.current?.resume();
+            setIsPlaying(true);
+        }
+    };
+
+    const chapterIndex = currentTrackIndex >= 0 ? flatCurriculum[currentTrackIndex]?.chapterIndex : undefined;
 
     return (
         <div className="h-full w-full snap-start relative flex flex-col justify-center bg-slate-900 border-b border-slate-800">
-            {/* Background / Video Area */}
+            
+            {/* 1. Visual Layer */}
             <div 
                 className="absolute inset-0 cursor-pointer"
-                onClick={handleManualPlay}
+                onClick={handleToggle}
             >
                 <img 
                     src={channel.imageUrl} 
                     alt={channel.title} 
-                    className="w-full h-full object-cover opacity-50"
+                    className="w-full h-full object-cover opacity-60"
                     loading={isActive ? "eager" : "lazy"}
                 />
-                <div className="absolute inset-0 bg-gradient-to-b from-transparent via-black/20 to-black/95"></div>
+                <div className="absolute inset-0 bg-gradient-to-b from-black/30 via-transparent to-black/95"></div>
                 
-                {/* Center States */}
-                <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10 p-6 text-center">
-                    
-                    {needsInteraction && (
-                        <div className="bg-black/60 backdrop-blur-md p-6 rounded-full border border-white/20 animate-pulse pointer-events-auto cursor-pointer">
-                            <Play size={48} fill="white" className="text-white" />
-                            <p className="text-xs font-bold text-white mt-2 uppercase tracking-widest">Tap to Start</p>
-                        </div>
-                    )}
-
-                    {!needsInteraction && status === 'intro' && (
-                        <div className="flex flex-col items-center gap-2">
-                            <div className="bg-indigo-600/80 backdrop-blur px-4 py-1 rounded-full border border-indigo-400/50">
-                                <span className="text-xs font-bold text-white uppercase tracking-wider animate-pulse">Introduction</span>
-                            </div>
-                            <h2 className="text-2xl font-bold text-white drop-shadow-xl">{channel.title}</h2>
-                        </div>
-                    )}
-
-                    {!needsInteraction && (status === 'buffering_lecture') && (
+                {/* 2. Status / Loading Indicator */}
+                {status === 'loading' && (
+                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
                         <div className="flex flex-col items-center gap-2 bg-black/60 backdrop-blur-md p-4 rounded-2xl border border-white/10">
                             <Loader2 size={32} className="text-indigo-400 animate-spin" />
                             <span className="text-xs font-bold text-white">{loadingText}</span>
                         </div>
-                    )}
+                    </div>
+                )}
 
-                    {!needsInteraction && status === 'playing_lecture' && currentTranscript && (
-                        <div className="bg-black/60 backdrop-blur-sm p-4 rounded-xl border-l-4 border-indigo-500 shadow-xl animate-fade-in-up max-w-sm">
-                            <p className="text-xs font-bold text-indigo-300 uppercase mb-2 flex items-center gap-2">
-                                <Mic size={12}/> {currentTranscript.speaker}
-                            </p>
-                            <p className="text-lg md:text-xl text-white font-medium leading-relaxed drop-shadow-md text-left">
-                                "{currentTranscript.text}"
-                            </p>
+                {/* 3. Pause Icon Overlay */}
+                {!isPlaying && status !== 'loading' && (
+                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
+                        <div className="bg-black/40 p-4 rounded-full backdrop-blur-sm">
+                            <Play size={48} fill="white" className="text-white/90" />
                         </div>
-                    )}
-                </div>
+                    </div>
+                )}
+
+                {/* 4. Text Content Overlay (Always Visible when Active) */}
+                {currentTranscript && (
+                    <div className="absolute top-1/2 left-4 right-20 -translate-y-1/2 pointer-events-none z-20">
+                        <div className={`transition-all duration-500 transform ${isPlaying ? 'translate-y-0 opacity-100' : 'translate-y-2 opacity-90'}`}>
+                            <div className="bg-black/60 backdrop-blur-md p-5 rounded-2xl border-l-4 border-indigo-500 shadow-2xl">
+                                <div className="flex items-center gap-2 mb-2">
+                                    <div className="p-1 bg-indigo-500/20 rounded-full">
+                                        <Mic size={12} className="text-indigo-300"/>
+                                    </div>
+                                    <span className="text-xs font-bold text-indigo-300 uppercase tracking-wider">
+                                        {currentTranscript.speaker}
+                                    </span>
+                                </div>
+                                <p className="text-lg md:text-2xl text-white font-medium leading-relaxed drop-shadow-md text-left font-sans">
+                                    "{currentTranscript.text}"
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                )}
             </div>
 
-            {/* Right Sidebar Actions */}
-            <div className="absolute right-2 bottom-32 flex flex-col items-center gap-6 z-20">
+            {/* 5. Right Sidebar Actions */}
+            <div className="absolute right-2 bottom-32 flex flex-col items-center gap-6 z-30">
                 <div className="relative mb-2 cursor-pointer" onClick={(e) => onProfileClick(e, channel)}>
                     <img 
                         src={channel.imageUrl} 
@@ -425,30 +407,35 @@ const MobileFeedCard = ({
                 </button>
             </div>
 
-            {/* Bottom Info Overlay */}
-            <div className="absolute left-0 bottom-0 w-full p-4 pb-6 bg-gradient-to-t from-black/90 via-black/60 to-transparent pointer-events-none pr-20">
+            {/* 6. Bottom Info Overlay */}
+            <div className="absolute left-0 bottom-0 w-full p-4 pb-6 bg-gradient-to-t from-black/90 via-black/60 to-transparent pointer-events-none pr-20 z-30">
                 <div className="pointer-events-auto" onClick={(e) => { e.stopPropagation(); onChannelClick(channel.id); }}>
-                    {/* Chapter / Lesson Indicator */}
+                    
+                    {/* Playing Indicator */}
                     <div className="flex items-center gap-2 mb-2">
-                        <div className="bg-indigo-600/80 backdrop-blur-md px-2 py-1 rounded text-[10px] font-bold text-white flex items-center gap-1 border border-indigo-500/30">
-                            <GraduationCap size={12} />
-                            <span>Lesson {Math.max(1, currentFlatIndex || 1)}/{Math.max(1, totalLessons || 1)}</span>
-                        </div>
-                        {currentLecture && (
-                            <span className="text-indigo-200 text-xs font-bold truncate max-w-[200px]">
-                                {currentLecture.topic}
-                            </span>
+                        {currentTrackIndex >= 0 ? (
+                            <div className="bg-indigo-600/90 backdrop-blur-md px-3 py-1 rounded-full text-[10px] font-bold text-white flex items-center gap-2 border border-indigo-500/50 shadow-lg animate-pulse">
+                                <GraduationCap size={12} />
+                                <span>Lesson {currentTrackIndex + 1}/{totalLessons}</span>
+                                <span className="opacity-50">|</span>
+                                <span className="truncate max-w-[150px]">{currentLectureTitle}</span>
+                            </div>
+                        ) : (
+                            <div className="bg-emerald-600/90 backdrop-blur-md px-3 py-1 rounded-full text-[10px] font-bold text-white flex items-center gap-2 border border-emerald-500/50 shadow-lg">
+                                <AlignLeft size={12} />
+                                <span>Introduction</span>
+                            </div>
                         )}
                     </div>
 
-                    <div className="flex items-center gap-2 mb-2">
+                    <div className="flex items-center gap-2 mb-1">
                         <h3 className="text-white font-bold text-lg drop-shadow-md cursor-pointer hover:underline">
                             @{channel.author}
                         </h3>
                     </div>
                     
-                    <p className="text-white/90 text-sm mb-3 line-clamp-2 leading-relaxed drop-shadow-sm">
-                        {channel.description} <span className="font-bold text-white cursor-pointer opacity-70">...more</span>
+                    <p className="text-white/90 text-sm mb-3 line-clamp-1 leading-relaxed drop-shadow-sm">
+                        {channel.description}
                     </p>
 
                     {/* Scrolling Music/Tags Marquee */}
