@@ -1,3 +1,5 @@
+
+// ... existing imports
 import { db, auth, storage } from './firebaseConfig';
 import firebase from 'firebase/compat/app';
 import { 
@@ -146,13 +148,18 @@ export async function deleteChannelFromFirestore(channelId: string) {
 
 export async function voteChannel(channelId: string, type: 'like' | 'dislike') {
     const ref = db.collection('channels').doc(channelId);
-    // Optimistic update often handled in UI, this persists it
-    // Check if channel exists in public DB first, otherwise it's local only
     const doc = await ref.get();
     if (doc.exists) {
         if (type === 'like') await ref.update({ likes: firebase.firestore.FieldValue.increment(1) });
         else await ref.update({ dislikes: firebase.firestore.FieldValue.increment(1) });
     }
+}
+
+export async function shareChannel(channelId: string) {
+    const ref = db.collection('channels').doc(channelId);
+    // Optimistic check not strictly needed for increment, but good for existence
+    // Fire and forget
+    await ref.update({ shares: firebase.firestore.FieldValue.increment(1) }).catch(() => {});
 }
 
 export async function addCommentToChannel(channelId: string, comment: Comment) {
@@ -217,6 +224,7 @@ export async function getGroupChannels(groupIds: string[]): Promise<Channel[]> {
     return results;
 }
 
+// ... rest of the file ...
 // --- Lecture & Curriculum ---
 
 export async function saveLectureToFirestore(channelId: string, lectureId: string, lecture: GeneratedLecture) {

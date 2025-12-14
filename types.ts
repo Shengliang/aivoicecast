@@ -81,6 +81,7 @@ export interface Channel {
   systemInstruction: string;
   likes: number;
   dislikes: number;
+  shares?: number; // Added for share tracking
   comments: Comment[];
   tags: string[];
   imageUrl: string;

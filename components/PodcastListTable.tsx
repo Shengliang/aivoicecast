@@ -1,6 +1,7 @@
+
 import React from 'react';
 import { Channel } from '../types';
-import { ArrowUp, ArrowDown, Play, MessageSquare, ThumbsUp, Calendar, Hash } from 'lucide-react';
+import { ArrowUp, ArrowDown, Play, MessageSquare, Heart, Calendar, Hash } from 'lucide-react';
 
 export type SortKey = 'title' | 'voiceName' | 'likes' | 'createdAt' | 'author';
 
@@ -115,7 +116,7 @@ export const PodcastListTable: React.FC<PodcastListTableProps> = ({
                 <td className="px-6 py-4 whitespace-nowrap">
                   <div className="flex items-center gap-3 text-xs font-mono">
                     <div className="flex items-center gap-1 text-emerald-400/80">
-                       <ThumbsUp size={12} /> {channel.likes}
+                       <Heart size={12} fill="currentColor" /> {channel.likes}
                     </div>
                     <div className="flex items-center gap-1 text-indigo-400/80">
                        <MessageSquare size={12} /> {channel.comments?.length || 0}

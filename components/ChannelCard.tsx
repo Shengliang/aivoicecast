@@ -1,8 +1,9 @@
 
-import React from 'react';
+import React, { useState } from 'react';
 import { Channel } from '../types';
-import { Play, ThumbsUp, ThumbsDown, MessageSquare, Lock, Globe, Users, Edit } from 'lucide-react';
+import { Play, Heart, MessageSquare, Lock, Globe, Users, Edit, Share2, Bookmark } from 'lucide-react';
 import { OFFLINE_CHANNEL_ID } from '../utils/offlineContent';
+import { shareChannel } from '../services/firestoreService';
 
 interface ChannelCardProps {
   channel: Channel;
@@ -22,6 +23,32 @@ export const ChannelCard: React.FC<ChannelCardProps> = ({
   onCommentClick
 }) => {
   const isOwner = currentUser && (channel.ownerId === currentUser.uid || currentUser.email === 'shengliang.song@gmail.com');
+  const [isBookmarked, setIsBookmarked] = useState(false);
+
+  const handleShareClick = async (e: React.MouseEvent) => {
+      e.stopPropagation();
+      try {
+          await shareChannel(channel.id);
+          if (navigator.share) {
+              await navigator.share({
+                  title: channel.title,
+                  text: channel.description,
+                  url: window.location.href
+              });
+          } else {
+              await navigator.clipboard.writeText(window.location.href);
+              alert("Link copied to clipboard!");
+          }
+      } catch(err) {
+          console.error("Share failed", err);
+      }
+  };
+
+  const handleBookmarkClick = (e: React.MouseEvent) => {
+      e.stopPropagation();
+      setIsBookmarked(!isBookmarked);
+      // Persist to local storage if needed in future
+  };
 
   return (
     <div 
@@ -92,31 +119,40 @@ export const ChannelCard: React.FC<ChannelCardProps> = ({
         </div>
 
         <div className="flex items-center justify-between pt-4 border-t border-slate-800">
-          <div className="flex space-x-4">
+          <div className="flex items-center gap-4">
             <button 
               onClick={(e) => handleVote(channel.id, 'like', e)}
-              className="flex items-center space-x-1 text-slate-500 hover:text-emerald-400 transition-colors"
+              className="flex items-center gap-1.5 text-slate-400 hover:text-red-500 transition-colors group/btn"
             >
-              <ThumbsUp size={16} />
-              <span className="text-xs">{channel.likes}</span>
+              <Heart size={18} className="group-hover/btn:fill-red-500" />
+              <span className="text-xs font-medium">{channel.likes}</span>
             </button>
+            
             <button 
-              onClick={(e) => handleVote(channel.id, 'dislike', e)}
-              className="flex items-center space-x-1 text-slate-500 hover:text-red-400 transition-colors"
+              onClick={(e) => {
+                e.stopPropagation();
+                onCommentClick(channel);
+              }}
+              className="flex items-center gap-1.5 text-slate-400 hover:text-indigo-400 transition-colors"
             >
-              <ThumbsDown size={16} />
-              <span className="text-xs">{channel.dislikes}</span>
+              <MessageSquare size={18} />
+              <span className="text-xs font-medium">{channel.comments.length}</span>
+            </button>
+
+            <button 
+              onClick={handleShareClick}
+              className="flex items-center gap-1.5 text-slate-400 hover:text-white transition-colors"
+            >
+              <Share2 size={18} />
+              <span className="text-xs font-medium">{channel.shares || 0}</span>
             </button>
           </div>
+          
           <button 
-            onClick={(e) => {
-              e.stopPropagation();
-              onCommentClick(channel);
-            }}
-            className="flex items-center space-x-1 text-slate-500 hover:text-indigo-400 transition-colors"
+            onClick={handleBookmarkClick}
+            className={`text-slate-400 hover:text-amber-400 transition-colors ${isBookmarked ? 'text-amber-400 fill-amber-400' : ''}`}
           >
-            <MessageSquare size={16} />
-            <span className="text-xs">{channel.comments.length}</span>
+            <Bookmark size={18} fill={isBookmarked ? "currentColor" : "none"} />
           </button>
         </div>
       </div>
