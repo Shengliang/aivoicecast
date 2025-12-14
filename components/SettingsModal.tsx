@@ -1,9 +1,10 @@
 
 import React, { useState, useEffect } from 'react';
 import { UserProfile } from '../types';
-import { X, User, Shield, CreditCard, LogOut, CheckCircle, AlertTriangle, Bell, Lock, Database, Trash2, Edit2, Save, FileText, ExternalLink, Loader2, DollarSign, HelpCircle, ChevronDown, ChevronUp, Github } from 'lucide-react';
+import { X, User, Shield, CreditCard, LogOut, CheckCircle, AlertTriangle, Bell, Lock, Database, Trash2, Edit2, Save, FileText, ExternalLink, Loader2, DollarSign, HelpCircle, ChevronDown, ChevronUp, Github, Heart, Hash } from 'lucide-react';
 import { logUserActivity, getBillingHistory, createStripePortalSession, updateUserProfile } from '../services/firestoreService';
 import { clearAudioCache } from '../services/tts';
+import { TOPIC_CATEGORIES } from '../utils/initialData';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -16,7 +17,7 @@ interface SettingsModalProps {
 export const SettingsModal: React.FC<SettingsModalProps> = ({ 
   isOpen, onClose, user, onUpdateProfile, onUpgradeClick 
 }) => {
-  const [activeTab, setActiveTab] = useState<'general' | 'preferences' | 'billing'>('general');
+  const [activeTab, setActiveTab] = useState<'general' | 'interests' | 'preferences' | 'billing'>('general');
   const [isProcessingPortal, setIsProcessingPortal] = useState(false);
   const [displayName, setDisplayName] = useState(user.displayName);
   const [defaultRepo, setDefaultRepo] = useState(user.defaultRepoUrl || '');
@@ -24,6 +25,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [emailNotifs, setEmailNotifs] = useState(true);
   const [publicProfile, setPublicProfile] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  
+  // Interests State
+  const [selectedInterests, setSelectedInterests] = useState<string[]>(user.interests || []);
   
   // Billing State
   const [billingHistory, setBillingHistory] = useState<any[]>([]);
@@ -35,6 +39,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           getBillingHistory(user.uid).then(setBillingHistory);
       }
   }, [activeTab, user]);
+
+  // Sync initial interests
+  useEffect(() => {
+      if (isOpen) setSelectedInterests(user.interests || []);
+  }, [isOpen, user]);
 
   if (!isOpen) return null;
 
@@ -63,19 +72,29 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           // Persist to Cloud first
           await updateUserProfile(user.uid, { 
               displayName: displayName, 
-              defaultRepoUrl: defaultRepo 
+              defaultRepoUrl: defaultRepo,
+              interests: selectedInterests
           });
 
           // Update Local State
-          const updatedProfile = { ...user, displayName, defaultRepoUrl: defaultRepo };
+          const updatedProfile = { ...user, displayName, defaultRepoUrl: defaultRepo, interests: selectedInterests };
           if (onUpdateProfile) {
               onUpdateProfile(updatedProfile);
           }
           setIsEditingName(false);
-          logUserActivity('update_profile', { displayName, defaultRepo });
+          logUserActivity('update_profile', { displayName, defaultRepo, interests: selectedInterests });
+          if(activeTab === 'interests') alert("Interests saved! Your feed will be updated.");
       } catch(e: any) {
           console.error("Save failed", e);
           alert("Failed to save settings: " + e.message);
+      }
+  };
+
+  const toggleInterest = (topic: string) => {
+      if (selectedInterests.includes(topic)) {
+          setSelectedInterests(prev => prev.filter(t => t !== topic));
+      } else {
+          setSelectedInterests(prev => [...prev, topic]);
       }
   };
 
@@ -107,14 +126,17 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           </button>
         </div>
 
-        <div className="flex border-b border-slate-800 bg-slate-900/50 shrink-0">
-            <button onClick={() => setActiveTab('general')} className={`flex-1 py-3 text-sm font-bold border-b-2 transition-colors ${activeTab === 'general' ? 'border-indigo-500 text-white bg-slate-800' : 'border-transparent text-slate-400 hover:text-slate-200'}`}>
+        <div className="flex border-b border-slate-800 bg-slate-900/50 shrink-0 overflow-x-auto">
+            <button onClick={() => setActiveTab('general')} className={`flex-1 py-3 px-4 text-sm font-bold border-b-2 transition-colors whitespace-nowrap ${activeTab === 'general' ? 'border-indigo-500 text-white bg-slate-800' : 'border-transparent text-slate-400 hover:text-slate-200'}`}>
                 General
             </button>
-            <button onClick={() => setActiveTab('preferences')} className={`flex-1 py-3 text-sm font-bold border-b-2 transition-colors ${activeTab === 'preferences' ? 'border-indigo-500 text-white bg-slate-800' : 'border-transparent text-slate-400 hover:text-slate-200'}`}>
+            <button onClick={() => setActiveTab('interests')} className={`flex-1 py-3 px-4 text-sm font-bold border-b-2 transition-colors whitespace-nowrap ${activeTab === 'interests' ? 'border-indigo-500 text-white bg-slate-800' : 'border-transparent text-slate-400 hover:text-slate-200'}`}>
+                Interests
+            </button>
+            <button onClick={() => setActiveTab('preferences')} className={`flex-1 py-3 px-4 text-sm font-bold border-b-2 transition-colors whitespace-nowrap ${activeTab === 'preferences' ? 'border-indigo-500 text-white bg-slate-800' : 'border-transparent text-slate-400 hover:text-slate-200'}`}>
                 Preferences
             </button>
-            <button onClick={() => setActiveTab('billing')} className={`flex-1 py-3 text-sm font-bold border-b-2 transition-colors ${activeTab === 'billing' ? 'border-indigo-500 text-white bg-slate-800' : 'border-transparent text-slate-400 hover:text-slate-200'}`}>
+            <button onClick={() => setActiveTab('billing')} className={`flex-1 py-3 px-4 text-sm font-bold border-b-2 transition-colors whitespace-nowrap ${activeTab === 'billing' ? 'border-indigo-500 text-white bg-slate-800' : 'border-transparent text-slate-400 hover:text-slate-200'}`}>
                 Billing
             </button>
         </div>
@@ -169,6 +191,53 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                             <div className="text-sm text-red-200"><p className="font-bold">Delete Account</p><p className="text-xs opacity-70">Permanently remove your profile and all data.</p></div>
                             <button onClick={handleDeleteAccount} className="px-4 py-2 bg-red-900/20 hover:bg-red-900/40 text-red-400 border border-red-900/50 rounded-lg text-xs font-bold transition-colors">Delete</button>
                         </div>
+                    </div>
+                </div>
+            )}
+
+            {activeTab === 'interests' && (
+                <div className="space-y-6">
+                    <div className="flex justify-between items-start">
+                        <div>
+                            <h3 className="text-lg font-bold text-white mb-2 flex items-center gap-2"><Heart className="text-pink-500" /> Your Interests</h3>
+                            <p className="text-sm text-slate-400">Select topics you love. We use these to personalize your podcast feed.</p>
+                        </div>
+                        <button 
+                            onClick={handleSaveProfile}
+                            className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-bold rounded-lg shadow-lg flex items-center gap-2"
+                        >
+                            <Save size={16} /> Save Interests
+                        </button>
+                    </div>
+
+                    <div className="space-y-6">
+                        {Object.keys(TOPIC_CATEGORIES).map(category => (
+                            <div key={category} className="bg-slate-800/30 border border-slate-800 rounded-xl p-4">
+                                <h4 className="text-sm font-bold text-slate-300 mb-3 flex items-center gap-2">
+                                    <Hash size={14} className="text-indigo-400" /> {category}
+                                </h4>
+                                <div className="flex flex-wrap gap-2">
+                                    {/* Include the category itself as a tag */}
+                                    <button
+                                        onClick={() => toggleInterest(category)}
+                                        className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-all ${selectedInterests.includes(category) ? 'bg-indigo-600 border-indigo-500 text-white shadow-md' : 'bg-slate-900 border-slate-700 text-slate-400 hover:border-slate-500 hover:text-slate-200'}`}
+                                    >
+                                        {category}
+                                    </button>
+                                    
+                                    {/* Sub-tags */}
+                                    {TOPIC_CATEGORIES[category].map(tag => (
+                                        <button
+                                            key={tag}
+                                            onClick={() => toggleInterest(tag)}
+                                            className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-all ${selectedInterests.includes(tag) ? 'bg-indigo-600 border-indigo-500 text-white shadow-md' : 'bg-slate-900 border-slate-700 text-slate-400 hover:border-slate-500 hover:text-slate-200'}`}
+                                        >
+                                            {tag}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                        ))}
                     </div>
                 </div>
             )}

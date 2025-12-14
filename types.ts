@@ -144,6 +144,7 @@ export interface UserProfile {
   displayName: string;
   photoURL: string;
   groups: string[]; // IDs of groups joined
+  interests?: string[]; // Personal interests for recommendations
   apiUsageCount?: number;
   createdAt?: number; // Added for sorting
   lastLogin?: any;

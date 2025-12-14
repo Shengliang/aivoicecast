@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo } from 'react';
 import { Channel, ViewState, UserProfile, TranscriptItem, SubscriptionTier } from './types';
 import { 
@@ -29,6 +28,7 @@ import { RecordingList } from './components/RecordingList';
 import { DocumentList } from './components/DocumentList';
 import { CalendarView } from './components/CalendarView';
 import { PodcastListTable, SortKey } from './components/PodcastListTable';
+import { PodcastFeed } from './components/PodcastFeed'; // New Import
 import { MissionManifesto } from './components/MissionManifesto';
 import { CodeStudio } from './components/CodeStudio';
 import { Whiteboard } from './components/Whiteboard';
@@ -53,12 +53,12 @@ import { HANDCRAFTED_CHANNELS, CATEGORY_STYLES, TOPIC_CATEGORIES } from './utils
 import { OFFLINE_CHANNEL_ID } from './utils/offlineContent';
 import { GEMINI_API_KEY } from './services/private_keys';
 
-const APP_VERSION = "v3.65.1";
+const APP_VERSION = "v3.66.0"; // Bump version
 
 const UI_TEXT = {
   en: {
     appTitle: "AIVoiceCast",
-    directory: "Discover",
+    directory: "Feed", // Changed from Discover
     myFeed: "My Feed",
     live: "Live Studio",
     search: "Search topics...",
@@ -84,7 +84,7 @@ const UI_TEXT = {
   },
   zh: {
     appTitle: "AI 播客",
-    directory: "发现",
+    directory: "推荐",
     myFeed: "我的订阅",
     live: "直播间",
     search: "搜索主题...",
@@ -110,7 +110,6 @@ const UI_TEXT = {
   }
 };
 
-// Add to types.ts in real project, but here we extend locally for the new view state
 type ExtendedViewState = ViewState | 'firestore_debug';
 
 const App: React.FC = () => {
@@ -123,7 +122,7 @@ const App: React.FC = () => {
   // Auth State
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
-  const [authLoading, setAuthLoading] = useState(true); // Loading state for initial auth check
+  const [authLoading, setAuthLoading] = useState(true);
 
   // Privacy Policy Public View
   const [isPrivacyOpen, setIsPrivacyOpen] = useState(false);
@@ -132,7 +131,7 @@ const App: React.FC = () => {
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [searchQuery, setSearchQuery] = useState('');
   
-  // Layout & Sorting
+  // Layout & Sorting (Kept for fallback, but main view is now Feed)
   const [layoutMode, setLayoutMode] = useState<'grid' | 'table'>('grid');
   const [sortConfig, setSortConfig] = useState<{ key: SortKey; direction: 'asc' | 'desc' }>({ key: 'createdAt', direction: 'desc' });
 
@@ -148,8 +147,8 @@ const App: React.FC = () => {
   const [isApiKeyModalOpen, setIsApiKeyModalOpen] = useState(false);
   const [isSyncModalOpen, setIsSyncModalOpen] = useState(false);
   const [isFirebaseModalOpen, setIsFirebaseModalOpen] = useState(false);
-  const [isAccountSettingsOpen, setIsAccountSettingsOpen] = useState(false); // New Modal State
-  const [isPricingOpen, setIsPricingOpen] = useState(false); // For cross-linking from settings
+  const [isAccountSettingsOpen, setIsAccountSettingsOpen] = useState(false); 
+  const [isPricingOpen, setIsPricingOpen] = useState(false); 
   
   const [hasApiKey, setHasApiKey] = useState(false);
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
@@ -178,26 +177,22 @@ const App: React.FC = () => {
   const [globalVoice, setGlobalVoice] = useState('Auto');
 
   useEffect(() => {
-    // Check local storage, private key file, or process env
     const key = localStorage.getItem('gemini_api_key') || GEMINI_API_KEY || process.env.API_KEY;
     setHasApiKey(!!key);
 
-    // CHECK URL FOR SHARED SESSION (Unified)
     const params = new URLSearchParams(window.location.search);
     const session = params.get('session');
-    const keyParam = params.get('key'); // Secret Token for Write Access
-    const mode = params.get('mode'); // 'code' or 'whiteboard'
+    const keyParam = params.get('key'); 
+    const mode = params.get('mode');
 
     if (session) {
         setSharedSessionId(session);
         if (keyParam) setAccessKey(keyParam);
         
-        // Prevent view state loop by checking current view state
         if (viewState !== 'code_studio' && viewState !== 'whiteboard') {
             if (mode === 'whiteboard') {
                  setViewState('whiteboard');
             } else {
-                 // Default to Code Studio for shared sessions
                  setViewState('code_studio');
             }
         }
@@ -205,7 +200,6 @@ const App: React.FC = () => {
 
     let unsubscribeAuth = () => {};
 
-    // Only attempt to connect auth if we have a valid config, otherwise we risk a crash
     if (isFirebaseConfigured) {
         unsubscribeAuth = auth.onAuthStateChanged(async (user) => {
           setCurrentUser(user);
@@ -220,10 +214,9 @@ const App: React.FC = () => {
             setUserProfile(null);
             setGroupChannels([]);
           }
-          setAuthLoading(false); // Auth check complete
+          setAuthLoading(false); 
         });
     } else {
-        // Auto-open modal if configuration is missing
         setIsFirebaseModalOpen(true);
         setAuthLoading(false);
     }
@@ -231,7 +224,6 @@ const App: React.FC = () => {
     return () => unsubscribeAuth();
   }, []);
 
-  // Listen for Subscription Changes (Stripe)
   useEffect(() => {
       if (currentUser && isFirebaseConfigured) {
           const unsub = setupSubscriptionListener(currentUser.uid, (newTier) => {
@@ -242,12 +234,10 @@ const App: React.FC = () => {
       }
   }, [currentUser]);
 
-  // Load User Channels (Local)
   useEffect(() => {
     getUserChannels().then(setUserChannels);
   }, []);
 
-  // Load Public Channels (Firestore)
   useEffect(() => {
     if (isFirebaseConfigured && currentUser) {
         const unsubPublic = subscribeToPublicChannels(
@@ -264,14 +254,12 @@ const App: React.FC = () => {
     }
   }, [currentUser]);
 
-  // Load Group Channels when profile updates
   useEffect(() => {
     if (userProfile && userProfile.groups && userProfile.groups.length > 0) {
        getGroupChannels(userProfile.groups).then(setGroupChannels);
     }
   }, [userProfile]);
 
-  // Combine all channels
   useEffect(() => {
     const all = [...HANDCRAFTED_CHANNELS, ...userChannels, ...publicChannels, ...groupChannels];
     const unique = Array.from(new Map(all.map(item => [item.id, item])).values());
@@ -287,14 +275,6 @@ const App: React.FC = () => {
     setChannels(unique);
   }, [userChannels, publicChannels, groupChannels]);
 
-  // Calculate Total Lectures
-  const totalLectures = useMemo(() => {
-    return channels.reduce((acc, channel) => {
-      return acc + (channel.chapters?.reduce((cAcc, ch) => cAcc + (ch.subTopics?.length || 0), 0) || 0);
-    }, 0);
-  }, [channels]);
-
-  // Active channel can be from the list OR the temporary one
   const activeChannel = useMemo(() => {
       return tempChannel || channels.find(c => c.id === activeChannelId);
   }, [channels, activeChannelId, tempChannel]);
@@ -396,14 +376,11 @@ const App: React.FC = () => {
       setViewState('live_session');
   };
 
-  // Called when CodeStudio or Whiteboard creates a shared link
   const handleSessionStart = (id: string) => {
       setSharedSessionId(id);
-      setAccessKey(undefined); // Reset key, owner doesn't need URL key usually
+      setAccessKey(undefined);
       
       const url = new URL(window.location.href);
-      
-      // Clean up all possible params first
       url.searchParams.delete('session');
       url.searchParams.delete('code_session');
       url.searchParams.delete('whiteboard_session');
@@ -412,26 +389,19 @@ const App: React.FC = () => {
       url.searchParams.delete('mode');
 
       url.searchParams.set('session', id);
-      // We do NOT set 'key' in the URL for the creator, as they are Owner by Auth.
-      // This keeps the URL clean.
-      
       window.history.pushState({}, '', url.toString());
   };
 
   const handleSessionStop = () => {
       setSharedSessionId(undefined);
       setAccessKey(undefined);
-      
       const url = new URL(window.location.href);
       url.searchParams.delete('session');
       url.searchParams.delete('key');
-      // Only removing 'session' and 'key', leaving other potential state like 'view' if we were using it (though here we use state)
-      
       window.history.pushState({}, '', url.toString());
   };
 
-  // --- Sorting & Filtering Logic ---
-
+  // --- Sorting Logic ---
   const handleSort = (key: SortKey) => {
       setSortConfig(current => ({
           key,
@@ -456,9 +426,9 @@ const App: React.FC = () => {
       return groups;
   }, [channels]);
 
-  const tableData = useMemo(() => {
+  // Combined Channel List for Feed
+  const feedChannels = useMemo(() => {
       let data = [...channels];
-
       if (searchQuery) {
           const lowerQ = searchQuery.toLowerCase();
           data = data.filter(c => 
@@ -467,42 +437,13 @@ const App: React.FC = () => {
               c.tags.some(t => t.toLowerCase().includes(lowerQ))
           );
       }
-
-      if (selectedCategory !== 'All') {
-          if (selectedCategory === 'Spotlight') {
-              data = data.filter(c => HANDCRAFTED_CHANNELS.some(h => h.id === c.id));
-          } else {
-              const keywords = selectedCategory.toLowerCase().split(/[ &]/).filter(w => w.length > 3);
-              data = data.filter(c => keywords.some(k => c.tags.some(t => t.toLowerCase().includes(k)) || c.title.toLowerCase().includes(k)));
-          }
-      }
-
-      data.sort((a, b) => {
-          const aVal = sortConfig.key === 'voiceName' ? a.voiceName : 
-                       sortConfig.key === 'likes' ? a.likes : 
-                       sortConfig.key === 'createdAt' ? (a.createdAt || 0) : 
-                       sortConfig.key === 'author' ? a.author :
-                       a.title;
-          
-          const bVal = sortConfig.key === 'voiceName' ? b.voiceName : 
-                       sortConfig.key === 'likes' ? b.likes : 
-                       sortConfig.key === 'createdAt' ? (b.createdAt || 0) : 
-                       sortConfig.key === 'author' ? b.author :
-                       b.title;
-
-          if (aVal < bVal) return sortConfig.direction === 'asc' ? -1 : 1;
-          if (aVal > bVal) return sortConfig.direction === 'asc' ? 1 : -1;
-          return 0;
-      });
-
       return data;
-  }, [channels, searchQuery, selectedCategory, sortConfig]);
+  }, [channels, searchQuery]);
 
   const handleUpgradeSuccess = async (newTier: SubscriptionTier) => {
       if (userProfile) {
           setUserProfile({ ...userProfile, subscriptionTier: newTier });
       }
-      
       if (currentUser) {
         try {
             const fresh = await getUserProfile(currentUser.uid);
@@ -520,12 +461,10 @@ const App: React.FC = () => {
       );
   }
 
-  // Handle Public Privacy Policy View
   if (isPrivacyOpen) {
       return <PrivacyPolicy onBack={() => setIsPrivacyOpen(false)} />;
   }
 
-  // Login Gate
   if (!currentUser) {
       return <LoginPage onPrivacyClick={() => setIsPrivacyOpen(true)} />;
   }
@@ -533,9 +472,9 @@ const App: React.FC = () => {
   return (
     <div className="min-h-screen supports-[min-height:100dvh]:min-h-[100dvh] bg-slate-950 text-slate-100 font-sans overflow-x-hidden">
       
-      {/* Navbar */}
-      {viewState !== 'chat' && (
-      <nav className="sticky top-0 z-30 bg-slate-900/80 backdrop-blur-md border-b border-slate-800">
+      {/* Navbar - Simplified for Feed Mode */}
+      {viewState !== 'chat' && viewState !== 'live_session' && (
+      <nav className="sticky top-0 z-30 bg-slate-900/90 backdrop-blur-md border-b border-slate-800">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
             <div className="flex items-center cursor-pointer" onClick={() => { setViewState('directory'); }}>
@@ -547,6 +486,8 @@ const App: React.FC = () => {
               </span>
             </div>
             
+            {/* Conditional Search - Hidden on Main Feed to reduce clutter, visible elsewhere */}
+            {(viewState as string) !== 'directory' && (
             <div className="hidden md:flex flex-1 max-w-md mx-8 relative">
               <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                 <Search className="h-4 w-4 text-slate-500" />
@@ -559,45 +500,31 @@ const App: React.FC = () => {
                 onChange={(e) => {
                     setSearchQuery(e.target.value);
                     if (e.target.value && viewState !== 'directory') setViewState('directory');
-                    if (e.target.value && activeTab !== 'categories') setActiveTab('categories');
                 }}
               />
             </div>
+            )}
 
             <div className="flex items-center space-x-2 sm:space-x-4">
               
-              <button 
-                onClick={() => setViewState('mission')} 
-                className="hidden lg:flex items-center space-x-2 px-3 py-1.5 bg-slate-800/50 hover:bg-indigo-900/30 text-indigo-300 text-xs font-bold rounded-lg transition-colors border border-indigo-500/20"
-              >
-                <Rocket size={14}/>
-                <span>{t.mission}</span>
-              </button>
-
-              <button 
-                onClick={() => { setViewState('code_studio'); }} 
-                className={`hidden lg:flex items-center space-x-2 px-3 py-1.5 bg-slate-800/50 hover:bg-emerald-900/30 text-emerald-400 text-xs font-bold rounded-lg transition-colors border border-emerald-500/20 ${viewState === 'code_studio' ? 'ring-1 ring-emerald-500 bg-emerald-900/40' : ''}`}
-              >
-                <Code size={14}/>
-                <span>{t.code}</span>
-              </button>
-
-              <button 
-                onClick={() => { setViewState('whiteboard'); }} 
-                className={`hidden lg:flex items-center space-x-2 px-3 py-1.5 bg-slate-800/50 hover:bg-pink-900/30 text-pink-400 text-xs font-bold rounded-lg transition-colors border border-pink-500/20 ${viewState === 'whiteboard' ? 'ring-1 ring-pink-500 bg-pink-900/40' : ''}`}
-              >
-                <PenTool size={14}/>
-                <span>{t.whiteboard}</span>
-              </button>
-
-              {/* Language Switcher */}
-              <div className="flex items-center bg-slate-800 rounded-lg p-1 border border-slate-700">
-                 <button onClick={() => setLanguage('en')} className={`px-2 py-1 rounded-md text-[10px] font-bold transition-all ${language === 'en' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-400 hover:text-white'}`}>EN</button>
-                 <button onClick={() => setLanguage('zh')} className={`px-2 py-1 rounded-md text-[10px] font-bold transition-all ${language === 'zh' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-400 hover:text-white'}`}>中文</button>
+              {/* Feature Buttons - Hidden on Mobile to reduce noise */}
+              <div className="hidden lg:flex gap-2">
+                  <button 
+                    onClick={() => setViewState('code_studio')} 
+                    className="flex items-center space-x-2 px-3 py-1.5 bg-slate-800/50 hover:bg-emerald-900/30 text-emerald-400 text-xs font-bold rounded-lg transition-colors"
+                  >
+                    <Code size={14}/><span>{t.code}</span>
+                  </button>
+                  <button 
+                    onClick={() => setViewState('whiteboard')} 
+                    className="flex items-center space-x-2 px-3 py-1.5 bg-slate-800/50 hover:bg-pink-900/30 text-pink-400 text-xs font-bold rounded-lg transition-colors"
+                  >
+                    <PenTool size={14}/><span>{t.whiteboard}</span>
+                  </button>
               </div>
 
               {!isFirebaseConfigured && (
-                  <button onClick={() => setIsFirebaseModalOpen(true)} className="p-2 text-amber-500 bg-amber-900/20 rounded-full hover:bg-amber-900/40 border border-amber-900/50 animate-pulse" title="Missing Firebase Config">
+                  <button onClick={() => setIsFirebaseModalOpen(true)} className="p-2 text-amber-500 bg-amber-900/20 rounded-full hover:bg-amber-900/40 border border-amber-900/50 animate-pulse">
                       <AlertTriangle size={18} />
                   </button>
               )}
@@ -641,11 +568,9 @@ const App: React.FC = () => {
       </nav>
       )}
 
-      {/* Main Content Switch */}
-      <div className="flex-1 overflow-y-auto">
+      {/* Main Content */}
+      <div className="flex-1 overflow-hidden h-[calc(100vh-64px)]">
         {viewState === 'mission' && <MissionManifesto onBack={() => setViewState('directory')} />}
-        
-        {/* Render User Manual when viewState is 'user_guide' */}
         {viewState === 'user_guide' && <UserManual onBack={() => setViewState('directory')} />}
         
         {viewState === 'code_studio' && (
@@ -655,9 +580,9 @@ const App: React.FC = () => {
                 userProfile={userProfile}
                 sessionId={sharedSessionId}
                 accessKey={accessKey}
-                onSessionStart={handleSessionStart} // Unified Session Handler
-                onSessionStop={handleSessionStop} // Stop Sharing Handler
-                onStartLiveSession={(channel, context) => handleStartLiveSession(channel, context)} // Teach Me Mode
+                onSessionStart={handleSessionStart} 
+                onSessionStop={handleSessionStop} 
+                onStartLiveSession={(channel, context) => handleStartLiveSession(channel, context)} 
             />
         )}
         
@@ -666,236 +591,95 @@ const App: React.FC = () => {
                 onBack={() => { setViewState('directory'); }}
                 sessionId={sharedSessionId}
                 accessKey={accessKey}
-                onSessionStart={handleSessionStart} // Unified Session Handler
+                onSessionStart={handleSessionStart} 
             />
         )}
         
         {viewState === 'blog' && <BlogView onBack={() => setViewState('directory')} currentUser={currentUser} />}
-        
         {viewState === 'chat' && <WorkplaceChat onBack={() => setViewState('directory')} currentUser={currentUser} />}
-        
         {viewState === 'careers' && <CareerCenter onBack={() => setViewState('directory')} currentUser={currentUser} />}
 
         {viewState === 'directory' && (
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 animate-fade-in">
+          <div className="h-full flex flex-col">
             
-            {/* Tabs */}
-            <div className="flex space-x-2 overflow-x-auto pb-4 mb-4 scrollbar-hide">
-               {[
-                 { id: 'categories', label: t.podcasts, icon: Layout },
-                 { id: 'calendar', label: t.calendar, icon: Calendar },
-                 { id: 'careers', label: t.careers, icon: Briefcase }, // New Tab
-                 { id: 'chat', label: t.chat, icon: MessageSquare },
-                 { id: 'code', label: t.code, icon: Code },
-                 { id: 'blog', label: t.blog, icon: Rss },
-                 { id: 'whiteboard', label: t.whiteboard, icon: PenTool },
-                 { id: 'mentorship', label: t.mentorship, icon: Users }, // Changed Icon for Mentorship to avoid duplicate Briefcase
-                 { id: 'groups', label: t.groups, icon: Users },
-                 { id: 'recordings', label: t.recordings, icon: Disc },
-                 { id: 'docs', label: t.docs, icon: FileText },
-               ].map(tab => (
-                 <button
-                   key={tab.id}
-                   onClick={() => {
-                       if (tab.id === 'code') setViewState('code_studio');
-                       else if (tab.id === 'whiteboard') setViewState('whiteboard');
-                       else if (tab.id === 'blog') setViewState('blog');
-                       else if (tab.id === 'chat') setViewState('chat');
-                       else if (tab.id === 'careers') setViewState('careers');
-                       else setActiveTab(tab.id);
-                   }}
-                   className={`flex items-center space-x-2 px-4 py-2 rounded-full text-sm font-bold whitespace-nowrap transition-all ${activeTab === tab.id ? 'bg-white text-slate-900 shadow-md' : 'bg-slate-800/50 text-slate-400 hover:bg-slate-800 hover:text-white'}`}
-                 >
-                   <tab.icon size={16} />
-                   <span>{tab.label}</span>
-                 </button>
-               ))}
+            {/* Secondary Nav / Tabs (Horizontal Scroll) */}
+            <div className="bg-slate-900/50 backdrop-blur-md border-b border-slate-800 p-2 overflow-x-auto shrink-0 scrollbar-hide">
+                <div className="flex space-x-2 w-max px-2">
+                   {[
+                     { id: 'categories', label: t.directory, icon: Layout }, // Main Feed
+                     { id: 'calendar', label: t.calendar, icon: Calendar },
+                     { id: 'careers', label: t.careers, icon: Briefcase },
+                     { id: 'chat', label: t.chat, icon: MessageSquare },
+                     { id: 'code', label: t.code, icon: Code },
+                     { id: 'blog', label: t.blog, icon: Rss },
+                     { id: 'mentorship', label: t.mentorship, icon: Users },
+                     { id: 'groups', label: t.groups, icon: Users },
+                     { id: 'recordings', label: t.recordings, icon: Disc },
+                     { id: 'docs', label: t.docs, icon: FileText },
+                   ].map(tab => (
+                     <button
+                       key={tab.id}
+                       onClick={() => {
+                           if (tab.id === 'code') setViewState('code_studio');
+                           else if (tab.id === 'blog') setViewState('blog');
+                           else if (tab.id === 'chat') setViewState('chat');
+                           else if (tab.id === 'careers') setViewState('careers');
+                           else setActiveTab(tab.id);
+                       }}
+                       className={`flex items-center space-x-2 px-4 py-2 rounded-full text-xs font-bold whitespace-nowrap transition-all ${activeTab === tab.id ? 'bg-white text-slate-900 shadow-md' : 'bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-white'}`}
+                     >
+                       <tab.icon size={14} />
+                       <span>{tab.label}</span>
+                     </button>
+                   ))}
+                </div>
             </div>
 
             {/* Content Area */}
-            <div className="min-h-[60vh]">
+            <div className="flex-1 overflow-hidden relative">
+               
+               {/* 1. Main Feed (TikTok Style) */}
                {activeTab === 'categories' && (
-                    <>
-                    <div className="flex flex-col md:flex-row items-center justify-between gap-4 mb-6">
-                        <div className="text-xl font-bold text-white flex items-center gap-2">
-                            {searchQuery && (
-                                <>
-                                    <Search className="text-indigo-400" />
-                                    <span>Search: "{searchQuery}"</span>
-                                </>
-                            )}
-                        </div>
-
-                        <div className="flex items-center gap-3 w-full md:w-auto">
-                            
-                            <button 
-                                onClick={() => setIsCreateModalOpen(true)}
-                                className="flex items-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-bold rounded-lg transition-colors shadow-lg shadow-indigo-500/20 whitespace-nowrap"
-                                title="Create New Podcast"
-                            >
-                                <Plus size={16} />
-                                <span className="hidden sm:inline">{t.create}</span>
-                            </button>
-
-                            <button 
-                                onClick={() => setIsVoiceCreateOpen(true)}
-                                className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-pink-600 to-purple-600 hover:from-pink-500 hover:to-purple-500 text-white text-sm font-bold rounded-lg transition-all shadow-lg shadow-pink-500/20 whitespace-nowrap"
-                                title="Magic Voice Create"
-                            >
-                                <Wand2 size={16} />
-                                <span className="hidden sm:inline">Magic</span>
-                            </button>
-
-                            <div className="flex bg-slate-800 p-1 rounded-lg border border-slate-700">
-                                <button 
-                                    onClick={() => setLayoutMode('grid')}
-                                    className={`p-2 rounded-md transition-colors ${layoutMode === 'grid' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-400 hover:text-white'}`}
-                                    title="Grid View"
-                                >
-                                    <LayoutGrid size={16} />
-                                </button>
-                                <button 
-                                    onClick={() => setLayoutMode('table')}
-                                    className={`p-2 rounded-md transition-colors ${layoutMode === 'table' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-400 hover:text-white'}`}
-                                    title="Table View"
-                                >
-                                    <TableIcon size={16} />
-                                </button>
-                            </div>
-
-                            <div className="relative flex-1 md:flex-none">
-                                <select 
-                                    value={selectedCategory} 
-                                    onChange={(e) => setSelectedCategory(e.target.value)}
-                                    className="w-full appearance-none bg-slate-800 border border-slate-700 text-white pl-4 pr-10 py-2.5 rounded-lg text-sm font-bold focus:ring-2 focus:ring-indigo-500 focus:outline-none cursor-pointer hover:bg-slate-700 transition-colors shadow-sm"
-                                >
-                                    <option value="All">All Categories</option>
-                                    {Object.keys(allCategoryGroups).map(cat => (
-                                        <option key={cat} value={cat}>{cat}</option>
-                                    ))}
-                                </select>
-                                <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-                            </div>
-                        </div>
-                    </div>
-
-                    {layoutMode === 'table' ? (
-                        <PodcastListTable 
-                            channels={tableData}
-                            onChannelClick={(id) => { setActiveChannelId(id); setViewState('podcast_detail'); }}
-                            sortConfig={sortConfig}
-                            onSort={handleSort}
-                            globalVoice={globalVoice}
-                        />
-                    ) : (
-                        <div className="space-y-6">
-                            {searchQuery ? (
-                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                                    {channels.filter(c => 
-                                        c.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                                        c.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                                        c.tags.some(t => t.toLowerCase().includes(searchQuery.toLowerCase()))
-                                    ).map(channel => (
-                                        <ChannelCard 
-                                          key={channel.id} 
-                                          channel={channel} 
-                                          handleChannelClick={(id) => { setActiveChannelId(id); setViewState('podcast_detail'); }}
-                                          handleVote={handleVote}
-                                          currentUser={currentUser}
-                                          setChannelToEdit={setChannelToEdit}
-                                          setIsSettingsModalOpen={setIsSettingsModalOpen}
-                                          globalVoice={globalVoice}
-                                          t={t}
-                                          onCommentClick={handleCommentClick}
-                                        />
-                                    ))}
-                                </div>
-                            ) : (
-                                <div className="space-y-12">
-                                    {Object.entries(allCategoryGroups)
-                                      .filter(([name]) => selectedCategory === 'All' || selectedCategory === name)
-                                      .map(([groupName, groupChannels]) => {
-                                        const channels = groupChannels as Channel[];
-                                        if (!channels || channels.length === 0) return null;
-                                        
-                                        return (
-                                          <div key={groupName} className="space-y-4 animate-fade-in">
-                                            <h2 className="text-2xl font-bold text-white flex items-center gap-2">
-                                              {groupName === 'Spotlight' ? (
-                                                <>
-                                                  <Sparkles className="text-yellow-400" />
-                                                  <span>{t.featured || 'Featured'}</span>
-                                                </>
-                                              ) : (
-                                                <>
-                                                  <div className="w-2 h-8 bg-indigo-500 rounded-full"></div>
-                                                  <span>{groupName}</span>
-                                                  <span className="text-sm font-normal text-slate-500 ml-2">({channels.length})</span>
-                                                </>
-                                              )}
-                                            </h2>
-                                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                                              {channels.map(channel => (
-                                                <ChannelCard 
-                                                  key={channel.id} 
-                                                  channel={channel} 
-                                                  handleChannelClick={(id) => { setActiveChannelId(id); setViewState('podcast_detail'); }}
-                                                  handleVote={handleVote}
-                                                  currentUser={currentUser}
-                                                  setChannelToEdit={setChannelToEdit}
-                                                  setIsSettingsModalOpen={setIsSettingsModalOpen}
-                                                  globalVoice={globalVoice}
-                                                  t={t}
-                                                  onCommentClick={handleCommentClick}
-                                                />
-                                              ))}
-                                            </div>
-                                          </div>
-                                        );
-                                    })}
-                                </div>
-                            )}
-                        </div>
-                    )}
-                    </>
+                   <PodcastFeed 
+                       channels={feedChannels}
+                       onChannelClick={(id) => { setActiveChannelId(id); setViewState('podcast_detail'); }}
+                       onStartLiveSession={(channel) => handleStartLiveSession(channel)}
+                       userProfile={userProfile}
+                       globalVoice={globalVoice}
+                   />
                )}
 
-               {activeTab === 'calendar' && (
-                  <CalendarView 
-                     channels={channels}
-                     handleChannelClick={(id) => { setActiveChannelId(id); setViewState('podcast_detail'); }}
-                     handleVote={handleVote}
-                     currentUser={currentUser}
-                     setChannelToEdit={setChannelToEdit}
-                     setIsSettingsModalOpen={setIsSettingsModalOpen}
-                     globalVoice={globalVoice}
-                     t={t}
-                     onCommentClick={handleCommentClick}
-                     onStartLiveSession={handleStartLiveSession}
-                     onCreateChannel={handleCreateChannel}
-                  />
-               )}
+               {/* 2. Other Tabs (Standard Layout) */}
+               {activeTab !== 'categories' && (
+                   <div className="h-full overflow-y-auto p-4 md:p-8 animate-fade-in max-w-7xl mx-auto w-full">
+                       {activeTab === 'calendar' && (
+                          <CalendarView 
+                             channels={channels}
+                             handleChannelClick={(id) => { setActiveChannelId(id); setViewState('podcast_detail'); }}
+                             handleVote={handleVote}
+                             currentUser={currentUser}
+                             setChannelToEdit={setChannelToEdit}
+                             setIsSettingsModalOpen={setIsSettingsModalOpen}
+                             globalVoice={globalVoice}
+                             t={t}
+                             onCommentClick={handleCommentClick}
+                             onStartLiveSession={handleStartLiveSession}
+                             onCreateChannel={handleCreateChannel}
+                          />
+                       )}
 
-               {activeTab === 'mentorship' && (
-                  <MentorBooking 
-                     currentUser={currentUser} 
-                     channels={channels}
-                     onStartLiveSession={handleStartLiveSession}
-                  />
-               )}
+                       {activeTab === 'mentorship' && (
+                          <MentorBooking 
+                             currentUser={currentUser} 
+                             channels={channels}
+                             onStartLiveSession={handleStartLiveSession}
+                          />
+                       )}
 
-               {activeTab === 'groups' && (
-                  <GroupManager />
-               )}
-
-               {activeTab === 'recordings' && (
-                  <RecordingList 
-                     onStartLiveSession={handleStartLiveSession}
-                  />
-               )}
-
-               {activeTab === 'docs' && (
-                  <DocumentList />
+                       {activeTab === 'groups' && <GroupManager />}
+                       {activeTab === 'recordings' && <RecordingList onStartLiveSession={handleStartLiveSession} />}
+                       {activeTab === 'docs' && <DocumentList />}
+                   </div>
                )}
             </div>
           </div>
@@ -958,61 +742,11 @@ const App: React.FC = () => {
         {viewState === 'firestore_debug' && <FirestoreInspector onBack={() => setViewState('directory')} />}
       </div>
 
-      {viewState === 'directory' && (
-        <footer className="bg-slate-950 border-t border-slate-900 py-12 px-4">
-           <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center gap-6">
-              <div className="text-center md:text-left">
-                 <h3 className="font-bold text-white text-lg flex items-center justify-center md:justify-start gap-2">
-                    <Podcast className="text-indigo-500"/> AIVoiceCast
-                 </h3>
-                 <p className="text-slate-500 text-sm mt-2 max-w-xs">
-                    The world's first interactive AI-Human community platform. 
-                 </p>
-                 <button onClick={() => setViewState('mission')} className="mt-2 text-xs text-indigo-400 hover:text-indigo-300 font-bold uppercase tracking-wider">
-                    Our Mission
-                 </button>
-              </div>
-              
-              <div className="flex flex-wrap justify-center gap-6 text-sm text-slate-400">
-                 <button onClick={() => setViewState('debug')} className="hover:text-indigo-400 flex items-center gap-2"><Database size={14}/> IndexedDB</button>
-                 <button onClick={() => setViewState('cloud_debug')} className="hover:text-indigo-400 flex items-center gap-2"><Cloud size={14}/> Cloud Storage</button>
-                 <button onClick={() => setViewState('firestore_debug')} className="hover:text-indigo-400 flex items-center gap-2"><Database size={14}/> Firestore Data</button>
-              </div>
-           </div>
-           <div className="text-center text-slate-700 text-xs mt-8">
-              {channels.length} {t.podcasts} • {totalLectures} {t.lectures} • {APP_VERSION} • Powered by Gemini 2.5 Flash & Firebase
-           </div>
-        </footer>
-      )}
-
-      <CreateChannelModal 
-        isOpen={isCreateModalOpen} 
-        onClose={() => setIsCreateModalOpen(false)} 
-        onCreate={handleCreateChannel} 
-      />
-      
-      <VoiceCreateModal 
-        isOpen={isVoiceCreateOpen}
-        onClose={() => setIsVoiceCreateOpen(false)}
-        onCreate={handleCreateChannel}
-      />
-
-      <ApiKeyModal 
-        isOpen={isApiKeyModalOpen} 
-        onClose={() => setIsApiKeyModalOpen(false)} 
-        onKeyUpdate={setHasApiKey}
-      />
-
-      <DataSyncModal
-        isOpen={isSyncModalOpen}
-        onClose={() => setIsSyncModalOpen(false)}
-      />
-
-      <FirebaseConfigModal
-        isOpen={isFirebaseModalOpen}
-        onClose={() => setIsFirebaseModalOpen(false)}
-        onConfigUpdate={(valid) => { if(valid) window.location.reload(); }}
-      />
+      <CreateChannelModal isOpen={isCreateModalOpen} onClose={() => setIsCreateModalOpen(false)} onCreate={handleCreateChannel} />
+      <VoiceCreateModal isOpen={isVoiceCreateOpen} onClose={() => setIsVoiceCreateOpen(false)} onCreate={handleCreateChannel} />
+      <ApiKeyModal isOpen={isApiKeyModalOpen} onClose={() => setIsApiKeyModalOpen(false)} onKeyUpdate={setHasApiKey} />
+      <DataSyncModal isOpen={isSyncModalOpen} onClose={() => setIsSyncModalOpen(false)} />
+      <FirebaseConfigModal isOpen={isFirebaseModalOpen} onClose={() => setIsFirebaseModalOpen(false)} onConfigUpdate={(valid) => { if(valid) window.location.reload(); }} />
 
       {isAccountSettingsOpen && userProfile && (
           <SettingsModal 
