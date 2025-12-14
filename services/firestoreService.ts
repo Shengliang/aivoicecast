@@ -69,28 +69,35 @@ export async function seedDatabase() {
 }
 
 export async function claimSystemChannels(email: string) {
+  // 1. Find the target user to assign ownership to
   const userSnap = await db.collection(USERS_COLLECTION).where('email', '==', email).limit(1).get();
-  if (userSnap.empty) throw new Error("User not found");
-  const uid = userSnap.docs[0].id;
+  if (userSnap.empty) throw new Error("User with this email not found in database.");
   
-  const channelsSnap = await db.collection(CHANNELS_COLLECTION).where('ownerId', '==', null).get();
+  const uid = userSnap.docs[0].id;
+  const userData = userSnap.docs[0].data();
+  const newAuthorName = userData.displayName || userData.email || 'Admin'; // Get proper display name
+  
   const batch = db.batch();
   let count = 0;
-  channelsSnap.forEach(doc => {
-      batch.update(doc.ref, { ownerId: uid });
-      count++;
-  });
-  // Also check explicit undefined if query failed
+  
+  // 2. Scan all channels
   const allSnap = await db.collection(CHANNELS_COLLECTION).get();
+  
   allSnap.forEach(doc => {
       const data = doc.data();
-      if (!data.ownerId) {
-          batch.update(doc.ref, { ownerId: uid });
+      // Claim if: No owner, Owner is null/empty, OR Owner is 'system' string
+      if (!data.ownerId || data.ownerId === 'system' || data.ownerId === '') {
+          batch.update(doc.ref, { 
+              ownerId: uid,
+              author: newAuthorName // Force update author to match new owner
+          });
           count++;
       }
   });
   
-  await batch.commit();
+  if (count > 0) {
+      await batch.commit();
+  }
   return count;
 }
 
