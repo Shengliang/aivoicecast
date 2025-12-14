@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo } from 'react';
 import { Channel, ViewState, UserProfile, TranscriptItem, SubscriptionTier } from './types';
 import { 
@@ -596,7 +595,7 @@ const App: React.FC = () => {
 
           <button 
               onClick={() => { setIsUserMenuOpen(true); setIsAppsMenuOpen(false); }}
-              className={`flex flex-col items-center gap-1 ${isUserMenuOpen ? 'text-white' : 'text-slate-500'}`}
+              className={`flex-col items-center gap-1 ${isUserMenuOpen ? 'text-white' : 'text-slate-500'} flex`}
           >
               <User size={24} fill={isUserMenuOpen ? "currentColor" : "none"} />
               <span className="text-[10px]">Profile</span>
@@ -887,42 +886,6 @@ const App: React.FC = () => {
 
         {viewState === 'directory' && (
           <div className="h-full flex flex-col">
-            
-            {/* Secondary Nav / Tabs (Horizontal Scroll) - Hidden on Mobile Feed */}
-            <div className={`bg-slate-900/50 backdrop-blur-md border-b border-slate-800 p-2 overflow-x-auto shrink-0 scrollbar-hide ${activeTab === 'categories' ? 'hidden md:block' : ''}`}>
-                <div className="flex space-x-2 w-max px-2">
-                   {[
-                     { id: 'categories', label: t.directory, icon: Layout }, // Main Feed
-                     { id: 'calendar', label: t.calendar, icon: Calendar },
-                     { id: 'careers', label: t.careers, icon: Briefcase },
-                     { id: 'chat', label: t.chat, icon: MessageSquare },
-                     { id: 'code', label: t.code, icon: Code },
-                     { id: 'notebooks', label: t.notebooks, icon: Book },
-                     { id: 'blog', label: t.blog, icon: Rss },
-                     { id: 'mentorship', label: t.mentorship, icon: Users },
-                     { id: 'groups', label: t.groups, icon: Users },
-                     { id: 'recordings', label: t.recordings, icon: Disc },
-                     { id: 'docs', label: t.docs, icon: FileText },
-                   ].map(tab => (
-                     <button
-                       key={tab.id}
-                       onClick={() => {
-                           if (tab.id === 'code') setViewState('code_studio');
-                           else if (tab.id === 'notebooks') setViewState('notebook_viewer');
-                           else if (tab.id === 'blog') setViewState('blog');
-                           else if (tab.id === 'chat') setViewState('chat');
-                           else if (tab.id === 'careers') setViewState('careers');
-                           else setActiveTab(tab.id);
-                       }}
-                       className={`flex items-center space-x-2 px-4 py-2 rounded-full text-xs font-bold whitespace-nowrap transition-all ${activeTab === tab.id ? 'bg-white text-slate-900 shadow-md' : 'bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-white'}`}
-                     >
-                       <tab.icon size={14} />
-                       <span>{tab.label}</span>
-                     </button>
-                   ))}
-                </div>
-            </div>
-
             {/* Content Area */}
             <div className="flex-1 overflow-hidden relative">
                
