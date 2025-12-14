@@ -8,13 +8,13 @@ export const ARCHITECTURE_BLOG_POST: BlogPost = {
   authorName: 'AIVoiceCast Engineering',
   authorImage: 'https://images.unsplash.com/photo-1550751827-4bd374c3f58b?w=200&q=80',
   title: 'Under the Hood: The Architecture of AIVoiceCast',
-  excerpt: 'A technical deep dive into how we built the world\'s first generative audio knowledge community. Learn about our React 19 frontend, Firebase backend, and Gemini AI integration.',
+  excerpt: 'A technical deep dive into how we built the world\'s first generative audio knowledge community. Learn about our React 19 frontend, Firebase backend, Gemini AI integration, and new Mobile Optimization strategies.',
   status: 'published',
   publishedAt: 1716000000000, // Fixed Date: May 18, 2024 (To keep it sorted correctly)
   createdAt: 1716000000000,
   likes: 999,
   commentCount: 0,
-  tags: ['Engineering', 'Architecture', 'Open Source'],
+  tags: ['Engineering', 'Architecture', 'Open Source', 'Mobile'],
   content: `
 # 🛠️ Under the Hood: The Architecture of AIVoiceCast
 
@@ -74,7 +74,18 @@ We use a unique **Hybrid Storage Model** to save costs and bandwidth.
 
 ---
 
-## 4. Source Code Layout (\`aivoicecast/\`)
+## 4. Mobile & Responsive Design
+
+We recently overhauled the mobile experience to ensure a native-app feel on the web.
+
+*   **Adaptive Layouts**: The application uses a "Context-Aware" layout engine. On desktop, the Code Studio shows a 3-pane layout (Explorer, Editor, Chat). On mobile, these collapse into slide-over drawers or bottom sheets to maximize utility without clutter.
+*   **Zen Mode**: To combat the limited screen real estate on phones, we introduced **Zen Mode**. This hides all chrome (navbars, headers, toolbars) and gives 100% of pixels to the active task, effectively turning your phone into a focused workstation.
+*   **Touch Optimization**: Interactive elements like the Whiteboard canvas have been tuned for touch events, allowing for pinch-to-zoom and pan gestures without conflict.
+*   **PWA Readiness**: The app is designed to be installable. It uses safe areas for notches and home bars, ensuring it looks like a native app when added to the home screen.
+
+---
+
+## 5. Source Code Layout (\`aivoicecast/\`)
 
 If you are exploring the codebase, here is the map:
 

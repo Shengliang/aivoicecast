@@ -77,6 +77,15 @@ export const OFFLINE_CURRICULUM: Chapter[] = [
       { id: 'ch-9-sub-1', title: 'Filtering Robotic Voices' },
       { id: 'ch-9-sub-2', title: 'Quality-Based Voice Selection' }
     ]
+  },
+  {
+    id: 'ch-10',
+    title: 'Mobile Optimization',
+    subTopics: [
+      { id: 'ch-10-sub-1', title: 'Adaptive Layouts & Zen Mode' },
+      { id: 'ch-10-sub-2', title: 'Touch-First Interactions' },
+      { id: 'ch-10-sub-3', title: 'PWA & Service Workers' }
+    ]
   }
 ];
 
@@ -353,6 +362,18 @@ export const OFFLINE_LECTURES: Record<string, GeneratedLecture> = {
       { speaker: "Teacher", text: "We don't just pick random system voices. We assign them roles." },
       { speaker: "Student", text: "Roles? Like teacher and student?" },
       { speaker: "Teacher", text: "Yes. We scan the available voice list. We try to assign the first high-quality voice to the Teacher, and a different high-quality voice to the Student. This makes the conversation easier to follow, even without the Neural AI voices." }
+    ]
+  },
+  "Adaptive Layouts & Zen Mode": {
+    topic: "Adaptive Layouts & Zen Mode",
+    professorName: "Mobile Lead",
+    studentName: "App Dev",
+    sections: [
+      { speaker: "Teacher", text: "Adapting a desktop-class IDE for mobile requires aggressive UI virtualization. We can't just shrink everything." },
+      { speaker: "Student", text: "So what is the strategy?" },
+      { speaker: "Teacher", text: "We use a 'Context-Aware' layout engine. When the viewport drops below 768px, the Code Studio automatically collapses the file tree and chat into slide-over panels. We also introduced 'Zen Mode'." },
+      { speaker: "Student", text: "What does Zen Mode do?" },
+      { speaker: "Teacher", text: "It enters fullscreen and hides all chrome—navbars, status bars, and tools. It gives 100% of the screen pixels to the active document or canvas. This turns a cramped phone screen into a focused workstation." }
     ]
   }
 };
