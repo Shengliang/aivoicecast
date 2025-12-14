@@ -799,25 +799,49 @@ export const PodcastFeed: React.FC<PodcastFeedProps> = ({
              </div>
         )}
 
-        {recommendedChannels.map((channel) => (
-            <div key={channel.id} data-id={channel.id} className="feed-card h-full w-full snap-start">
-                <MobileFeedCard 
-                    channel={channel}
-                    isActive={activeChannelId === channel.id}
-                    isLiked={likedChannels.has(channel.id)}
-                    isBookmarked={bookmarkedChannels.has(channel.id)}
-                    isFollowed={followedChannels.has(channel.id) || (userProfile?.following?.includes(channel.ownerId || ''))}
-                    onToggleLike={toggleLike}
-                    onToggleBookmark={toggleBookmark}
-                    onToggleFollow={toggleFollow}
-                    onShare={handleShare}
-                    onComment={handleComment}
-                    onProfileClick={(e: any, ch: any) => { e.stopPropagation(); setViewingCreator(ch); }}
-                    onChannelClick={onChannelClick}
-                    onChannelFinish={() => handleScrollToNext(channel.id)}
-                />
-            </div>
-        ))}
+        {recommendedChannels.length === 0 ? (
+             <div className="h-full w-full flex flex-col items-center justify-center p-8 text-center space-y-6">
+                 <div className="w-20 h-20 bg-slate-900 rounded-full flex items-center justify-center">
+                     <Heart size={32} className="text-slate-600" />
+                 </div>
+                 <div>
+                     <h3 className="text-xl font-bold text-white mb-2">No Podcasts Here Yet</h3>
+                     <p className="text-slate-400 text-sm max-w-xs mx-auto">
+                         {filterMode === 'following' 
+                            ? "Follow creators or like channels to build your personal feed."
+                            : "We couldn't find any podcasts matching your criteria."}
+                     </p>
+                 </div>
+                 {filterMode === 'following' && (
+                     <button 
+                        onClick={onRefresh} // Using onRefresh to reshuffle/reset if needed
+                        className="px-6 py-3 bg-slate-800 hover:bg-slate-700 text-white font-bold rounded-full transition-colors border border-slate-700"
+                     >
+                        Discover Content
+                     </button>
+                 )}
+             </div>
+        ) : (
+            recommendedChannels.map((channel) => (
+                <div key={channel.id} data-id={channel.id} className="feed-card h-full w-full snap-start">
+                    <MobileFeedCard 
+                        channel={channel}
+                        isActive={activeChannelId === channel.id}
+                        isLiked={likedChannels.has(channel.id)}
+                        isBookmarked={bookmarkedChannels.has(channel.id)}
+                        isFollowed={followedChannels.has(channel.id) || (userProfile?.following?.includes(channel.ownerId || ''))}
+                        onToggleLike={toggleLike}
+                        onToggleBookmark={toggleBookmark}
+                        onToggleFollow={toggleFollow}
+                        onShare={handleShare}
+                        onComment={handleComment}
+                        onProfileClick={(e: any, ch: any) => { e.stopPropagation(); setViewingCreator(ch); }}
+                        onChannelClick={onChannelClick}
+                        onChannelFinish={() => handleScrollToNext(channel.id)}
+                    />
+                </div>
+            ))
+        )}
     </div>
 
     {viewingCreator && (

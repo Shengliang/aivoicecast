@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo } from 'react';
 import { Channel, ViewState, UserProfile, TranscriptItem, SubscriptionTier } from './types';
 import { 
@@ -465,12 +464,21 @@ const App: React.FC = () => {
       let data = [...channels];
       
       // Filter for "Following" tab (Mobile)
-      if (mobileFeedTab === 'following' && userProfile) {
-          const followingIds = userProfile.following || [];
-          if (followingIds.length > 0) {
-              data = data.filter(c => c.ownerId && followingIds.includes(c.ownerId));
+      if (mobileFeedTab === 'following') {
+          if (userProfile) {
+              const followingIds = userProfile.following || [];
+              const likedIds = userProfile.likedChannelIds || [];
+              
+              if (followingIds.length > 0 || likedIds.length > 0) {
+                  data = data.filter(c => 
+                      (c.ownerId && followingIds.includes(c.ownerId)) || 
+                      likedIds.includes(c.id)
+                  );
+              } else {
+                  data = [];
+              }
           } else {
-              // If following no one, return empty or fallback
+              // Guest viewing "Following" -> Empty
               data = [];
           }
       }
@@ -484,12 +492,6 @@ const App: React.FC = () => {
           );
       }
       
-      // Shuffle logic for "refresh" handled in component state usually, 
-      // but here we just re-sort for "For You"
-      if (mobileFeedTab === 'foryou') {
-          // Default sorting logic handled inside PodcastFeed for ranking
-      }
-
       return data;
   }, [channels, searchQuery, mobileFeedTab, userProfile]);
 
