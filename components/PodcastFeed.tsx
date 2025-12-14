@@ -71,6 +71,10 @@ const MobileFeedCard = ({
     const sourceRef = useRef<AudioBufferSourceNode | null>(null);
     const mountedRef = useRef(true);
     const playbackSessionRef = useRef(0); // Incremented to invalidate old loops
+    
+    // Buffering Refs
+    const preloadedScriptRef = useRef<Promise<GeneratedLecture | null> | null>(null);
+    const preloadedAudioRef = useRef<Promise<any> | null>(null);
 
     // Data Helpers
     const flatCurriculum = useMemo(() => {
@@ -115,6 +119,8 @@ const MobileFeedCard = ({
             stopAudio();
             setPlaybackState('idle');
             playbackSessionRef.current++; // Invalidate any running loops
+            preloadedScriptRef.current = null;
+            preloadedAudioRef.current = null;
         }
     }, [isActive, channel.id]);
 
@@ -177,6 +183,19 @@ const MobileFeedCard = ({
         runTrackSequence(start, sessionId);
     };
 
+    // Helper: Trigger fetching of a lecture script without waiting
+    const preloadScript = (lessonMeta: any) => {
+        if (!lessonMeta) return null;
+        return fetchLectureData(lessonMeta);
+    };
+
+    // Helper: Trigger fetching of audio for a text segment without waiting
+    const preloadAudio = (text: string, voice: string) => {
+        const ctx = getSharedAudioContext();
+        // synthesizeSpeech handles caching internally
+        return synthesizeSpeech(text, voice, ctx);
+    };
+
     const runTrackSequence = async (startIndex: number, sessionId: number) => {
         setPlaybackState('playing');
 
@@ -194,9 +213,9 @@ const MobileFeedCard = ({
         while (mountedRef.current && isActive && sessionId === playbackSessionRef.current) {
             setTrackIndex(currentIndex); 
             
-            // 1. Determine Content
             let textParts: {speaker: string, text: string, voice: string}[] = [];
             
+            // --- STEP 1: PREPARATION ---
             if (currentIndex === -1) {
                 // INTRO
                 const introText = channel.welcomeMessage || channel.description || `Welcome to ${channel.title}.`;
@@ -208,6 +227,14 @@ const MobileFeedCard = ({
                     text: introText,
                     voice: channel.voiceName || 'Puck'
                 }];
+
+                // PRE-FETCH STRATEGY: 
+                // While Intro plays, start fetching the Script for Lesson 1 (Index 0)
+                if (flatCurriculum.length > 0) {
+                    console.log("Pre-fetching script for Lesson 1...");
+                    preloadedScriptRef.current = preloadScript(flatCurriculum[0]);
+                }
+
             } else {
                 // LESSON
                 if (currentIndex >= flatCurriculum.length) {
@@ -218,52 +245,109 @@ const MobileFeedCard = ({
                 }
 
                 const lessonMeta = flatCurriculum[currentIndex];
-                setStatusMessage(`Generating: ${lessonMeta.title.substring(0, 20)}...`);
-                setPlaybackState('buffering');
                 
-                // Fetch/Generate Script
-                try {
-                    const lecture = await fetchLectureData(lessonMeta);
-                    if (!lecture || !lecture.sections || lecture.sections.length === 0) {
-                        console.warn("Empty lecture content, skipping.");
-                        // Short delay before skip to prevent rapid looping on errors
-                        await new Promise(r => setTimeout(r, 1000));
-                        currentIndex++;
-                        continue; 
-                    }
-                    
-                    setPlaybackState('playing');
-                    setStatusMessage("Playing");
+                // --- STEP 2: GET SCRIPT (Robustly) ---
+                let lecture = null;
+                
+                // Check if we pre-fetched it
+                if (preloadedScriptRef.current) {
+                    setStatusMessage(`Loading ${lessonMeta.title.substring(0,15)}...`);
+                    lecture = await preloadedScriptRef.current;
+                    preloadedScriptRef.current = null; // Clear usage
+                } else {
+                    setStatusMessage(`Generating: ${lessonMeta.title.substring(0, 20)}...`);
+                    setPlaybackState('buffering');
+                    lecture = await fetchLectureData(lessonMeta);
+                }
 
-                    // VOICE SELECTION FIX: Use same logic as Intro for the Teacher
-                    // If channel has voiceName, use it. If not, default to Puck (same as intro fallback)
-                    const hostVoice = channel.voiceName || 'Puck';
+                // Retry Logic for Script Generation
+                if (!lecture || !lecture.sections || lecture.sections.length === 0) {
+                    console.warn("Script generation failed, retrying once...");
+                    setStatusMessage("Retrying generation...");
+                    await new Promise(r => setTimeout(r, 1000));
+                    lecture = await fetchLectureData(lessonMeta); // Retry hard
                     
-                    textParts = lecture.sections.map((s: any) => ({
-                        speaker: s.speaker === 'Teacher' ? lecture.professorName : lecture.studentName,
-                        text: s.text,
-                        voice: s.speaker === 'Teacher' ? hostVoice : 'Puck'
-                    }));
-                } catch (e) {
-                    console.error("Lecture Gen Failed", e);
-                    setStatusMessage("Error (Skipping)");
-                    await new Promise(r => setTimeout(r, 2000)); // Longer delay on error
-                    currentIndex++;
-                    continue;
+                    if (!lecture) {
+                        console.error("Lecture Gen Failed completely.");
+                        setStatusMessage("Error (Skipping)");
+                        await new Promise(r => setTimeout(r, 2000));
+                        currentIndex++;
+                        continue;
+                    }
+                }
+                
+                setPlaybackState('playing');
+                setStatusMessage("Playing");
+
+                // Prepare Segments
+                const hostVoice = channel.voiceName || 'Puck';
+                textParts = lecture.sections.map((s: any) => ({
+                    speaker: s.speaker === 'Teacher' ? lecture.professorName : lecture.studentName,
+                    text: s.text,
+                    voice: s.speaker === 'Teacher' ? hostVoice : 'Puck'
+                }));
+
+                // Pre-fetch Script for NEXT Lesson (Index + 1)
+                if (currentIndex + 1 < flatCurriculum.length) {
+                    preloadedScriptRef.current = preloadScript(flatCurriculum[currentIndex + 1]);
                 }
             }
 
-            // 2. Play Parts
+            // --- STEP 3: PLAY PARTS (With Audio Buffering) ---
             for (let i = 0; i < textParts.length; i++) {
                 if (!mountedRef.current || !isActive || sessionId !== playbackSessionRef.current) return;
 
                 const part = textParts[i];
                 setTranscript({ speaker: part.speaker, text: part.text });
                 
-                await playText(part.text, part.voice, sessionId);
+                // 1. Get Audio for Current Part
+                let audioResult = null;
+                
+                // Did we prefetch this specific segment? (Only applicable if we implement granular prefetch)
+                // For simplified robustness: If it's the first segment of a lecture, check if we started it
+                // For now, we will do Just-In-Time buffering loop:
+                
+                if (i === 0 && preloadedAudioRef.current) {
+                    // Use preloaded audio for first segment
+                    audioResult = await preloadedAudioRef.current;
+                    preloadedAudioRef.current = null;
+                } else {
+                    // Fetch now
+                    if (playbackState !== 'playing') setPlaybackState('buffering');
+                    audioResult = await preloadAudio(part.text, part.voice);
+                }
+
+                // 2. TRIGGER PRE-FETCH FOR NEXT PART (Pipeline)
+                if (i + 1 < textParts.length) {
+                    const nextPart = textParts[i+1];
+                    preloadedAudioRef.current = preloadAudio(nextPart.text, nextPart.voice);
+                } else {
+                    // End of this lesson. Could pre-fetch first audio of NEXT lesson here if we had the script.
+                    // But we likely don't have the next script parsed yet. 
+                    // The 'preloadedScriptRef' handles the text generation latency.
+                    preloadedAudioRef.current = null;
+                }
+
+                // 3. Play Current Audio
+                if (audioResult && audioResult.buffer) {
+                    setPlaybackState('playing'); // Ensure status is playing
+                    await playAudioBuffer(audioResult.buffer, sessionId);
+                } else {
+                    console.warn("TTS Gen failed for part", i);
+                    setStatusMessage("Audio Error (Retrying...)");
+                    await new Promise(r => setTimeout(r, 1000));
+                    // Simple retry for audio
+                    const retryResult = await preloadAudio(part.text, part.voice);
+                    if (retryResult && retryResult.buffer) {
+                        await playAudioBuffer(retryResult.buffer, sessionId);
+                    } else {
+                        // Skip segment only if double fail
+                        await new Promise(r => setTimeout(r, 1000));
+                    }
+                }
                 
                 // Small gap between speakers
-                await new Promise(r => setTimeout(r, 300));
+                await new Promise(r => setTimeout(r, 200));
             }
 
             // 3. Increment to next lesson
@@ -271,40 +355,22 @@ const MobileFeedCard = ({
         }
     };
 
-    const playText = async (text: string, voice: string, sessionId: number): Promise<void> => {
-        return new Promise(async (resolve) => {
+    const playAudioBuffer = (buffer: AudioBuffer, sessionId: number): Promise<void> => {
+        return new Promise((resolve) => {
             if (!mountedRef.current || !isActive || sessionId !== playbackSessionRef.current) { resolve(); return; }
-
-            try {
-                const ctx = getSharedAudioContext();
-                if (ctx.state === 'suspended') try { await ctx.resume(); } catch(e) {}
-
-                // synthesizeSpeech handles caching and network calls
-                const result = await synthesizeSpeech(text, voice, ctx);
-                
-                if (sessionId !== playbackSessionRef.current) { resolve(); return; }
-
-                if (result.buffer && mountedRef.current && isActive) {
-                    const source = ctx.createBufferSource();
-                    source.buffer = result.buffer;
-                    source.connect(ctx.destination);
-                    
-                    source.onended = () => {
-                        sourceRef.current = null;
-                        resolve();
-                    };
-                    
-                    sourceRef.current = source;
-                    source.start(0);
-                } else {
-                    console.warn("TTS Gen failed", result.errorMessage);
-                    setStatusMessage("Audio Error (Skipping Segment)");
-                    setTimeout(resolve, 500); 
-                }
-            } catch (e) {
-                console.error("Playback error", e);
-                setTimeout(resolve, 500);
-            }
+            
+            const ctx = getSharedAudioContext();
+            const source = ctx.createBufferSource();
+            source.buffer = buffer;
+            source.connect(ctx.destination);
+            
+            source.onended = () => {
+                sourceRef.current = null;
+                resolve();
+            };
+            
+            sourceRef.current = source;
+            source.start(0);
         });
     };
 
