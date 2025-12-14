@@ -9,6 +9,8 @@ import { generateLectureScript } from '../services/lectureGenerator';
 import { synthesizeSpeech } from '../services/tts';
 import { getCachedLectureScript, cacheLectureScript } from '../utils/db';
 import { GEMINI_API_KEY } from '../services/private_keys';
+import { SPOTLIGHT_DATA } from '../utils/spotlightContent';
+import { OFFLINE_CHANNEL_ID, OFFLINE_CURRICULUM, OFFLINE_LECTURES } from '../utils/offlineContent';
 
 interface PodcastFeedProps {
   channels: Channel[];
@@ -32,8 +34,6 @@ interface PodcastFeedProps {
 }
 
 // --- Singleton Audio Context ---
-// Using a global context ensures that once the user interacts with the page once,
-// all subsequent cards can auto-play without needing new gestures.
 let sharedAudioContext: AudioContext | null = null;
 
 const getSharedAudioContext = () => {
@@ -57,7 +57,7 @@ const MobileFeedCard = ({
     onComment, 
     onProfileClick, 
     onChannelClick,
-    onChannelFinish // Callback to trigger scroll to next
+    onChannelFinish 
 }: any) => {
     // UI State
     const [playbackState, setPlaybackState] = useState<'idle' | 'buffering' | 'playing' | 'error'>('idle');
@@ -76,10 +76,21 @@ const MobileFeedCard = ({
     const preloadedScriptRef = useRef<Promise<GeneratedLecture | null> | null>(null);
     const preloadedAudioRef = useRef<Promise<any> | null>(null);
 
-    // Data Helpers
+    // Data Helpers - Merge Static Data to ensure we have a curriculum
     const flatCurriculum = useMemo(() => {
-        if (!channel.chapters) return [];
-        return channel.chapters.flatMap((ch: any, cIdx: number) => 
+        let chapters = channel.chapters;
+        
+        // Fallback to Spotlight/Offline data if chapters missing on channel object
+        if (!chapters || chapters.length === 0) {
+            if (channel.id === OFFLINE_CHANNEL_ID) {
+                chapters = OFFLINE_CURRICULUM;
+            } else if (SPOTLIGHT_DATA[channel.id]) {
+                chapters = SPOTLIGHT_DATA[channel.id].curriculum;
+            }
+        }
+
+        if (!chapters) return [];
+        return chapters.flatMap((ch: any, cIdx: number) => 
             (ch.subTopics || []).map((sub: any, lIdx: number) => ({
                 chapterIndex: cIdx,
                 lessonIndex: lIdx,
@@ -112,13 +123,12 @@ const MobileFeedCard = ({
             // Try Auto-Play
             const timer = setTimeout(() => {
                 attemptAutoPlay();
-            }, 600); // Slight delay for smooth scrolling
+            }, 600); 
             return () => clearTimeout(timer);
         } else {
-            // Stop everything when swiping away
             stopAudio();
             setPlaybackState('idle');
-            playbackSessionRef.current++; // Invalidate any running loops
+            playbackSessionRef.current++;
             preloadedScriptRef.current = null;
             preloadedAudioRef.current = null;
         }
@@ -133,17 +143,13 @@ const MobileFeedCard = ({
     };
 
     const attemptAutoPlay = async () => {
-        // If we are already playing (e.g. fast swipe back and forth), don't restart
         if (playbackState === 'playing' || playbackState === 'buffering') return;
 
         const ctx = getSharedAudioContext();
-        
-        // Attempt to resume context if suspended (works if user interacted with document before)
         if (ctx.state === 'suspended') {
             try { await ctx.resume(); } catch(e) {}
         }
 
-        // Only auto-play if context is running. If locked, wait for user click.
         if (ctx.state === 'running') {
             const sessionId = ++playbackSessionRef.current;
             runTrackSequence(-1, sessionId);
@@ -160,12 +166,10 @@ const MobileFeedCard = ({
             return;
         }
 
-        // Manual Play = Force Unlock
         const ctx = getSharedAudioContext();
         if (ctx.state === 'suspended') {
             try { 
                 await ctx.resume(); 
-                // Play silent buffer to force unlock logic on iOS
                 const buffer = ctx.createBuffer(1, 1, 22050);
                 const source = ctx.createBufferSource();
                 source.buffer = buffer;
@@ -177,36 +181,26 @@ const MobileFeedCard = ({
         }
         
         const sessionId = ++playbackSessionRef.current;
-        // Resume from current track index. If finished, restart.
-        // Important: trackIndex might be > totalLessons if it finished. Reset to -1.
         const start = (trackIndex >= totalLessons) ? -1 : trackIndex;
         runTrackSequence(start, sessionId);
     };
 
-    // Helper: Trigger fetching of a lecture script without waiting
     const preloadScript = (lessonMeta: any) => {
         if (!lessonMeta) return null;
         return fetchLectureData(lessonMeta);
     };
 
-    // Helper: Trigger fetching of audio for a text segment without waiting
     const preloadAudio = (text: string, voice: string) => {
         const ctx = getSharedAudioContext();
-        // synthesizeSpeech handles caching internally
         return synthesizeSpeech(text, voice, ctx);
     };
 
     const runTrackSequence = async (startIndex: number, sessionId: number) => {
         setPlaybackState('playing');
 
-        // Check API Key
         const apiKey = localStorage.getItem('gemini_api_key') || GEMINI_API_KEY || process.env.API_KEY;
-        if (!apiKey) {
-            setTranscript({ speaker: 'System', text: "API Key Missing. Please set it in Settings to hear audio." });
-            setPlaybackState('error');
-            setStatusMessage("No API Key");
-            return;
-        }
+        // NOTE: We allow playing static content (Intro + Spotlight) even without API Key, 
+        // but dynamic generation will fail gracefully inside fetchLectureData/synthesizeSpeech.
 
         let currentIndex = startIndex;
 
@@ -215,7 +209,6 @@ const MobileFeedCard = ({
             
             let textParts: {speaker: string, text: string, voice: string}[] = [];
             
-            // --- STEP 1: PREPARATION ---
             if (currentIndex === -1) {
                 // INTRO
                 const introText = channel.welcomeMessage || channel.description || `Welcome to ${channel.title}.`;
@@ -228,10 +221,8 @@ const MobileFeedCard = ({
                     voice: channel.voiceName || 'Puck'
                 }];
 
-                // PRE-FETCH STRATEGY: 
-                // While Intro plays, start fetching the Script for Lesson 1 (Index 0)
+                // PRE-FETCH: Start fetching Lesson 1 Script during Intro
                 if (flatCurriculum.length > 0) {
-                    console.log("Pre-fetching script for Lesson 1...");
                     preloadedScriptRef.current = preloadScript(flatCurriculum[0]);
                 }
 
@@ -246,40 +237,30 @@ const MobileFeedCard = ({
 
                 const lessonMeta = flatCurriculum[currentIndex];
                 
-                // --- STEP 2: GET SCRIPT (Robustly) ---
                 let lecture = null;
                 
-                // Check if we pre-fetched it
+                // Use pre-fetched script if available
                 if (preloadedScriptRef.current) {
                     setStatusMessage(`Loading ${lessonMeta.title.substring(0,15)}...`);
                     lecture = await preloadedScriptRef.current;
-                    preloadedScriptRef.current = null; // Clear usage
+                    preloadedScriptRef.current = null;
                 } else {
                     setStatusMessage(`Generating: ${lessonMeta.title.substring(0, 20)}...`);
                     setPlaybackState('buffering');
                     lecture = await fetchLectureData(lessonMeta);
                 }
 
-                // Retry Logic for Script Generation
                 if (!lecture || !lecture.sections || lecture.sections.length === 0) {
-                    console.warn("Script generation failed, retrying once...");
-                    setStatusMessage("Retrying generation...");
-                    await new Promise(r => setTimeout(r, 1000));
-                    lecture = await fetchLectureData(lessonMeta); // Retry hard
-                    
-                    if (!lecture) {
-                        console.error("Lecture Gen Failed completely.");
-                        setStatusMessage("Error (Skipping)");
-                        await new Promise(r => setTimeout(r, 2000));
-                        currentIndex++;
-                        continue;
-                    }
+                    console.warn("Lecture generation failed or empty.");
+                    setStatusMessage("Content Unavailable - Skipping");
+                    await new Promise(r => setTimeout(r, 2000));
+                    currentIndex++;
+                    continue;
                 }
                 
                 setPlaybackState('playing');
                 setStatusMessage("Playing");
 
-                // Prepare Segments
                 const hostVoice = channel.voiceName || 'Puck';
                 textParts = lecture.sections.map((s: any) => ({
                     speaker: s.speaker === 'Teacher' ? lecture.professorName : lecture.studentName,
@@ -287,70 +268,52 @@ const MobileFeedCard = ({
                     voice: s.speaker === 'Teacher' ? hostVoice : 'Puck'
                 }));
 
-                // Pre-fetch Script for NEXT Lesson (Index + 1)
+                // Pre-fetch Script for NEXT Lesson
                 if (currentIndex + 1 < flatCurriculum.length) {
                     preloadedScriptRef.current = preloadScript(flatCurriculum[currentIndex + 1]);
                 }
             }
 
-            // --- STEP 3: PLAY PARTS (With Audio Buffering) ---
+            // PLAY AUDIO PARTS
             for (let i = 0; i < textParts.length; i++) {
                 if (!mountedRef.current || !isActive || sessionId !== playbackSessionRef.current) return;
 
                 const part = textParts[i];
                 setTranscript({ speaker: part.speaker, text: part.text });
                 
-                // 1. Get Audio for Current Part
+                // Just-In-Time Audio Buffering
                 let audioResult = null;
                 
-                // Did we prefetch this specific segment? (Only applicable if we implement granular prefetch)
-                // For simplified robustness: If it's the first segment of a lecture, check if we started it
-                // For now, we will do Just-In-Time buffering loop:
-                
                 if (i === 0 && preloadedAudioRef.current) {
-                    // Use preloaded audio for first segment
                     audioResult = await preloadedAudioRef.current;
                     preloadedAudioRef.current = null;
                 } else {
-                    // Fetch now
-                    if (playbackState !== 'playing') setPlaybackState('buffering');
+                    // Show buffering only if it takes more than 100ms
+                    const bufferTimer = setTimeout(() => setPlaybackState('buffering'), 100);
                     audioResult = await preloadAudio(part.text, part.voice);
+                    clearTimeout(bufferTimer);
+                    setPlaybackState('playing');
                 }
 
-                // 2. TRIGGER PRE-FETCH FOR NEXT PART (Pipeline)
+                // Trigger pre-fetch for next part audio
                 if (i + 1 < textParts.length) {
                     const nextPart = textParts[i+1];
                     preloadedAudioRef.current = preloadAudio(nextPart.text, nextPart.voice);
                 } else {
-                    // End of this lesson. Could pre-fetch first audio of NEXT lesson here if we had the script.
-                    // But we likely don't have the next script parsed yet. 
-                    // The 'preloadedScriptRef' handles the text generation latency.
                     preloadedAudioRef.current = null;
                 }
 
-                // 3. Play Current Audio
                 if (audioResult && audioResult.buffer) {
-                    setPlaybackState('playing'); // Ensure status is playing
                     await playAudioBuffer(audioResult.buffer, sessionId);
                 } else {
-                    console.warn("TTS Gen failed for part", i);
-                    setStatusMessage("Audio Error (Retrying...)");
+                    // Audio failed (Quota/Network). Just skip this sentence after small delay.
+                    console.warn("Audio skipped:", audioResult?.errorMessage);
                     await new Promise(r => setTimeout(r, 1000));
-                    // Simple retry for audio
-                    const retryResult = await preloadAudio(part.text, part.voice);
-                    if (retryResult && retryResult.buffer) {
-                        await playAudioBuffer(retryResult.buffer, sessionId);
-                    } else {
-                        // Skip segment only if double fail
-                        await new Promise(r => setTimeout(r, 1000));
-                    }
                 }
                 
-                // Small gap between speakers
                 await new Promise(r => setTimeout(r, 200));
             }
 
-            // 3. Increment to next lesson
             currentIndex++;
         }
     };
@@ -375,8 +338,15 @@ const MobileFeedCard = ({
     };
 
     const fetchLectureData = async (meta: any) => {
+        // 1. Check Offline/Spotlight Static Content FIRST (Zero wait time)
+        if (OFFLINE_LECTURES[meta.title]) return OFFLINE_LECTURES[meta.title];
+        if (SPOTLIGHT_DATA[channel.id]?.lectures?.[meta.title]) return SPOTLIGHT_DATA[channel.id].lectures[meta.title];
+
+        // 2. Check DB Cache
         const cacheKey = `lecture_${channel.id}_${meta.id}_en`;
         let data = await getCachedLectureScript(cacheKey);
+        
+        // 3. Generate if missing
         if (!data) {
             data = await generateLectureScript(meta.title, `Podcast: ${channel.title}. ${channel.description}`, 'en');
             if (data) await cacheLectureScript(cacheKey, data);
@@ -386,8 +356,6 @@ const MobileFeedCard = ({
 
     return (
         <div className="h-full w-full snap-start relative flex flex-col justify-center bg-slate-900 border-b border-slate-800">
-            
-            {/* 1. Visual Background */}
             <div className="absolute inset-0">
                 <img 
                     src={channel.imageUrl} 
@@ -397,7 +365,6 @@ const MobileFeedCard = ({
                 />
                 <div className="absolute inset-0 bg-gradient-to-b from-black/30 via-transparent to-black/90"></div>
                 
-                {/* Status Overlay (Loading / Error) */}
                 {(playbackState === 'buffering' || statusMessage) && (
                     <div className="absolute top-20 left-0 w-full flex justify-center pointer-events-none z-20">
                         <div className={`backdrop-blur-md px-4 py-2 rounded-full flex items-center gap-2 border shadow-lg ${playbackState === 'error' ? 'bg-red-900/60 border-red-500/50' : 'bg-black/60 border-white/10'}`}>
@@ -409,7 +376,6 @@ const MobileFeedCard = ({
                     </div>
                 )}
 
-                {/* Transcript */}
                 {transcript && (
                     <div className="absolute top-1/2 left-4 right-16 -translate-y-1/2 pointer-events-none z-10">
                         <div className="bg-black/40 backdrop-blur-sm p-6 rounded-3xl border-l-4 border-indigo-500/50 shadow-2xl animate-fade-in-up">
@@ -426,7 +392,6 @@ const MobileFeedCard = ({
                 )}
             </div>
 
-            {/* 2. Sidebar Actions (Right) */}
             <div className="absolute right-2 bottom-40 flex flex-col items-center gap-6 z-30">
                 <div className="relative mb-2 cursor-pointer" onClick={(e) => { e.stopPropagation(); onProfileClick(e, channel); }}>
                     <img 
@@ -464,10 +429,7 @@ const MobileFeedCard = ({
                 </button>
             </div>
 
-            {/* 3. Bottom Info & Play Controls */}
             <div className="absolute left-0 bottom-0 w-full p-4 pb-6 bg-gradient-to-t from-black via-black/80 to-transparent z-30 pr-20">
-                
-                {/* Introduction Badge (Clickable) */}
                 <div 
                     onClick={(e) => { e.stopPropagation(); onChannelClick(channel.id); }}
                     className="inline-flex items-center gap-2 mb-3 bg-slate-800/80 backdrop-blur-md px-3 py-1.5 rounded-lg border border-slate-700 cursor-pointer active:scale-95 transition-transform"
@@ -484,7 +446,6 @@ const MobileFeedCard = ({
                     <ChevronRight size={12} className="text-slate-500" />
                 </div>
 
-                {/* Host Line with Play Button */}
                 <div className="flex items-center gap-3 mb-2">
                     <button 
                         onClick={handleTogglePlay}
