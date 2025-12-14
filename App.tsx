@@ -55,12 +55,12 @@ import { HANDCRAFTED_CHANNELS, CATEGORY_STYLES, TOPIC_CATEGORIES } from './utils
 import { OFFLINE_CHANNEL_ID } from './utils/offlineContent';
 import { GEMINI_API_KEY } from './services/private_keys';
 
-const APP_VERSION = "v3.66.0"; // Bump version
+const APP_VERSION = "v3.66.1"; // Bump version
 
 const UI_TEXT = {
   en: {
     appTitle: "AIVoiceCast",
-    directory: "Feed", // Changed from Discover
+    directory: "Explore", // Changed back to Explore
     myFeed: "My Feed",
     live: "Live Studio",
     search: "Search topics...",
@@ -86,7 +86,7 @@ const UI_TEXT = {
   },
   zh: {
     appTitle: "AI 播客",
-    directory: "推荐",
+    directory: "探索",
     myFeed: "我的订阅",
     live: "直播间",
     search: "搜索主题...",
@@ -593,6 +593,25 @@ const App: React.FC = () => {
             )}
 
             <div className="flex items-center space-x-2 sm:space-x-4">
+              
+              {/* Desktop Creation Buttons (Restored) */}
+              <div className="hidden lg:flex items-center space-x-2 mr-2">
+                  <button
+                      onClick={() => setIsCreateModalOpen(true)}
+                      className="flex items-center space-x-2 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-lg transition-colors shadow-sm"
+                  >
+                      <Plus size={14} />
+                      <span>New Podcast</span>
+                  </button>
+                  <button
+                      onClick={() => setIsVoiceCreateOpen(true)}
+                      className="flex items-center space-x-2 px-3 py-1.5 bg-pink-600 hover:bg-pink-500 text-white text-xs font-bold rounded-lg transition-colors shadow-sm"
+                  >
+                      <Sparkles size={14} />
+                      <span>Magic Create</span>
+                  </button>
+              </div>
+
               <div className="flex gap-2">
                   <button 
                     onClick={() => setViewState('code_studio')} 
@@ -733,7 +752,7 @@ const App: React.FC = () => {
             {/* Content Area */}
             <div className="flex-1 overflow-hidden relative">
                
-               {/* 1. Main Feed (TikTok Style) */}
+               {/* 1. Main Feed (Hybrid Layout) */}
                {activeTab === 'categories' && (
                    <PodcastFeed 
                        channels={feedChannels}
@@ -742,6 +761,12 @@ const App: React.FC = () => {
                        userProfile={userProfile}
                        globalVoice={globalVoice}
                        onRefresh={handleRefreshFeed}
+                       t={t}
+                       currentUser={currentUser}
+                       setChannelToEdit={setChannelToEdit}
+                       setIsSettingsModalOpen={setIsSettingsModalOpen}
+                       onCommentClick={handleCommentClick}
+                       handleVote={handleVote}
                    />
                )}
 
