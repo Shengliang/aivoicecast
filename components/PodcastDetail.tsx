@@ -409,6 +409,16 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
       }
   }, [chapters]);
 
+  // AUTO-PLAY WHEN LECTURE LOADS
+  useEffect(() => {
+      if (activeLecture && !isPlaying && !isLiveActive) {
+          // Check if user has API key, if not we rely on system voice
+          // Don't auto-play if we are just browsing, but usually loading a lecture implies intent
+          playSessionIdRef.current++;
+          setIsPlaying(true);
+      }
+  }, [activeLecture]);
+
   const handleRegenerateCurriculum = async (isAuto = false) => {
       if (!isChannelOwner) { if (!isAuto) alert(t.guestRestrict); return; }
       const isEmpty = !chapters || chapters.length === 0;
@@ -540,8 +550,15 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
           if (!isPlayingRef.current) return;
           const sessionId = playSessionIdRef.current;
           const ctx = getAudioContext();
+          
+          // FORCE RESUME IF SUSPENDED (Crucial fix for silent auto-play)
+          if (ctx.state === 'suspended') {
+              try { await ctx.resume(); } catch(e) { console.warn("Auto-resume failed", e); }
+          }
+
           const lookahead = 0.5; 
           if (nextScheduleTimeRef.current < ctx.currentTime) { nextScheduleTimeRef.current = ctx.currentTime + 0.1; }
+          
           while (nextScheduleTimeRef.current < ctx.currentTime + lookahead && activeLecture) {
              const scheduleIdx = schedulingCursorRef.current; 
              if (playSessionIdRef.current !== sessionId) return; 
@@ -556,6 +573,7 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
                 const result = await synthesizeSpeech(section.text, voice, ctx);
                 setIsBuffering(false);
                 if (playSessionIdRef.current !== sessionId) return; 
+                
                 if (result.buffer) {
                    const source = ctx.createBufferSource();
                    source.buffer = result.buffer;
@@ -574,10 +592,19 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
                    schedulingCursorRef.current++; 
                    break; 
                 } else {
-                   if (result.errorType === 'quota') { alert(t.quotaError); stopAudio(); setUseSystemVoice(true); break; }
-                   stopAudio(); break;
+                   // AUTO-FALLBACK: If Neural TTS fails, switch to system voice immediately
+                   console.warn("Neural TTS Failed/Timeout. Switching to System Voice fallback.");
+                   setUseSystemVoice(true);
+                   // The useEffect depends on useSystemVoice, so changing it will re-run the effect
+                   // and enter the 'else' block below automatically.
+                   return;
                 }
-             } catch(e) { console.error("Schedule error", e); stopAudio(); break; }
+             } catch(e) { 
+                 console.error("Schedule error", e); 
+                 // Even on unknown error, try system voice
+                 setUseSystemVoice(true);
+                 return;
+             }
           }
           if (isPlayingRef.current && playSessionIdRef.current === sessionId) { schedulerTimerRef.current = setTimeout(schedule, 200); }
         };
@@ -878,7 +905,7 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
                             ) : (
                                 <button onClick={togglePlayback} className={`w-16 h-16 rounded-full flex items-center justify-center transition-all shadow-lg ${isPlaying ? 'bg-slate-800 text-red-400 hover:bg-slate-700' : 'bg-emerald-600 text-white hover:bg-emerald-500 hover:scale-105'}`}>{isPlaying ? (isBuffering ? <Loader2 className="animate-spin" size={28}/> : <Pause fill="currentColor" size={28} />) : <Play fill="currentColor" size={28} />}</button>
                             )}
-                            {!isPlaying && !useSystemVoice && !isAudioReady && !isGenerating && <span className="text-xs text-indigo-400 font-medium animate-pulse">Generate Audio First</span>}
+                            {isBuffering && useSystemVoice && <span className="text-xs text-slate-500">Processing...</span>}
                         </div>
                         <button onClick={() => {}} disabled={currentLectureIndex === -1 || currentLectureIndex >= flatCurriculum.length - 1} className="text-slate-400 hover:text-white disabled:opacity-30 flex items-center space-x-2 text-sm font-bold transition-colors"><span className="hidden sm:inline">{t.next}</span><SkipForward size={20} /></button>
                     </div>

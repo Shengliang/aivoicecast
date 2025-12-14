@@ -1,7 +1,7 @@
 
 import React, { useMemo, useRef, useState, useEffect, useCallback } from 'react';
 import { Channel, UserProfile, GeneratedLecture } from '../types';
-import { Play, MessageSquare, Heart, Share2, Bookmark, Music, Plus, Pause, Loader2, Volume2, VolumeX, GraduationCap, ChevronRight, Mic, AlignLeft, BarChart3, User, AlertCircle } from 'lucide-react';
+import { Play, MessageSquare, Heart, Share2, Bookmark, Music, Plus, Pause, Loader2, Volume2, VolumeX, GraduationCap, ChevronRight, Mic, AlignLeft, BarChart3, User, AlertCircle, Zap, Radio } from 'lucide-react';
 import { ChannelCard } from './ChannelCard';
 import { CreatorProfileModal } from './CreatorProfileModal';
 import { followUser, unfollowUser } from '../services/firestoreService';
@@ -56,13 +56,17 @@ const MobileFeedCard = ({
     onShare, 
     onComment, 
     onProfileClick, 
-    onChannelClick,
+    onChannelClick, 
     onChannelFinish 
 }: any) => {
     // UI State
     const [playbackState, setPlaybackState] = useState<'idle' | 'buffering' | 'playing' | 'error'>('idle');
     const [statusMessage, setStatusMessage] = useState('');
     const [transcript, setTranscript] = useState<{speaker: string, text: string} | null>(null);
+    
+    // TTS Mode State
+    const [ttsMode, setTtsMode] = useState<'neural' | 'system'>('neural');
+    const ttsModeRef = useRef<'neural' | 'system'>('neural'); // Ref for access in loop
     
     // Logic State
     const [trackIndex, setTrackIndex] = useState(-1); // -1 = Intro, 0+ = Lessons
@@ -75,6 +79,9 @@ const MobileFeedCard = ({
     // Buffering Refs
     const preloadedScriptRef = useRef<Promise<GeneratedLecture | null> | null>(null);
     const preloadedAudioRef = useRef<Promise<any> | null>(null);
+
+    // Sync Ref
+    useEffect(() => { ttsModeRef.current = ttsMode; }, [ttsMode]);
 
     // Data Helpers - Merge Static Data to ensure we have a curriculum
     const flatCurriculum = useMemo(() => {
@@ -105,6 +112,11 @@ const MobileFeedCard = ({
 
     useEffect(() => {
         mountedRef.current = true;
+        // Check for API Key on mount - if missing, default to System for stability
+        const apiKey = localStorage.getItem('gemini_api_key') || GEMINI_API_KEY || process.env.API_KEY;
+        if (!apiKey) {
+            setTtsMode('system');
+        }
         return () => { 
             mountedRef.current = false;
             stopAudio();
@@ -150,7 +162,7 @@ const MobileFeedCard = ({
             try { await ctx.resume(); } catch(e) {}
         }
 
-        if (ctx.state === 'running') {
+        if (ctx.state === 'running' || ttsModeRef.current === 'system') {
             const sessionId = ++playbackSessionRef.current;
             runTrackSequence(-1, sessionId);
         }
@@ -185,6 +197,21 @@ const MobileFeedCard = ({
         runTrackSequence(start, sessionId);
     };
 
+    const toggleTtsMode = (e: React.MouseEvent) => {
+        e.stopPropagation();
+        const newMode = ttsMode === 'neural' ? 'system' : 'neural';
+        setTtsMode(newMode);
+        // Force restart if currently playing
+        if (playbackState === 'playing' || playbackState === 'buffering') {
+            stopAudio();
+            playbackSessionRef.current++;
+            setTimeout(() => {
+                const sessionId = ++playbackSessionRef.current;
+                runTrackSequence(trackIndex === -1 ? -1 : trackIndex, sessionId);
+            }, 100);
+        }
+    };
+
     const preloadScript = (lessonMeta: any) => {
         if (!lessonMeta) return null;
         return fetchLectureData(lessonMeta);
@@ -195,12 +222,73 @@ const MobileFeedCard = ({
         return synthesizeSpeech(text, voice, ctx);
     };
 
+    const playAudioBuffer = (buffer: AudioBuffer, sessionId: number): Promise<void> => {
+        return new Promise((resolve) => {
+            if (!mountedRef.current || !isActive || sessionId !== playbackSessionRef.current) {
+                resolve();
+                return;
+            }
+
+            const ctx = getSharedAudioContext();
+            const source = ctx.createBufferSource();
+            source.buffer = buffer;
+            source.connect(ctx.destination);
+            sourceRef.current = source;
+
+            source.onended = () => {
+                sourceRef.current = null;
+                resolve();
+            };
+
+            source.start(0);
+        });
+    };
+
+    const playSystemAudio = (text: string, voiceName: string): Promise<void> => {
+        return new Promise((resolve) => {
+            if (!mountedRef.current || !isActive) { resolve(); return; }
+            
+            // Cancel any pending speech
+            window.speechSynthesis.cancel();
+
+            const utterance = new SpeechSynthesisUtterance(text);
+            
+            // Voice Selection Heuristics
+            const voices = window.speechSynthesis.getVoices();
+            // 1. Try exact name match
+            // 2. Try Google/Premium English
+            // 3. Try any English
+            const v = voices.find(v => v.name.includes(voiceName)) || 
+                      voices.find(v => v.lang.startsWith('en') && (v.name.includes('Google') || v.name.includes('Premium') || v.name.includes('Enhanced'))) ||
+                      voices.find(v => v.lang.startsWith('en'));
+            
+            if (v) utterance.voice = v;
+            
+            utterance.rate = 1.1; // Slightly faster for content
+            
+            utterance.onend = () => {
+                resolve();
+            };
+            
+            utterance.onerror = (e) => {
+                console.warn("System TTS Error", e);
+                resolve(); // Fallback: Resolve to continue sequence even if audio fails
+            };
+
+            window.speechSynthesis.speak(utterance);
+        });
+    };
+
     const runTrackSequence = async (startIndex: number, sessionId: number) => {
         setPlaybackState('playing');
 
         const apiKey = localStorage.getItem('gemini_api_key') || GEMINI_API_KEY || process.env.API_KEY;
-        // NOTE: We allow playing static content (Intro + Spotlight) even without API Key, 
-        // but dynamic generation will fail gracefully inside fetchLectureData/synthesizeSpeech.
+        
+        // Auto-downgrade if no key and trying neural
+        if (!apiKey && ttsModeRef.current === 'neural') {
+            setTtsMode('system');
+            ttsModeRef.current = 'system';
+        }
 
         let currentIndex = startIndex;
 
@@ -221,7 +309,7 @@ const MobileFeedCard = ({
                     voice: channel.voiceName || 'Puck'
                 }];
 
-                // PRE-FETCH: Start fetching Lesson 1 Script during Intro
+                // PRE-FETCH
                 if (flatCurriculum.length > 0) {
                     preloadedScriptRef.current = preloadScript(flatCurriculum[0]);
                 }
@@ -239,7 +327,6 @@ const MobileFeedCard = ({
                 
                 let lecture = null;
                 
-                // Use pre-fetched script if available
                 if (preloadedScriptRef.current) {
                     setStatusMessage(`Loading ${lessonMeta.title.substring(0,15)}...`);
                     lecture = await preloadedScriptRef.current;
@@ -268,47 +355,52 @@ const MobileFeedCard = ({
                     voice: s.speaker === 'Teacher' ? hostVoice : 'Puck'
                 }));
 
-                // Pre-fetch Script for NEXT Lesson
                 if (currentIndex + 1 < flatCurriculum.length) {
                     preloadedScriptRef.current = preloadScript(flatCurriculum[currentIndex + 1]);
                 }
             }
 
-            // PLAY AUDIO PARTS
+            // PLAY PARTS (Audio Loop)
             for (let i = 0; i < textParts.length; i++) {
                 if (!mountedRef.current || !isActive || sessionId !== playbackSessionRef.current) return;
 
                 const part = textParts[i];
                 setTranscript({ speaker: part.speaker, text: part.text });
                 
-                // Just-In-Time Audio Buffering
-                let audioResult = null;
-                
-                if (i === 0 && preloadedAudioRef.current) {
-                    audioResult = await preloadedAudioRef.current;
-                    preloadedAudioRef.current = null;
-                } else {
-                    // Show buffering only if it takes more than 100ms
-                    const bufferTimer = setTimeout(() => setPlaybackState('buffering'), 100);
-                    audioResult = await preloadAudio(part.text, part.voice);
-                    clearTimeout(bufferTimer);
-                    setPlaybackState('playing');
-                }
+                const currentMode = ttsModeRef.current;
 
-                // Trigger pre-fetch for next part audio
-                if (i + 1 < textParts.length) {
-                    const nextPart = textParts[i+1];
-                    preloadedAudioRef.current = preloadAudio(nextPart.text, nextPart.voice);
+                if (currentMode === 'system') {
+                    // SYSTEM MODE
+                    await playSystemAudio(part.text, part.voice);
                 } else {
-                    preloadedAudioRef.current = null;
-                }
+                    // NEURAL MODE (with Fallback)
+                    let audioResult = null;
+                    
+                    if (i === 0 && preloadedAudioRef.current) {
+                        audioResult = await preloadedAudioRef.current;
+                        preloadedAudioRef.current = null;
+                    } else {
+                        const bufferTimer = setTimeout(() => setPlaybackState('buffering'), 100);
+                        audioResult = await preloadAudio(part.text, part.voice);
+                        clearTimeout(bufferTimer);
+                        setPlaybackState('playing');
+                    }
 
-                if (audioResult && audioResult.buffer) {
-                    await playAudioBuffer(audioResult.buffer, sessionId);
-                } else {
-                    // Audio failed (Quota/Network). Just skip this sentence after small delay.
-                    console.warn("Audio skipped:", audioResult?.errorMessage);
-                    await new Promise(r => setTimeout(r, 1000));
+                    // Pipeline next part
+                    if (i + 1 < textParts.length) {
+                        const nextPart = textParts[i+1];
+                        preloadedAudioRef.current = preloadAudio(nextPart.text, nextPart.voice);
+                    } else {
+                        preloadedAudioRef.current = null;
+                    }
+
+                    if (audioResult && audioResult.buffer) {
+                        await playAudioBuffer(audioResult.buffer, sessionId);
+                    } else {
+                        // FALLBACK TO SYSTEM if Neural Fails
+                        console.warn("Audio failed, switching to System Voice fallback for this segment");
+                        await playSystemAudio(part.text, part.voice);
+                    }
                 }
                 
                 await new Promise(r => setTimeout(r, 200));
@@ -316,25 +408,6 @@ const MobileFeedCard = ({
 
             currentIndex++;
         }
-    };
-
-    const playAudioBuffer = (buffer: AudioBuffer, sessionId: number): Promise<void> => {
-        return new Promise((resolve) => {
-            if (!mountedRef.current || !isActive || sessionId !== playbackSessionRef.current) { resolve(); return; }
-            
-            const ctx = getSharedAudioContext();
-            const source = ctx.createBufferSource();
-            source.buffer = buffer;
-            source.connect(ctx.destination);
-            
-            source.onended = () => {
-                sourceRef.current = null;
-                resolve();
-            };
-            
-            sourceRef.current = source;
-            source.start(0);
-        });
     };
 
     const fetchLectureData = async (meta: any) => {
@@ -365,16 +438,23 @@ const MobileFeedCard = ({
                 />
                 <div className="absolute inset-0 bg-gradient-to-b from-black/30 via-transparent to-black/90"></div>
                 
-                {(playbackState === 'buffering' || statusMessage) && (
-                    <div className="absolute top-20 left-0 w-full flex justify-center pointer-events-none z-20">
-                        <div className={`backdrop-blur-md px-4 py-2 rounded-full flex items-center gap-2 border shadow-lg ${playbackState === 'error' ? 'bg-red-900/60 border-red-500/50' : 'bg-black/60 border-white/10'}`}>
-                            {playbackState === 'buffering' ? <Loader2 size={14} className="animate-spin text-indigo-400" /> : 
-                             playbackState === 'error' ? <AlertCircle size={14} className="text-red-400"/> :
-                             <Music size={14} className="text-emerald-400" />}
-                            <span className="text-xs font-bold text-white uppercase tracking-wider">{statusMessage || "Active"}</span>
+                {/* Mode Toggle & Status */}
+                <div className="absolute top-20 right-4 z-30 flex flex-col items-end gap-2">
+                    <button 
+                        onClick={toggleTtsMode}
+                        className={`backdrop-blur-md px-3 py-1.5 rounded-full flex items-center gap-2 border text-xs font-bold shadow-lg transition-all ${ttsMode === 'neural' ? 'bg-emerald-900/60 border-emerald-500/50 text-emerald-300' : 'bg-indigo-900/60 border-indigo-500/50 text-indigo-300'}`}
+                    >
+                        {ttsMode === 'neural' ? <Zap size={12} fill="currentColor"/> : <Radio size={12} />}
+                        <span>{ttsMode === 'neural' ? 'Neural' : 'System'}</span>
+                    </button>
+
+                    {(playbackState === 'buffering' || statusMessage) && (
+                        <div className={`backdrop-blur-md px-3 py-1.5 rounded-full flex items-center gap-2 border shadow-lg bg-black/60 border-white/10`}>
+                            {playbackState === 'buffering' ? <Loader2 size={12} className="animate-spin text-indigo-400" /> : <Music size={12} className="text-slate-400" />}
+                            <span className="text-[10px] font-bold text-white uppercase tracking-wider">{statusMessage || "Active"}</span>
                         </div>
-                    </div>
-                )}
+                    )}
+                </div>
 
                 {transcript && (
                     <div className="absolute top-1/2 left-4 right-16 -translate-y-1/2 pointer-events-none z-10">
@@ -476,7 +556,7 @@ const MobileFeedCard = ({
                 <div className="flex items-center gap-2 text-white/60 text-xs font-medium overflow-hidden whitespace-nowrap">
                     <Music size={12} className={playbackState === 'playing' ? "animate-pulse text-emerald-400" : ""} />
                     <div className="flex gap-4 animate-marquee">
-                        <span>Voice: {channel.voiceName}</span>
+                        <span>Voice: {channel.voiceName} ({ttsMode === 'neural' ? 'Neural' : 'System'})</span>
                         <span>•</span>
                         {channel.tags.map((t: string) => <span key={t}>#{t}</span>)}
                     </div>
