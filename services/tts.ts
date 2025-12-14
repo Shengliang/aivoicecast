@@ -164,7 +164,6 @@ export async function synthesizeSpeech(
         // Correctly handle decoding based on provider type inferred from voice name
         if (isOpenAIVoice(voiceName)) {
             // OpenAI = MP3 = Native Browser Decode
-            // Slice(0) creates a copy to avoid detachment issues if buffer is reused later
             audioBuffer = await audioContext.decodeAudioData(cachedArrayBuffer.slice(0));
         } else {
             // Gemini = PCM = Custom Manual Decode
@@ -181,7 +180,7 @@ export async function synthesizeSpeech(
 
       // Check if requested voice is OpenAI
       if (isOpenAIVoice(voiceName)) {
-          const openAiKey = localStorage.getItem('openai_api_key') || OPENAI_API_KEY || '';
+          const openAiKey = localStorage.getItem('openai_api_key') || OPENAI_API_KEY || process.env.OPENAI_API_KEY || '';
           if (!openAiKey) {
               return { buffer: null, errorType: 'auth', errorMessage: 'OpenAI API Key missing' };
           }
@@ -207,7 +206,6 @@ export async function synthesizeSpeech(
       let audioBuffer: AudioBuffer;
       if (usedProvider === 'openai') {
           // OpenAI returns MP3 -> Use native decode
-          // Note: decodeAudioData detaches the buffer, so we pass a slice if we needed rawBuffer again (we don't here, but good practice)
           audioBuffer = await audioContext.decodeAudioData(rawBuffer.slice(0));
       } else {
           // Gemini returns Raw PCM -> Use manual decode

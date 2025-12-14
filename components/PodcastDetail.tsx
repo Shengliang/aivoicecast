@@ -190,7 +190,7 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
   // Provider: 'system' | 'gemini' | 'openai'
   // Auto-detect based on API Keys available
   const hasGeminiKey = !!(localStorage.getItem('gemini_api_key') || GEMINI_API_KEY || process.env.API_KEY);
-  const hasOpenAiKey = !!(localStorage.getItem('openai_api_key') || OPENAI_API_KEY);
+  const hasOpenAiKey = !!(localStorage.getItem('openai_api_key') || OPENAI_API_KEY || process.env.OPENAI_API_KEY);
   
   const [voiceProvider, setVoiceProvider] = useState<'system' | 'gemini' | 'openai'>(
       hasGeminiKey ? 'gemini' : (hasOpenAiKey ? 'openai' : 'system')

@@ -241,7 +241,7 @@ const MobileFeedCard = ({
 
         // Notify user if keys missing but still switch (let loop handle error for consistency or handle here)
         const hasGemini = !!(localStorage.getItem('gemini_api_key') || GEMINI_API_KEY || process.env.API_KEY);
-        const hasOpenAI = !!(localStorage.getItem('openai_api_key') || OPENAI_API_KEY);
+        const hasOpenAI = !!(localStorage.getItem('openai_api_key') || OPENAI_API_KEY || process.env.OPENAI_API_KEY);
 
         if (newMode === 'gemini' && !hasGemini) {
             alert("Gemini API Key is missing. Please add it in Settings.");
@@ -326,7 +326,7 @@ const MobileFeedCard = ({
 
         // Check keys validity at start of playback
         const hasGemini = !!(localStorage.getItem('gemini_api_key') || GEMINI_API_KEY || process.env.API_KEY);
-        const hasOpenAI = !!(localStorage.getItem('openai_api_key') || OPENAI_API_KEY);
+        const hasOpenAI = !!(localStorage.getItem('openai_api_key') || OPENAI_API_KEY || process.env.OPENAI_API_KEY);
         
         if (providerRef.current === 'gemini' && !hasGemini) {
              setProvider('system'); providerRef.current = 'system';
