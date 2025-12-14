@@ -1,3 +1,4 @@
+
 import { db, auth, storage } from './firebaseConfig';
 import firebase from 'firebase/compat/app';
 import { 
@@ -7,6 +8,7 @@ import {
   JobPosting, CodeProject, WhiteboardElement, CodeFile, SubscriptionTier, CursorPosition, CloudItem, GlobalStats
 } from '../types';
 import { HANDCRAFTED_CHANNELS } from '../utils/initialData';
+import { ARCHITECTURE_BLOG_POST } from '../utils/blogContent';
 
 // --- User & Profile ---
 
@@ -854,7 +856,11 @@ export async function getCommunityPosts(): Promise<BlogPost[]> {
         .orderBy('publishedAt', 'desc')
         .limit(20)
         .get();
-    return snap.docs.map(d => ({ id: d.id, ...d.data() } as BlogPost));
+    
+    const dbPosts = snap.docs.map(d => ({ id: d.id, ...d.data() } as BlogPost));
+    
+    // Inject Static Architecture Blog Post
+    return [ARCHITECTURE_BLOG_POST, ...dbPosts];
 }
 
 export async function getUserPosts(blogId: string): Promise<BlogPost[]> {
@@ -889,6 +895,11 @@ export async function addPostComment(postId: string, comment: Comment): Promise<
 }
 
 export async function getBlogPost(postId: string): Promise<BlogPost | null> {
+    // Check if it's the static post first
+    if (postId === ARCHITECTURE_BLOG_POST.id) {
+        return ARCHITECTURE_BLOG_POST;
+    }
+
     const doc = await db.collection('blog_posts').doc(postId).get();
     return doc.exists ? ({ id: doc.id, ...doc.data() } as BlogPost) : null;
 }

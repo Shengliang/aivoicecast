@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { ArrowLeft, Book } from 'lucide-react';
 import { MarkdownView } from './MarkdownView';
@@ -63,17 +62,29 @@ A full-featured code editor with an embedded AI pair programmer.
 *   **AI Tools**:
     *   **Chat**: Ask the AI to "Refactor this function" or "Fix the bug".
     *   **Direct Editing**: The AI has permission to *edit your file directly*. It can rewrite code blocks for you.
-*   **Multi-User Collaboration**:
-    *   Click **Share** to generate a link.
-    *   Send it to a friend. You can both edit the same file simultaneously (Google Docs style).
 
 ### 6. 🎨 Whiteboard
 A collaborative infinite canvas for systems design.
 
 *   **Tools**: Draw rectangles, arrows, text, and freehand sketches.
-*   **AI Analysis**: (Coming Soon) Ask the AI to "Explain this architecture diagram" by looking at your drawing.
+*   **AI Analysis**: Ask the AI to generate diagrams or explain visuals drawn on the board.
 
-### 7. 🤝 Community & Career
+### 7. 👥 Real-Time Collaboration
+Work together with peers or mentors in Code Studio and Whiteboard.
+
+*   **Sharing a Session**:
+    1. Click the **Share** button in the top toolbar.
+    2. Choose **Anyone with Link** for public sharing, or **Restricted** to invite specific members.
+    3. Restricted invites appear in the recipient's **Notifications** (Bell Icon) and **Direct Messages**.
+*   **Synchronized Features**:
+    *   **Real-Time Typing**: See code changes as they happen.
+    *   **Live Cursors**: See where other users are looking or typing, labeled with their name.
+    *   **Follow Mode**: When the session host switches files in Code Studio, all viewers automatically switch to the same file. This is ideal for teaching or presentations.
+*   **Security**:
+    *   Edit access is controlled via a unique secure token in the shared link (\`&key=...\`).
+    *   Read-only participants can view the session but cannot type or draw.
+
+### 8. 🤝 Community & Career
 *   **Mentorship Hub**:
     *   **Book AI**: Schedule a deep-dive session with an AI expert persona.
     *   **Book Humans**: Find real community members and book P2P learning sessions.
@@ -89,10 +100,10 @@ export const UserManual: React.FC<UserManualProps> = ({ onBack }) => {
       {/* Header */}
       <div className="p-6 border-b border-slate-900 flex items-center gap-4 sticky top-0 bg-slate-950/90 backdrop-blur-md z-20">
         <button onClick={onBack} className="p-2 hover:bg-slate-800 rounded-full transition-colors">
-          <ArrowLeft size={24} />
+          <ArrowLeft size="24" />
         </button>
         <h1 className="text-xl font-bold tracking-widest uppercase text-slate-400 flex items-center gap-2">
-            <Book size={20} className="text-indigo-400"/> User Guide
+            <Book size="20" className="text-indigo-400"/> User Guide
         </h1>
       </div>
 
