@@ -289,13 +289,20 @@ const App: React.FC = () => {
 
   const handleVote = async (id: string, type: 'like' | 'dislike', e: React.MouseEvent) => {
     e.stopPropagation();
+    
+    // 1. Optimistic UI Update
     setChannels(prev => prev.map(c => {
       if (c.id === id) {
         return type === 'like' ? { ...c, likes: c.likes + 1 } : { ...c, dislikes: c.dislikes + 1 };
       }
       return c;
     }));
-    await voteChannel(id, type);
+
+    // 2. Persist to Firestore (Handling promotion of static channels)
+    const channel = channels.find(c => c.id === id);
+    if (channel) {
+        await voteChannel(channel, type);
+    }
   };
 
   const handleCreateChannel = async (newChannel: Channel) => {

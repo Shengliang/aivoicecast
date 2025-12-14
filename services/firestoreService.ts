@@ -146,12 +146,26 @@ export async function deleteChannelFromFirestore(channelId: string) {
     await db.collection('channels').doc(channelId).delete();
 }
 
-export async function voteChannel(channelId: string, type: 'like' | 'dislike') {
-    const ref = db.collection('channels').doc(channelId);
+export async function voteChannel(channel: Channel, type: 'like' | 'dislike') {
+    const ref = db.collection('channels').doc(channel.id);
     const doc = await ref.get();
+    
     if (doc.exists) {
         if (type === 'like') await ref.update({ likes: firebase.firestore.FieldValue.increment(1) });
         else await ref.update({ dislikes: firebase.firestore.FieldValue.increment(1) });
+    } else {
+        // Document doesn't exist (Static Channel). Create it to persist the vote.
+        // We set it to 'public' so it appears in the live feed for everyone.
+        const newLikes = type === 'like' ? (channel.likes || 0) + 1 : (channel.likes || 0);
+        const newDislikes = type === 'dislike' ? (channel.dislikes || 0) + 1 : (channel.dislikes || 0);
+        
+        await ref.set({
+            ...channel,
+            likes: newLikes,
+            dislikes: newDislikes,
+            visibility: 'public', // Promote to public DB channel
+            ownerId: channel.ownerId || 'system' // Ensure owner exists
+        });
     }
 }
 
