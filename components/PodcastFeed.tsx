@@ -66,8 +66,11 @@ const MobileFeedCard = ({
     const [transcript, setTranscript] = useState<{speaker: string, text: string} | null>(null);
     
     // Provider State: 'system', 'gemini', 'openai'
-    // Default to Gemini if key exists, else System. OpenAI must be manually toggled if not default.
+    // Default to OpenAI if key exists, then Gemini, else System.
     const [provider, setProvider] = useState<'system' | 'gemini' | 'openai'>(() => {
+        const hasOpenAI = !!(localStorage.getItem('openai_api_key') || OPENAI_API_KEY || process.env.OPENAI_API_KEY);
+        if (hasOpenAI) return 'openai';
+
         const hasGemini = !!(localStorage.getItem('gemini_api_key') || GEMINI_API_KEY || process.env.API_KEY);
         return hasGemini ? 'gemini' : 'system';
     });

@@ -4,7 +4,7 @@ import { Channel, GeneratedLecture, Chapter, SubTopic, TranscriptItem, Attachmen
 import { ArrowLeft, Play, Pause, BookOpen, MessageCircle, Sparkles, User, GraduationCap, Loader2, ChevronDown, ChevronRight, SkipForward, SkipBack, Settings, X, Mic, Download, RefreshCw, Square, MoreVertical, Edit, Lock, Zap, ToggleLeft, ToggleRight, Users, Check, AlertTriangle, Activity, MessageSquare, FileText, Code, Video, Monitor, PlusCircle, Bot, ExternalLink, ChevronLeft, Menu, List, PanelLeftClose, PanelLeftOpen, CornerDownRight, Trash2, FileDown, Printer, FileJson, HelpCircle, ListMusic, Copy, Paperclip, UploadCloud, Crown, Radio } from 'lucide-react';
 import { generateLectureScript } from '../services/lectureGenerator';
 import { generateCurriculum } from '../services/curriculumGenerator';
-import { synthesizeSpeech, cleanTextForTTS, checkAudioCache, clearAudioCache } from '../services/tts';
+import { synthesizeSpeech, clearAudioCache, checkAudioCache, cleanTextForTTS } from '../services/tts';
 import { OFFLINE_CHANNEL_ID, OFFLINE_CURRICULUM, OFFLINE_LECTURES } from '../utils/offlineContent';
 import { SPOTLIGHT_DATA } from '../utils/spotlightContent';
 import { STATIC_READING_MATERIALS } from '../utils/staticResources';
@@ -193,7 +193,7 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
   const hasOpenAiKey = !!(localStorage.getItem('openai_api_key') || OPENAI_API_KEY || process.env.OPENAI_API_KEY);
   
   const [voiceProvider, setVoiceProvider] = useState<'system' | 'gemini' | 'openai'>(
-      hasGeminiKey ? 'gemini' : (hasOpenAiKey ? 'openai' : 'system')
+      hasOpenAiKey ? 'openai' : (hasGeminiKey ? 'gemini' : 'system')
   );
   
   const [systemVoices, setSystemVoices] = useState<SpeechSynthesisVoice[]>([]);
