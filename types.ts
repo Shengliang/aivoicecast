@@ -4,32 +4,32 @@ export interface Invitation {
   fromUserId: string;
   fromName: string;
   toEmail: string;
-  groupId: string; // For 'group' invites, this is Group ID. For 'session', this can be placeholder or Session ID.
+  groupId: string;
   groupName: string;
   status: 'pending' | 'accepted' | 'rejected';
   createdAt: number;
-  type?: 'group' | 'session'; // Distinguish invite types
-  link?: string; // URL for session invites
+  type?: 'group' | 'session';
+  link?: string;
 }
 
 export interface Booking {
   id: string;
   userId: string;
-  hostName?: string; // Name of the person booking (for P2P)
-  mentorId: string; // Corresponds to Channel ID OR 'p2p-meeting'
-  mentorName: string; // Channel Title OR 'Peer Meeting'
+  hostName?: string;
+  mentorId: string;
+  mentorName: string;
   mentorImage: string;
-  date: string; // YYYY-MM-DD
-  time: string; // HH:mm
+  date: string;
+  time: string;
   topic: string;
-  invitedEmail?: string; // For inviting another member or the P2P Guest
+  invitedEmail?: string;
   status: 'scheduled' | 'completed' | 'cancelled' | 'pending' | 'rejected';
   type?: 'ai' | 'p2p';
   createdAt: number;
-  recordingUrl?: string; // URL to audio recording
-  transcriptUrl?: string; // URL to transcript markdown
+  recordingUrl?: string;
+  transcriptUrl?: string;
 }
-// ... rest of file is unchanged, but included for context ...
+
 export type AttachmentType = 'image' | 'audio' | 'video' | 'file';
 
 export interface Attachment {
@@ -42,7 +42,7 @@ export interface Attachment {
 
 export interface Comment {
   id: string;
-  userId?: string; // Added for ownership check
+  userId?: string;
   user: string;
   text: string;
   timestamp: number;
@@ -53,7 +53,6 @@ export interface TranscriptItem {
   role: 'user' | 'ai';
   text: string;
   timestamp: number;
-  // ... existing fields ...
 }
 
 export interface SubTopic {
@@ -70,33 +69,39 @@ export interface Chapter {
 
 export type ChannelVisibility = 'private' | 'public' | 'group';
 
+export interface ChannelStats {
+  likes: number;
+  dislikes: number;
+  shares: number;
+}
+
 export interface Channel {
   id: string;
   title: string;
   description: string;
   author: string;
-  ownerId?: string; // Firebase UID of creator
+  ownerId?: string;
   visibility?: ChannelVisibility;
-  groupId?: string; // If visibility is 'group'
-  voiceName: string; // 'Puck', 'Charon', 'Kore', 'Fenrir', 'Zephyr'
+  groupId?: string;
+  voiceName: string;
   systemInstruction: string;
   likes: number;
   dislikes: number;
-  shares?: number; // Added for share tracking
+  shares?: number;
   comments: Comment[];
   tags: string[];
   imageUrl: string;
   welcomeMessage?: string;
   starterPrompts?: string[];
   chapters?: Chapter[];
-  appendix?: Attachment[]; // New field for generated/uploaded docs
-  createdAt?: number; // Timestamp for sorting
+  appendix?: Attachment[];
+  createdAt?: number;
 }
 
 export interface LectureSection {
-  speaker: string; // 'Teacher' | 'Student'
+  speaker: string;
   text: string;
-  discussionId?: string; // ID of the linked discussion
+  discussionId?: string;
 }
 
 export interface GeneratedLecture {
@@ -114,12 +119,12 @@ export interface CommunityDiscussion {
   userName: string;
   transcript: TranscriptItem[];
   summary?: string;
-  designDoc?: string; // New field for generated formal document
+  designDoc?: string;
   createdAt: number;
-  segmentIndex?: number; // If linked to a specific segment
+  segmentIndex?: number;
   updatedAt?: number;
-  title?: string; // Editable title for docs
-  isManual?: boolean; // Created manually via editor
+  title?: string;
+  isManual?: boolean;
 }
 
 export type ViewState = 'directory' | 'podcast_detail' | 'live_session' | 'create_channel' | 'debug' | 'cloud_debug' | 'public_debug' | 'mission' | 'code_studio' | 'whiteboard' | 'blog' | 'chat' | 'careers' | 'user_guide';
@@ -145,17 +150,17 @@ export interface UserProfile {
   email: string;
   displayName: string;
   photoURL: string;
-  groups: string[]; // IDs of groups joined
-  interests?: string[]; // Personal interests for recommendations
+  groups: string[];
+  interests?: string[];
   apiUsageCount?: number;
-  createdAt?: number; // Added for sorting
+  createdAt?: number;
   lastLogin?: any;
   subscriptionTier?: SubscriptionTier;
   subscriptionStatus?: 'active' | 'past_due' | 'canceled';
-  defaultRepoUrl?: string; // User preferred git repo
-  followers?: string[]; // IDs of users following this user
-  following?: string[]; // IDs of users this user is following
-  likedChannelIds?: string[]; // IDs of channels liked by user
+  defaultRepoUrl?: string;
+  followers?: string[];
+  following?: string[];
+  likedChannelIds?: string[];
 }
 
 export interface RecordingSession {
@@ -165,8 +170,8 @@ export interface RecordingSession {
   channelTitle: string;
   channelImage: string;
   timestamp: number;
-  mediaUrl: string;     // audio or video
-  mediaType: string;    // mime type
+  mediaUrl: string;
+  mediaType: string;
   transcriptUrl: string;
 }
 
@@ -174,20 +179,20 @@ export interface TodoItem {
   id: string;
   text: string;
   isCompleted: boolean;
-  date: string; // YYYY-MM-DD
+  date: string;
 }
 
 export interface CodeFile {
   name: string;
   language: 'python' | 'javascript' | 'typescript' | 'html' | 'css' | 'java' | 'c++' | 'c' | 'rust' | 'go' | 'c#' | 'json' | 'markdown' | 'text' | 'typescript (react)' | 'javascript (react)' | 'plantuml';
   content: string;
-  sha?: string; // GitHub blob SHA for updates
-  path?: string; // Full path in repo
-  loaded?: boolean; // For lazy loading large repos
-  isDirectory?: boolean; // Is this a folder?
-  treeSha?: string; // If folder, the SHA of the tree
-  childrenFetched?: boolean; // Have we fetched this folder's contents?
-  isModified?: boolean; // Has the file been edited locally?
+  sha?: string;
+  path?: string;
+  loaded?: boolean;
+  isDirectory?: boolean;
+  treeSha?: string;
+  childrenFetched?: boolean;
+  isModified?: boolean;
 }
 
 export interface ChatMessage {
@@ -203,12 +208,12 @@ export interface GithubMetadata {
 }
 
 export interface CursorPosition {
-  clientId: string; // Unique per session/tab (allows same user in 2 tabs)
+  clientId: string;
   userId: string;
   userName: string;
-  fileName: string; // The file they are looking at
-  line: number; // 1-based line number
-  column: number; // 0-based column index
+  fileName: string;
+  line: number;
+  column: number;
   color: string;
   updatedAt: number;
 }
@@ -224,17 +229,17 @@ export interface CodeProject {
   humanComments?: string;
   interviewFeedback?: string;
   chatHistory?: ChatMessage[];
-  cursors?: Record<string, CursorPosition>; // Map of ClientID -> Cursor
-  activeClientId?: string; // LOCK: The ClientID currently holding write access
-  activeWriterName?: string; // Display name of the active writer
-  activeFilePath?: string; // SYNC: The file path currently active by the writer
-  editRequest?: { // Pending request for control
+  cursors?: Record<string, CursorPosition>;
+  activeClientId?: string;
+  activeWriterName?: string;
+  activeFilePath?: string;
+  editRequest?: {
     clientId: string;
     userName: string;
     timestamp: number;
   };
-  accessLevel?: 'public' | 'restricted'; // Access control
-  allowedUserIds?: string[]; // Whitelist for restricted projects
+  accessLevel?: 'public' | 'restricted';
+  allowedUserIds?: string[];
 }
 
 export interface Blog {
@@ -285,7 +290,7 @@ export interface RealTimeMessage {
   senderId: string;
   senderName: string;
   senderImage?: string;
-  timestamp: any; // Firestore Timestamp or number
+  timestamp: any;
   replyTo?: {
     id: string;
     text: string;
@@ -298,7 +303,7 @@ export interface CareerApplication {
   userId: string;
   userName: string;
   userEmail: string;
-  userPhotoURL?: string; // Added for displaying profile photo
+  userPhotoURL?: string;
   role: 'mentor' | 'expert' | 'contributor';
   expertise: string[];
   bio: string;
@@ -316,11 +321,10 @@ export interface JobPosting {
   description: string;
   requirements?: string;
   contactEmail: string;
-  postedBy: string; // userId
+  postedBy: string;
   postedAt: number;
 }
 
-// Whiteboard Types
 export type ToolType = 'select' | 'pen' | 'eraser' | 'rect' | 'circle' | 'line' | 'arrow' | 'text' | 'pan' | 'triangle' | 'star' | 'curve';
 export type LineStyle = 'solid' | 'dashed' | 'dotted' | 'dash-dot' | 'long-dash';
 export type BrushType = 'standard' | 'pencil' | 'marker' | 'calligraphy-pen' | 'writing-brush' | 'airbrush' | 'oil' | 'watercolor' | 'crayon';
@@ -328,12 +332,12 @@ export type BrushType = 'standard' | 'pencil' | 'marker' | 'calligraphy-pen' | '
 export interface WhiteboardElement {
   id: string;
   type: ToolType;
-  points?: { x: number; y: number }[]; // For pen and curve
+  points?: { x: number; y: number }[];
   x: number;
   y: number;
   width?: number;
   height?: number;
-  endX?: number; // For line/arrow
+  endX?: number;
   endY?: number;
   text?: string;
   color: string;
@@ -342,13 +346,12 @@ export interface WhiteboardElement {
   brushType?: BrushType;
   fontSize?: number;
   fontFamily?: string;
-  borderRadius?: number; // For rect
-  rotation?: number; // In degrees
-  startArrow?: boolean; // For curve
-  endArrow?: boolean; // For curve
+  borderRadius?: number;
+  rotation?: number;
+  startArrow?: boolean;
+  endArrow?: boolean;
 }
 
-// Cloud Storage Type
 export interface CloudItem {
   name: string;
   fullPath: string;

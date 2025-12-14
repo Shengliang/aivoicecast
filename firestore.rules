@@ -59,22 +59,21 @@ service cloud.firestore {
     }
 
     // ----------------------------------------------------------------------
-    // PODCAST CHANNELS
+    // PODCAST CHANNELS & STATS
+    // ----------------------------------------------------------------------
+    
+    // Main Channel Metadata: STRICT. Only Owner/Admin can write.
     match /channels/{channelId} {
       allow read: if true; 
       allow create: if isAuthenticated();
       
-      // Update Rule:
-      // 1. Owner can update everything.
-      // 2. Admin can update everything.
-      // 3. Allow claiming channels that are orphaned (null owner) or marked 'system'.
-      // 4. OR: Any authenticated user can update ONLY interaction fields (likes, comments, etc.)
       allow update: if isAuthenticated() && (
         resource.data.ownerId == request.auth.uid || 
         resource.data.ownerId == null ||
         resource.data.ownerId == 'system' ||
         isAdmin() ||
-        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likes', 'dislikes', 'shares', 'comments', 'appendix'])
+        // Only allow non-owners to update comments/appendix, but NOT counters
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['comments', 'appendix'])
       );
       
       allow delete: if isAuthenticated() && (resource.data.ownerId == request.auth.uid || resource.data.ownerId == null || isAdmin());
@@ -82,6 +81,13 @@ service cloud.firestore {
       match /lectures/{lectureId} { allow read, write: if true; }
       match /comments/{commentId} { allow read, write: if true; }
       match /meta/{docId} { allow read, write: if true; }
+    }
+
+    // Separate Stats Table for Counters (Likes, Dislikes, Shares)
+    // Allows any authenticated member to update counters for ANY channel.
+    match /channel_stats/{channelId} {
+      allow read: if true;
+      allow write: if isAuthenticated();
     }
 
     // ----------------------------------------------------------------------

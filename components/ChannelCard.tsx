@@ -1,9 +1,9 @@
 
 import React, { useState, useEffect } from 'react';
-import { Channel } from '../types';
+import { Channel, ChannelStats } from '../types';
 import { Play, Heart, MessageSquare, Lock, Globe, Users, Edit, Share2, Bookmark } from 'lucide-react';
 import { OFFLINE_CHANNEL_ID } from '../utils/offlineContent';
-import { shareChannel } from '../services/firestoreService';
+import { shareChannel, subscribeToChannelStats } from '../services/firestoreService';
 
 interface ChannelCardProps {
   channel: Channel;
@@ -26,6 +26,22 @@ export const ChannelCard: React.FC<ChannelCardProps> = ({
   const isOwner = currentUser && (channel.ownerId === currentUser.uid || currentUser.email === 'shengliang.song@gmail.com');
   const [isBookmarked, setIsBookmarked] = useState(false);
   const [hasLiked, setHasLiked] = useState(isLiked);
+  
+  // Real-time Stats from separate collection
+  const [stats, setStats] = useState<ChannelStats>({
+      likes: channel.likes,
+      dislikes: channel.dislikes,
+      shares: channel.shares || 0
+  });
+
+  useEffect(() => {
+      // Subscribe to real-time updates for likes/shares
+      // This is crucial because the main 'channels' document is now read-only for non-owners
+      const unsubscribe = subscribeToChannelStats(channel.id, (newStats) => {
+          setStats(prev => ({ ...prev, ...newStats }));
+      });
+      return () => unsubscribe();
+  }, [channel.id]);
 
   // Sync state when prop updates (e.g. after profile load)
   useEffect(() => {
@@ -147,7 +163,7 @@ export const ChannelCard: React.FC<ChannelCardProps> = ({
               className={`flex items-center gap-1.5 transition-colors group/btn ${hasLiked ? 'text-red-500' : 'text-slate-400 hover:text-red-500'}`}
             >
               <Heart size={18} className={hasLiked ? "fill-red-500" : "group-hover/btn:fill-red-500"} />
-              <span className="text-xs font-medium">{channel.likes}</span>
+              <span className="text-xs font-medium">{stats.likes}</span>
             </button>
             
             <button 
@@ -166,7 +182,7 @@ export const ChannelCard: React.FC<ChannelCardProps> = ({
               className="flex items-center gap-1.5 text-slate-400 hover:text-white transition-colors"
             >
               <Share2 size={18} />
-              <span className="text-xs font-medium">{channel.shares || 0}</span>
+              <span className="text-xs font-medium">{stats.shares}</span>
             </button>
           </div>
           

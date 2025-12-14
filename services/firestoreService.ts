@@ -1,6 +1,3 @@
-
-import { db, storage, auth } from './firebaseConfig';
-import firebase from 'firebase/compat/app';
 import { 
   Channel, 
   GeneratedLecture, 
@@ -22,13 +19,18 @@ import {
   CareerApplication,
   JobPosting,
   ChatChannel,
-  SubscriptionTier
+  SubscriptionTier,
+  ChannelStats,
+  GlobalStats
 } from '../types';
+import { db, auth, storage } from './firebaseConfig';
+import firebase from 'firebase/compat/app';
 import { HANDCRAFTED_CHANNELS } from '../utils/initialData';
 
 // Collection Constants
 const USERS_COLLECTION = 'users';
 const CHANNELS_COLLECTION = 'channels';
+const CHANNEL_STATS_COLLECTION = 'channel_stats';
 const LECTURES_COLLECTION = 'lectures';
 const CURRICULUM_COLLECTION = 'curriculums';
 const DISCUSSIONS_COLLECTION = 'discussions';
@@ -45,144 +47,111 @@ const JOBS_COLLECTION = 'job_postings';
 const APPLICATIONS_COLLECTION = 'career_applications';
 const STATS_COLLECTION = 'stats';
 const DM_CHANNELS_COLLECTION = 'chat_channels';
+const ACTIVITY_LOGS_COLLECTION = 'activity_logs';
 
-// --- Stats & Global ---
-
-export async function getGlobalStats() {
-  const doc = await db.collection(STATS_COLLECTION).doc('global').get();
-  return doc.exists ? doc.data() as any : { totalLogins: 0, uniqueUsers: 0 };
-}
-
-export async function recalculateGlobalStats() {
-  const usersSnap = await db.collection(USERS_COLLECTION).get();
-  const count = usersSnap.size;
-  await db.collection(STATS_COLLECTION).doc('global').set({ uniqueUsers: count }, { merge: true });
-  return count;
-}
-
-export async function seedDatabase() {
-  const batch = db.batch();
-  for (const channel of HANDCRAFTED_CHANNELS) {
-    const ref = db.collection(CHANNELS_COLLECTION).doc(channel.id);
-    batch.set(ref, { ...channel, visibility: 'public' }, { merge: true });
-  }
-  await batch.commit();
-}
-
-export async function claimSystemChannels(email: string) {
-  // 1. Find the target user to assign ownership to
-  const userSnap = await db.collection(USERS_COLLECTION).where('email', '==', email).limit(1).get();
-  if (userSnap.empty) throw new Error("User with this email not found in database.");
-  
-  const uid = userSnap.docs[0].id;
-  const userData = userSnap.docs[0].data();
-  const newAuthorName = userData.displayName || userData.email || 'Admin'; // Get proper display name
-  
-  const batch = db.batch();
-  let count = 0;
-  
-  // 2. Scan all channels
-  const allSnap = await db.collection(CHANNELS_COLLECTION).get();
-  
-  allSnap.forEach(doc => {
-      const data = doc.data();
-      // Claim if: No owner, Owner is null/empty, OR Owner is 'system' string
-      if (!data.ownerId || data.ownerId === 'system' || data.ownerId === '') {
-          batch.update(doc.ref, { 
-              ownerId: uid,
-              author: newAuthorName // Force update author to match new owner
-          });
-          count++;
-      }
-  });
-  
-  if (count > 0) {
-      await batch.commit();
-  }
-  return count;
-}
-
-// --- Users ---
-
-export async function syncUserProfile(user: firebase.User) {
-  const ref = db.collection(USERS_COLLECTION).doc(user.uid);
-  const doc = await ref.get();
-  
-  const statsRef = db.collection(STATS_COLLECTION).doc('global');
-
-  if (!doc.exists) {
-    await ref.set({
-      uid: user.uid,
-      email: user.email,
-      displayName: user.displayName,
-      photoURL: user.photoURL,
-      createdAt: Date.now(),
-      apiUsageCount: 0,
-      groups: [],
-      subscriptionTier: 'free'
-    });
-    // Increment global stats (Using set with merge to ensure document creation)
-    await statsRef.set({ 
-        uniqueUsers: firebase.firestore.FieldValue.increment(1),
-        totalLogins: firebase.firestore.FieldValue.increment(1)
-    }, { merge: true });
-  } else {
-    await ref.update({ lastLogin: Date.now() });
-    // Increment total logins for returning users as well
-    await statsRef.set({ 
-        totalLogins: firebase.firestore.FieldValue.increment(1)
-    }, { merge: true });
-  }
-}
+// --- User & Profile ---
 
 export async function getUserProfile(uid: string): Promise<UserProfile | null> {
-  const doc = await db.collection(USERS_COLLECTION).doc(uid).get();
-  return doc.exists ? doc.data() as UserProfile : null;
+  try {
+    const doc = await db.collection(USERS_COLLECTION).doc(uid).get();
+    if (doc.exists) {
+      return doc.data() as UserProfile;
+    }
+    return null;
+  } catch (error) {
+    console.error("Error fetching user profile:", error);
+    return null;
+  }
 }
 
-export async function getUserProfileByEmail(email: string): Promise<UserProfile | null> {
-  const snap = await db.collection(USERS_COLLECTION).where('email', '==', email).limit(1).get();
-  if (snap.empty) return null;
-  return snap.docs[0].data() as UserProfile;
-}
+export async function syncUserProfile(user: firebase.User): Promise<void> {
+  const userRef = db.collection(USERS_COLLECTION).doc(user.uid);
+  const doc = await userRef.get();
+  
+  const userData: Partial<UserProfile> = {
+    uid: user.uid,
+    email: user.email || '',
+    displayName: user.displayName || 'Anonymous',
+    photoURL: user.photoURL || '',
+    lastLogin: firebase.firestore.FieldValue.serverTimestamp()
+  };
 
-export async function getAllUsers(): Promise<UserProfile[]> {
-  const snap = await db.collection(USERS_COLLECTION).limit(100).get(); // Limit for performance
-  return snap.docs.map(d => d.data() as UserProfile);
+  if (!doc.exists) {
+    // New User
+    await userRef.set({
+      ...userData,
+      createdAt: Date.now(),
+      groups: [],
+      apiUsageCount: 0,
+      subscriptionTier: 'free'
+    });
+    // Increment global user count
+    const statsRef = db.collection(STATS_COLLECTION).doc('global');
+    await statsRef.set({ uniqueUsers: firebase.firestore.FieldValue.increment(1) }, { merge: true });
+  } else {
+    // Update existing
+    await userRef.update(userData);
+  }
 }
 
 export async function updateUserProfile(uid: string, data: Partial<UserProfile>) {
-  await db.collection(USERS_COLLECTION).doc(uid).update(data);
+    await db.collection(USERS_COLLECTION).doc(uid).update(data);
+}
+
+export async function getAllUsers(): Promise<UserProfile[]> {
+    const snap = await db.collection(USERS_COLLECTION).limit(100).get(); // Limit for safety
+    return snap.docs.map(d => d.data() as UserProfile);
+}
+
+export async function getUserProfileByEmail(email: string): Promise<UserProfile | null> {
+    const snap = await db.collection(USERS_COLLECTION).where('email', '==', email).limit(1).get();
+    if (!snap.empty) {
+        return snap.docs[0].data() as UserProfile;
+    }
+    return null;
 }
 
 export async function incrementApiUsage(uid: string) {
-  await db.collection(USERS_COLLECTION).doc(uid).update({
-    apiUsageCount: firebase.firestore.FieldValue.increment(1)
-  });
+    const userRef = db.collection(USERS_COLLECTION).doc(uid);
+    await userRef.update({
+        apiUsageCount: firebase.firestore.FieldValue.increment(1)
+    });
 }
 
-export async function setUserSubscriptionTier(uid: string, tier: SubscriptionTier) {
-  await db.collection(USERS_COLLECTION).doc(uid).update({ subscriptionTier: tier });
+export async function logUserActivity(action: string, metadata: any = {}) {
+    if (!auth.currentUser) return;
+    await db.collection(ACTIVITY_LOGS_COLLECTION).add({
+        action,
+        metadata,
+        timestamp: firebase.firestore.FieldValue.serverTimestamp(),
+        userId: auth.currentUser.uid
+    });
+    
+    // Increment global login counter if login
+    if (action === 'login') {
+        const statsRef = db.collection(STATS_COLLECTION).doc('global');
+        await statsRef.set({ totalLogins: firebase.firestore.FieldValue.increment(1) }, { merge: true });
+    }
 }
 
-export async function logUserActivity(action: string, details: any) {
-  if (!auth.currentUser) return;
-  await db.collection('activity_logs').add({
-    userId: auth.currentUser.uid,
-    action,
-    details,
-    timestamp: Date.now()
-  });
+export async function getGlobalStats(): Promise<GlobalStats> {
+    const doc = await db.collection(STATS_COLLECTION).doc('global').get();
+    if (doc.exists) {
+        return doc.data() as GlobalStats;
+    }
+    return { totalLogins: 0, uniqueUsers: 0 };
 }
+
+// --- Social Graph (Follow/Unfollow) ---
 
 export async function followUser(followerId: string, targetId: string) {
     const batch = db.batch();
     const followerRef = db.collection(USERS_COLLECTION).doc(followerId);
     const targetRef = db.collection(USERS_COLLECTION).doc(targetId);
-    
+
     batch.update(followerRef, { following: firebase.firestore.FieldValue.arrayUnion(targetId) });
     batch.update(targetRef, { followers: firebase.firestore.FieldValue.arrayUnion(followerId) });
-    
+
     await batch.commit();
 }
 
@@ -190,17 +159,79 @@ export async function unfollowUser(followerId: string, targetId: string) {
     const batch = db.batch();
     const followerRef = db.collection(USERS_COLLECTION).doc(followerId);
     const targetRef = db.collection(USERS_COLLECTION).doc(targetId);
-    
+
     batch.update(followerRef, { following: firebase.firestore.FieldValue.arrayRemove(targetId) });
     batch.update(targetRef, { followers: firebase.firestore.FieldValue.arrayRemove(followerId) });
-    
+
     await batch.commit();
+}
+
+// --- Admin / Debug ---
+
+export async function seedDatabase() {
+    const batch = db.batch();
+    // Assuming HANDCRAFTED_CHANNELS is imported from initialData
+    HANDCRAFTED_CHANNELS.forEach(channel => {
+        // Only seed if not offline channel
+        if (channel.id !== 'offline-architecture-101') {
+            const ref = db.collection(CHANNELS_COLLECTION).doc(channel.id);
+            // Set channel data
+            batch.set(ref, {
+                ...channel,
+                visibility: 'public', // Force public for seeded channels
+                ownerId: null // System owned
+            }, { merge: true });
+            
+            // Init stats
+            const statsRef = db.collection(CHANNEL_STATS_COLLECTION).doc(channel.id);
+            batch.set(statsRef, {
+                likes: channel.likes,
+                dislikes: channel.dislikes,
+                shares: 0
+            }, { merge: true });
+        }
+    });
+    await batch.commit();
+}
+
+export async function recalculateGlobalStats() {
+    const usersSnap = await db.collection(USERS_COLLECTION).get();
+    const count = usersSnap.size;
+    await db.collection(STATS_COLLECTION).doc('global').set({ uniqueUsers: count }, { merge: true });
+    return count;
+}
+
+export async function claimSystemChannels(email: string) {
+    const user = await getUserProfileByEmail(email);
+    if (!user) throw new Error("User not found");
+    
+    const snap = await db.collection(CHANNELS_COLLECTION).where('ownerId', '==', null).get();
+    const batch = db.batch();
+    let count = 0;
+    
+    snap.docs.forEach(doc => {
+        batch.update(doc.ref, { ownerId: user.uid });
+        count++;
+    });
+    
+    if (count > 0) await batch.commit();
+    return count;
+}
+
+export async function setUserSubscriptionTier(uid: string, tier: 'free' | 'pro') {
+    await db.collection(USERS_COLLECTION).doc(uid).update({ subscriptionTier: tier });
 }
 
 // --- Channels ---
 
 export async function publishChannelToFirestore(channel: Channel) {
   await db.collection(CHANNELS_COLLECTION).doc(channel.id).set(channel);
+  // Initialize separate stats doc
+  await db.collection(CHANNEL_STATS_COLLECTION).doc(channel.id).set({
+      likes: channel.likes || 0,
+      dislikes: channel.dislikes || 0,
+      shares: channel.shares || 0
+  }, { merge: true });
 }
 
 export async function getPublicChannels(): Promise<Channel[]> {
@@ -214,7 +245,6 @@ export async function getPublicChannels(): Promise<Channel[]> {
     return snap.docs.map(d => d.data() as Channel);
   } catch (e: any) {
     // Fallback: If index is missing, query without sort and sort in memory
-    // This allows the app to work for developers without manually creating the index first
     if (e.code === 'failed-precondition' || e.message?.includes('index')) {
         console.warn("Firestore Index missing for Public Channels. Falling back to client-side sort.");
         const snap = await db.collection(CHANNELS_COLLECTION)
@@ -225,7 +255,6 @@ export async function getPublicChannels(): Promise<Channel[]> {
         // Manual Sort
         return data.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
     }
-    // Re-throw if it's a permission error or other issue
     throw e;
   }
 }
@@ -238,6 +267,17 @@ export function subscribeToPublicChannels(onUpdate: (channels: Channel[]) => voi
     .onSnapshot(snap => {
       onUpdate(snap.docs.map(d => d.data() as Channel));
     }, onError);
+}
+
+export function subscribeToChannelStats(channelId: string, onUpdate: (stats: ChannelStats) => void) {
+    return db.collection(CHANNEL_STATS_COLLECTION).doc(channelId).onSnapshot(doc => {
+        if (doc.exists) {
+            onUpdate(doc.data() as ChannelStats);
+        } else {
+            // Fallback default
+            onUpdate({ likes: 0, dislikes: 0, shares: 0 });
+        }
+    });
 }
 
 export async function getGroupChannels(groupIds: string[]): Promise<Channel[]> {
@@ -260,16 +300,16 @@ export async function getGroupChannels(groupIds: string[]): Promise<Channel[]> {
 }
 
 export async function voteChannel(channel: Channel, type: 'like' | 'dislike') {
-  const ref = db.collection(CHANNELS_COLLECTION).doc(channel.id);
+  const statsRef = db.collection(CHANNEL_STATS_COLLECTION).doc(channel.id);
   const userRef = db.collection(USERS_COLLECTION).doc(auth.currentUser!.uid);
   
   const batch = db.batch();
   
   if (type === 'like') {
-      batch.update(ref, { likes: firebase.firestore.FieldValue.increment(1) });
+      batch.set(statsRef, { likes: firebase.firestore.FieldValue.increment(1) }, { merge: true });
       batch.update(userRef, { likedChannelIds: firebase.firestore.FieldValue.arrayUnion(channel.id) });
   } else {
-      batch.update(ref, { likes: firebase.firestore.FieldValue.increment(-1) }); 
+      batch.set(statsRef, { likes: firebase.firestore.FieldValue.increment(-1) }, { merge: true }); 
       batch.update(userRef, { likedChannelIds: firebase.firestore.FieldValue.arrayRemove(channel.id) });
   }
   
@@ -277,13 +317,16 @@ export async function voteChannel(channel: Channel, type: 'like' | 'dislike') {
 }
 
 export async function deleteChannelFromFirestore(id: string) {
-  await db.collection(CHANNELS_COLLECTION).doc(id).delete();
+  const batch = db.batch();
+  batch.delete(db.collection(CHANNELS_COLLECTION).doc(id));
+  batch.delete(db.collection(CHANNEL_STATS_COLLECTION).doc(id));
+  await batch.commit();
 }
 
 export async function shareChannel(id: string) {
-    await db.collection(CHANNELS_COLLECTION).doc(id).update({
+    await db.collection(CHANNEL_STATS_COLLECTION).doc(id).set({
         shares: firebase.firestore.FieldValue.increment(1)
-    });
+    }, { merge: true });
 }
 
 export async function getChannelsByIds(ids: string[]): Promise<Channel[]> {
@@ -855,10 +898,13 @@ export async function createStripeCheckoutSession(uid: string): Promise<string> 
         success_url: window.location.origin,
         cancel_url: window.location.origin,
     });
+    // This would typically redirect to the URL in the doc, but we mock the success URL here for dev
     return window.location.origin + '?success=true';
 }
 
 export async function createStripePortalSession(uid: string): Promise<string> {
+    // This usually requires cloud function to generate link
+    // Returning a placeholder for now
     return 'https://billing.stripe.com/p/login/test';
 }
 
