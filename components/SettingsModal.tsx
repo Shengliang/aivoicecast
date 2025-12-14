@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { UserProfile } from '../types';
 import { X, User, Shield, CreditCard, LogOut, CheckCircle, AlertTriangle, Bell, Lock, Database, Trash2, Edit2, Save, FileText, ExternalLink, Loader2, DollarSign, HelpCircle, ChevronDown, ChevronUp, Github, Heart, Hash } from 'lucide-react';
 import { logUserActivity, getBillingHistory, createStripePortalSession, updateUserProfile } from '../services/firestoreService';
+import { signOut } from '../services/authService';
 import { clearAudioCache } from '../services/tts';
 import { TOPIC_CATEGORIES } from '../utils/initialData';
 
@@ -105,6 +106,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       }
   };
 
+  const handleLogout = async () => {
+      await signOut();
+      onClose();
+  };
+
   const handleDeleteAccount = () => {
       const confirmText = prompt("Type 'DELETE' to confirm account deletion. This action is irreversible.");
       if (confirmText === 'DELETE') {
@@ -184,7 +190,25 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                             </div>
                         </div>
                     </div>
+                    
                     <div className="h-px bg-slate-800 w-full" />
+
+                    {/* Sign Out Button */}
+                    <div>
+                        <button 
+                            onClick={handleLogout} 
+                            className="w-full py-3 bg-slate-800 hover:bg-slate-700 text-white rounded-xl font-bold flex items-center justify-center gap-2 border border-slate-700 transition-colors shadow-sm"
+                        >
+                            <LogOut size={18} />
+                            <span>Sign Out</span>
+                        </button>
+                        <p className="text-center text-[10px] text-slate-500 mt-2">
+                            To switch accounts, sign out and then select a different Google account.
+                        </p>
+                    </div>
+
+                    <div className="h-px bg-slate-800 w-full" />
+
                     <div className="space-y-4">
                         <h4 className="text-sm font-bold text-red-500 uppercase tracking-wider flex items-center gap-2"><AlertTriangle size={16}/> Danger Zone</h4>
                         <div className="bg-red-900/10 border border-red-900/30 rounded-xl p-4 flex items-center justify-between">

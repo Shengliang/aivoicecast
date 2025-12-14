@@ -5,7 +5,7 @@ import {
   Podcast, Mic, Layout, Search, Sparkles, LogOut, 
   Settings, Menu, X, Plus, Github, Database, Cloud, Globe, 
   Calendar, Briefcase, Users, Disc, FileText, AlertTriangle, List, BookOpen, ChevronDown, Table as TableIcon, LayoutGrid, Rocket, Code, Wand2, PenTool, Rss, Loader2, MessageSquare,
-  Home, Video as VideoIcon, Inbox, User, PlusSquare
+  Home, Video as VideoIcon, Inbox, User, PlusSquare, ArrowLeft, Play
 } from 'lucide-react';
 import { LiveSession } from './components/LiveSession';
 import { PodcastDetail } from './components/PodcastDetail';
@@ -124,6 +124,8 @@ const App: React.FC = () => {
   
   // Mobile Navigation State
   const [mobileFeedTab, setMobileFeedTab] = useState<'foryou' | 'following'>('foryou');
+  const [isMobileSearchOpen, setIsMobileSearchOpen] = useState(false);
+  const [mobileSearchQuery, setMobileSearchQuery] = useState('');
   
   // Auth State
   const [currentUser, setCurrentUser] = useState<any>(null);
@@ -491,6 +493,13 @@ const App: React.FC = () => {
           
           <button 
               onClick={() => { setViewState('directory'); setActiveTab('groups'); setIsAppsMenuOpen(false); }}
+              className={`flex-1 flex-col items-center gap-1 hidden ${activeTab === 'groups' && !isAppsMenuOpen ? 'text-white' : 'text-slate-500'}`}
+          >
+              {/* Hidden in simplified layout to fix spacing, or use flex-1 properly */}
+          </button>
+          
+          <button 
+              onClick={() => { setViewState('directory'); setActiveTab('groups'); setIsAppsMenuOpen(false); }}
               className={`flex flex-col items-center gap-1 ${activeTab === 'groups' && !isAppsMenuOpen ? 'text-white' : 'text-slate-500'}`}
           >
               <Users size={24} fill={activeTab === 'groups' && !isAppsMenuOpen ? "currentColor" : "none"} />
@@ -551,9 +560,82 @@ const App: React.FC = () => {
                   </button>
               </div>
 
-              <button onClick={() => { /* Open Search Modal */ }} className="pointer-events-auto text-white/80 hover:text-white">
+              <button onClick={() => setIsMobileSearchOpen(true)} className="pointer-events-auto text-white/80 hover:text-white">
                   <Search size={24} />
               </button>
+          </div>
+      );
+  };
+
+  // Mobile Search Overlay
+  const MobileSearchOverlay = () => {
+      if (!isMobileSearchOpen) return null;
+      
+      const filteredChannels = channels.filter(c => 
+          c.title.toLowerCase().includes(mobileSearchQuery.toLowerCase()) || 
+          c.description.toLowerCase().includes(mobileSearchQuery.toLowerCase()) ||
+          c.tags.some(t => t.toLowerCase().includes(mobileSearchQuery.toLowerCase()))
+      );
+
+      return (
+          <div className="fixed inset-0 z-50 bg-slate-950 flex flex-col animate-fade-in">
+              <div className="flex items-center gap-4 p-4 border-b border-slate-800 bg-slate-900">
+                  <button onClick={() => setIsMobileSearchOpen(false)} className="p-2 hover:bg-slate-800 rounded-full text-slate-400">
+                      <ArrowLeft size={24} />
+                  </button>
+                  <div className="flex-1 relative">
+                      <input 
+                          autoFocus
+                          type="text" 
+                          placeholder="Search podcasts..." 
+                          value={mobileSearchQuery}
+                          onChange={(e) => setMobileSearchQuery(e.target.value)}
+                          className="w-full bg-slate-800 border border-slate-700 rounded-full py-2 pl-4 pr-10 text-white focus:outline-none focus:border-indigo-500"
+                      />
+                      {mobileSearchQuery && (
+                          <button onClick={() => setMobileSearchQuery('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500">
+                              <X size={16} />
+                          </button>
+                      )}
+                  </div>
+              </div>
+              
+              <div className="flex-1 overflow-y-auto p-4">
+                  {mobileSearchQuery ? (
+                      <div className="space-y-4">
+                          <p className="text-xs font-bold text-slate-500 uppercase">Results</p>
+                          {filteredChannels.length === 0 ? (
+                              <p className="text-center text-slate-500 py-8">No results found.</p>
+                          ) : (
+                              filteredChannels.map(channel => (
+                                  <div 
+                                      key={channel.id} 
+                                      onClick={() => {
+                                          setActiveChannelId(channel.id);
+                                          setViewState('podcast_detail');
+                                          setIsMobileSearchOpen(false);
+                                      }}
+                                      className="flex items-center gap-4 p-3 bg-slate-900 border border-slate-800 rounded-xl active:scale-95 transition-transform"
+                                  >
+                                      <img src={channel.imageUrl} className="w-12 h-12 rounded-lg object-cover" alt="" />
+                                      <div className="flex-1 min-w-0">
+                                          <h4 className="font-bold text-white truncate">{channel.title}</h4>
+                                          <p className="text-xs text-slate-400 truncate">{channel.author}</p>
+                                      </div>
+                                      <button className="p-2 bg-indigo-600 rounded-full text-white">
+                                          <Play size={12} fill="currentColor"/>
+                                      </button>
+                                  </div>
+                              ))
+                          )}
+                      </div>
+                  ) : (
+                      <div className="text-center text-slate-500 mt-20">
+                          <Search size={48} className="mx-auto mb-4 opacity-20" />
+                          <p>Type to search podcasts</p>
+                      </div>
+                  )}
+              </div>
           </div>
       );
   };
@@ -682,6 +764,7 @@ const App: React.FC = () => {
       )}
 
       <MobileTopNav />
+      <MobileSearchOverlay />
 
       {/* Main Content */}
       <div className="flex-1 overflow-hidden h-[calc(100vh-64px)] md:h-[calc(100vh-64px)] pb-16 md:pb-0">
