@@ -32,7 +32,7 @@ service cloud.firestore {
       // Allow owner to update profile 
       // OR Admin to update anything (e.g. subscriptionTier)
       // OR any auth user to update ONLY the followers list (e.g. Follow button)
-      allow update: if isOwner(userId) || isAdmin() || (isAuthenticated() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['followers'])); 
+      allow update: if isOwner(userId) || isAdmin() || (isAuthenticated() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['followers', 'likedChannelIds', 'following'])); 
     }
 
     // ----------------------------------------------------------------------
@@ -87,7 +87,8 @@ service cloud.firestore {
     // Allows any authenticated member to update counters for ANY channel.
     match /channel_stats/{channelId} {
       allow read: if true;
-      allow write: if isAuthenticated();
+      allow write: if isAuthenticated() 
+                   && request.resource.data.likes is number;
     }
 
     // ----------------------------------------------------------------------

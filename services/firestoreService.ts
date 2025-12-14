@@ -330,17 +330,47 @@ export async function voteChannel(channel: Channel, type: 'like' | 'dislike') {
   const statsRef = db.collection(CHANNEL_STATS_COLLECTION).doc(channel.id);
   const userRef = db.collection(USERS_COLLECTION).doc(auth.currentUser!.uid);
   
-  const batch = db.batch();
-  
-  if (type === 'like') {
-      batch.set(statsRef, { likes: firebase.firestore.FieldValue.increment(1) }, { merge: true });
-      batch.update(userRef, { likedChannelIds: firebase.firestore.FieldValue.arrayUnion(channel.id) });
-  } else {
-      batch.set(statsRef, { likes: firebase.firestore.FieldValue.increment(-1) }, { merge: true }); 
-      batch.update(userRef, { likedChannelIds: firebase.firestore.FieldValue.arrayRemove(channel.id) });
-  }
-  
-  await batch.commit();
+  // Use a transaction to safely handle the "first vote" on legacy channels
+  await db.runTransaction(async (transaction) => {
+      const statsDoc = await transaction.get(statsRef);
+      
+      // Determine current counts (use static props if doc is missing)
+      let currentLikes = 0;
+      let currentDislikes = 0;
+      let currentShares = 0;
+      
+      if (statsDoc.exists) {
+          const data = statsDoc.data();
+          currentLikes = data?.likes || 0;
+          currentDislikes = data?.dislikes || 0;
+          currentShares = data?.shares || 0;
+      } else {
+          // Fallback to channel prop defaults if doc doesn't exist
+          currentLikes = channel.likes || 0;
+          currentDislikes = channel.dislikes || 0;
+          currentShares = channel.shares || 0;
+      }
+      
+      if (type === 'like') {
+          // Increment Likes
+          transaction.set(statsRef, { 
+              likes: currentLikes + 1, 
+              dislikes: currentDislikes,
+              shares: currentShares
+          }, { merge: true });
+          
+          transaction.update(userRef, { likedChannelIds: firebase.firestore.FieldValue.arrayUnion(channel.id) });
+      } else {
+          // Decrement Likes (Unlike)
+          transaction.set(statsRef, { 
+              likes: Math.max(0, currentLikes - 1),
+              dislikes: currentDislikes,
+              shares: currentShares
+          }, { merge: true });
+          
+          transaction.update(userRef, { likedChannelIds: firebase.firestore.FieldValue.arrayRemove(channel.id) });
+      }
+  });
 }
 
 export async function deleteChannelFromFirestore(id: string) {
