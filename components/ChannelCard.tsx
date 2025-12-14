@@ -24,6 +24,7 @@ export const ChannelCard: React.FC<ChannelCardProps> = ({
 }) => {
   const isOwner = currentUser && (channel.ownerId === currentUser.uid || currentUser.email === 'shengliang.song@gmail.com');
   const [isBookmarked, setIsBookmarked] = useState(false);
+  const [hasLiked, setHasLiked] = useState(false); // Local state for immediate toggle effect
 
   const handleShareClick = async (e: React.MouseEvent) => {
       e.stopPropagation();
@@ -48,6 +49,17 @@ export const ChannelCard: React.FC<ChannelCardProps> = ({
       e.stopPropagation();
       setIsBookmarked(!isBookmarked);
       // Persist to local storage if needed in future
+  };
+
+  const handleLikeClick = (e: React.MouseEvent) => {
+      e.stopPropagation();
+      if (hasLiked) {
+          handleVote(channel.id, 'dislike', e);
+          setHasLiked(false);
+      } else {
+          handleVote(channel.id, 'like', e);
+          setHasLiked(true);
+      }
   };
 
   return (
@@ -121,10 +133,10 @@ export const ChannelCard: React.FC<ChannelCardProps> = ({
         <div className="flex items-center justify-between pt-4 border-t border-slate-800">
           <div className="flex items-center gap-4">
             <button 
-              onClick={(e) => handleVote(channel.id, 'like', e)}
-              className="flex items-center gap-1.5 text-slate-400 hover:text-red-500 transition-colors group/btn"
+              onClick={handleLikeClick}
+              className={`flex items-center gap-1.5 transition-colors group/btn ${hasLiked ? 'text-red-500' : 'text-slate-400 hover:text-red-500'}`}
             >
-              <Heart size={18} className="group-hover/btn:fill-red-500" />
+              <Heart size={18} className={hasLiked ? "fill-red-500" : "group-hover/btn:fill-red-500"} />
               <span className="text-xs font-medium">{channel.likes}</span>
             </button>
             
