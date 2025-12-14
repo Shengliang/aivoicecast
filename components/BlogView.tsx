@@ -6,6 +6,7 @@ import { auth } from '../services/firebaseConfig';
 import { Edit3, Plus, Trash2, Globe, User, MessageSquare, Loader2, ArrowLeft, Save, Image as ImageIcon, Search, LayoutList, PenTool, Rss, X, Pin } from 'lucide-react';
 import { MarkdownView } from './MarkdownView';
 import { CommentsModal } from './CommentsModal';
+import { ARCHITECTURE_BLOG_POST } from '../utils/blogContent';
 
 interface BlogViewProps {
   currentUser: any;
@@ -45,9 +46,22 @@ export const BlogView: React.FC<BlogViewProps> = ({ currentUser, onBack }) => {
     setLoading(true);
     try {
       const data = await getCommunityPosts();
-      setPosts(data);
+      
+      // Merge static architecture post if not already in DB
+      const dbHasStatic = data.some(p => p.id === ARCHITECTURE_BLOG_POST.id);
+      if (!dbHasStatic) {
+          // Sort combined list by date
+          const combined = [ARCHITECTURE_BLOG_POST, ...data].sort((a, b) => b.createdAt - a.createdAt);
+          // Ensure pinned/static post is at top if desired, or just let date sort handle it
+          // Force architecture post to top for visibility if it's the "Welcome" post
+          setPosts([ARCHITECTURE_BLOG_POST, ...data.filter(p => p.id !== ARCHITECTURE_BLOG_POST.id)]);
+      } else {
+          setPosts(data);
+      }
     } catch (e) {
       console.error(e);
+      // Fallback to showing static post on error (e.g. offline)
+      setPosts([ARCHITECTURE_BLOG_POST]);
     } finally {
       setLoading(false);
     }
@@ -157,6 +171,20 @@ export const BlogView: React.FC<BlogViewProps> = ({ currentUser, onBack }) => {
       };
       
       try {
+          // If it's the static architecture post, we can't save comments to Firestore easily 
+          // without a real document ID. 
+          if (activePost.id === ARCHITECTURE_BLOG_POST.id) {
+              // Just optimistic update for session
+              const updatedPost = { 
+                  ...activePost, 
+                  comments: [...(activePost.comments || []), newComment],
+                  commentCount: (activePost.commentCount || 0) + 1
+              };
+              setActivePost(updatedPost);
+              setPosts(prev => prev.map(p => p.id === activePost.id ? updatedPost : p));
+              return;
+          }
+
           await addPostComment(activePost.id, newComment);
           // Optimistic update
           const updatedPost = { 
