@@ -702,7 +702,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
                     <button onClick={handleShare} className="flex items-center space-x-2 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-bold shadow-md" title="Share Session">
                         <Share2 size={14}/><span>Share</span>
                     </button>
-                    <button onClick={() => { if(confirm('Disconnect from session?')) onSessionStop?.(); }} className="flex items-center space-x-2 px-3 py-1.5 bg-red-600 hover:bg-red-500 text-white rounded-lg text-xs font-bold shadow-md">
+                    <button onClick={() => onSessionStop?.()} className="flex items-center space-x-2 px-3 py-1.5 bg-red-600 hover:bg-red-500 text-white rounded-lg text-xs font-bold shadow-md">
                         <WifiOff size={14}/><span>Stop</span>
                     </button>
                 </div>

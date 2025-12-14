@@ -508,7 +508,7 @@ export async function getSavedWordForUser(uid: string, word: string): Promise<an
 
 // --- Chat & Messaging ---
 
-export async function createOrGetDMChannel(otherUserId: string): Promise<string> {
+export async function createOrGetDMChannel(otherUserId: string, otherUserName?: string): Promise<string> {
     const user = auth.currentUser;
     if (!user) throw new Error("Not logged in");
     
@@ -520,16 +520,25 @@ export async function createOrGetDMChannel(otherUserId: string): Promise<string>
     const doc = await channelRef.get();
     
     if (!doc.exists) {
+        // Prepare names map for quick lookup
+        const names: Record<string, string> = {
+            [user.uid]: user.displayName || 'User'
+        };
+        
+        if (otherUserName) {
+            names[otherUserId] = otherUserName;
+        } else {
+             // Fallback: try to fetch if not provided
+             const p = await getUserProfile(otherUserId);
+             if (p) names[otherUserId] = p.displayName;
+        }
+
         await channelRef.set({
             id: channelId,
             type: 'dm',
             memberIds: participants,
             createdAt: Date.now(),
-            // Store names for quick lookup
-            names: {
-                [user.uid]: user.displayName,
-                // We'll update the other name later or fetch it
-            }
+            names
         });
     }
     
@@ -545,13 +554,24 @@ export async function getUserDMChannels(): Promise<ChatChannel[]> {
         .where('type', '==', 'dm')
         .get();
         
-    // Format names
-    return snap.docs.map(d => {
+    const channels = await Promise.all(snap.docs.map(async d => {
         const data = d.data();
         const otherId = data.memberIds.find((id: string) => id !== user.uid);
-        const name = data.names?.[otherId] || 'Unknown User';
-        return { ...data, name, id: d.id } as ChatChannel;
-    });
+        
+        let name = data.names?.[otherId];
+        
+        // Fix: If name is missing in channel doc (legacy data), fetch from profile
+        if (!name && otherId) {
+             const userDoc = await db.collection('users').doc(otherId).get();
+             if (userDoc.exists) {
+                 name = (userDoc.data() as UserProfile).displayName;
+             }
+        }
+        
+        return { ...data, name: name || 'Unknown User', id: d.id } as ChatChannel;
+    }));
+    
+    return channels;
 }
 
 export async function sendMessage(channelId: string, text: string, collectionPath: string, replyTo?: any, attachments?: any[]): Promise<void> {

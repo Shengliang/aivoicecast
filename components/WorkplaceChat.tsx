@@ -186,7 +186,7 @@ export const WorkplaceChat: React.FC<WorkplaceChatProps> = ({ onBack, currentUse
 
   const handleStartDM = async (otherUserId: string, otherUserName: string) => {
       try {
-          const channelId = await createOrGetDMChannel(otherUserId);
+          const channelId = await createOrGetDMChannel(otherUserId, otherUserName);
           const updatedDMs = await getUserDMChannels();
           setDms(updatedDMs);
           
