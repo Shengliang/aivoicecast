@@ -38,9 +38,10 @@ export const ChannelCard: React.FC<ChannelCardProps> = ({
   useEffect(() => {
       // Subscribe to real-time updates for likes/shares
       // This is crucial because the main 'channels' document is now read-only for non-owners
+      // We pass current channel stats as default so static channels don't flash to 0 if not in DB yet
       const unsubscribe = subscribeToChannelStats(channel.id, (newStats) => {
           setStats(prev => ({ ...prev, ...newStats }));
-      });
+      }, { likes: channel.likes, dislikes: channel.dislikes, shares: channel.shares || 0 });
       return () => unsubscribe();
   }, [channel.id]);
 

@@ -1,4 +1,3 @@
-
 import { 
   Channel, 
   GeneratedLecture, 
@@ -297,13 +296,13 @@ export function subscribeToPublicChannels(onUpdate: (channels: Channel[]) => voi
     }, onError);
 }
 
-export function subscribeToChannelStats(channelId: string, onUpdate: (stats: ChannelStats) => void) {
+export function subscribeToChannelStats(channelId: string, onUpdate: (stats: ChannelStats) => void, defaultStats?: ChannelStats) {
     return db.collection(CHANNEL_STATS_COLLECTION).doc(channelId).onSnapshot(doc => {
         if (doc.exists) {
             onUpdate(doc.data() as ChannelStats);
         } else {
             // Fallback default
-            onUpdate({ likes: 0, dislikes: 0, shares: 0 });
+            onUpdate(defaultStats || { likes: 0, dislikes: 0, shares: 0 });
         }
     });
 }
