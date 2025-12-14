@@ -8,6 +8,7 @@ import { followUser, unfollowUser } from '../services/firestoreService';
 import { generateLectureScript } from '../services/lectureGenerator';
 import { synthesizeSpeech } from '../services/tts';
 import { getCachedLectureScript, cacheLectureScript } from '../utils/db';
+import { GEMINI_API_KEY } from '../services/private_keys';
 
 interface PodcastFeedProps {
   channels: Channel[];
@@ -51,8 +52,7 @@ const MobileFeedCard = ({
     const [needsInteraction, setNeedsInteraction] = useState(false);
     const [loadingMessage, setLoadingMessage] = useState('');
     const [transcript, setTranscript] = useState<{speaker: string, text: string} | null>(null);
-    const [progress, setProgress] = useState(0); // 0 to 100 for bar
-
+    
     // Logic State
     const [trackIndex, setTrackIndex] = useState(-1); // -1 = Intro, 0+ = Lessons
     
@@ -94,7 +94,6 @@ const MobileFeedCard = ({
             setTranscript({ speaker: 'Host', text: introText });
             
             setTrackIndex(-1);
-            setProgress(0);
             
             // 2. Start Audio Sequence
             attemptAutoPlay();
@@ -129,7 +128,7 @@ const MobileFeedCard = ({
             try {
                 await ctx.resume();
             } catch (e) {
-                console.warn("Autoplay prevented (browser policy):", e);
+                // Ignore, will be caught in state check
             }
         }
 
@@ -150,7 +149,7 @@ const MobileFeedCard = ({
             setNeedsInteraction(false);
             // If we were stuck, start now. If already running, do nothing.
             if (!isProcessRunningRef.current) {
-                runTrackSequence(trackIndex);
+                runTrackSequence(trackIndex === -1 ? -1 : trackIndex);
             }
         }
     };
@@ -159,6 +158,15 @@ const MobileFeedCard = ({
         if (isProcessRunningRef.current) return; // Prevent overlapping loops
         isProcessRunningRef.current = true;
         setIsPlaying(true);
+
+        // Check API Key
+        const apiKey = localStorage.getItem('gemini_api_key') || GEMINI_API_KEY || process.env.API_KEY;
+        if (!apiKey) {
+            setTranscript({ speaker: 'System', text: "API Key Missing. Please set it in Settings to hear audio." });
+            setIsPlaying(false);
+            isProcessRunningRef.current = false;
+            return;
+        }
 
         let currentIndex = startIndex;
 
@@ -170,10 +178,12 @@ const MobileFeedCard = ({
             
             if (currentIndex === -1) {
                 // INTRO
-                // Don't show "Loading..." if we already displayed the text in the initial useEffect
-                if (!transcript) setLoadingMessage("Loading Intro..."); 
-                
                 const introText = channel.welcomeMessage || channel.description || `Welcome to ${channel.title}.`;
+                // Ensure intro text is displayed if not already
+                if (transcript?.text !== introText) {
+                    setTranscript({ speaker: 'Host', text: introText });
+                }
+                
                 textParts = [{
                     speaker: 'Host',
                     text: introText,
@@ -240,6 +250,11 @@ const MobileFeedCard = ({
             try {
                 const ctx = getAudioContext();
                 
+                // Try resume one more time just in case
+                if (ctx.state === 'suspended') {
+                    try { await ctx.resume(); } catch(e) {}
+                }
+
                 if (ctx.state === 'suspended') {
                     setNeedsInteraction(true);
                     isProcessRunningRef.current = false; // Break the loop
@@ -261,7 +276,7 @@ const MobileFeedCard = ({
                     sourceRef.current = source;
                     source.start(0);
                 } else {
-                    console.warn("TTS Gen failed or no buffer");
+                    console.warn("TTS Gen failed or no buffer", result.errorMessage);
                     setTimeout(resolve, 1000); 
                 }
             } catch (e) {
