@@ -4,7 +4,8 @@ import { Channel, ViewState, UserProfile, TranscriptItem, SubscriptionTier } fro
 import { 
   Podcast, Mic, Layout, Search, Sparkles, LogOut, 
   Settings, Menu, X, Plus, Github, Database, Cloud, Globe, 
-  Calendar, Briefcase, Users, Disc, FileText, AlertTriangle, List, BookOpen, ChevronDown, Table as TableIcon, LayoutGrid, Rocket, Code, Wand2, PenTool, Rss, Loader2, MessageSquare
+  Calendar, Briefcase, Users, Disc, FileText, AlertTriangle, List, BookOpen, ChevronDown, Table as TableIcon, LayoutGrid, Rocket, Code, Wand2, PenTool, Rss, Loader2, MessageSquare,
+  Home, Video as VideoIcon, Inbox, User, PlusSquare
 } from 'lucide-react';
 import { LiveSession } from './components/LiveSession';
 import { PodcastDetail } from './components/PodcastDetail';
@@ -119,6 +120,9 @@ const App: React.FC = () => {
   const [viewState, setViewState] = useState<ExtendedViewState>('directory');
   const [activeChannelId, setActiveChannelId] = useState<string | null>(null);
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
+  
+  // Mobile Navigation State
+  const [mobileFeedTab, setMobileFeedTab] = useState<'foryou' | 'following'>('foryou');
   
   // Auth State
   const [currentUser, setCurrentUser] = useState<any>(null);
@@ -410,26 +414,17 @@ const App: React.FC = () => {
       }));
   };
 
-  const allCategoryGroups = useMemo(() => {
-      const groups: Record<string, Channel[]> = {};
-      groups['Spotlight'] = HANDCRAFTED_CHANNELS;
-
-      Object.keys(TOPIC_CATEGORIES).forEach(category => {
-          const keywords = category.toLowerCase().split(/[ &]/).filter(w => w.length > 3);
-          const matches = channels.filter(c => 
-              keywords.some(k => c.tags.some(t => t.toLowerCase().includes(k)) || c.title.toLowerCase().includes(k))
-          );
-          if (matches.length > 0) {
-              groups[category] = matches;
-          }
-      });
-
-      return groups;
-  }, [channels]);
-
   // Combined Channel List for Feed
   const feedChannels = useMemo(() => {
       let data = [...channels];
+      
+      // Filter for "Following" tab (Mobile)
+      if (mobileFeedTab === 'following' && currentUser) {
+          // Simple logic: Only group channels or public channels user has interacted with
+          // Real app would have a 'subscribedChannels' array
+          data = data.filter(c => c.visibility === 'group' || c.likes > 50);
+      }
+
       if (searchQuery) {
           const lowerQ = searchQuery.toLowerCase();
           data = data.filter(c => 
@@ -438,8 +433,20 @@ const App: React.FC = () => {
               c.tags.some(t => t.toLowerCase().includes(lowerQ))
           );
       }
+      
+      // Shuffle logic for "refresh" handled in component state usually, 
+      // but here we just re-sort for "For You"
+      if (mobileFeedTab === 'foryou') {
+          // Default sorting logic handled inside PodcastFeed for ranking
+      }
+
       return data;
-  }, [channels, searchQuery]);
+  }, [channels, searchQuery, mobileFeedTab, currentUser]);
+
+  const handleRefreshFeed = () => {
+      // Simulate fetch new data by reshuffling locally for demo
+      setChannels(prev => [...prev.sort(() => 0.5 - Math.random())]);
+  };
 
   const handleUpgradeSuccess = async (newTier: SubscriptionTier) => {
       if (userProfile) {
@@ -470,26 +477,105 @@ const App: React.FC = () => {
       return <LoginPage onPrivacyClick={() => setIsPrivacyOpen(true)} />;
   }
 
+  // Mobile Bottom Nav Component
+  const MobileBottomNav = () => (
+      <div className="md:hidden fixed bottom-0 left-0 w-full bg-slate-950/90 backdrop-blur-md border-t border-slate-800 z-50 px-6 py-2 flex justify-between items-center safe-area-bottom">
+          <button 
+              onClick={() => { setViewState('directory'); setActiveTab('categories'); }}
+              className={`flex flex-col items-center gap-1 ${viewState === 'directory' ? 'text-white' : 'text-slate-500'}`}
+          >
+              <Home size={24} fill={viewState === 'directory' ? "currentColor" : "none"} />
+              <span className="text-[10px]">Home</span>
+          </button>
+          
+          <button 
+              onClick={() => { setViewState('directory'); setActiveTab('groups'); }}
+              className={`flex flex-col items-center gap-1 ${activeTab === 'groups' ? 'text-white' : 'text-slate-500'}`}
+          >
+              <Users size={24} fill={activeTab === 'groups' ? "currentColor" : "none"} />
+              <span className="text-[10px]">Friends</span>
+          </button>
+
+          <button 
+              onClick={() => setIsVoiceCreateOpen(true)}
+              className="flex flex-col items-center justify-center -mt-6"
+          >
+              <div className="bg-gradient-to-r from-blue-500 to-red-500 p-0.5 rounded-xl w-12 h-8 flex items-center justify-center shadow-lg hover:scale-105 transition-transform">
+                  <div className="bg-black w-full h-full rounded-lg flex items-center justify-center">
+                      <Plus size={20} className="text-white"/>
+                  </div>
+              </div>
+          </button>
+
+          <button 
+              onClick={() => setViewState('chat')}
+              className={`flex flex-col items-center gap-1 ${viewState === 'chat' ? 'text-white' : 'text-slate-500'}`}
+          >
+              <Inbox size={24} fill={viewState === 'chat' ? "currentColor" : "none"} />
+              <span className="text-[10px]">Inbox</span>
+          </button>
+
+          <button 
+              onClick={() => setIsAccountSettingsOpen(true)}
+              className={`flex flex-col items-center gap-1 ${isAccountSettingsOpen ? 'text-white' : 'text-slate-500'}`}
+          >
+              <User size={24} fill={isAccountSettingsOpen ? "currentColor" : "none"} />
+              <span className="text-[10px]">Profile</span>
+          </button>
+      </div>
+  );
+
+  // Mobile Top Nav Component (Overlay on Feed)
+  const MobileTopNav = () => {
+      if (viewState !== 'directory' || activeTab !== 'categories') return null;
+      return (
+          <div className="md:hidden fixed top-0 left-0 w-full z-40 bg-gradient-to-b from-black/80 to-transparent p-4 flex items-center justify-between pointer-events-none">
+              <button onClick={() => setViewState('live_session')} className="pointer-events-auto text-white/80 hover:text-white">
+                  <VideoIcon size={24} />
+              </button>
+              
+              <div className="flex gap-4 font-bold text-base pointer-events-auto">
+                  <button 
+                      onClick={() => setMobileFeedTab('following')}
+                      className={`${mobileFeedTab === 'following' ? 'text-white border-b-2 border-white pb-1' : 'text-white/60'}`}
+                  >
+                      Following
+                  </button>
+                  <span className="text-white/20">|</span>
+                  <button 
+                      onClick={() => setMobileFeedTab('foryou')}
+                      className={`${mobileFeedTab === 'foryou' ? 'text-white border-b-2 border-white pb-1' : 'text-white/60'}`}
+                  >
+                      For You
+                  </button>
+              </div>
+
+              <button onClick={() => { /* Open Search Modal */ }} className="pointer-events-auto text-white/80 hover:text-white">
+                  <Search size={24} />
+              </button>
+          </div>
+      );
+  };
+
   return (
-    <div className="min-h-screen supports-[min-height:100dvh]:min-h-[100dvh] bg-slate-950 text-slate-100 font-sans overflow-x-hidden">
+    <div className="min-h-screen supports-[min-height:100dvh]:min-h-[100dvh] bg-slate-950 text-slate-100 font-sans overflow-hidden">
       
-      {/* Navbar - Simplified for Feed Mode */}
+      {/* Navbar - Desktop Only */}
       {viewState !== 'chat' && viewState !== 'live_session' && (
-      <nav className="sticky top-0 z-30 bg-slate-900/90 backdrop-blur-md border-b border-slate-800">
+      <nav className="hidden md:block sticky top-0 z-30 bg-slate-900/90 backdrop-blur-md border-b border-slate-800">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
             <div className="flex items-center cursor-pointer" onClick={() => { setViewState('directory'); }}>
               <div className="bg-gradient-to-tr from-indigo-600 to-purple-600 p-2 rounded-xl shadow-lg shadow-indigo-500/20">
                 <Podcast className="text-white w-6 h-6" />
               </div>
-              <span className="ml-3 text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-white to-slate-400 hidden sm:block">
+              <span className="ml-3 text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-white to-slate-400">
                 {t.appTitle}
               </span>
             </div>
             
-            {/* Conditional Search - Hidden on Main Feed to reduce clutter, visible elsewhere */}
             {(viewState as string) !== 'directory' && (
-            <div className="hidden md:flex flex-1 max-w-md mx-8 relative">
+            <div className="flex flex-1 max-w-md mx-8 relative">
               <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                 <Search className="h-4 w-4 text-slate-500" />
               </div>
@@ -507,9 +593,7 @@ const App: React.FC = () => {
             )}
 
             <div className="flex items-center space-x-2 sm:space-x-4">
-              
-              {/* Feature Buttons - Hidden on Mobile to reduce noise */}
-              <div className="hidden lg:flex gap-2">
+              <div className="flex gap-2">
                   <button 
                     onClick={() => setViewState('code_studio')} 
                     className="flex items-center space-x-2 px-3 py-1.5 bg-slate-800/50 hover:bg-emerald-900/30 text-emerald-400 text-xs font-bold rounded-lg transition-colors"
@@ -524,11 +608,10 @@ const App: React.FC = () => {
                   </button>
               </div>
 
-              {/* Language Toggle */}
               <button 
                 onClick={() => setLanguage(prev => prev === 'en' ? 'zh' : 'en')}
                 className="w-9 h-9 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-xs font-bold text-slate-300 hover:text-white hover:border-slate-500 transition-all"
-                title={language === 'en' ? "Switch to Chinese" : "Switch to English"}
+                title="Switch Language"
               >
                 {language === 'en' ? '中' : 'EN'}
               </button>
@@ -578,8 +661,10 @@ const App: React.FC = () => {
       </nav>
       )}
 
+      <MobileTopNav />
+
       {/* Main Content */}
-      <div className="flex-1 overflow-hidden h-[calc(100vh-64px)]">
+      <div className="flex-1 overflow-hidden h-[calc(100vh-64px)] md:h-[calc(100vh-64px)] pb-16 md:pb-0">
         {viewState === 'mission' && <MissionManifesto onBack={() => setViewState('directory')} />}
         {viewState === 'user_guide' && <UserManual onBack={() => setViewState('directory')} />}
         
@@ -612,8 +697,8 @@ const App: React.FC = () => {
         {viewState === 'directory' && (
           <div className="h-full flex flex-col">
             
-            {/* Secondary Nav / Tabs (Horizontal Scroll) */}
-            <div className="bg-slate-900/50 backdrop-blur-md border-b border-slate-800 p-2 overflow-x-auto shrink-0 scrollbar-hide">
+            {/* Secondary Nav / Tabs (Horizontal Scroll) - Hidden on Mobile Feed */}
+            <div className={`bg-slate-900/50 backdrop-blur-md border-b border-slate-800 p-2 overflow-x-auto shrink-0 scrollbar-hide ${activeTab === 'categories' ? 'hidden md:block' : ''}`}>
                 <div className="flex space-x-2 w-max px-2">
                    {[
                      { id: 'categories', label: t.directory, icon: Layout }, // Main Feed
@@ -656,12 +741,13 @@ const App: React.FC = () => {
                        onStartLiveSession={(channel) => handleStartLiveSession(channel)}
                        userProfile={userProfile}
                        globalVoice={globalVoice}
+                       onRefresh={handleRefreshFeed}
                    />
                )}
 
                {/* 2. Other Tabs (Standard Layout) */}
                {activeTab !== 'categories' && (
-                   <div className="h-full overflow-y-auto p-4 md:p-8 animate-fade-in max-w-7xl mx-auto w-full">
+                   <div className="h-full overflow-y-auto p-4 md:p-8 animate-fade-in max-w-7xl mx-auto w-full pb-20">
                        {activeTab === 'calendar' && (
                           <CalendarView 
                              channels={channels}
@@ -721,7 +807,7 @@ const App: React.FC = () => {
         )}
 
         {viewState === 'live_session' && activeChannel && (
-          <div className="fixed inset-0 z-50 bg-slate-950">
+          <div className="fixed inset-0 z-[100] bg-slate-950">
              <LiveSession 
                channel={activeChannel}
                initialContext={liveConfig.context}
@@ -751,6 +837,8 @@ const App: React.FC = () => {
         {viewState === 'public_debug' && <PublicChannelInspector onBack={() => setViewState('directory')} />}
         {viewState === 'firestore_debug' && <FirestoreInspector onBack={() => setViewState('directory')} />}
       </div>
+
+      <MobileBottomNav />
 
       <CreateChannelModal isOpen={isCreateModalOpen} onClose={() => setIsCreateModalOpen(false)} onCreate={handleCreateChannel} />
       <VoiceCreateModal isOpen={isVoiceCreateOpen} onClose={() => setIsVoiceCreateOpen(false)} onCreate={handleCreateChannel} />
