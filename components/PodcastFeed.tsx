@@ -1,7 +1,7 @@
 
 import React, { useMemo, useRef, useState, useEffect, useCallback } from 'react';
 import { Channel, UserProfile, GeneratedLecture } from '../types';
-import { Play, MessageSquare, Heart, Share2, Bookmark, Music, Plus, Pause, Loader2, Volume2, VolumeX, GraduationCap, ChevronRight, Mic, AlignLeft, BarChart3, User } from 'lucide-react';
+import { Play, MessageSquare, Heart, Share2, Bookmark, Music, Plus, Pause, Loader2, Volume2, VolumeX, GraduationCap, ChevronRight, Mic, AlignLeft, BarChart3, User, AlertCircle } from 'lucide-react';
 import { ChannelCard } from './ChannelCard';
 import { CreatorProfileModal } from './CreatorProfileModal';
 import { followUser, unfollowUser } from '../services/firestoreService';
@@ -31,6 +31,18 @@ interface PodcastFeedProps {
   filterMode?: 'foryou' | 'following';
 }
 
+// --- Singleton Audio Context ---
+// Using a global context ensures that once the user interacts with the page once,
+// all subsequent cards can auto-play without needing new gestures.
+let sharedAudioContext: AudioContext | null = null;
+
+const getSharedAudioContext = () => {
+    if (!sharedAudioContext || sharedAudioContext.state === 'closed') {
+        sharedAudioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+    }
+    return sharedAudioContext;
+};
+
 // --- Sub-Component for Mobile Feed Card ---
 const MobileFeedCard = ({ 
     channel, 
@@ -56,7 +68,6 @@ const MobileFeedCard = ({
     const [trackIndex, setTrackIndex] = useState(-1); // -1 = Intro, 0+ = Lessons
     
     // Refs
-    const audioCtxRef = useRef<AudioContext | null>(null);
     const sourceRef = useRef<AudioBufferSourceNode | null>(null);
     const mountedRef = useRef(true);
     const playbackSessionRef = useRef(0); // Incremented to invalidate old loops
@@ -92,12 +103,12 @@ const MobileFeedCard = ({
             const introText = channel.welcomeMessage || channel.description || `Welcome to ${channel.title}.`;
             setTranscript({ speaker: 'Host', text: introText });
             setTrackIndex(-1);
+            setStatusMessage("");
             
-            // Try Auto-Play (Low Priority)
-            // We set a small timeout to allow UI to settle
+            // Try Auto-Play
             const timer = setTimeout(() => {
                 attemptAutoPlay();
-            }, 500);
+            }, 600); // Slight delay for smooth scrolling
             return () => clearTimeout(timer);
         } else {
             // Stop everything when swiping away
@@ -112,19 +123,21 @@ const MobileFeedCard = ({
             try { sourceRef.current.stop(); } catch(e) {}
             sourceRef.current = null;
         }
-        window.speechSynthesis.cancel(); // Also stop system TTS if active
-    };
-
-    const getAudioContext = () => {
-        if (!audioCtxRef.current || audioCtxRef.current.state === 'closed') {
-            audioCtxRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
-        }
-        return audioCtxRef.current;
+        window.speechSynthesis.cancel();
     };
 
     const attemptAutoPlay = async () => {
-        const ctx = getAudioContext();
-        // Only auto-play if context is already running (user interacted previously)
+        // If we are already playing (e.g. fast swipe back and forth), don't restart
+        if (playbackState === 'playing' || playbackState === 'buffering') return;
+
+        const ctx = getSharedAudioContext();
+        
+        // Attempt to resume context if suspended (works if user interacted with document before)
+        if (ctx.state === 'suspended') {
+            try { await ctx.resume(); } catch(e) {}
+        }
+
+        // Only auto-play if context is running. If locked, wait for user click.
         if (ctx.state === 'running') {
             const sessionId = ++playbackSessionRef.current;
             runTrackSequence(-1, sessionId);
@@ -141,31 +154,25 @@ const MobileFeedCard = ({
             return;
         }
 
-        // Start Playback
-        setPlaybackState('buffering');
-        setStatusMessage("Starting Audio...");
-        
-        // 1. Force Unlock Audio Context
-        let ctx = audioCtxRef.current;
-        if (!ctx || ctx.state === 'closed') {
-            ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
-            audioCtxRef.current = ctx;
-        }
-        
-        try {
-            await ctx.resume();
-            // Play silent buffer to unlock iOS
-            const buffer = ctx.createBuffer(1, 1, 22050);
-            const source = ctx.createBufferSource();
-            source.buffer = buffer;
-            source.connect(ctx.destination);
-            source.start(0);
-        } catch (err) {
-            console.error("Audio resume failed", err);
+        // Manual Play = Force Unlock
+        const ctx = getSharedAudioContext();
+        if (ctx.state === 'suspended') {
+            try { 
+                await ctx.resume(); 
+                // Play silent buffer to force unlock logic on iOS
+                const buffer = ctx.createBuffer(1, 1, 22050);
+                const source = ctx.createBufferSource();
+                source.buffer = buffer;
+                source.connect(ctx.destination);
+                source.start(0);
+            } catch(e) {
+                console.error("Audio unlock failed", e);
+            }
         }
         
         const sessionId = ++playbackSessionRef.current;
-        // Resume from current track index or start over if at end
+        // Resume from current track index. If finished, restart.
+        // Important: trackIndex might be > totalLessons if it finished. Reset to -1.
         const start = (trackIndex >= totalLessons) ? -1 : trackIndex;
         runTrackSequence(start, sessionId);
     };
@@ -211,23 +218,33 @@ const MobileFeedCard = ({
                 }
 
                 const lessonMeta = flatCurriculum[currentIndex];
-                setStatusMessage(`Loading: ${lessonMeta.title.substring(0, 20)}...`);
+                setStatusMessage(`Generating: ${lessonMeta.title.substring(0, 20)}...`);
                 setPlaybackState('buffering');
                 
                 // Fetch/Generate Script
-                const lecture = await fetchLectureData(lessonMeta);
-                if (!lecture || !lecture.sections) {
-                    currentIndex++;
-                    continue; // Skip failed lecture
-                }
-                setPlaybackState('playing');
-                setStatusMessage("Playing");
+                try {
+                    const lecture = await fetchLectureData(lessonMeta);
+                    if (!lecture || !lecture.sections || lecture.sections.length === 0) {
+                        console.warn("Empty lecture content, skipping.");
+                        currentIndex++;
+                        continue; 
+                    }
+                    
+                    setPlaybackState('playing');
+                    setStatusMessage("Playing");
 
-                textParts = lecture.sections.map((s: any) => ({
-                    speaker: s.speaker === 'Teacher' ? lecture.professorName : lecture.studentName,
-                    text: s.text,
-                    voice: s.speaker === 'Teacher' ? (channel.voiceName || 'Fenrir') : 'Puck'
-                }));
+                    textParts = lecture.sections.map((s: any) => ({
+                        speaker: s.speaker === 'Teacher' ? lecture.professorName : lecture.studentName,
+                        text: s.text,
+                        voice: s.speaker === 'Teacher' ? (channel.voiceName || 'Fenrir') : 'Puck'
+                    }));
+                } catch (e) {
+                    console.error("Lecture Gen Failed", e);
+                    setStatusMessage("Error (Skipping)");
+                    await new Promise(r => setTimeout(r, 1000));
+                    currentIndex++;
+                    continue;
+                }
             }
 
             // 2. Play Parts
@@ -243,7 +260,7 @@ const MobileFeedCard = ({
                 await new Promise(r => setTimeout(r, 300));
             }
 
-            // 3. Increment
+            // 3. Increment to next lesson
             currentIndex++;
         }
     };
@@ -253,7 +270,7 @@ const MobileFeedCard = ({
             if (!mountedRef.current || !isActive || sessionId !== playbackSessionRef.current) { resolve(); return; }
 
             try {
-                const ctx = getAudioContext();
+                const ctx = getSharedAudioContext();
                 if (ctx.state === 'suspended') try { await ctx.resume(); } catch(e) {}
 
                 // synthesizeSpeech handles caching and network calls
@@ -275,12 +292,12 @@ const MobileFeedCard = ({
                     source.start(0);
                 } else {
                     console.warn("TTS Gen failed", result.errorMessage);
-                    setStatusMessage("Audio Error (Skipping)");
-                    setTimeout(resolve, 1000); 
+                    setStatusMessage("Audio Error (Skipping Segment)");
+                    setTimeout(resolve, 500); 
                 }
             } catch (e) {
                 console.error("Playback error", e);
-                setTimeout(resolve, 1000);
+                setTimeout(resolve, 500);
             }
         });
     };
@@ -311,8 +328,10 @@ const MobileFeedCard = ({
                 {/* Status Overlay (Loading / Error) */}
                 {(playbackState === 'buffering' || statusMessage) && (
                     <div className="absolute top-20 left-0 w-full flex justify-center pointer-events-none z-20">
-                        <div className="bg-black/60 backdrop-blur-md px-4 py-2 rounded-full flex items-center gap-2 border border-white/10 shadow-lg">
-                            {playbackState === 'buffering' ? <Loader2 size={14} className="animate-spin text-indigo-400" /> : <Music size={14} className="text-emerald-400" />}
+                        <div className={`backdrop-blur-md px-4 py-2 rounded-full flex items-center gap-2 border shadow-lg ${playbackState === 'error' ? 'bg-red-900/60 border-red-500/50' : 'bg-black/60 border-white/10'}`}>
+                            {playbackState === 'buffering' ? <Loader2 size={14} className="animate-spin text-indigo-400" /> : 
+                             playbackState === 'error' ? <AlertCircle size={14} className="text-red-400"/> :
+                             <Music size={14} className="text-emerald-400" />}
                             <span className="text-xs font-bold text-white uppercase tracking-wider">{statusMessage || "Active"}</span>
                         </div>
                     </div>
