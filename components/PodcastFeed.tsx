@@ -1,3 +1,4 @@
+
 import React, { useMemo, useRef, useState, useEffect } from 'react';
 import { Channel, UserProfile } from '../types';
 import { Play, MessageSquare, ThumbsUp, Star, Info, RefreshCw, Loader2, Heart, Share2, Bookmark, Music, Plus } from 'lucide-react';
@@ -162,6 +163,7 @@ export const PodcastFeed: React.FC<PodcastFeedProps> = ({
                         t={t || { host: 'Host' }}
                         onCommentClick={onCommentClick || (() => {})}
                         isLiked={userProfile?.likedChannelIds?.includes(channel.id)}
+                        onCreatorClick={(e) => handleCreatorClick(e, channel)}
                     />
                 ))}
             </div>

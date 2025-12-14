@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { Channel, ChannelStats } from '../types';
-import { Play, Heart, MessageSquare, Lock, Globe, Users, Edit, Share2, Bookmark } from 'lucide-react';
+import { Play, Heart, MessageSquare, Lock, Globe, Users, Edit, Share2, Bookmark, User } from 'lucide-react';
 import { OFFLINE_CHANNEL_ID } from '../utils/offlineContent';
 import { shareChannel, subscribeToChannelStats } from '../services/firestoreService';
 
@@ -15,13 +15,14 @@ interface ChannelCardProps {
   globalVoice: string;
   t: any;
   onCommentClick: (channel: Channel) => void;
-  isLiked?: boolean; // New prop to sync state
+  isLiked?: boolean;
+  onCreatorClick?: (e: React.MouseEvent) => void;
 }
 
 export const ChannelCard: React.FC<ChannelCardProps> = ({ 
   channel, handleChannelClick, handleVote, currentUser, 
   setChannelToEdit, setIsSettingsModalOpen, globalVoice, t,
-  onCommentClick, isLiked = false
+  onCommentClick, isLiked = false, onCreatorClick
 }) => {
   const isOwner = currentUser && (channel.ownerId === currentUser.uid || currentUser.email === 'shengliang.song@gmail.com');
   const [isBookmarked, setIsBookmarked] = useState(false);
@@ -138,9 +139,22 @@ export const ChannelCard: React.FC<ChannelCardProps> = ({
       
       <div className="p-5 flex-1 flex flex-col">
         <div className="flex items-start justify-between mb-2">
-          <div>
+          <div className="w-full">
             <h3 className="text-lg font-bold text-white group-hover:text-indigo-400 transition-colors line-clamp-1">{channel.title}</h3>
-            <p className="text-xs text-slate-500">{t.host}: <span className={globalVoice !== 'Auto' ? 'text-indigo-300 font-semibold' : ''}>{channel.voiceName}</span></p>
+            <div className="flex justify-between items-center mt-1 w-full">
+                <p className="text-xs text-slate-500">{t.host}: <span className={globalVoice !== 'Auto' ? 'text-indigo-300 font-semibold' : ''}>{channel.voiceName}</span></p>
+                <button 
+                    className="text-xs text-slate-400 hover:text-white hover:underline cursor-pointer transition-colors flex items-center gap-1 z-20"
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        if (onCreatorClick) onCreatorClick(e);
+                    }}
+                    title="View Creator Profile"
+                >
+                    <User size={12} />
+                    <span className="truncate max-w-[100px]">@{channel.author}</span>
+                </button>
+            </div>
           </div>
         </div>
         
