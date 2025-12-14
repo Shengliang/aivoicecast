@@ -33,8 +33,9 @@ interface PodcastFeedProps {
   filterMode?: 'foryou' | 'following';
 }
 
-// --- Singleton Audio Context ---
+// --- Singleton Audio Context & Global Controls ---
 let sharedAudioContext: AudioContext | null = null;
+let globalStopPlayback: (() => void) | null = null;
 
 const getSharedAudioContext = () => {
     if (!sharedAudioContext || sharedAudioContext.state === 'closed') {
@@ -75,6 +76,7 @@ const MobileFeedCard = ({
     const sourceRef = useRef<AudioBufferSourceNode | null>(null);
     const mountedRef = useRef(true);
     const playbackSessionRef = useRef(0); // Incremented to invalidate old loops
+    const isActiveRef = useRef(isActive); // Fresh ref for async loops
     
     // Buffering Refs
     const preloadedScriptRef = useRef<Promise<GeneratedLecture | null> | null>(null);
@@ -82,6 +84,7 @@ const MobileFeedCard = ({
 
     // Sync Ref
     useEffect(() => { ttsModeRef.current = ttsMode; }, [ttsMode]);
+    useEffect(() => { isActiveRef.current = isActive; }, [isActive]);
 
     // Data Helpers - Merge Static Data to ensure we have a curriculum
     const flatCurriculum = useMemo(() => {
@@ -146,16 +149,22 @@ const MobileFeedCard = ({
         }
     }, [isActive, channel.id]);
 
-    const stopAudio = () => {
+    const stopAudio = useCallback(() => {
         if (sourceRef.current) {
             try { sourceRef.current.stop(); } catch(e) {}
             sourceRef.current = null;
         }
         window.speechSynthesis.cancel();
-    };
+    }, []);
 
     const attemptAutoPlay = async () => {
         if (playbackState === 'playing' || playbackState === 'buffering') return;
+
+        // Force Stop other global audio (e.g. if previous card is still fading out)
+        if (globalStopPlayback && globalStopPlayback !== stopAudio) {
+            globalStopPlayback();
+        }
+        globalStopPlayback = stopAudio;
 
         const ctx = getSharedAudioContext();
         if (ctx.state === 'suspended') {
@@ -180,6 +189,15 @@ const MobileFeedCard = ({
     const handleTogglePlay = async (e: React.MouseEvent) => {
         e.stopPropagation();
         
+        // 1. If not active card, make it active (this will trigger auto-play via effect)
+        if (!isActive) {
+            onChannelClick(channel.id);
+            // Ensure we stop old audio immediately for snappier feel
+            if (globalStopPlayback) globalStopPlayback();
+            return;
+        }
+
+        // 2. Toggle Logic
         if (playbackState === 'playing' || playbackState === 'buffering') {
             stopAudio();
             playbackSessionRef.current++; // Invalidate loop
@@ -187,6 +205,12 @@ const MobileFeedCard = ({
             setStatusMessage("Paused");
             return;
         }
+
+        // 3. Start Playback
+        if (globalStopPlayback && globalStopPlayback !== stopAudio) {
+            globalStopPlayback();
+        }
+        globalStopPlayback = stopAudio;
 
         const ctx = getSharedAudioContext();
         if (ctx.state === 'suspended') {
@@ -234,7 +258,8 @@ const MobileFeedCard = ({
 
     const playAudioBuffer = (buffer: AudioBuffer, sessionId: number): Promise<void> => {
         return new Promise((resolve) => {
-            if (!mountedRef.current || !isActive || sessionId !== playbackSessionRef.current) {
+            // Use refs for freshness check
+            if (!mountedRef.current || !isActiveRef.current || sessionId !== playbackSessionRef.current) {
                 resolve();
                 return;
             }
@@ -256,7 +281,7 @@ const MobileFeedCard = ({
 
     const playSystemAudio = (text: string, voiceName: string): Promise<void> => {
         return new Promise((resolve) => {
-            if (!mountedRef.current || !isActive) { resolve(); return; }
+            if (!mountedRef.current || !isActiveRef.current) { resolve(); return; }
             
             // Cancel any pending speech
             window.speechSynthesis.cancel();
@@ -265,9 +290,6 @@ const MobileFeedCard = ({
             
             // Voice Selection Heuristics
             const voices = window.speechSynthesis.getVoices();
-            // 1. Try exact name match
-            // 2. Try Google/Premium English
-            // 3. Try any English
             const v = voices.find(v => v.name.includes(voiceName)) || 
                       voices.find(v => v.lang.startsWith('en') && (v.name.includes('Google') || v.name.includes('Premium') || v.name.includes('Enhanced'))) ||
                       voices.find(v => v.lang.startsWith('en'));
@@ -302,7 +324,8 @@ const MobileFeedCard = ({
 
         let currentIndex = startIndex;
 
-        while (mountedRef.current && isActive && sessionId === playbackSessionRef.current) {
+        // Use refs for loop condition to avoid stale state closures
+        while (mountedRef.current && isActiveRef.current && sessionId === playbackSessionRef.current) {
             setTrackIndex(currentIndex); 
             
             let textParts: {speaker: string, text: string, voice: string}[] = [];
@@ -372,7 +395,7 @@ const MobileFeedCard = ({
 
             // PLAY PARTS (Audio Loop)
             for (let i = 0; i < textParts.length; i++) {
-                if (!mountedRef.current || !isActive || sessionId !== playbackSessionRef.current) return;
+                if (!mountedRef.current || !isActiveRef.current || sessionId !== playbackSessionRef.current) return;
 
                 const part = textParts[i];
                 setTranscript({ speaker: part.speaker, text: part.text });
