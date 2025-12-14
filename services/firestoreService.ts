@@ -259,6 +259,32 @@ export async function getPublicChannels(): Promise<Channel[]> {
   }
 }
 
+export async function getCreatorChannels(ownerId: string): Promise<Channel[]> {
+  try {
+    // Optimized query for recent episodes/channels by a specific creator
+    const snap = await db.collection(CHANNELS_COLLECTION)
+      .where('ownerId', '==', ownerId)
+      .where('visibility', '==', 'public')
+      .orderBy('createdAt', 'desc')
+      .limit(21) // 3 columns * 7 rows typical max
+      .get();
+    return snap.docs.map(d => d.data() as Channel);
+  } catch (e: any) {
+    // Fallback if index missing
+    if (e.code === 'failed-precondition' || e.message?.includes('index')) {
+        const snap = await db.collection(CHANNELS_COLLECTION)
+          .where('ownerId', '==', ownerId)
+          .where('visibility', '==', 'public')
+          .limit(50)
+          .get();
+        const data = snap.docs.map(d => d.data() as Channel);
+        return data.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)).slice(0, 21);
+    }
+    console.error("Error fetching creator channels:", e);
+    return [];
+  }
+}
+
 export function subscribeToPublicChannels(onUpdate: (channels: Channel[]) => void, onError: (error: any) => void) {
   return db.collection(CHANNELS_COLLECTION)
     .where('visibility', '==', 'public')

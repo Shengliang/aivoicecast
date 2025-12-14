@@ -1,8 +1,7 @@
-
 import React, { useState, useEffect } from 'react';
 import { X, User, MessageSquare, Heart, Users, Check, Bell, Play } from 'lucide-react';
 import { Channel, UserProfile } from '../types';
-import { getUserProfile, followUser, unfollowUser, getUserProfileByEmail, getChannelsByIds } from '../services/firestoreService';
+import { getUserProfile, followUser, unfollowUser, getUserProfileByEmail, getChannelsByIds, getCreatorChannels } from '../services/firestoreService';
 
 interface CreatorProfileModalProps {
   isOpen: boolean;
@@ -19,6 +18,10 @@ export const CreatorProfileModal: React.FC<CreatorProfileModalProps> = ({ isOpen
   const [activeTab, setActiveTab] = useState<'posts' | 'community'>('posts');
   const [isLoading, setIsLoading] = useState(false);
   const [targetOwnerId, setTargetOwnerId] = useState<string | null>(null);
+  
+  // Recent Episodes (Channels) State
+  const [recentChannels, setRecentChannels] = useState<Channel[]>([]);
+  const [loadingRecent, setLoadingRecent] = useState(false);
   
   // Liked Channels State
   const [likedChannels, setLikedChannels] = useState<Channel[]>([]);
@@ -68,6 +71,16 @@ export const CreatorProfileModal: React.FC<CreatorProfileModalProps> = ({ isOpen
                         }
                     }
                 }
+                
+                // NEW: Load Created Channels (Episodes)
+                setLoadingRecent(true);
+                getCreatorChannels(oid).then(channels => {
+                    if (isActive) setRecentChannels(channels);
+                    setLoadingRecent(false);
+                }).catch(() => {
+                    if (isActive) setLoadingRecent(false);
+                });
+
             } catch (err) {
                 console.error("Failed to load creator profile", err);
             }
@@ -230,16 +243,35 @@ export const CreatorProfileModal: React.FC<CreatorProfileModalProps> = ({ isOpen
                     <div className="px-4 py-2 text-xs font-bold text-slate-500 uppercase tracking-wider sticky top-0 bg-slate-900 z-10 border-b border-slate-800">
                         Recent Episodes
                     </div>
-                    <div className="grid grid-cols-3 gap-0.5">
-                        {[1,2,3,4,5,6].map(i => (
-                            <div key={i} className="aspect-[3/4] bg-slate-800 relative group cursor-pointer">
-                                <img src={`https://picsum.photos/200/300?random=${i}`} className="w-full h-full object-cover opacity-60 group-hover:opacity-100 transition-opacity"/>
-                                <div className="absolute bottom-1 right-1 flex items-center gap-1 text-[10px] text-white font-bold drop-shadow-md">
-                                    <Play size={8} fill="white" /> {(Math.random() * 10).toFixed(1)}k
+                    {loadingRecent ? (
+                        <div className="p-12 text-center flex justify-center">
+                            <span className="w-6 h-6 border-2 border-indigo-500/30 border-t-indigo-500 rounded-full animate-spin"></span>
+                        </div>
+                    ) : recentChannels.length === 0 ? (
+                        <div className="p-12 text-center text-slate-500 text-xs italic">
+                            No public episodes found.
+                        </div>
+                    ) : (
+                        <div className="grid grid-cols-3 gap-0.5">
+                            {recentChannels.map(ch => (
+                                <div key={ch.id} className="aspect-[3/4] bg-slate-800 relative group cursor-pointer border border-slate-900">
+                                    <img 
+                                        src={ch.imageUrl} 
+                                        alt={ch.title}
+                                        className="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity"
+                                        loading="lazy"
+                                    />
+                                    <div className="absolute bottom-1 right-1 flex items-center gap-1 text-[10px] text-white font-bold drop-shadow-md bg-black/40 px-1 rounded backdrop-blur-sm">
+                                        <Play size={8} fill="white" /> {ch.likes || 0}
+                                    </div>
+                                    {/* New Indicator (created within last 7 days) */}
+                                    {ch.createdAt && (Date.now() - ch.createdAt < 86400000 * 7) && (
+                                        <div className="absolute top-1 left-1 w-2 h-2 bg-red-500 rounded-full border border-white shadow-sm"></div>
+                                    )}
                                 </div>
-                            </div>
-                        ))}
-                    </div>
+                            ))}
+                        </div>
+                    )}
                 </>
             ) : (
                 <div className="pb-4">
@@ -248,7 +280,7 @@ export const CreatorProfileModal: React.FC<CreatorProfileModalProps> = ({ isOpen
                     </div>
                     {loadingLikes ? (
                         <div className="p-8 text-center text-slate-500 flex flex-col items-center">
-                            <span className="loading loading-spinner loading-md"></span>
+                            <span className="w-6 h-6 border-2 border-slate-600 border-t-white rounded-full animate-spin"></span>
                             <p className="text-xs mt-2">Loading...</p>
                         </div>
                     ) : likedChannels.length === 0 ? (
