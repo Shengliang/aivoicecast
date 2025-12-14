@@ -1,4 +1,5 @@
 
+
 export interface Invitation {
   id: string;
   fromUserId: string;
@@ -120,7 +121,7 @@ export interface CommunityDiscussion {
   isManual?: boolean; // Created manually via editor
 }
 
-export type ViewState = 'directory' | 'podcast_detail' | 'live_session' | 'create_channel' | 'debug' | 'cloud_debug' | 'public_debug' | 'mission' | 'code_studio' | 'whiteboard' | 'blog' | 'chat' | 'careers' | 'user_guide';
+export type ViewState = 'directory' | 'podcast_detail' | 'live_session' | 'create_channel' | 'debug' | 'cloud_debug' | 'public_debug' | 'mission' | 'code_studio' | 'whiteboard' | 'blog' | 'chat' | 'careers' | 'user_guide' | 'calendar' | 'recordings' | 'mentorship' | 'groups' | 'documents' | 'privacy' | 'firestore_debug';
 
 export interface AudioState {
   isConnected: boolean;
