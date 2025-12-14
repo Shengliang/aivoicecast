@@ -42,7 +42,7 @@ const MobileFeedCard = ({
     onToggleFollow, 
     onShare, 
     onComment, 
-    onProfileClick,
+    onProfileClick, 
     onChannelClick,
     onChannelFinish // Callback to trigger scroll to next
 }: any) => {
@@ -89,12 +89,14 @@ const MobileFeedCard = ({
     // --- Main Control Loop ---
     useEffect(() => {
         if (isActive) {
-            // Reset state when becoming active
+            // 1. IMMEDIATE DISPLAY: Show summary/intro text immediately
+            const introText = channel.welcomeMessage || channel.description || `Welcome to ${channel.title}.`;
+            setTranscript({ speaker: 'Host', text: introText });
+            
             setTrackIndex(-1);
-            setTranscript(null);
             setProgress(0);
             
-            // Start Sequence
+            // 2. Start Audio Sequence
             attemptAutoPlay();
         } else {
             // Stop everything when swiping away
@@ -122,12 +124,12 @@ const MobileFeedCard = ({
     const attemptAutoPlay = async () => {
         const ctx = getAudioContext();
         
-        // Try to resume if suspended
+        // Try to resume if suspended (browsers block this without gesture)
         if (ctx.state === 'suspended') {
             try {
                 await ctx.resume();
             } catch (e) {
-                console.warn("Autoplay prevented:", e);
+                console.warn("Autoplay prevented (browser policy):", e);
             }
         }
 
@@ -135,8 +137,9 @@ const MobileFeedCard = ({
             setNeedsInteraction(false);
             runTrackSequence(-1); // Start from Intro
         } else {
+            // BLOCKED: Show visual cue but keep text visible
             setNeedsInteraction(true);
-            setTranscript({ speaker: 'System', text: "Tap screen to start audio." });
+            // We do NOT start runTrackSequence yet because it relies on onended which won't fire if suspended.
         }
     };
 
@@ -167,7 +170,9 @@ const MobileFeedCard = ({
             
             if (currentIndex === -1) {
                 // INTRO
-                setLoadingMessage("Loading Intro...");
+                // Don't show "Loading..." if we already displayed the text in the initial useEffect
+                if (!transcript) setLoadingMessage("Loading Intro..."); 
+                
                 const introText = channel.welcomeMessage || channel.description || `Welcome to ${channel.title}.`;
                 textParts = [{
                     speaker: 'Host',
@@ -202,7 +207,7 @@ const MobileFeedCard = ({
             }
 
             // 2. Play Parts
-            setLoadingMessage(''); // Clear loading text
+            setLoadingMessage(''); // Clear loading text once data is ready
             for (let i = 0; i < textParts.length; i++) {
                 if (!mountedRef.current || !isActive) {
                     isProcessRunningRef.current = false;
@@ -210,6 +215,7 @@ const MobileFeedCard = ({
                 }
 
                 const part = textParts[i];
+                // Update transcript for every new part
                 setTranscript({ speaker: part.speaker, text: part.text });
                 
                 // Speak and Wait
@@ -234,11 +240,7 @@ const MobileFeedCard = ({
             try {
                 const ctx = getAudioContext();
                 
-                // Double check state before spending API tokens
                 if (ctx.state === 'suspended') {
-                    // We lost audio focus or it was never granted. 
-                    // Pause here and wait for interaction? 
-                    // No, simpler to just set needsInteraction and wait for user to restart loop.
                     setNeedsInteraction(true);
                     isProcessRunningRef.current = false; // Break the loop
                     resolve(); 
@@ -259,9 +261,8 @@ const MobileFeedCard = ({
                     sourceRef.current = source;
                     source.start(0);
                 } else {
-                    // Fail gracefully
                     console.warn("TTS Gen failed or no buffer");
-                    setTimeout(resolve, 1000); // Wait a bit so we don't spin loop
+                    setTimeout(resolve, 1000); 
                 }
             } catch (e) {
                 console.error("Playback error", e);
@@ -299,12 +300,13 @@ const MobileFeedCard = ({
                 />
                 <div className="absolute inset-0 bg-gradient-to-b from-black/30 via-transparent to-black/95"></div>
                 
-                {/* Center Status */}
+                {/* Interaction / Mute Overlay */}
                 {needsInteraction && (
-                    <div className="absolute inset-0 flex items-center justify-center z-20 bg-black/40 backdrop-blur-sm">
-                        <div className="bg-white/10 p-6 rounded-full border border-white/30 animate-pulse cursor-pointer">
-                            <Play size={48} fill="white" className="text-white" />
+                    <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-30 pointer-events-none">
+                        <div className="bg-black/50 backdrop-blur-md p-4 rounded-full border border-white/20 animate-pulse">
+                            <VolumeX size={32} className="text-white" />
                         </div>
+                        <p className="text-white text-xs font-bold mt-2 text-center shadow-black drop-shadow-md">Tap to Unmute</p>
                     </div>
                 )}
 
@@ -317,7 +319,7 @@ const MobileFeedCard = ({
                     </div>
                 )}
 
-                {/* Live Transcript Overlay - ALWAYS VISIBLE if there is text */}
+                {/* Live Transcript Overlay - ALWAYS VISIBLE if there is text, even if paused/muted */}
                 {transcript && !loadingMessage && (
                     <div className="absolute top-1/2 left-4 right-20 -translate-y-1/2 pointer-events-none z-10">
                         <div className="bg-black/60 backdrop-blur-md p-6 rounded-3xl border-l-4 border-indigo-500 shadow-2xl animate-fade-in-up">
