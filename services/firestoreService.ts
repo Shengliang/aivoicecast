@@ -1,3 +1,4 @@
+
 import { 
   Channel, 
   GeneratedLecture, 
@@ -21,7 +22,8 @@ import {
   ChatChannel,
   SubscriptionTier,
   ChannelStats,
-  GlobalStats
+  GlobalStats,
+  Notebook
 } from '../types';
 import { db, auth, storage } from './firebaseConfig';
 import firebase from 'firebase/compat/app';
@@ -1034,6 +1036,43 @@ export async function getJobPostings(): Promise<JobPosting[]> {
 export async function getAllCareerApplications(): Promise<CareerApplication[]> {
     const snap = await db.collection(APPLICATIONS_COLLECTION).orderBy('createdAt', 'desc').get();
     return snap.docs.map(d => ({ id: d.id, ...d.data() } as CareerApplication));
+}
+
+// --- LLM Notebooks (New) ---
+
+export async function getCreatorNotebooks(userId: string): Promise<Notebook[]> {
+    // For now, return mock notebooks to enable feature without full backend migration
+    return [
+        {
+            id: 'nb-1',
+            title: 'Transformer Architecture Deep Dive',
+            author: 'AI Research Team',
+            description: 'A comprehensive walkthrough of the attention mechanism with Python code.',
+            kernel: 'python',
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+            tags: ['AI', 'Deep Learning'],
+            cells: [
+                { id: 'c1', type: 'markdown', content: '# Understanding Transformers\n\nIn this notebook, we will explore the **Self-Attention** mechanism.' },
+                { id: 'c2', type: 'code', language: 'python', content: 'import torch\nimport torch.nn as nn\n\nclass SelfAttention(nn.Module):\n    def __init__(self, embed_size, heads):\n        super(SelfAttention, self).__init__()\n        # Implementation goes here\n        pass' },
+                { id: 'c3', type: 'markdown', content: '## Testing the Layer\nLet\'s instantiate the layer and pass a dummy tensor.' }
+            ]
+        },
+        {
+            id: 'nb-2',
+            title: 'Data Analysis with Pandas',
+            author: 'Data Science Lead',
+            description: 'Basic data manipulation techniques for beginners.',
+            kernel: 'python',
+            createdAt: Date.now() - 86400000,
+            updatedAt: Date.now(),
+            tags: ['Data Science', 'Pandas'],
+            cells: [
+                { id: 'c1', type: 'markdown', content: '# Pandas 101\n\nLoad a CSV file and perform basic aggregation.' },
+                { id: 'c2', type: 'code', language: 'python', content: 'import pandas as pd\n\ndf = pd.read_csv("data.csv")\ndf.head()' }
+            ]
+        }
+    ];
 }
 
 // --- Debug / Admin ---

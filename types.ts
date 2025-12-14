@@ -127,7 +127,7 @@ export interface CommunityDiscussion {
   isManual?: boolean;
 }
 
-export type ViewState = 'directory' | 'podcast_detail' | 'live_session' | 'create_channel' | 'debug' | 'cloud_debug' | 'public_debug' | 'mission' | 'code_studio' | 'whiteboard' | 'blog' | 'chat' | 'careers' | 'user_guide';
+export type ViewState = 'directory' | 'podcast_detail' | 'live_session' | 'create_channel' | 'debug' | 'cloud_debug' | 'public_debug' | 'mission' | 'code_studio' | 'whiteboard' | 'blog' | 'chat' | 'careers' | 'user_guide' | 'notebook_viewer';
 
 export interface AudioState {
   isConnected: boolean;
@@ -365,4 +365,25 @@ export interface CloudItem {
 export interface GlobalStats {
   totalLogins: number;
   uniqueUsers: number;
+}
+
+export interface NotebookCell {
+  id: string;
+  type: 'markdown' | 'code';
+  content: string;
+  language?: 'python' | 'javascript' | 'sql' | 'json';
+  output?: string;
+  isExecuting?: boolean;
+}
+
+export interface Notebook {
+  id: string;
+  title: string;
+  author: string;
+  description: string;
+  kernel: 'python' | 'javascript';
+  cells: NotebookCell[];
+  createdAt: number;
+  updatedAt: number;
+  tags: string[];
 }

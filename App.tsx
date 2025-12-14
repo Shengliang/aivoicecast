@@ -1,10 +1,11 @@
+
 import React, { useState, useEffect, useMemo } from 'react';
 import { Channel, ViewState, UserProfile, TranscriptItem, SubscriptionTier } from './types';
 import { 
   Podcast, Mic, Layout, Search, Sparkles, LogOut, 
   Settings, Menu, X, Plus, Github, Database, Cloud, Globe, 
   Calendar, Briefcase, Users, Disc, FileText, AlertTriangle, List, BookOpen, ChevronDown, Table as TableIcon, LayoutGrid, Rocket, Code, Wand2, PenTool, Rss, Loader2, MessageSquare,
-  Home, Video as VideoIcon, Inbox, User, PlusSquare, ArrowLeft, Play
+  Home, Video as VideoIcon, Inbox, User, PlusSquare, ArrowLeft, Play, Book
 } from 'lucide-react';
 import { LiveSession } from './components/LiveSession';
 import { PodcastDetail } from './components/PodcastDetail';
@@ -29,7 +30,7 @@ import { RecordingList } from './components/RecordingList';
 import { DocumentList } from './components/DocumentList';
 import { CalendarView } from './components/CalendarView';
 import { PodcastListTable, SortKey } from './components/PodcastListTable';
-import { PodcastFeed } from './components/PodcastFeed'; // New Import
+import { PodcastFeed } from './components/PodcastFeed'; 
 import { MissionManifesto } from './components/MissionManifesto';
 import { CodeStudio } from './components/CodeStudio';
 import { Whiteboard } from './components/Whiteboard';
@@ -41,6 +42,7 @@ import { PricingModal } from './components/PricingModal';
 import { CareerCenter } from './components/CareerCenter';
 import { UserManual } from './components/UserManual'; 
 import { PrivacyPolicy } from './components/PrivacyPolicy';
+import { NotebookViewer } from './components/NotebookViewer'; // New Import
 
 import { auth, isFirebaseConfigured } from './services/firebaseConfig';
 import { 
@@ -54,12 +56,12 @@ import { HANDCRAFTED_CHANNELS, CATEGORY_STYLES, TOPIC_CATEGORIES } from './utils
 import { OFFLINE_CHANNEL_ID } from './utils/offlineContent';
 import { GEMINI_API_KEY } from './services/private_keys';
 
-const APP_VERSION = "v3.66.5"; // Bump version
+const APP_VERSION = "v3.67.0"; // Bump version
 
 const UI_TEXT = {
   en: {
     appTitle: "AIVoiceCast",
-    directory: "Explore", // Changed back to Explore
+    directory: "Explore", 
     myFeed: "My Feed",
     live: "Live Studio",
     search: "Search topics...",
@@ -81,7 +83,8 @@ const UI_TEXT = {
     whiteboard: "Whiteboard",
     blog: "Community Blog",
     chat: "Team Chat",
-    careers: "Careers"
+    careers: "Careers",
+    notebooks: "LLM Notebooks"
   },
   zh: {
     appTitle: "AI 播客",
@@ -107,7 +110,8 @@ const UI_TEXT = {
     whiteboard: "白板",
     blog: "社区博客",
     chat: "团队聊天",
-    careers: "职业发展"
+    careers: "职业发展",
+    notebooks: "LLM 笔记本"
   }
 };
 
@@ -822,6 +826,7 @@ const App: React.FC = () => {
       <div className="flex-1 overflow-hidden h-[calc(100vh-64px)] md:h-[calc(100vh-64px)] pb-16 md:pb-0">
         {viewState === 'mission' && <MissionManifesto onBack={() => setViewState('directory')} />}
         {viewState === 'user_guide' && <UserManual onBack={() => setViewState('directory')} />}
+        {viewState === 'notebook_viewer' && <NotebookViewer onBack={() => setViewState('directory')} currentUser={currentUser} />}
         
         {viewState === 'code_studio' && (
             <CodeStudio 
@@ -861,6 +866,7 @@ const App: React.FC = () => {
                      { id: 'careers', label: t.careers, icon: Briefcase },
                      { id: 'chat', label: t.chat, icon: MessageSquare },
                      { id: 'code', label: t.code, icon: Code },
+                     { id: 'notebooks', label: t.notebooks, icon: Book },
                      { id: 'blog', label: t.blog, icon: Rss },
                      { id: 'mentorship', label: t.mentorship, icon: Users },
                      { id: 'groups', label: t.groups, icon: Users },
@@ -871,6 +877,7 @@ const App: React.FC = () => {
                        key={tab.id}
                        onClick={() => {
                            if (tab.id === 'code') setViewState('code_studio');
+                           else if (tab.id === 'notebooks') setViewState('notebook_viewer');
                            else if (tab.id === 'blog') setViewState('blog');
                            else if (tab.id === 'chat') setViewState('chat');
                            else if (tab.id === 'careers') setViewState('careers');
@@ -1017,6 +1024,7 @@ const App: React.FC = () => {
                     { label: 'Workspace', icon: MessageSquare, action: () => setViewState('chat'), color: 'text-indigo-400' },
                     { label: 'Calendar', icon: Calendar, action: () => { setViewState('directory'); setActiveTab('calendar'); }, color: 'text-emerald-400' },
                     { label: 'CodeStudio', icon: Code, action: () => setViewState('code_studio'), color: 'text-blue-400' },
+                    { label: 'Notebooks', icon: Book, action: () => setViewState('notebook_viewer'), color: 'text-orange-300' },
                     { label: 'Whiteboard', icon: PenTool, action: () => setViewState('whiteboard'), color: 'text-pink-400' },
                     { label: 'Blog', icon: Rss, action: () => setViewState('blog'), color: 'text-orange-400' },
                     { label: 'Mentorship', icon: Users, action: () => { setViewState('directory'); setActiveTab('mentorship'); }, color: 'text-purple-400' },
