@@ -275,6 +275,18 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
       });
   };
 
+  // Sync active file with Firestore
+  const updateActiveFileAndSync = (file: CodeFile) => {
+      setActiveFile(file);
+      const filePath = file.path || file.name;
+      // Add debug log with full path as requested
+      addDebugLog(`Switched active file: ${filePath}`);
+      
+      if (isSharedSession && sessionId) {
+          updateProjectActiveFile(sessionId, filePath);
+      }
+  };
+
   // Sync default repo if profile loads late
   useEffect(() => {
       if (userProfile?.defaultRepoUrl && !publicRepoPath) {
@@ -578,7 +590,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
               const res = await fetch(item.url);
               const text = await res.text();
               const newFile: CodeFile = { name: item.name, path: item.fullPath, content: text, language: getLanguageFromExt(item.name), loaded: true, isDirectory: false };
-              setActiveFile(newFile);
+              updateActiveFileAndSync(newFile);
               setProject(prev => { const exists = prev.files.some(f => f.path === newFile.path); if (!exists) return { ...prev, files: [...prev.files, newFile] }; return prev; });
           } catch(e) { showToast("Failed to load file", "error"); }
       }
@@ -590,25 +602,24 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
           if (activeTab === 'cloud') handleCloudSelect(node);
           else if (activeTab === 'drive') handleDriveSelect(node);
           else if (activeTab === 'github') handleWorkspaceSelect(node);
-          else setActiveFile(node.data);
+          else updateActiveFileAndSync(node.data);
       }
   };
 
-  // ... (Other handlers unchanged: handleCloudToggle, handleConnectDrive, handleDriveToggle, handleDriveSelect, handleDragStart, handleDrop, handleCreateFolder, handleCreateFile, handleCreateWhiteboard, createFileInActiveContext, handleDeleteItem, handleRenameItem, handleShareItem, handleWorkspaceSelect) ...
   const handleCloudToggle = async (node: TreeNode) => { const isExpanded = expandedFolders[node.id]; setExpandedFolders(prev => ({ ...prev, [node.id]: !isExpanded })); if (!isExpanded) { setLoadingFolders(prev => ({ ...prev, [node.id]: true })); try { await refreshCloudPath(node.id); } catch(e) { console.error(e); } finally { setLoadingFolders(prev => ({ ...prev, [node.id]: false })); } } };
   const handleConnectDrive = async () => { try { const token = await connectGoogleDrive(); setDriveToken(token); const rootId = await ensureCodeStudioFolder(token); setDriveRootId(rootId); const files = await listDriveFiles(token, rootId); setDriveItems([{ id: rootId, name: 'CodeStudio', mimeType: 'application/vnd.google-apps.folder', isLoaded: true }, ...files.map(f => ({ ...f, parentId: rootId, isLoaded: false }))]); showToast("Google Drive Connected", "success"); } catch(e: any) { showToast(e.message, "error"); } };
   const handleDriveToggle = async (node: TreeNode) => { const driveFile = node.data as DriveFile; const isExpanded = expandedFolders[node.id]; setExpandedFolders(prev => ({ ...prev, [node.id]: !isExpanded })); if (!isExpanded && driveToken && (!node.children || node.children.length === 0)) { setLoadingFolders(prev => ({ ...prev, [node.id]: true })); try { const files = await listDriveFiles(driveToken, driveFile.id); setDriveItems(prev => { const newItems = files.map(f => ({ ...f, parentId: node.id, isLoaded: false })); return Array.from(new Map([...prev, ...newItems].map(item => [item.id, item])).values()); }); } catch(e) { console.error(e); } finally { setLoadingFolders(prev => ({ ...prev, [node.id]: false })); } } };
-  const handleDriveSelect = async (node: TreeNode) => { const driveFile = node.data as DriveFile; if (!driveToken) return; setLoadingFolders(prev => ({ ...prev, [node.id]: true })); try { const text = await readDriveFile(driveToken, driveFile.id); const newFile: CodeFile = { name: driveFile.name, path: `drive://${driveFile.id}`, content: text, language: getLanguageFromExt(driveFile.name), loaded: true, isDirectory: false }; setActiveFile(newFile); } catch (e: any) { showToast("Failed to read Drive file", "error"); } finally { setLoadingFolders(prev => ({ ...prev, [node.id]: false })); } };
+  const handleDriveSelect = async (node: TreeNode) => { const driveFile = node.data as DriveFile; if (!driveToken) return; setLoadingFolders(prev => ({ ...prev, [node.id]: true })); try { const text = await readDriveFile(driveToken, driveFile.id); const newFile: CodeFile = { name: driveFile.name, path: `drive://${driveFile.id}`, content: text, language: getLanguageFromExt(driveFile.name), loaded: true, isDirectory: false }; updateActiveFileAndSync(newFile); } catch (e: any) { showToast("Failed to read Drive file", "error"); } finally { setLoadingFolders(prev => ({ ...prev, [node.id]: false })); } };
   const handleDragStart = (e: React.DragEvent, node: TreeNode) => { setDraggedNode(node); e.dataTransfer.effectAllowed = 'move'; };
   const handleDrop = async (e: React.DragEvent, targetNode: TreeNode) => { e.preventDefault(); if (!draggedNode) return; if (draggedNode.id === targetNode.id) return; if (targetNode.type !== 'folder') return; try { if (activeTab === 'cloud') { const item = draggedNode.data as CloudItem; const targetPath = (targetNode.data as CloudItem).fullPath; const newFullPath = targetPath.replace(/\/+$/, '') + '/' + item.name; await moveCloudFile(item.fullPath, newFullPath); setCloudItems(prev => prev.filter(i => i.fullPath !== item.fullPath)); await refreshCloudPath(targetPath); showToast("File moved", "success"); } } catch (err: any) { showToast("Move failed", "error"); } setDraggedNode(null); };
   const handleCreateFolder = async () => { const name = prompt("Folder Name:"); if (!name) return; try { if (activeTab === 'cloud' && currentUser) { await createCloudFolder(`projects/${currentUser.uid}`, name); showToast("Folder created", "success"); await refreshCloudPath(`projects/${currentUser.uid}`); } } catch(e: any) { showToast(e.message, "error"); } };
   const handleCreateFile = async () => { const name = prompt("File Name:"); if (!name) return; await createFileInActiveContext(name, "// New File"); };
   const handleCreateWhiteboard = async () => { const name = prompt("Whiteboard Name:"); if (!name) return; await createFileInActiveContext(name.endsWith('.wb')?name:name+'.wb', "[]"); };
-  const createFileInActiveContext = async (name: string, content: string) => { try { if (activeTab === 'cloud' && currentUser) { await saveProjectToCloud(`projects/${currentUser.uid}`, name, content); await refreshCloudPath(`projects/${currentUser.uid}`); const newFile: CodeFile = { name, path: `projects/${currentUser.uid}/${name}`, language: getLanguageFromExt(name), content, loaded: true, isDirectory: false, isModified: false }; setActiveFile(newFile); setProject(prev => ({ ...prev, files: [...prev.files, newFile] })); } else if (activeTab === 'session') { const newFile: CodeFile = { name, path: name, language: getLanguageFromExt(name), content, loaded: true, isDirectory: false, isModified: true }; setProject(prev => ({ ...prev, files: [...prev.files, newFile] })); setActiveFile(newFile); if (isSharedSession && sessionId) await updateCodeFile(sessionId, newFile); } } catch(e: any) { showToast(e.message, "error"); } };
+  const createFileInActiveContext = async (name: string, content: string) => { try { if (activeTab === 'cloud' && currentUser) { await saveProjectToCloud(`projects/${currentUser.uid}`, name, content); await refreshCloudPath(`projects/${currentUser.uid}`); const newFile: CodeFile = { name, path: `projects/${currentUser.uid}/${name}`, language: getLanguageFromExt(name), content, loaded: true, isDirectory: false, isModified: false }; updateActiveFileAndSync(newFile); setProject(prev => ({ ...prev, files: [...prev.files, newFile] })); } else if (activeTab === 'session') { const newFile: CodeFile = { name, path: name, language: getLanguageFromExt(name), content, loaded: true, isDirectory: false, isModified: true }; setProject(prev => ({ ...prev, files: [...prev.files, newFile] })); updateActiveFileAndSync(newFile); if (isSharedSession && sessionId) await updateCodeFile(sessionId, newFile); } } catch(e: any) { showToast(e.message, "error"); } };
   const handleDeleteItem = async (node: TreeNode) => { if (!confirm(`Delete ${node.name}?`)) return; try { if (activeTab === 'cloud') { await deleteCloudItem(node.data as CloudItem); setCloudItems(prev => prev.filter(i => i.fullPath !== node.id)); } else if (activeTab === 'session') { setProject(prev => ({ ...prev, files: prev.files.filter(f => (f.path || f.name) !== node.id) })); if (activeFile && (activeFile.path || activeFile.name) === node.id) setActiveFile(null); if (isSharedSession && sessionId) await deleteCodeFile(sessionId, node.name); } showToast("Deleted", "success"); } catch(e: any) { showToast(e.message, "error"); } };
   const handleRenameItem = async (node: TreeNode) => { /* Simplified for brevity, use existing logic */ };
   const handleShareItem = (node: TreeNode) => { const link = (node.data as CloudItem).url || ""; if (link) { navigator.clipboard.writeText(link); showToast("Link copied!", "success"); } };
-  const handleWorkspaceSelect = async (node: TreeNode) => { const file = node.data as CodeFile; if (!file.loaded && project.github) { try { const content = await fetchFileContent(githubToken, project.github.owner, project.github.repo, file.path || file.name, project.github.branch); const updatedFile = { ...file, content, loaded: true }; setProject(prev => ({ ...prev, files: prev.files.map(f => (f.path || f.name) === (file.path || file.name) ? updatedFile : f) })); setActiveFile(updatedFile); } catch(e) { showToast("Load failed", "error"); } } else { setActiveFile(file); } };
+  const handleWorkspaceSelect = async (node: TreeNode) => { const file = node.data as CodeFile; if (!file.loaded && project.github) { try { const content = await fetchFileContent(githubToken, project.github.owner, project.github.repo, file.path || file.name, project.github.branch); const updatedFile = { ...file, content, loaded: true }; setProject(prev => ({ ...prev, files: prev.files.map(f => (f.path || f.name) === (file.path || file.name) ? updatedFile : f) })); updateActiveFileAndSync(updatedFile); } catch(e) { showToast("Load failed", "error"); } } else { updateActiveFileAndSync(file); } };
 
   useEffect(() => { 
       if (activeTab === 'cloud' && currentUser) listCloudDirectory(`projects/${currentUser.uid}`).then(setCloudItems); 
@@ -620,6 +631,22 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
           const unsubscribe = subscribeToCodeProject(sessionId, (remoteProject) => {
               const safeFiles = Array.isArray(remoteProject?.files) ? remoteProject.files : [];
               setProject({ ...remoteProject, files: safeFiles });
+              
+              // Sync active file from remote project if available
+              if (remoteProject.activeFilePath) {
+                  const targetFile = safeFiles.find(f => (f.path || f.name) === remoteProject.activeFilePath);
+                  if (targetFile) {
+                      setActiveFile(prev => {
+                          const prevPath = prev ? (prev.path || prev.name) : null;
+                          const newPath = targetFile.path || targetFile.name;
+                          if (prevPath !== newPath) {
+                              addDebugLog(`Remote requested switch to: ${newPath}`);
+                              return targetFile;
+                          }
+                          return targetFile; // Update object reference to ensure content is fresh
+                      });
+                  }
+              }
           });
           return () => unsubscribe();
       } else {
