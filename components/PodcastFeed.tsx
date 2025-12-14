@@ -632,6 +632,15 @@ export const PodcastFeed: React.FC<PodcastFeedProps> = ({
   const containerRef = useRef<HTMLDivElement>(null);
   const [activeChannelId, setActiveChannelId] = useState<string | null>(null);
   
+  // NEW: Detect Desktop vs Mobile to prevent background playback from hidden mobile components
+  const [isDesktop, setIsDesktop] = useState(() => typeof window !== 'undefined' ? window.innerWidth >= 768 : true);
+
+  useEffect(() => {
+      const handleResize = () => setIsDesktop(window.innerWidth >= 768);
+      window.addEventListener('resize', handleResize);
+      return () => window.removeEventListener('resize', handleResize);
+  }, []);
+  
   // Interaction States
   const [likedChannels, setLikedChannels] = useState<Set<string>>(new Set());
   const [bookmarkedChannels, setBookmarkedChannels] = useState<Set<string>>(new Set());
@@ -669,17 +678,17 @@ export const PodcastFeed: React.FC<PodcastFeedProps> = ({
       return scored.map(s => s.channel);
   }, [channels, userProfile, filterMode]);
 
-  // Initial Auto-Play (First item)
+  // Initial Auto-Play (First item) - ONLY ON MOBILE
   useEffect(() => {
-      if (recommendedChannels.length > 0 && !activeChannelId) {
+      if (!isDesktop && recommendedChannels.length > 0 && !activeChannelId) {
           setActiveChannelId(recommendedChannels[0].id);
       }
-  }, [recommendedChannels]);
+  }, [recommendedChannels, isDesktop]);
 
-  // Intersection Observer for Scroll Snap
+  // Intersection Observer for Scroll Snap (Mobile Only)
   useEffect(() => {
       const container = containerRef.current;
-      if (!container) return;
+      if (!container || isDesktop) return;
 
       const observer = new IntersectionObserver((entries) => {
           entries.forEach(entry => {
@@ -697,7 +706,7 @@ export const PodcastFeed: React.FC<PodcastFeedProps> = ({
       cards.forEach(c => observer.observe(c));
 
       return () => observer.disconnect();
-  }, [recommendedChannels]);
+  }, [recommendedChannels, isDesktop]);
 
   // Interaction Handlers
   const toggleLike = (e: React.MouseEvent, channelId: string) => {
@@ -757,39 +766,57 @@ export const PodcastFeed: React.FC<PodcastFeedProps> = ({
       }
   };
 
-  return (
-    <>
-    {/* DESKTOP VIEW */}
-    <div className="hidden md:block h-full overflow-y-auto p-6 scrollbar-thin scrollbar-thumb-slate-800">
-        <div className="max-w-7xl mx-auto">
-            <h2 className="text-2xl font-bold text-white mb-6 flex items-center gap-2">
-                <span className="bg-indigo-600 w-2 h-8 rounded-full"></span> Explore Podcasts
-            </h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {recommendedChannels.map(channel => (
-                    <ChannelCard
-                        key={channel.id}
-                        channel={channel}
-                        handleChannelClick={onChannelClick}
-                        handleVote={handleVote || (() => {})}
-                        currentUser={currentUser}
-                        setChannelToEdit={setChannelToEdit || (() => {})}
-                        setIsSettingsModalOpen={setIsSettingsModalOpen || (() => {})}
-                        globalVoice={globalVoice}
-                        t={t || { host: 'Host' }}
-                        onCommentClick={onCommentClick || (() => {})}
-                        isLiked={userProfile?.likedChannelIds?.includes(channel.id)}
-                        onCreatorClick={(e) => { e.stopPropagation(); setViewingCreator(channel); }}
-                    />
-                ))}
+  // Conditional Rendering logic to avoid invisible auto-play
+  if (isDesktop) {
+      return (
+        <>
+        <div className="h-full overflow-y-auto p-6 scrollbar-thin scrollbar-thumb-slate-800">
+            <div className="max-w-7xl mx-auto">
+                <h2 className="text-2xl font-bold text-white mb-6 flex items-center gap-2">
+                    <span className="bg-indigo-600 w-2 h-8 rounded-full"></span> Explore Podcasts
+                </h2>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {recommendedChannels.map(channel => (
+                        <ChannelCard
+                            key={channel.id}
+                            channel={channel}
+                            handleChannelClick={onChannelClick}
+                            handleVote={handleVote || (() => {})}
+                            currentUser={currentUser}
+                            setChannelToEdit={setChannelToEdit || (() => {})}
+                            setIsSettingsModalOpen={setIsSettingsModalOpen || (() => {})}
+                            globalVoice={globalVoice}
+                            t={t || { host: 'Host' }}
+                            onCommentClick={onCommentClick || (() => {})}
+                            isLiked={userProfile?.likedChannelIds?.includes(channel.id)}
+                            onCreatorClick={(e) => { e.stopPropagation(); setViewingCreator(channel); }}
+                        />
+                    ))}
+                </div>
             </div>
         </div>
-    </div>
+        {viewingCreator && (
+            <CreatorProfileModal 
+                isOpen={true}
+                onClose={() => setViewingCreator(null)}
+                channel={viewingCreator}
+                onMessage={() => {
+                    if (onMessageCreator && viewingCreator.ownerId) onMessageCreator(viewingCreator.ownerId, viewingCreator.author);
+                    setViewingCreator(null);
+                }}
+                onChannelClick={(id) => { setViewingCreator(null); onChannelClick(id); }}
+                currentUser={currentUser}
+            />
+        )}
+        </>
+      );
+  }
 
-    {/* MOBILE VIEW */}
+  return (
+    <>
     <div 
         ref={containerRef}
-        className="md:hidden h-[calc(100vh-64px)] w-full bg-black overflow-y-scroll snap-y snap-mandatory scroll-smooth no-scrollbar relative"
+        className="h-[calc(100vh-64px)] w-full bg-black overflow-y-scroll snap-y snap-mandatory scroll-smooth no-scrollbar relative"
     >
         {isRefreshing && (
              <div className="w-full absolute top-16 left-0 flex justify-center pointer-events-none z-20">
@@ -814,7 +841,7 @@ export const PodcastFeed: React.FC<PodcastFeedProps> = ({
                  </div>
                  {filterMode === 'following' && (
                      <button 
-                        onClick={onRefresh} // Using onRefresh to reshuffle/reset if needed
+                        onClick={onRefresh} 
                         className="px-6 py-3 bg-slate-800 hover:bg-slate-700 text-white font-bold rounded-full transition-colors border border-slate-700"
                      >
                         Discover Content
