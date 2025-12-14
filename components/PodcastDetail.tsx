@@ -12,7 +12,7 @@ import { cacheLectureScript, getCachedLectureScript, deleteCachedLectureScript }
 import { saveLectureToFirestore, getLectureFromFirestore, saveCurriculumToFirestore, getCurriculumFromFirestore, deleteLectureFromFirestore, uploadFileToStorage, addChannelAttachment, getUserProfile } from '../services/firestoreService';
 import { LiveSession } from './LiveSession';
 import { DiscussionModal } from './DiscussionModal';
-import { GEMINI_API_KEY } from '../services/private_keys';
+import { GEMINI_API_KEY, OPENAI_API_KEY } from '../services/private_keys';
 
 interface PodcastDetailProps {
   channel: Channel;
@@ -190,7 +190,7 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
   // Provider: 'system' | 'gemini' | 'openai'
   // Auto-detect based on API Keys available
   const hasGeminiKey = !!(localStorage.getItem('gemini_api_key') || GEMINI_API_KEY || process.env.API_KEY);
-  const hasOpenAiKey = !!localStorage.getItem('openai_api_key');
+  const hasOpenAiKey = !!(localStorage.getItem('openai_api_key') || OPENAI_API_KEY);
   
   const [voiceProvider, setVoiceProvider] = useState<'system' | 'gemini' | 'openai'>(
       hasGeminiKey ? 'gemini' : (hasOpenAiKey ? 'openai' : 'system')

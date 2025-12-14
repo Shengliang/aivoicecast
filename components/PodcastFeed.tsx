@@ -8,7 +8,7 @@ import { followUser, unfollowUser } from '../services/firestoreService';
 import { generateLectureScript } from '../services/lectureGenerator';
 import { synthesizeSpeech } from '../services/tts';
 import { getCachedLectureScript, cacheLectureScript } from '../utils/db';
-import { GEMINI_API_KEY } from '../services/private_keys';
+import { GEMINI_API_KEY, OPENAI_API_KEY } from '../services/private_keys';
 import { SPOTLIGHT_DATA } from '../utils/spotlightContent';
 import { OFFLINE_CHANNEL_ID, OFFLINE_CURRICULUM, OFFLINE_LECTURES } from '../utils/offlineContent';
 
@@ -117,7 +117,7 @@ const MobileFeedCard = ({
         mountedRef.current = true;
         // Check for API Keys on mount
         const hasGemini = !!(localStorage.getItem('gemini_api_key') || GEMINI_API_KEY || process.env.API_KEY);
-        const hasOpenAI = !!localStorage.getItem('openai_api_key');
+        const hasOpenAI = !!(localStorage.getItem('openai_api_key') || OPENAI_API_KEY);
         
         if (hasOpenAI) setProvider('openai');
         else if (hasGemini) setProvider('gemini');
@@ -239,7 +239,7 @@ const MobileFeedCard = ({
         // Cycle: Gemini -> OpenAI -> System
         let newMode: 'system' | 'gemini' | 'openai' = 'system';
         const hasGemini = !!(localStorage.getItem('gemini_api_key') || GEMINI_API_KEY || process.env.API_KEY);
-        const hasOpenAI = !!localStorage.getItem('openai_api_key');
+        const hasOpenAI = !!(localStorage.getItem('openai_api_key') || OPENAI_API_KEY);
 
         if (provider === 'gemini') {
             if (hasOpenAI) newMode = 'openai';
@@ -329,7 +329,7 @@ const MobileFeedCard = ({
 
         // Check keys validity one last time
         const hasGemini = !!(localStorage.getItem('gemini_api_key') || GEMINI_API_KEY || process.env.API_KEY);
-        const hasOpenAI = !!localStorage.getItem('openai_api_key');
+        const hasOpenAI = !!(localStorage.getItem('openai_api_key') || OPENAI_API_KEY);
         
         if (providerRef.current === 'gemini' && !hasGemini) {
              setProvider('system'); providerRef.current = 'system';

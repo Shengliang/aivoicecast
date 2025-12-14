@@ -3,7 +3,7 @@
 import { GoogleGenAI } from '@google/genai';
 import { base64ToBytes, decodeAudioData } from '../utils/audioUtils';
 import { getCachedAudioBuffer, cacheAudioBuffer } from '../utils/db';
-import { GEMINI_API_KEY } from './private_keys';
+import { GEMINI_API_KEY, OPENAI_API_KEY } from './private_keys';
 
 export type TtsErrorType = 'none' | 'quota' | 'network' | 'unknown' | 'auth';
 
@@ -166,7 +166,7 @@ export async function synthesizeSpeech(
 
       // Check if requested voice is OpenAI
       if (OPENAI_VOICES.includes(voiceName.toLowerCase())) {
-          const openAiKey = localStorage.getItem('openai_api_key');
+          const openAiKey = localStorage.getItem('openai_api_key') || OPENAI_API_KEY || '';
           if (!openAiKey) {
               return { buffer: null, errorType: 'auth', errorMessage: 'OpenAI API Key missing' };
           }
