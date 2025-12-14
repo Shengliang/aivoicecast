@@ -124,6 +124,7 @@ const App: React.FC = () => {
   const [activeChannelId, setActiveChannelId] = useState<string | null>(null);
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
   const [isAppsMenuOpen, setIsAppsMenuOpen] = useState(false);
+  const [isDesktopAppsOpen, setIsDesktopAppsOpen] = useState(false);
   
   // Mobile Navigation State
   const [mobileFeedTab, setMobileFeedTab] = useState<'foryou' | 'following'>('foryou');
@@ -189,6 +190,21 @@ const App: React.FC = () => {
   
   // Messaging Target
   const [chatTargetId, setChatTargetId] = useState<string | null>(null);
+
+  const allApps = [
+    { label: t.podcasts, icon: Podcast, action: () => { setViewState('directory'); setActiveTab('categories'); }, color: 'text-indigo-400' },
+    { label: t.code, icon: Code, action: () => setViewState('code_studio'), color: 'text-blue-400' },
+    { label: t.notebooks, icon: Book, action: () => setViewState('notebook_viewer'), color: 'text-orange-300' },
+    { label: t.whiteboard, icon: PenTool, action: () => setViewState('whiteboard'), color: 'text-pink-400' },
+    { label: t.chat, icon: MessageSquare, action: () => setViewState('chat'), color: 'text-indigo-400' },
+    { label: t.calendar, icon: Calendar, action: () => { setViewState('directory'); setActiveTab('calendar'); }, color: 'text-emerald-400' },
+    { label: t.careers, icon: Briefcase, action: () => setViewState('careers'), color: 'text-yellow-400' },
+    { label: t.blog, icon: Rss, action: () => setViewState('blog'), color: 'text-orange-400' },
+    { label: t.mentorship, icon: Users, action: () => { setViewState('directory'); setActiveTab('mentorship'); }, color: 'text-purple-400' },
+    { label: t.groups, icon: Users, action: () => { setViewState('directory'); setActiveTab('groups'); }, color: 'text-cyan-400' },
+    { label: t.recordings, icon: Disc, action: () => { setViewState('directory'); setActiveTab('recordings'); }, color: 'text-red-400' },
+    { label: t.docs, icon: FileText, action: () => { setViewState('directory'); setActiveTab('docs'); }, color: 'text-gray-400' },
+  ];
 
   useEffect(() => {
     const key = localStorage.getItem('gemini_api_key') || GEMINI_API_KEY || process.env.API_KEY;
@@ -748,19 +764,34 @@ const App: React.FC = () => {
                   </button>
               </div>
 
-              <div className="flex gap-2">
+              {/* Desktop App Group Dropdown */}
+              <div className="relative">
                   <button 
-                    onClick={() => setViewState('code_studio')} 
-                    className="flex items-center space-x-2 px-3 py-1.5 bg-slate-800/50 hover:bg-emerald-900/30 text-emerald-400 text-xs font-bold rounded-lg transition-colors"
+                    onClick={() => setIsDesktopAppsOpen(!isDesktopAppsOpen)}
+                    className={`flex items-center space-x-2 px-3 py-1.5 rounded-lg transition-colors ${isDesktopAppsOpen ? 'bg-slate-800 text-white' : 'bg-slate-800/50 hover:bg-slate-800 text-slate-400 hover:text-white'}`}
                   >
-                    <Code size={14}/><span>{t.code}</span>
+                    <LayoutGrid size={16}/><span>Apps</span>
                   </button>
-                  <button 
-                    onClick={() => setViewState('whiteboard')} 
-                    className="flex items-center space-x-2 px-3 py-1.5 bg-slate-800/50 hover:bg-pink-900/30 text-pink-400 text-xs font-bold rounded-lg transition-colors"
-                  >
-                    <PenTool size={14}/><span>{t.whiteboard}</span>
-                  </button>
+                  
+                  {isDesktopAppsOpen && (
+                      <>
+                        <div className="fixed inset-0 z-40" onClick={() => setIsDesktopAppsOpen(false)}></div>
+                        <div className="absolute top-full right-0 mt-2 w-80 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl p-4 grid grid-cols-3 gap-3 z-50 animate-fade-in-up origin-top-right">
+                            {allApps.map(app => (
+                                <button
+                                    key={app.label}
+                                    onClick={() => { app.action(); setIsDesktopAppsOpen(false); }}
+                                    className="flex flex-col items-center justify-center gap-2 p-3 bg-slate-800/50 hover:bg-slate-800 border border-slate-700/50 hover:border-slate-600 rounded-xl transition-all group"
+                                >
+                                    <div className={`p-2 bg-slate-800 rounded-lg group-hover:scale-110 transition-transform ${app.color}`}>
+                                        <app.icon size={20} />
+                                    </div>
+                                    <span className="text-[10px] font-bold text-slate-300 group-hover:text-white">{app.label}</span>
+                                </button>
+                            ))}
+                        </div>
+                      </>
+                  )}
               </div>
 
               <button 
@@ -1020,19 +1051,7 @@ const App: React.FC = () => {
                 </button>
             </div>
             <div className="p-6 grid grid-cols-3 gap-4 overflow-y-auto pb-24">
-                {[
-                    { label: 'Workspace', icon: MessageSquare, action: () => setViewState('chat'), color: 'text-indigo-400' },
-                    { label: 'Calendar', icon: Calendar, action: () => { setViewState('directory'); setActiveTab('calendar'); }, color: 'text-emerald-400' },
-                    { label: 'CodeStudio', icon: Code, action: () => setViewState('code_studio'), color: 'text-blue-400' },
-                    { label: 'Notebooks', icon: Book, action: () => setViewState('notebook_viewer'), color: 'text-orange-300' },
-                    { label: 'Whiteboard', icon: PenTool, action: () => setViewState('whiteboard'), color: 'text-pink-400' },
-                    { label: 'Blog', icon: Rss, action: () => setViewState('blog'), color: 'text-orange-400' },
-                    { label: 'Mentorship', icon: Users, action: () => { setViewState('directory'); setActiveTab('mentorship'); }, color: 'text-purple-400' },
-                    { label: 'Groups', icon: Users, action: () => { setViewState('directory'); setActiveTab('groups'); }, color: 'text-cyan-400' },
-                    { label: 'Recordings', icon: Disc, action: () => { setViewState('directory'); setActiveTab('recordings'); }, color: 'text-red-400' },
-                    { label: 'Careers', icon: Briefcase, action: () => setViewState('careers'), color: 'text-yellow-400' },
-                    { label: 'Documents', icon: FileText, action: () => { setViewState('directory'); setActiveTab('docs'); }, color: 'text-gray-400' },
-                ].map((app) => (
+                {allApps.map((app) => (
                     <button 
                         key={app.label}
                         onClick={() => {
