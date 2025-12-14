@@ -66,8 +66,12 @@ const MobileFeedCard = ({
     const [transcript, setTranscript] = useState<{speaker: string, text: string} | null>(null);
     
     // Provider State: 'system', 'gemini', 'openai'
-    const [provider, setProvider] = useState<'system' | 'gemini' | 'openai'>('gemini');
-    const providerRef = useRef<'system' | 'gemini' | 'openai'>('gemini'); // Ref for access in loop
+    // Default to Gemini if key exists, else System. OpenAI must be manually toggled if not default.
+    const [provider, setProvider] = useState<'system' | 'gemini' | 'openai'>(() => {
+        const hasGemini = !!(localStorage.getItem('gemini_api_key') || GEMINI_API_KEY || process.env.API_KEY);
+        return hasGemini ? 'gemini' : 'system';
+    });
+    const providerRef = useRef<'system' | 'gemini' | 'openai'>(provider); // Ref for access in loop
     
     // Logic State
     const [trackIndex, setTrackIndex] = useState(-1); // -1 = Intro, 0+ = Lessons
@@ -115,14 +119,6 @@ const MobileFeedCard = ({
 
     useEffect(() => {
         mountedRef.current = true;
-        // Check for API Keys on mount
-        const hasGemini = !!(localStorage.getItem('gemini_api_key') || GEMINI_API_KEY || process.env.API_KEY);
-        const hasOpenAI = !!(localStorage.getItem('openai_api_key') || OPENAI_API_KEY);
-        
-        if (hasOpenAI) setProvider('openai');
-        else if (hasGemini) setProvider('gemini');
-        else setProvider('system');
-
         return () => { 
             mountedRef.current = false;
             stopAudio();
@@ -195,7 +191,6 @@ const MobileFeedCard = ({
         // 1. If not active card, make it active (this will trigger auto-play via effect)
         if (!isActive) {
             onChannelClick(channel.id);
-            // Ensure we stop old audio immediately for snappier feel
             if (globalStopPlayback) globalStopPlayback();
             return;
         }
@@ -219,6 +214,7 @@ const MobileFeedCard = ({
         if (ctx.state === 'suspended') {
             try { 
                 await ctx.resume(); 
+                // Play dummy silent buffer to unlock on iOS
                 const buffer = ctx.createBuffer(1, 1, 22050);
                 const source = ctx.createBufferSource();
                 source.buffer = buffer;
@@ -238,23 +234,25 @@ const MobileFeedCard = ({
         e.stopPropagation();
         // Cycle: Gemini -> OpenAI -> System
         let newMode: 'system' | 'gemini' | 'openai' = 'system';
+        
+        if (provider === 'gemini') newMode = 'openai';
+        else if (provider === 'openai') newMode = 'system';
+        else newMode = 'gemini';
+
+        // Notify user if keys missing but still switch (let loop handle error for consistency or handle here)
         const hasGemini = !!(localStorage.getItem('gemini_api_key') || GEMINI_API_KEY || process.env.API_KEY);
         const hasOpenAI = !!(localStorage.getItem('openai_api_key') || OPENAI_API_KEY);
 
-        if (provider === 'gemini') {
-            if (hasOpenAI) newMode = 'openai';
-            else newMode = 'system';
-        } else if (provider === 'openai') {
-            newMode = 'system';
-        } else {
-            if (hasGemini) newMode = 'gemini';
-            else if (hasOpenAI) newMode = 'openai';
-            else newMode = 'system';
+        if (newMode === 'gemini' && !hasGemini) {
+            alert("Gemini API Key is missing. Please add it in Settings.");
+        }
+        if (newMode === 'openai' && !hasOpenAI) {
+            alert("OpenAI API Key is missing. Please add it in Settings.");
         }
 
         setProvider(newMode);
         
-        // Force restart if currently playing
+        // Force restart if currently playing to apply new voice
         if (playbackState === 'playing' || playbackState === 'buffering') {
             stopAudio();
             playbackSessionRef.current++;
@@ -277,7 +275,6 @@ const MobileFeedCard = ({
 
     const playAudioBuffer = (buffer: AudioBuffer, sessionId: number): Promise<void> => {
         return new Promise((resolve) => {
-            // Use refs for freshness check
             if (!mountedRef.current || !isActiveRef.current || sessionId !== playbackSessionRef.current) {
                 resolve();
                 return;
@@ -327,7 +324,7 @@ const MobileFeedCard = ({
     const runTrackSequence = async (startIndex: number, sessionId: number) => {
         setPlaybackState('playing');
 
-        // Check keys validity one last time
+        // Check keys validity at start of playback
         const hasGemini = !!(localStorage.getItem('gemini_api_key') || GEMINI_API_KEY || process.env.API_KEY);
         const hasOpenAI = !!(localStorage.getItem('openai_api_key') || OPENAI_API_KEY);
         
@@ -345,12 +342,15 @@ const MobileFeedCard = ({
             
             let textParts: {speaker: string, text: string, voice: string}[] = [];
             
-            // Map generic voice names to provider specific ones if needed
+            // Determine Voice Names based on Provider
             let hostVoice = channel.voiceName || 'Puck';
-            
+            let studentVoice = 'Zephyr';
+
             if (providerRef.current === 'openai') {
-                // Map common names to OpenAI names
-                hostVoice = 'Alloy'; // Default OpenAI host
+                hostVoice = 'Alloy';
+                studentVoice = 'Echo';
+            } else if (providerRef.current === 'system') {
+                // System voice selection handled inside playSystemAudio by finding name match or default
             }
 
             if (currentIndex === -1) {
@@ -404,7 +404,7 @@ const MobileFeedCard = ({
                 textParts = lecture.sections.map((s: any) => ({
                     speaker: s.speaker === 'Teacher' ? lecture.professorName : lecture.studentName,
                     text: s.text,
-                    voice: s.speaker === 'Teacher' ? hostVoice : (providerRef.current === 'openai' ? 'Echo' : 'Puck')
+                    voice: s.speaker === 'Teacher' ? hostVoice : studentVoice
                 }));
 
                 if (currentIndex + 1 < flatCurriculum.length) {
