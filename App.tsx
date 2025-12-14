@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useMemo } from 'react';
 import { Channel, ViewState, UserProfile, TranscriptItem, SubscriptionTier } from './types';
 import { 
@@ -522,6 +523,15 @@ const App: React.FC = () => {
                     <PenTool size={14}/><span>{t.whiteboard}</span>
                   </button>
               </div>
+
+              {/* Language Toggle */}
+              <button 
+                onClick={() => setLanguage(prev => prev === 'en' ? 'zh' : 'en')}
+                className="w-9 h-9 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-xs font-bold text-slate-300 hover:text-white hover:border-slate-500 transition-all"
+                title={language === 'en' ? "Switch to Chinese" : "Switch to English"}
+              >
+                {language === 'en' ? '中' : 'EN'}
+              </button>
 
               {!isFirebaseConfigured && (
                   <button onClick={() => setIsFirebaseModalOpen(true)} className="p-2 text-amber-500 bg-amber-900/20 rounded-full hover:bg-amber-900/40 border border-amber-900/50 animate-pulse">

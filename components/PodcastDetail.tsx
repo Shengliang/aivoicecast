@@ -227,7 +227,8 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
   const prefetchedIds = useRef<Set<string>>(new Set());
   
   const isMember = !!currentUser;
-  const isOwner = currentUser && (channel.ownerId === currentUser.uid || currentUser.email === 'shengliang.song@gmail.com');
+  const isChannelOwner = currentUser && (channel.ownerId === currentUser.uid);
+  const isSuperAdmin = currentUser?.email === 'shengliang.song@gmail.com';
 
   useEffect(() => {
       if (currentUser) {
@@ -236,10 +237,11 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
   }, [currentUser]);
 
   useEffect(() => {
-      if (userProfile && userProfile.subscriptionTier !== 'pro' && !useSystemVoice) {
-          setUseSystemVoice(true);
+      // Auto-enable Neural Voice for Owner/SuperAdmin
+      if (isSuperAdmin) {
+          setUseSystemVoice(false);
       }
-  }, [userProfile]);
+  }, [isSuperAdmin]);
 
   const flatCurriculum = useMemo(() => {
       if(!chapters) return [];
@@ -386,12 +388,12 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
           const cloudCurriculum = await getCurriculumFromFirestore(channel.id);
           if (cloudCurriculum) { setChapters(cloudCurriculum); if (cloudCurriculum.length > 0) setExpandedChapterId(cloudCurriculum[0].id); localStorage.setItem(cacheKey, JSON.stringify(cloudCurriculum)); return; }
       }
-      if (isOwner && !staticReading) {
+      if (isChannelOwner && !staticReading) {
           handleRegenerateCurriculum(true); 
       }
     };
     loadCurriculum();
-  }, [channel.id, channel.title, channel.description, channel.chapters, language, isMember, isOwner, staticReading]);
+  }, [channel.id, channel.title, channel.description, channel.chapters, language, isMember, isChannelOwner, staticReading]);
 
   // AUTO-LOAD FIRST LECTURE IF AVAILABLE
   useEffect(() => {
@@ -408,7 +410,7 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
   }, [chapters]);
 
   const handleRegenerateCurriculum = async (isAuto = false) => {
-      if (!isOwner) { if (!isAuto) alert(t.guestRestrict); return; }
+      if (!isChannelOwner) { if (!isAuto) alert(t.guestRestrict); return; }
       const isEmpty = !chapters || chapters.length === 0;
       if (!isAuto && !isEmpty && !confirm("Are you sure?")) return;
       setIsGeneratingCurriculum(true);
@@ -440,10 +442,27 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
 
   const handleGenerateAudio = async () => {
     if (!activeLecture) return;
-    if (userProfile?.subscriptionTier !== 'pro') {
-        alert("High-Quality Neural Audio generation is a Pro feature. Please upgrade to Pro to unlock this.\n\nFree users can listen using the System Voice.");
-        setUseSystemVoice(true); 
-        return;
+    
+    const isPro = userProfile?.subscriptionTier === 'pro';
+    
+    // Check Daily Limit for Free Users
+    if (!isPro && !isSuperAdmin) {
+        const today = new Date().toISOString().split('T')[0];
+        const usageKey = `daily_gen_${currentUser?.uid || 'guest'}_${today}`;
+        const usageCount = parseInt(localStorage.getItem(usageKey) || '0');
+        
+        if (usageCount >= 1) {
+             alert("Daily Free Limit Reached.\n\nNon-pro members can generate 1 AI podcast per day using Gemini Neural Voice.\n\nPlease upgrade to Pro for unlimited generation, or use System Voice (Free).");
+             setUseSystemVoice(true);
+             return;
+        }
+        
+        if (!confirm(`Generate this podcast with Gemini Neural Voice?\n\nThis will use your 1 free daily credit.`)) {
+            return;
+        }
+        
+        // Increment immediately
+        localStorage.setItem(usageKey, (usageCount + 1).toString());
     }
 
     setIsGenerating(true);
@@ -479,7 +498,7 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
 
   const handleRegenerateLecture = async () => {
     if (!activeLecture) return;
-    if (!isMember && !isOwner) { alert(t.guestRestrict); return; }
+    if (!isMember && !isChannelOwner) { alert(t.guestRestrict); return; }
     if (!confirm("Regenerate?")) return;
     stopAudio();
     setIsGenerating(true);
@@ -494,7 +513,7 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
             if (activeSubTopicId) {
                 const cacheKey = `lecture_${channel.id}_${activeSubTopicId}_${language}`;
                 await cacheLectureScript(cacheKey, script);
-                if (currentUser) await saveLectureToFirestore(channel.id, activeSubTopicId, script);
+                if (currentUser && activeSubTopicId) await saveLectureToFirestore(channel.id, activeSubTopicId, script);
             }
             setCurrentSectionIndex(0);
         }
@@ -607,7 +626,7 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
             if (cloudLecture) { setActiveLecture(cloudLecture); setIsLoadedFromCache(true); await cacheLectureScript(cacheKey, cloudLecture); return; }
         }
         const hasApiKey = !!localStorage.getItem('gemini_api_key');
-        if (isMember || isOwner || hasApiKey) {
+        if (isMember || isChannelOwner || hasApiKey) {
           setIsGenerating(true);
           const script = await generateLectureScript(topicTitle, channel.description, language);
           setIsGenerating(false);
@@ -649,9 +668,16 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
   };
 
   const handleVoiceSwitch = (isSystem: boolean) => {
-      if (!isSystem && userProfile?.subscriptionTier !== 'pro') {
-          alert("Neural voices are only available for Pro members.");
-          return;
+      // Allow switch if: is system voice, user is pro, user is super admin, OR user has remaining free credit
+      if (!isSystem && userProfile?.subscriptionTier !== 'pro' && !isSuperAdmin) {
+          const today = new Date().toISOString().split('T')[0];
+          const usageKey = `daily_gen_${currentUser?.uid || 'guest'}_${today}`;
+          const usageCount = parseInt(localStorage.getItem(usageKey) || '0');
+          
+          if (usageCount >= 1) {
+              alert("You have used your free daily Neural Voice generation.\n\nSwitching back to System Voice.");
+              return;
+          }
       }
       stopAudio();
       setUseSystemVoice(isSystem);
@@ -690,7 +716,7 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
                 <ArrowLeft size={16} /><span>{t.back}</span>
             </button>
         </div>
-        {isOwner && onEditChannel && (<div className="absolute top-4 right-4 z-20"><button onClick={onEditChannel} className="flex items-center space-x-2 px-4 py-2 bg-indigo-600/80 backdrop-blur-md rounded-full hover:bg-indigo-500 transition-colors text-white text-sm font-bold shadow-lg"><Edit size={16} /><span>{t.edit}</span></button></div>)}
+        {isChannelOwner && onEditChannel && (<div className="absolute top-4 right-4 z-20"><button onClick={onEditChannel} className="flex items-center space-x-2 px-4 py-2 bg-indigo-600/80 backdrop-blur-md rounded-full hover:bg-indigo-500 transition-colors text-white text-sm font-bold shadow-lg"><Edit size={16} /><span>{t.edit}</span></button></div>)}
         <div className="absolute bottom-0 left-0 w-full p-6 md:p-8 max-w-7xl mx-auto">
            <div className="flex items-end justify-between">
              <div>
@@ -725,7 +751,7 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
                             <h3 className="text-xl font-bold text-white flex items-center space-x-2"><BookOpen className="text-indigo-400" size={20} /><span>{t.curriculum}</span></h3>
                             <p className="text-xs text-slate-500 mt-1">{chapters && chapters.length > 0 ? `${chapters.length} ${t.chapters}` : t.selectTopic}</p>
                         </div>
-                        {isOwner && <button onClick={() => handleRegenerateCurriculum(false)} disabled={isGeneratingCurriculum} className="flex items-center space-x-1.5 px-3 py-1.5 bg-slate-800 hover:bg-indigo-600 text-slate-400 hover:text-white rounded-lg transition-colors border border-slate-700 hover:border-indigo-500 shadow-sm" title={t.regenerate}><RefreshCw size={14} className={isGeneratingCurriculum ? 'animate-spin' : ''} /><span className="text-xs font-bold hidden xl:inline">{t.regenerate}</span></button>}
+                        {isChannelOwner && <button onClick={() => handleRegenerateCurriculum(false)} disabled={isGeneratingCurriculum} className="flex items-center space-x-1.5 px-3 py-1.5 bg-slate-800 hover:bg-indigo-600 text-slate-400 hover:text-white rounded-lg transition-colors border border-slate-700 hover:border-indigo-500 shadow-sm" title={t.regenerate}><RefreshCw size={14} className={isGeneratingCurriculum ? 'animate-spin' : ''} /><span className="text-xs font-bold hidden xl:inline">{t.regenerate}</span></button>}
                     </div>
                     {chapters && chapters.length > 0 ? (
                         <div className="divide-y divide-slate-800">
@@ -789,7 +815,7 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
                             <p className="text-xs text-slate-500 mt-1 pl-4 flex items-center space-x-2"><User size={12} /><span>{activeLecture.professorName}</span><span>&</span><GraduationCap size={12} /><span>{activeLecture.studentName}</span></p>
                         </div>
                         <div className="flex items-center space-x-2">
-                            {(isMember || isOwner) && (
+                            {(isMember || isChannelOwner) && (
                                 <>
                                     <button onClick={handleRegenerateLecture} className="flex items-center space-x-2 px-3 py-2 bg-slate-800 rounded-full text-slate-400 hover:text-indigo-400 transition-colors border border-slate-700 hover:border-indigo-500/50" disabled={isGenerating}><Bot size={18} className={isGenerating ? 'animate-bounce' : ''} /></button>
                                     <button onClick={handleDeleteLecture} className="flex items-center space-x-2 px-3 py-2 bg-slate-800 rounded-full text-slate-400 hover:text-red-400 transition-colors border border-slate-700 hover:border-red-500/50"><Trash2 size={18} /></button>
