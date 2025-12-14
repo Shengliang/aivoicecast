@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Channel, GeneratedLecture, Chapter, SubTopic, TranscriptItem, Attachment, UserProfile } from '../types';
-import { ArrowLeft, Play, Pause, BookOpen, MessageCircle, Sparkles, User, GraduationCap, Loader2, ChevronDown, ChevronRight, SkipForward, SkipBack, Settings, X, Mic, Download, RefreshCw, Square, MoreVertical, Edit, Lock, Zap, ToggleLeft, ToggleRight, Users, Check, AlertTriangle, Activity, MessageSquare, FileText, Code, Video, Monitor, PlusCircle, Bot, ExternalLink, ChevronLeft, Menu, List, PanelLeftClose, PanelLeftOpen, CornerDownRight, Trash2, FileDown, Printer, FileJson, HelpCircle, ListMusic, Copy, Paperclip, UploadCloud, Crown } from 'lucide-react';
+import { ArrowLeft, Play, Pause, BookOpen, MessageCircle, Sparkles, User, GraduationCap, Loader2, ChevronDown, ChevronRight, SkipForward, SkipBack, Settings, X, Mic, Download, RefreshCw, Square, MoreVertical, Edit, Lock, Zap, ToggleLeft, ToggleRight, Users, Check, AlertTriangle, Activity, MessageSquare, FileText, Code, Video, Monitor, PlusCircle, Bot, ExternalLink, ChevronLeft, Menu, List, PanelLeftClose, PanelLeftOpen, CornerDownRight, Trash2, FileDown, Printer, FileJson, HelpCircle, ListMusic, Copy, Paperclip, UploadCloud, Crown, Radio } from 'lucide-react';
 import { generateLectureScript } from '../services/lectureGenerator';
 import { generateCurriculum } from '../services/curriculumGenerator';
 import { synthesizeSpeech, cleanTextForTTS, checkAudioCache, clearAudioCache } from '../services/tts';
@@ -25,6 +25,7 @@ interface PodcastDetailProps {
 }
 
 const GEMINI_VOICES = ['Puck', 'Charon', 'Kore', 'Fenrir', 'Zephyr'];
+const OPENAI_VOICES = ['Alloy', 'Echo', 'Fable', 'Onyx', 'Nova', 'Shimmer'];
 const BLOCKLIST = ['Fred', 'Trinoids', 'Albert', 'Bad News', 'Bells', 'Cellos', 'Good News', 'Organ', 'Zarvox', 'Deranged', 'Hysterical', 'Boing', 'Bubbles', 'Bahh', 'Whisper', 'Wobble'];
 const QUALITY_KEYWORDS = [
     'Google', 'Premium', 'Enhanced', 'Natural', 'Siri', 'Neural', 
@@ -186,9 +187,14 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
   const [teacherVoice, setTeacherVoice] = useState(channel.voiceName || 'Puck');
   const [studentVoice, setStudentVoice] = useState('Puck');
   
-  // Check for API Key to determine default system voice usage
-  const hasApiKey = !!(localStorage.getItem('gemini_api_key') || GEMINI_API_KEY || process.env.API_KEY);
-  const [useSystemVoice, setUseSystemVoice] = useState(!hasApiKey);
+  // Provider: 'system' | 'gemini' | 'openai'
+  // Auto-detect based on API Keys available
+  const hasGeminiKey = !!(localStorage.getItem('gemini_api_key') || GEMINI_API_KEY || process.env.API_KEY);
+  const hasOpenAiKey = !!localStorage.getItem('openai_api_key');
+  
+  const [voiceProvider, setVoiceProvider] = useState<'system' | 'gemini' | 'openai'>(
+      hasGeminiKey ? 'gemini' : (hasOpenAiKey ? 'openai' : 'system')
+  );
   
   const [systemVoices, setSystemVoices] = useState<SpeechSynthesisVoice[]>([]);
   const [allRawVoices, setAllRawVoices] = useState<SpeechSynthesisVoice[]>([]);
@@ -198,8 +204,6 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
   const [activeSubTopicId, setActiveSubTopicId] = useState<string | null>(null);
   const [guestError, setGuestError] = useState<string | null>(null);
   
-  const [voiceDebugStatus, setVoiceDebugStatus] = useState<string>('Scanning system voices...');
-
   const [generationProgress, setGenerationProgress] = useState<GenProgress | null>(null);
   const [isAudioReady, setIsAudioReady] = useState(false);
   
@@ -231,7 +235,6 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
   const schedulingCursorRef = useRef(0); 
   const uiTimersRef = useRef<number[]>([]); 
   const playSessionIdRef = useRef(0);
-  const prefetchedIds = useRef<Set<string>>(new Set());
   
   const isMember = !!currentUser;
   const isChannelOwner = currentUser && (channel.ownerId === currentUser.uid);
@@ -275,22 +278,11 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
      }
   }, [channel.chapters, staticReading]);
 
-  useEffect(() => { prefetchedIds.current.clear(); }, [channel.id]);
-
   const loadVoices = useCallback(() => {
     const voices = window.speechSynthesis.getVoices();
     setAllRawVoices(voices); 
     const langCode = language === 'zh' ? 'zh' : 'en';
     
-    let status = '';
-    if (voices.length === 0) {
-        status = "Browser reported 0 voices.";
-    } else {
-        const exampleNames = voices.slice(0, 3).map(v => v.name).join(', ');
-        status = `Detected ${voices.length} voices. (e.g. ${exampleNames}...)`;
-    }
-    setVoiceDebugStatus(status);
-
     let filtered = voices.filter(v => {
         const isLangMatch = v.lang.startsWith(langCode) || (langCode === 'en' && v.lang.startsWith('en'));
         const isSiri = v.name.toLowerCase().includes('siri');
@@ -412,8 +404,6 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
   // AUTO-PLAY WHEN LECTURE LOADS
   useEffect(() => {
       if (activeLecture && !isPlaying && !isLiveActive) {
-          // Check if user has API key, if not we rely on system voice
-          // Don't auto-play if we are just browsing, but usually loading a lecture implies intent
           playSessionIdRef.current++;
           setIsPlaying(true);
       }
@@ -453,21 +443,25 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
   const handleGenerateAudio = async () => {
     if (!activeLecture) return;
     
+    // Safety: Check Key for current provider
+    if (voiceProvider === 'gemini' && !hasGeminiKey) { alert("Gemini API Key missing."); setVoiceProvider('system'); return; }
+    if (voiceProvider === 'openai' && !hasOpenAiKey) { alert("OpenAI API Key missing."); setVoiceProvider('system'); return; }
+
     const isPro = userProfile?.subscriptionTier === 'pro';
     
     // Check Daily Limit for Free Users
-    if (!isPro && !isSuperAdmin) {
+    if (!isPro && !isSuperAdmin && voiceProvider !== 'system') {
         const today = new Date().toISOString().split('T')[0];
         const usageKey = `daily_gen_${currentUser?.uid || 'guest'}_${today}`;
         const usageCount = parseInt(localStorage.getItem(usageKey) || '0');
         
         if (usageCount >= 1) {
-             alert("Daily Free Limit Reached.\n\nNon-pro members can generate 1 AI podcast per day using Gemini Neural Voice.\n\nPlease upgrade to Pro for unlimited generation, or use System Voice (Free).");
-             setUseSystemVoice(true);
+             alert("Daily Free Limit Reached.\n\nNon-pro members can generate 1 AI podcast per day.\n\nPlease upgrade to Pro, or use System Voice.");
+             setVoiceProvider('system');
              return;
         }
         
-        if (!confirm(`Generate this podcast with Gemini Neural Voice?\n\nThis will use your 1 free daily credit.`)) {
+        if (!confirm(`Generate this podcast with ${voiceProvider === 'openai' ? 'OpenAI' : 'Gemini'} Voice?\n\nThis will use your 1 free daily credit.`)) {
             return;
         }
         
@@ -488,9 +482,15 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
         
         if (result.errorType === 'quota') {
             alert(t.quotaError);
-            setUseSystemVoice(true);
+            setVoiceProvider('system');
             setIsGenerating(false);
             setGenerationProgress(null);
+            return;
+        }
+        if (result.errorType === 'auth') {
+            alert(`Auth Error: ${result.errorMessage}. Switching to System.`);
+            setVoiceProvider('system');
+            setIsGenerating(false);
             return;
         }
         if (result.errorType === 'network' || result.errorType === 'unknown') {
@@ -545,16 +545,13 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
 
   useEffect(() => {
     if (isPlaying) {
-      if (!useSystemVoice) {
+      if (voiceProvider !== 'system') {
         const schedule = async () => {
           if (!isPlayingRef.current) return;
           const sessionId = playSessionIdRef.current;
           const ctx = getAudioContext();
           
-          // FORCE RESUME IF SUSPENDED (Crucial fix for silent auto-play)
-          if (ctx.state === 'suspended') {
-              try { await ctx.resume(); } catch(e) { console.warn("Auto-resume failed", e); }
-          }
+          if (ctx.state === 'suspended') { try { await ctx.resume(); } catch(e) {} }
 
           const lookahead = 0.5; 
           if (nextScheduleTimeRef.current < ctx.currentTime) { nextScheduleTimeRef.current = ctx.currentTime + 0.1; }
@@ -584,7 +581,6 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
                    const timerId = window.setTimeout(() => {
                        if (isPlayingRef.current && playSessionIdRef.current === sessionId) {
                            setCurrentSectionIndex(scheduleIdx); 
-                           // Enforce scrolling to center with smooth behavior
                            sectionRefs.current[scheduleIdx]?.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
                        }
                    }, Math.max(0, (nextScheduleTimeRef.current - ctx.currentTime) * 1000));
@@ -593,17 +589,13 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
                    schedulingCursorRef.current++; 
                    break; 
                 } else {
-                   // AUTO-FALLBACK: If Neural TTS fails, switch to system voice immediately
-                   console.warn("Neural TTS Failed/Timeout. Switching to System Voice fallback.");
-                   setUseSystemVoice(true);
-                   // The useEffect depends on useSystemVoice, so changing it will re-run the effect
-                   // and enter the 'else' block below automatically.
+                   console.warn("TTS Failed. Switching to System Voice fallback.");
+                   setVoiceProvider('system');
                    return;
                 }
              } catch(e) { 
                  console.error("Schedule error", e); 
-                 // Even on unknown error, try system voice
-                 setUseSystemVoice(true);
+                 setVoiceProvider('system');
                  return;
              }
           }
@@ -612,6 +604,7 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
         isPlayingRef.current = true;
         schedule();
       } else {
+        // SYSTEM MODE
         const playSystem = () => {
            const idx = schedulingCursorRef.current;
            if (!activeLecture || idx >= activeLecture.sections.length) { stopAudio(); setCurrentSectionIndex(0); return; }
@@ -632,7 +625,7 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
       }
     }
     return () => { if (schedulerTimerRef.current) clearTimeout(schedulerTimerRef.current); };
-  }, [isPlaying, activeLecture, useSystemVoice, teacherVoice, studentVoice, sysTeacherVoiceURI, sysStudentVoiceURI]);
+  }, [isPlaying, activeLecture, voiceProvider, teacherVoice, studentVoice, sysTeacherVoiceURI, sysStudentVoiceURI]);
 
   const handleTopicClick = async (topicTitle: string, subTopicId?: string) => {
     if (isLiveActive) setIsLiveActive(false); 
@@ -653,8 +646,11 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
             const cloudLecture = await getLectureFromFirestore(channel.id, subTopicId);
             if (cloudLecture) { setActiveLecture(cloudLecture); setIsLoadedFromCache(true); await cacheLectureScript(cacheKey, cloudLecture); return; }
         }
-        const hasApiKey = !!localStorage.getItem('gemini_api_key');
-        if (isMember || isChannelOwner || hasApiKey) {
+        
+        // Check either key for generation capability
+        const canGenerate = isMember || isChannelOwner || hasGeminiKey;
+        
+        if (canGenerate) {
           setIsGenerating(true);
           const script = await generateLectureScript(topicTitle, channel.description, language);
           setIsGenerating(false);
@@ -662,7 +658,7 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
             setActiveLecture(script); setIsLoadedFromCache(false);
             await cacheLectureScript(cacheKey, script);
             if (currentUser && subTopicId) await saveLectureToFirestore(channel.id, subTopicId, script);
-          } else { alert("Could not generate content."); }
+          } else { alert("Could not generate content. Ensure API Key is valid."); }
         } else { setGuestError(t.guestRestrict); }
     } catch (e: any) { 
         console.error(e); 
@@ -695,20 +691,22 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
       }, 50); 
   };
 
-  const handleVoiceSwitch = (isSystem: boolean) => {
-      // Allow switch if: is system voice, user is pro, user is super admin, OR user has remaining free credit
-      if (!isSystem && userProfile?.subscriptionTier !== 'pro' && !isSuperAdmin) {
-          const today = new Date().toISOString().split('T')[0];
-          const usageKey = `daily_gen_${currentUser?.uid || 'guest'}_${today}`;
-          const usageCount = parseInt(localStorage.getItem(usageKey) || '0');
-          
-          if (usageCount >= 1) {
-              alert("You have used your free daily Neural Voice generation.\n\nSwitching back to System Voice.");
-              return;
-          }
-      }
+  const switchProvider = (prov: 'system' | 'gemini' | 'openai') => {
+      // Validate
+      if (prov === 'gemini' && !hasGeminiKey) return alert("Gemini Key required.");
+      if (prov === 'openai' && !hasOpenAiKey) return alert("OpenAI Key required.");
+      
       stopAudio();
-      setUseSystemVoice(isSystem);
+      setVoiceProvider(prov);
+      
+      // Reset selected voices to defaults for that provider
+      if (prov === 'openai') {
+          setTeacherVoice('Alloy');
+          setStudentVoice('Echo');
+      } else if (prov === 'gemini') {
+          setTeacherVoice('Puck');
+          setStudentVoice('Zephyr');
+      }
   };
 
   const liveSessionChannel = useMemo(() => {
@@ -721,17 +719,6 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
     }
     return channel;
   }, [channel, language]);
-
-  const handleDownload = () => {
-    if (!activeLecture) return;
-    const content = activeLecture.sections.map(s => `[${s.speaker}]: ${s.text}`).join('\n\n');
-    const blob = new Blob([content], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${activeLecture.topic.replace(/[^a-z0-9]/gi, '_')}.txt`;
-    a.click();
-  };
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col pb-24 relative overflow-hidden">
@@ -762,7 +749,7 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
 
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 flex flex-col-reverse lg:grid lg:grid-cols-12 gap-8 relative">
         
-        {/* Sidebar (Curriculum) - Child 1 (Left on Desktop, Bottom on Mobile) */}
+        {/* Sidebar (Curriculum) */}
         <div className="w-full lg:col-span-4 h-full lg:h-[calc(100vh-24rem)] lg:sticky lg:top-8 overflow-y-auto">
           <div className="bg-slate-900 border border-slate-800 rounded-xl shadow-xl overflow-hidden h-full flex flex-col">
              <div className="flex border-b border-slate-800 shrink-0 overflow-x-auto scrollbar-hide">
@@ -805,30 +792,11 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
                     ) : <div className="p-8 text-center space-y-4"><p className="text-slate-500 text-sm italic">No curriculum.</p></div>}
                  </>
              )}
-             
-             {activeTab === 'appendix' && (
-                 <div className="p-4 space-y-4">
-                     <div className="space-y-2">
-                         {channel.appendix && channel.appendix.length > 0 ? (
-                             channel.appendix.map((file, idx) => (
-                                 <div key={file.id || idx} className="bg-slate-800/50 border border-slate-700 rounded-lg p-3 flex items-center justify-between group hover:border-indigo-500/50 transition-colors">
-                                     <div className="flex items-center space-x-3 overflow-hidden">
-                                         <div className="p-2 bg-slate-800 rounded text-indigo-400"><FileText size={16} /></div>
-                                         <div className="min-w-0"><p className="text-sm text-slate-200 font-medium truncate">{file.name}</p><p className="text-[10px] text-slate-500">{file.uploadedAt ? new Date(file.uploadedAt).toLocaleDateString() : 'Unknown'}</p></div>
-                                     </div>
-                                     <a href={file.url} target="_blank" rel="noopener noreferrer" className="p-2 text-slate-400 hover:text-white hover:bg-slate-700 rounded transition-colors" download><Download size={16} /></a>
-                                 </div>
-                             ))
-                         ) : <p className="text-center text-xs text-slate-500 py-4 italic">No files.</p>}
-                     </div>
-                     {currentUser && <div className="pt-4 border-t border-slate-800"><input type="file" ref={fileInputRef} className="hidden" onChange={(e) => { /* logic */ }} /><button onClick={() => fileInputRef.current?.click()} className="w-full py-2 bg-slate-800 hover:bg-slate-700 text-indigo-300 hover:text-white border border-slate-700 rounded-lg text-xs font-bold flex items-center justify-center space-x-2 transition-colors"><UploadCloud size={14} /><span>Upload</span></button></div>}
-                 </div>
-             )}
              </div>
           </div>
         </div>
 
-        {/* Main Content (Player) - Child 2 (Right on Desktop, Top on Mobile) */}
+        {/* Main Content (Player) */}
         <div className="lg:col-span-8 transition-all duration-300">
           {isLiveActive && liveSessionChannel ? (
               <div className="h-[calc(100vh-20rem)] min-h-[500px] w-full bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-2xl relative">
@@ -855,24 +823,43 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
 
                     {showVoiceSettings && (
                         <div className="mb-4 p-4 bg-slate-800/50 rounded-xl border border-slate-700 animate-fade-in">
-                            <div className="flex justify-between items-center mb-3">
+                            <div className="flex justify-between items-center mb-4">
                                 <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider">{t.voiceSettings}</h4>
-                                <div className="flex items-center space-x-2 bg-slate-900 rounded-lg p-1 border border-slate-700">
-                                    <button onClick={() => handleVoiceSwitch(false)} className={`px-3 py-1 text-xs font-bold rounded-md transition-all ${!useSystemVoice ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:text-slate-300'}`}>Neural (AI)</button>
-                                    <button onClick={() => handleVoiceSwitch(true)} className={`px-3 py-1 text-xs font-bold rounded-md transition-all ${useSystemVoice ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:text-slate-300'}`}>System</button>
+                                {/* Provider Switcher */}
+                                <div className="flex items-center bg-slate-900 rounded-lg p-1 border border-slate-700">
+                                    <button 
+                                        onClick={() => switchProvider('system')} 
+                                        className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all flex items-center gap-1 ${voiceProvider === 'system' ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:text-slate-300'}`}
+                                    >
+                                        <Radio size={12}/> System
+                                    </button>
+                                    <button 
+                                        onClick={() => switchProvider('gemini')} 
+                                        className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all flex items-center gap-1 ${voiceProvider === 'gemini' ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:text-slate-300'}`}
+                                        title={!hasGeminiKey ? "Set Gemini Key" : "Gemini Neural"}
+                                    >
+                                        <Zap size={12} fill="currentColor"/> Gemini
+                                    </button>
+                                    <button 
+                                        onClick={() => switchProvider('openai')} 
+                                        className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all flex items-center gap-1 ${voiceProvider === 'openai' ? 'bg-emerald-600 text-white' : 'text-slate-500 hover:text-slate-300'}`}
+                                        title={!hasOpenAiKey ? "Set OpenAI Key" : "OpenAI Neural"}
+                                    >
+                                        <Sparkles size={12}/> OpenAI
+                                    </button>
                                 </div>
                             </div>
                             
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
                                     <label className="text-[10px] text-slate-500 uppercase font-bold mb-1 block">Teacher</label>
-                                    {useSystemVoice ? (
+                                    {voiceProvider === 'system' ? (
                                         <select value={sysTeacherVoiceURI} onChange={e => setSysTeacherVoiceURI(e.target.value)} className="w-full bg-slate-900 text-white text-xs p-2 rounded border border-slate-600">
                                             {systemVoices.map(v => <option key={v.voiceURI} value={v.voiceURI}>{v.name}</option>)}
                                         </select>
                                     ) : (
                                         <div className="flex gap-1 flex-wrap">
-                                            {GEMINI_VOICES.map(v => (
+                                            {(voiceProvider === 'gemini' ? GEMINI_VOICES : OPENAI_VOICES).map(v => (
                                                 <button key={v} onClick={() => setTeacherVoice(v)} className={`px-2 py-1 text-xs rounded border ${teacherVoice === v ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-slate-900 border-slate-700 text-slate-400'}`}>{v}</button>
                                             ))}
                                         </div>
@@ -880,13 +867,13 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
                                 </div>
                                 <div>
                                     <label className="text-[10px] text-slate-500 uppercase font-bold mb-1 block">Student</label>
-                                    {useSystemVoice ? (
+                                    {voiceProvider === 'system' ? (
                                         <select value={sysStudentVoiceURI} onChange={e => setSysStudentVoiceURI(e.target.value)} className="w-full bg-slate-900 text-white text-xs p-2 rounded border border-slate-600">
                                             {systemVoices.map(v => <option key={v.voiceURI} value={v.voiceURI}>{v.name}</option>)}
                                         </select>
                                     ) : (
                                         <div className="flex gap-1 flex-wrap">
-                                            {GEMINI_VOICES.map(v => (
+                                            {(voiceProvider === 'gemini' ? GEMINI_VOICES : OPENAI_VOICES).map(v => (
                                                 <button key={v} onClick={() => setStudentVoice(v)} className={`px-2 py-1 text-xs rounded border ${studentVoice === v ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-slate-900 border-slate-700 text-slate-400'}`}>{v}</button>
                                             ))}
                                         </div>
@@ -899,14 +886,14 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
                     <div className="flex justify-between items-center mt-6 pt-6 border-t border-slate-800">
                         <button onClick={() => {}} disabled={currentLectureIndex <= 0} className="text-slate-400 hover:text-white disabled:opacity-30 flex items-center space-x-2 text-sm font-bold transition-colors"><SkipBack size={20} /><span className="hidden sm:inline">{t.prev}</span></button>
                         <div className="flex flex-col items-center gap-2">
-                            {!useSystemVoice && !isAudioReady && !isPlaying ? (
+                            {voiceProvider !== 'system' && !isAudioReady && !isPlaying ? (
                                 <button onClick={handleGenerateAudio} disabled={isGenerating} className="w-16 h-16 rounded-full flex items-center justify-center transition-all shadow-lg bg-indigo-600 text-white hover:bg-indigo-500 hover:scale-105 disabled:opacity-50 disabled:scale-100" title={t.preGenDesc}>
                                     {isGenerating ? <div className="flex flex-col items-center"><Loader2 className="animate-spin mb-1" size={20} /><span className="text-[10px] font-bold">{generationProgress ? `${Math.round((generationProgress.current / generationProgress.total) * 100)}%` : '...'}</span></div> : <Zap fill="currentColor" size={28} />}
                                 </button>
                             ) : (
                                 <button onClick={togglePlayback} className={`w-16 h-16 rounded-full flex items-center justify-center transition-all shadow-lg ${isPlaying ? 'bg-slate-800 text-red-400 hover:bg-slate-700' : 'bg-emerald-600 text-white hover:bg-emerald-500 hover:scale-105'}`}>{isPlaying ? (isBuffering ? <Loader2 className="animate-spin" size={28}/> : <Pause fill="currentColor" size={28} />) : <Play fill="currentColor" size={28} />}</button>
                             )}
-                            {isBuffering && useSystemVoice && <span className="text-xs text-slate-500">Processing...</span>}
+                            {isBuffering && <span className="text-xs text-slate-500">Processing...</span>}
                         </div>
                         <button onClick={() => {}} disabled={currentLectureIndex === -1 || currentLectureIndex >= flatCurriculum.length - 1} className="text-slate-400 hover:text-white disabled:opacity-30 flex items-center space-x-2 text-sm font-bold transition-colors"><span className="hidden sm:inline">{t.next}</span><SkipForward size={20} /></button>
                     </div>

@@ -1,19 +1,21 @@
 
-// [FORCE-SYNC-v3.62.1] Timestamp: 2025-05-18T12:00:00.000Z
+// [FORCE-SYNC-v3.63.0] Timestamp: 2025-05-18T13:00:00.000Z
 import { GoogleGenAI } from '@google/genai';
 import { base64ToBytes, decodeAudioData } from '../utils/audioUtils';
 import { getCachedAudioBuffer, cacheAudioBuffer } from '../utils/db';
 import { GEMINI_API_KEY } from './private_keys';
 
-export type TtsErrorType = 'none' | 'quota' | 'network' | 'unknown';
+export type TtsErrorType = 'none' | 'quota' | 'network' | 'unknown' | 'auth';
 
 export interface TtsResult {
   buffer: AudioBuffer | null;
   errorType: TtsErrorType;
   errorMessage?: string;
+  provider?: 'gemini' | 'openai';
 }
 
 const USAGE_KEY = 'tts_daily_usage';
+const OPENAI_VOICES = ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'];
 
 // In-memory cache for fast access during the current session
 const memoryCache = new Map<string, AudioBuffer>();
@@ -79,6 +81,56 @@ export function clearMemoryCache() {
 // Keep the old name as alias for backward compatibility if needed, though clearMemoryCache is preferred.
 export const clearAudioCache = clearMemoryCache;
 
+async function synthesizeOpenAI(text: string, voice: string, apiKey: string): Promise<ArrayBuffer> {
+  const response = await fetch("https://api.openai.com/v1/audio/speech", {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: "tts-1", // tts-1 is faster, tts-1-hd is higher quality. Using fast for consistency.
+      input: text,
+      voice: voice.toLowerCase(), // OpenAI expects lowercase
+    }),
+  });
+
+  if (!response.ok) {
+    const err = await response.json();
+    throw new Error(`OpenAI Error: ${err.error?.message || response.statusText}`);
+  }
+
+  return await response.arrayBuffer();
+}
+
+async function synthesizeGemini(text: string, voice: string, apiKey: string): Promise<ArrayBuffer> {
+    const ai = new GoogleGenAI({ apiKey });
+    
+    // Create a timeout promise that rejects after 25 seconds
+    const timeoutPromise = new Promise<never>((_, reject) => 
+        setTimeout(() => reject(new Error("Gemini TTS Timeout (25s)")), 25000)
+    );
+
+    const apiCallPromise = ai.models.generateContent({
+        model: 'gemini-2.5-flash-preview-tts',
+        contents: [{ parts: [{ text: text }] }],
+        config: {
+          responseModalities: ['AUDIO'] as any, 
+          speechConfig: {
+            voiceConfig: {
+              prebuiltVoiceConfig: { voiceName: voice },
+            },
+          },
+        },
+    });
+
+    const response = await Promise.race([apiCallPromise, timeoutPromise]);
+    const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+    
+    if (!base64Audio) throw new Error("Empty audio response from Gemini");
+    return base64ToBytes(base64Audio).buffer;
+}
+
 export async function synthesizeSpeech(
   text: string, 
   voiceName: string, 
@@ -97,71 +149,53 @@ export async function synthesizeSpeech(
     return pendingRequests.get(cacheKey)!;
   }
 
-  // 3. Start Process (Check DB -> Call API)
+  // 3. Start Process
   const requestPromise = (async (): Promise<TtsResult> => {
     try {
       // 3a. Check Persistent Cache (IndexedDB)
       const cachedArrayBuffer = await getCachedAudioBuffer(cacheKey);
       if (cachedArrayBuffer) {
-        // Decode logic requires a copy in some browsers if buffer is detached, 
-        // but IDB returns a fresh buffer so we are good.
         const audioBuffer = await decodeAudioData(new Uint8Array(cachedArrayBuffer), audioContext);
         memoryCache.set(cacheKey, audioBuffer);
         return { buffer: audioBuffer, errorType: 'none' };
       }
 
-      // Initialize client inside function to pick up latest API Key
-      const apiKey = localStorage.getItem('gemini_api_key') || GEMINI_API_KEY || process.env.API_KEY || '';
-      if (!apiKey) {
-        console.warn("API Key missing, cannot synthesize speech");
-        return { buffer: null, errorType: 'unknown', errorMessage: 'API Key missing' };
-      }
-      const ai = new GoogleGenAI({ apiKey });
+      // 3b. Determine Provider & Synthesize
+      let rawBuffer: ArrayBuffer;
+      let usedProvider: 'gemini' | 'openai' = 'gemini';
 
-      // 3b. Call Gemini API with Timeout
-      // Create a timeout promise that rejects after 30 seconds (increased from 10s)
-      const timeoutPromise = new Promise<never>((_, reject) => 
-        setTimeout(() => reject(new Error("TTS Timeout (30s) - Network slow or API busy")), 30000)
-      );
-
-      const apiCallPromise = ai.models.generateContent({
-        model: 'gemini-2.5-flash-preview-tts',
-        contents: [{ parts: [{ text: cleanText }] }],
-        config: {
-          responseModalities: ['AUDIO'] as any, 
-          speechConfig: {
-            voiceConfig: {
-              prebuiltVoiceConfig: { voiceName: voiceName },
-            },
-          },
-        },
-      });
-
-      // Race the API call against the timeout
-      const response = await Promise.race([apiCallPromise, timeoutPromise]);
-
-      const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-      
-      if (!base64Audio) {
-        console.warn("No audio data received from Gemini TTS");
-        return { buffer: null, errorType: 'unknown', errorMessage: 'Empty response from API' };
+      // Check if requested voice is OpenAI
+      if (OPENAI_VOICES.includes(voiceName.toLowerCase())) {
+          const openAiKey = localStorage.getItem('openai_api_key');
+          if (!openAiKey) {
+              return { buffer: null, errorType: 'auth', errorMessage: 'OpenAI API Key missing' };
+          }
+          usedProvider = 'openai';
+          rawBuffer = await synthesizeOpenAI(cleanText, voiceName, openAiKey);
+      } else {
+          // Default to Gemini
+          const geminiKey = localStorage.getItem('gemini_api_key') || GEMINI_API_KEY || process.env.API_KEY || '';
+          if (!geminiKey) {
+              return { buffer: null, errorType: 'auth', errorMessage: 'Gemini API Key missing' };
+          }
+          usedProvider = 'gemini';
+          rawBuffer = await synthesizeGemini(cleanText, voiceName, geminiKey);
       }
 
-      const audioBytes = base64ToBytes(base64Audio);
-      
       // 3c. Save to Persistent Cache (IndexedDB)
-      await cacheAudioBuffer(cacheKey, audioBytes.buffer);
+      await cacheAudioBuffer(cacheKey, rawBuffer);
 
       // Track usage on success
       incrementDailyTtsUsage();
 
       // 3d. Decode for playback
-      const audioBuffer = await decodeAudioData(audioBytes, audioContext);
+      const audioBuffer = await decodeAudioData(new Uint8Array(rawBuffer), audioContext);
       
       // Save to Memory Cache
       memoryCache.set(cacheKey, audioBuffer);
       
-      return { buffer: audioBuffer, errorType: 'none' };
+      return { buffer: audioBuffer, errorType: 'none', provider: usedProvider };
+
     } catch (error: any) {
       console.error("TTS Generation Error:", error);
       
@@ -172,13 +206,12 @@ export async function synthesizeSpeech(
           errorType = 'quota';
       } else if (msg.includes('timeout') || msg.includes('network') || msg.includes('fetch') || msg.includes('offline')) {
           errorType = 'network';
+      } else if (msg.includes('Key missing') || msg.includes('Unauthorized') || msg.includes('401')) {
+          errorType = 'auth';
       }
 
       return { buffer: null, errorType, errorMessage: msg };
     } finally {
-      // CRITICAL: Always clean up the pending request map, 
-      // even if the API timed out or failed. 
-      // This prevents subsequent retries from getting stuck on a dead promise.
       pendingRequests.delete(cacheKey);
     }
   })();

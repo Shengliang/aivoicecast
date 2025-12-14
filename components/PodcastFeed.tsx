@@ -1,7 +1,7 @@
 
 import React, { useMemo, useRef, useState, useEffect, useCallback } from 'react';
 import { Channel, UserProfile, GeneratedLecture } from '../types';
-import { Play, MessageSquare, Heart, Share2, Bookmark, Music, Plus, Pause, Loader2, Volume2, VolumeX, GraduationCap, ChevronRight, Mic, AlignLeft, BarChart3, User, AlertCircle, Zap, Radio, Square } from 'lucide-react';
+import { Play, MessageSquare, Heart, Share2, Bookmark, Music, Plus, Pause, Loader2, Volume2, VolumeX, GraduationCap, ChevronRight, Mic, AlignLeft, BarChart3, User, AlertCircle, Zap, Radio, Square, Sparkles } from 'lucide-react';
 import { ChannelCard } from './ChannelCard';
 import { CreatorProfileModal } from './CreatorProfileModal';
 import { followUser, unfollowUser } from '../services/firestoreService';
@@ -65,9 +65,9 @@ const MobileFeedCard = ({
     const [statusMessage, setStatusMessage] = useState('');
     const [transcript, setTranscript] = useState<{speaker: string, text: string} | null>(null);
     
-    // TTS Mode State
-    const [ttsMode, setTtsMode] = useState<'neural' | 'system'>('neural');
-    const ttsModeRef = useRef<'neural' | 'system'>('neural'); // Ref for access in loop
+    // Provider State: 'system', 'gemini', 'openai'
+    const [provider, setProvider] = useState<'system' | 'gemini' | 'openai'>('gemini');
+    const providerRef = useRef<'system' | 'gemini' | 'openai'>('gemini'); // Ref for access in loop
     
     // Logic State
     const [trackIndex, setTrackIndex] = useState(-1); // -1 = Intro, 0+ = Lessons
@@ -83,7 +83,7 @@ const MobileFeedCard = ({
     const preloadedAudioRef = useRef<Promise<any> | null>(null);
 
     // Sync Ref
-    useEffect(() => { ttsModeRef.current = ttsMode; }, [ttsMode]);
+    useEffect(() => { providerRef.current = provider; }, [provider]);
     useEffect(() => { isActiveRef.current = isActive; }, [isActive]);
 
     // Data Helpers - Merge Static Data to ensure we have a curriculum
@@ -115,11 +115,14 @@ const MobileFeedCard = ({
 
     useEffect(() => {
         mountedRef.current = true;
-        // Check for API Key on mount - if missing, default to System for stability
-        const apiKey = localStorage.getItem('gemini_api_key') || GEMINI_API_KEY || process.env.API_KEY;
-        if (!apiKey) {
-            setTtsMode('system');
-        }
+        // Check for API Keys on mount
+        const hasGemini = !!(localStorage.getItem('gemini_api_key') || GEMINI_API_KEY || process.env.API_KEY);
+        const hasOpenAI = !!localStorage.getItem('openai_api_key');
+        
+        if (hasOpenAI) setProvider('openai');
+        else if (hasGemini) setProvider('gemini');
+        else setProvider('system');
+
         return () => { 
             mountedRef.current = false;
             stopAudio();
@@ -171,7 +174,7 @@ const MobileFeedCard = ({
             try { await ctx.resume(); } catch(e) {}
         }
 
-        if (ctx.state === 'running' || ttsModeRef.current === 'system') {
+        if (ctx.state === 'running' || providerRef.current === 'system') {
             const sessionId = ++playbackSessionRef.current;
             runTrackSequence(-1, sessionId);
         }
@@ -233,8 +236,24 @@ const MobileFeedCard = ({
 
     const toggleTtsMode = (e: React.MouseEvent) => {
         e.stopPropagation();
-        const newMode = ttsMode === 'neural' ? 'system' : 'neural';
-        setTtsMode(newMode);
+        // Cycle: Gemini -> OpenAI -> System
+        let newMode: 'system' | 'gemini' | 'openai' = 'system';
+        const hasGemini = !!(localStorage.getItem('gemini_api_key') || GEMINI_API_KEY || process.env.API_KEY);
+        const hasOpenAI = !!localStorage.getItem('openai_api_key');
+
+        if (provider === 'gemini') {
+            if (hasOpenAI) newMode = 'openai';
+            else newMode = 'system';
+        } else if (provider === 'openai') {
+            newMode = 'system';
+        } else {
+            if (hasGemini) newMode = 'gemini';
+            else if (hasOpenAI) newMode = 'openai';
+            else newMode = 'system';
+        }
+
+        setProvider(newMode);
+        
         // Force restart if currently playing
         if (playbackState === 'playing' || playbackState === 'buffering') {
             stopAudio();
@@ -283,28 +302,22 @@ const MobileFeedCard = ({
         return new Promise((resolve) => {
             if (!mountedRef.current || !isActiveRef.current) { resolve(); return; }
             
-            // Cancel any pending speech
             window.speechSynthesis.cancel();
 
             const utterance = new SpeechSynthesisUtterance(text);
-            
-            // Voice Selection Heuristics
             const voices = window.speechSynthesis.getVoices();
             const v = voices.find(v => v.name.includes(voiceName)) || 
-                      voices.find(v => v.lang.startsWith('en') && (v.name.includes('Google') || v.name.includes('Premium') || v.name.includes('Enhanced'))) ||
                       voices.find(v => v.lang.startsWith('en'));
             
             if (v) utterance.voice = v;
-            
-            utterance.rate = 1.1; // Slightly faster for content
+            utterance.rate = 1.1; 
             
             utterance.onend = () => {
                 resolve();
             };
             
             utterance.onerror = (e) => {
-                console.warn("System TTS Error", e);
-                resolve(); // Fallback: Resolve to continue sequence even if audio fails
+                resolve();
             };
 
             window.speechSynthesis.speak(utterance);
@@ -314,22 +327,32 @@ const MobileFeedCard = ({
     const runTrackSequence = async (startIndex: number, sessionId: number) => {
         setPlaybackState('playing');
 
-        const apiKey = localStorage.getItem('gemini_api_key') || GEMINI_API_KEY || process.env.API_KEY;
+        // Check keys validity one last time
+        const hasGemini = !!(localStorage.getItem('gemini_api_key') || GEMINI_API_KEY || process.env.API_KEY);
+        const hasOpenAI = !!localStorage.getItem('openai_api_key');
         
-        // Auto-downgrade if no key and trying neural
-        if (!apiKey && ttsModeRef.current === 'neural') {
-            setTtsMode('system');
-            ttsModeRef.current = 'system';
+        if (providerRef.current === 'gemini' && !hasGemini) {
+             setProvider('system'); providerRef.current = 'system';
+        }
+        if (providerRef.current === 'openai' && !hasOpenAI) {
+             setProvider('system'); providerRef.current = 'system';
         }
 
         let currentIndex = startIndex;
 
-        // Use refs for loop condition to avoid stale state closures
         while (mountedRef.current && isActiveRef.current && sessionId === playbackSessionRef.current) {
             setTrackIndex(currentIndex); 
             
             let textParts: {speaker: string, text: string, voice: string}[] = [];
             
+            // Map generic voice names to provider specific ones if needed
+            let hostVoice = channel.voiceName || 'Puck';
+            
+            if (providerRef.current === 'openai') {
+                // Map common names to OpenAI names
+                hostVoice = 'Alloy'; // Default OpenAI host
+            }
+
             if (currentIndex === -1) {
                 // INTRO
                 const introText = channel.welcomeMessage || channel.description || `Welcome to ${channel.title}.`;
@@ -339,10 +362,9 @@ const MobileFeedCard = ({
                 textParts = [{
                     speaker: 'Host',
                     text: introText,
-                    voice: channel.voiceName || 'Puck'
+                    voice: hostVoice
                 }];
 
-                // PRE-FETCH
                 if (flatCurriculum.length > 0) {
                     preloadedScriptRef.current = preloadScript(flatCurriculum[0]);
                 }
@@ -357,7 +379,6 @@ const MobileFeedCard = ({
                 }
 
                 const lessonMeta = flatCurriculum[currentIndex];
-                
                 let lecture = null;
                 
                 if (preloadedScriptRef.current) {
@@ -371,8 +392,7 @@ const MobileFeedCard = ({
                 }
 
                 if (!lecture || !lecture.sections || lecture.sections.length === 0) {
-                    console.warn("Lecture generation failed or empty.");
-                    setStatusMessage("Content Unavailable - Skipping");
+                    setStatusMessage("Skipping...");
                     await new Promise(r => setTimeout(r, 2000));
                     currentIndex++;
                     continue;
@@ -381,11 +401,10 @@ const MobileFeedCard = ({
                 setPlaybackState('playing');
                 setStatusMessage("Playing");
 
-                const hostVoice = channel.voiceName || 'Puck';
                 textParts = lecture.sections.map((s: any) => ({
                     speaker: s.speaker === 'Teacher' ? lecture.professorName : lecture.studentName,
                     text: s.text,
-                    voice: s.speaker === 'Teacher' ? hostVoice : 'Puck'
+                    voice: s.speaker === 'Teacher' ? hostVoice : (providerRef.current === 'openai' ? 'Echo' : 'Puck')
                 }));
 
                 if (currentIndex + 1 < flatCurriculum.length) {
@@ -393,20 +412,18 @@ const MobileFeedCard = ({
                 }
             }
 
-            // PLAY PARTS (Audio Loop)
+            // PLAY PARTS
             for (let i = 0; i < textParts.length; i++) {
                 if (!mountedRef.current || !isActiveRef.current || sessionId !== playbackSessionRef.current) return;
 
                 const part = textParts[i];
                 setTranscript({ speaker: part.speaker, text: part.text });
                 
-                const currentMode = ttsModeRef.current;
+                const currentMode = providerRef.current;
 
                 if (currentMode === 'system') {
-                    // SYSTEM MODE
                     await playSystemAudio(part.text, part.voice);
                 } else {
-                    // NEURAL MODE (with Fallback)
                     let audioResult = null;
                     
                     if (i === 0 && preloadedAudioRef.current) {
@@ -419,7 +436,6 @@ const MobileFeedCard = ({
                         setPlaybackState('playing');
                     }
 
-                    // Pipeline next part
                     if (i + 1 < textParts.length) {
                         const nextPart = textParts[i+1];
                         preloadedAudioRef.current = preloadAudio(nextPart.text, nextPart.voice);
@@ -430,8 +446,7 @@ const MobileFeedCard = ({
                     if (audioResult && audioResult.buffer) {
                         await playAudioBuffer(audioResult.buffer, sessionId);
                     } else {
-                        // FALLBACK TO SYSTEM if Neural Fails
-                        console.warn("Audio failed, switching to System Voice fallback for this segment");
+                        console.warn("Audio failed, switching to System Voice fallback");
                         await playSystemAudio(part.text, part.voice);
                     }
                 }
@@ -444,18 +459,19 @@ const MobileFeedCard = ({
     };
 
     const fetchLectureData = async (meta: any) => {
-        // 1. Check Offline/Spotlight Static Content FIRST (Zero wait time)
         if (OFFLINE_LECTURES[meta.title]) return OFFLINE_LECTURES[meta.title];
         if (SPOTLIGHT_DATA[channel.id]?.lectures?.[meta.title]) return SPOTLIGHT_DATA[channel.id].lectures[meta.title];
 
-        // 2. Check DB Cache
         const cacheKey = `lecture_${channel.id}_${meta.id}_en`;
         let data = await getCachedLectureScript(cacheKey);
         
-        // 3. Generate if missing
         if (!data) {
-            data = await generateLectureScript(meta.title, `Podcast: ${channel.title}. ${channel.description}`, 'en');
-            if (data) await cacheLectureScript(cacheKey, data);
+            // Need Gemini Key for text generation regardless of audio provider
+            const apiKey = localStorage.getItem('gemini_api_key') || GEMINI_API_KEY || process.env.API_KEY;
+            if (apiKey) {
+                data = await generateLectureScript(meta.title, `Podcast: ${channel.title}. ${channel.description}`, 'en');
+                if (data) await cacheLectureScript(cacheKey, data);
+            }
         }
         return data;
     };
@@ -475,10 +491,10 @@ const MobileFeedCard = ({
                 <div className="absolute top-20 right-4 z-30 flex flex-col items-end gap-2">
                     <button 
                         onClick={toggleTtsMode}
-                        className={`backdrop-blur-md px-3 py-1.5 rounded-full flex items-center gap-2 border text-xs font-bold shadow-lg transition-all ${ttsMode === 'neural' ? 'bg-emerald-900/60 border-emerald-500/50 text-emerald-300' : 'bg-indigo-900/60 border-indigo-500/50 text-indigo-300'}`}
+                        className={`backdrop-blur-md px-3 py-1.5 rounded-full flex items-center gap-2 border text-xs font-bold shadow-lg transition-all ${provider === 'openai' ? 'bg-emerald-900/60 border-emerald-500/50 text-emerald-300' : provider === 'gemini' ? 'bg-indigo-900/60 border-indigo-500/50 text-indigo-300' : 'bg-slate-800/60 border-slate-600 text-slate-300'}`}
                     >
-                        {ttsMode === 'neural' ? <Zap size={12} fill="currentColor"/> : <Radio size={12} />}
-                        <span>{ttsMode === 'neural' ? 'Neural' : 'System'}</span>
+                        {provider === 'openai' ? <Sparkles size={12} fill="currentColor"/> : provider === 'gemini' ? <Zap size={12} fill="currentColor"/> : <Radio size={12} />}
+                        <span>{provider === 'openai' ? 'OpenAI' : provider === 'gemini' ? 'Gemini' : 'System'}</span>
                     </button>
 
                     {(playbackState === 'buffering' || statusMessage) && (
@@ -598,7 +614,7 @@ const MobileFeedCard = ({
                 <div className="flex items-center gap-2 text-white/60 text-xs font-medium overflow-hidden whitespace-nowrap">
                     <Music size={12} className={playbackState === 'playing' ? "animate-pulse text-emerald-400" : ""} />
                     <div className="flex gap-4 animate-marquee">
-                        <span>Voice: {channel.voiceName} ({ttsMode === 'neural' ? 'Neural' : 'System'})</span>
+                        <span>Voice: {channel.voiceName} ({provider === 'openai' ? 'OpenAI' : provider === 'gemini' ? 'Gemini' : 'System'})</span>
                         <span>•</span>
                         {channel.tags.map((t: string) => <span key={t}>#{t}</span>)}
                     </div>
@@ -667,7 +683,6 @@ export const PodcastFeed: React.FC<PodcastFeedProps> = ({
 
       const observer = new IntersectionObserver((entries) => {
           entries.forEach(entry => {
-              // Increased threshold to 0.8 (80% visible) to prevent quick swipes triggering change
               if (entry.isIntersecting) {
                   const id = entry.target.getAttribute('data-id');
                   if (id) setActiveChannelId(id);
