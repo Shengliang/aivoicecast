@@ -120,6 +120,7 @@ const App: React.FC = () => {
   const [viewState, setViewState] = useState<ExtendedViewState>('directory');
   const [activeChannelId, setActiveChannelId] = useState<string | null>(null);
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
+  const [isAppsMenuOpen, setIsAppsMenuOpen] = useState(false);
   
   // Mobile Navigation State
   const [mobileFeedTab, setMobileFeedTab] = useState<'foryou' | 'following'>('foryou');
@@ -481,18 +482,18 @@ const App: React.FC = () => {
   const MobileBottomNav = () => (
       <div className="md:hidden fixed bottom-0 left-0 w-full bg-slate-950/90 backdrop-blur-md border-t border-slate-800 z-50 px-6 py-2 flex justify-between items-center safe-area-bottom">
           <button 
-              onClick={() => { setViewState('directory'); setActiveTab('categories'); }}
-              className={`flex flex-col items-center gap-1 ${viewState === 'directory' ? 'text-white' : 'text-slate-500'}`}
+              onClick={() => { setViewState('directory'); setActiveTab('categories'); setIsAppsMenuOpen(false); }}
+              className={`flex flex-col items-center gap-1 ${viewState === 'directory' && activeTab === 'categories' && !isAppsMenuOpen ? 'text-white' : 'text-slate-500'}`}
           >
-              <Home size={24} fill={viewState === 'directory' ? "currentColor" : "none"} />
+              <Home size={24} fill={viewState === 'directory' && activeTab === 'categories' && !isAppsMenuOpen ? "currentColor" : "none"} />
               <span className="text-[10px]">Home</span>
           </button>
           
           <button 
-              onClick={() => { setViewState('directory'); setActiveTab('groups'); }}
-              className={`flex flex-col items-center gap-1 ${activeTab === 'groups' ? 'text-white' : 'text-slate-500'}`}
+              onClick={() => { setViewState('directory'); setActiveTab('groups'); setIsAppsMenuOpen(false); }}
+              className={`flex flex-col items-center gap-1 ${activeTab === 'groups' && !isAppsMenuOpen ? 'text-white' : 'text-slate-500'}`}
           >
-              <Users size={24} fill={activeTab === 'groups' ? "currentColor" : "none"} />
+              <Users size={24} fill={activeTab === 'groups' && !isAppsMenuOpen ? "currentColor" : "none"} />
               <span className="text-[10px]">Friends</span>
           </button>
 
@@ -508,15 +509,15 @@ const App: React.FC = () => {
           </button>
 
           <button 
-              onClick={() => setViewState('chat')}
-              className={`flex flex-col items-center gap-1 ${viewState === 'chat' ? 'text-white' : 'text-slate-500'}`}
+              onClick={() => setIsAppsMenuOpen(true)}
+              className={`flex flex-col items-center gap-1 ${isAppsMenuOpen ? 'text-white' : 'text-slate-500'}`}
           >
-              <Inbox size={24} fill={viewState === 'chat' ? "currentColor" : "none"} />
-              <span className="text-[10px]">Inbox</span>
+              <LayoutGrid size={24} fill={isAppsMenuOpen ? "currentColor" : "none"} />
+              <span className="text-[10px]">Apps</span>
           </button>
 
           <button 
-              onClick={() => setIsAccountSettingsOpen(true)}
+              onClick={() => { setIsAccountSettingsOpen(true); setIsAppsMenuOpen(false); }}
               className={`flex flex-col items-center gap-1 ${isAccountSettingsOpen ? 'text-white' : 'text-slate-500'}`}
           >
               <User size={24} fill={isAccountSettingsOpen ? "currentColor" : "none"} />
@@ -862,6 +863,48 @@ const App: React.FC = () => {
         {viewState === 'public_debug' && <PublicChannelInspector onBack={() => setViewState('directory')} />}
         {viewState === 'firestore_debug' && <FirestoreInspector onBack={() => setViewState('directory')} />}
       </div>
+
+      {isAppsMenuOpen && (
+        <div className="fixed inset-0 z-[60] bg-slate-950/95 backdrop-blur-md flex flex-col animate-fade-in md:hidden">
+            <div className="p-4 flex justify-between items-center border-b border-slate-800 bg-slate-900/50">
+                <h2 className="text-lg font-bold text-white flex items-center gap-2">
+                    <LayoutGrid size={20} className="text-indigo-400" />
+                    All Apps
+                </h2>
+                <button onClick={() => setIsAppsMenuOpen(false)} className="p-2 bg-slate-800 rounded-full text-slate-400 hover:text-white">
+                    <X size={20} />
+                </button>
+            </div>
+            <div className="p-6 grid grid-cols-3 gap-4 overflow-y-auto pb-24">
+                {[
+                    { label: 'Workspace', icon: MessageSquare, action: () => setViewState('chat'), color: 'text-indigo-400' },
+                    { label: 'Calendar', icon: Calendar, action: () => { setViewState('directory'); setActiveTab('calendar'); }, color: 'text-emerald-400' },
+                    { label: 'CodeStudio', icon: Code, action: () => setViewState('code_studio'), color: 'text-blue-400' },
+                    { label: 'Whiteboard', icon: PenTool, action: () => setViewState('whiteboard'), color: 'text-pink-400' },
+                    { label: 'Blog', icon: Rss, action: () => setViewState('blog'), color: 'text-orange-400' },
+                    { label: 'Mentorship', icon: Users, action: () => { setViewState('directory'); setActiveTab('mentorship'); }, color: 'text-purple-400' },
+                    { label: 'Groups', icon: Users, action: () => { setViewState('directory'); setActiveTab('groups'); }, color: 'text-cyan-400' },
+                    { label: 'Recordings', icon: Disc, action: () => { setViewState('directory'); setActiveTab('recordings'); }, color: 'text-red-400' },
+                    { label: 'Careers', icon: Briefcase, action: () => setViewState('careers'), color: 'text-yellow-400' },
+                    { label: 'Documents', icon: FileText, action: () => { setViewState('directory'); setActiveTab('docs'); }, color: 'text-gray-400' },
+                ].map((app) => (
+                    <button 
+                        key={app.label}
+                        onClick={() => {
+                            app.action();
+                            setIsAppsMenuOpen(false);
+                        }}
+                        className="flex flex-col items-center justify-center gap-3 p-4 bg-slate-900 border border-slate-800 rounded-2xl hover:bg-slate-800 active:scale-95 transition-all aspect-square shadow-lg"
+                    >
+                        <div className={`p-3 bg-slate-800 rounded-xl ${app.color} shadow-inner`}>
+                            <app.icon size={28} />
+                        </div>
+                        <span className="text-xs font-bold text-slate-300">{app.label}</span>
+                    </button>
+                ))}
+            </div>
+        </div>
+      )}
 
       <MobileBottomNav />
 
