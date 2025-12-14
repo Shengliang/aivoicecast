@@ -341,14 +341,31 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
   }, []);
 
   const unlockAudioContext = () => {
+      // iOS Safari Workaround:
+      // Simply resuming AudioContext isn't enough to bypass the hardware mute switch.
+      // We must play an HTML5 audio element to force the audio session category to 'Playback'.
+      
       const ctx = getAudioContext();
       if (ctx.state === 'suspended') ctx.resume().catch(console.error);
+      
       try {
+          // 1. Play a dummy buffer on Web Audio API (Legacy method, still good for state)
           const buffer = ctx.createBuffer(1, 1, 22050);
           const source = ctx.createBufferSource();
           source.buffer = buffer;
           source.connect(ctx.destination);
           source.start(0);
+
+          // 2. Play a silent HTML5 Audio element (Critical for iOS Mute Switch bypass)
+          const audio = new Audio();
+          audio.src = 'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA';
+          audio.volume = 0.01; // Must have volume > 0 to trigger session change
+          audio.play().then(() => {
+              // Once played, pause to save resources, the session is unlocked
+              setTimeout(() => audio.pause(), 100);
+          }).catch(e => {
+              // Ignore auto-play errors if interaction wasn't fast enough
+          });
       } catch(e) {}
   };
 
