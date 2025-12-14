@@ -1,7 +1,7 @@
 
 import React, { useMemo, useRef, useState, useEffect, useCallback } from 'react';
 import { Channel, UserProfile, GeneratedLecture } from '../types';
-import { Play, MessageSquare, Heart, Share2, Bookmark, Music, Plus, Pause, Loader2, Volume2, VolumeX, GraduationCap, ChevronRight, Mic, AlignLeft, BarChart3 } from 'lucide-react';
+import { Play, MessageSquare, Heart, Share2, Bookmark, Music, Plus, Pause, Loader2, Volume2, VolumeX, GraduationCap, ChevronRight, Mic, AlignLeft, BarChart3, User } from 'lucide-react';
 import { ChannelCard } from './ChannelCard';
 import { CreatorProfileModal } from './CreatorProfileModal';
 import { followUser, unfollowUser } from '../services/firestoreService';
@@ -48,9 +48,8 @@ const MobileFeedCard = ({
     onChannelFinish // Callback to trigger scroll to next
 }: any) => {
     // UI State
-    const [isPlaying, setIsPlaying] = useState(false);
-    const [isAudioReady, setIsAudioReady] = useState(false); // False = Click to Play, True = Context Running
-    const [loadingMessage, setLoadingMessage] = useState('');
+    const [playbackState, setPlaybackState] = useState<'idle' | 'buffering' | 'playing' | 'error'>('idle');
+    const [statusMessage, setStatusMessage] = useState('');
     const [transcript, setTranscript] = useState<{speaker: string, text: string} | null>(null);
     
     // Logic State
@@ -86,25 +85,25 @@ const MobileFeedCard = ({
         };
     }, []);
 
-    // --- Main Control Loop ---
+    // --- Lifecycle Management ---
     useEffect(() => {
         if (isActive) {
-            // 1. IMMEDIATE DISPLAY: Show summary/intro text immediately
+            // Reset state when card becomes active
             const introText = channel.welcomeMessage || channel.description || `Welcome to ${channel.title}.`;
             setTranscript({ speaker: 'Host', text: introText });
-            
-            // Reset for new card
             setTrackIndex(-1);
             
-            // 2. Start Audio Sequence
-            attemptAutoPlay();
+            // Try Auto-Play (Low Priority)
+            // We set a small timeout to allow UI to settle
+            const timer = setTimeout(() => {
+                attemptAutoPlay();
+            }, 500);
+            return () => clearTimeout(timer);
         } else {
             // Stop everything when swiping away
             stopAudio();
-            setIsPlaying(false);
-            setIsAudioReady(false);
-            // Invalidate session
-            playbackSessionRef.current++;
+            setPlaybackState('idle');
+            playbackSessionRef.current++; // Invalidate any running loops
         }
     }, [isActive, channel.id]);
 
@@ -113,6 +112,7 @@ const MobileFeedCard = ({
             try { sourceRef.current.stop(); } catch(e) {}
             sourceRef.current = null;
         }
+        window.speechSynthesis.cancel(); // Also stop system TTS if active
     };
 
     const getAudioContext = () => {
@@ -124,42 +124,28 @@ const MobileFeedCard = ({
 
     const attemptAutoPlay = async () => {
         const ctx = getAudioContext();
-        
-        // If already running (from previous card), we are good
+        // Only auto-play if context is already running (user interacted previously)
         if (ctx.state === 'running') {
-            setIsAudioReady(true);
             const sessionId = ++playbackSessionRef.current;
-            runTrackSequence(-1, sessionId); 
-            return;
-        }
-
-        // Try to resume if suspended (browsers block this without gesture)
-        try {
-            await ctx.resume();
-        } catch (e) {
-            // Likely blocked
-        }
-
-        if (ctx.state === 'running') {
-            setIsAudioReady(true);
-            const sessionId = ++playbackSessionRef.current;
-            runTrackSequence(-1, sessionId); 
-        } else {
-            // BLOCKED: Show Play Button
-            setIsAudioReady(false);
+            runTrackSequence(-1, sessionId);
         }
     };
 
-    const handleManualPlay = async (e: React.MouseEvent) => {
+    const handleTogglePlay = async (e: React.MouseEvent) => {
         e.stopPropagation();
         
-        // 1. Setup new session
-        const sessionId = ++playbackSessionRef.current;
-        stopAudio();
-        setIsPlaying(true);
-        setLoadingMessage("Starting Audio...");
+        if (playbackState === 'playing' || playbackState === 'buffering') {
+            stopAudio();
+            setPlaybackState('idle');
+            setStatusMessage("Paused");
+            return;
+        }
+
+        // Start Playback
+        setPlaybackState('buffering');
+        setStatusMessage("Starting Audio...");
         
-        // 2. Force unlock with a new context if needed or resume existing
+        // 1. Force Unlock Audio Context
         let ctx = audioCtxRef.current;
         if (!ctx || ctx.state === 'closed') {
             ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
@@ -168,8 +154,7 @@ const MobileFeedCard = ({
         
         try {
             await ctx.resume();
-            
-            // Play silent sound to force-unlock iOS/Android audio stack
+            // Play silent buffer to unlock iOS
             const buffer = ctx.createBuffer(1, 1, 22050);
             const source = ctx.createBufferSource();
             source.buffer = buffer;
@@ -179,34 +164,28 @@ const MobileFeedCard = ({
             console.error("Audio resume failed", err);
         }
         
-        if (ctx.state === 'running') {
-            setIsAudioReady(true);
-            // Restart from current track or intro
-            const start = trackIndex === -1 ? -1 : trackIndex;
-            runTrackSequence(start, sessionId);
-        } else {
-            setIsPlaying(false);
-            setLoadingMessage("");
-            setIsAudioReady(false); // Should show play button again
-        }
+        const sessionId = ++playbackSessionRef.current;
+        // Resume from current track index or start over if at end
+        const start = (trackIndex >= totalLessons) ? -1 : trackIndex;
+        runTrackSequence(start, sessionId);
     };
 
     const runTrackSequence = async (startIndex: number, sessionId: number) => {
-        setIsPlaying(true);
+        setPlaybackState('playing');
 
         // Check API Key
         const apiKey = localStorage.getItem('gemini_api_key') || GEMINI_API_KEY || process.env.API_KEY;
         if (!apiKey) {
             setTranscript({ speaker: 'System', text: "API Key Missing. Please set it in Settings to hear audio." });
-            setIsPlaying(false);
-            setLoadingMessage("");
+            setPlaybackState('error');
+            setStatusMessage("No API Key");
             return;
         }
 
         let currentIndex = startIndex;
 
         while (mountedRef.current && isActive && sessionId === playbackSessionRef.current) {
-            setTrackIndex(currentIndex); // Update UI
+            setTrackIndex(currentIndex); 
             
             // 1. Determine Content
             let textParts: {speaker: string, text: string, voice: string}[] = [];
@@ -214,13 +193,9 @@ const MobileFeedCard = ({
             if (currentIndex === -1) {
                 // INTRO
                 const introText = channel.welcomeMessage || channel.description || `Welcome to ${channel.title}.`;
-                if (transcript?.text !== introText) {
-                    setTranscript({ speaker: 'Host', text: introText });
-                }
+                if (transcript?.text !== introText) setTranscript({ speaker: 'Host', text: introText });
                 
-                // Show loading for intro too so user knows it's working
-                setLoadingMessage("Generating Intro...");
-                
+                setStatusMessage("Intro...");
                 textParts = [{
                     speaker: 'Host',
                     text: introText,
@@ -229,21 +204,24 @@ const MobileFeedCard = ({
             } else {
                 // LESSON
                 if (currentIndex >= flatCurriculum.length) {
-                    console.log("Channel Finished");
+                    setStatusMessage("Finished");
+                    setPlaybackState('idle');
                     if (onChannelFinish) onChannelFinish();
                     break;
                 }
 
                 const lessonMeta = flatCurriculum[currentIndex];
-                setLoadingMessage(`Loading: ${lessonMeta.title}`);
+                setStatusMessage(`Loading: ${lessonMeta.title.substring(0, 20)}...`);
+                setPlaybackState('buffering');
                 
                 // Fetch/Generate Script
                 const lecture = await fetchLectureData(lessonMeta);
                 if (!lecture || !lecture.sections) {
-                    // Skip if failed
                     currentIndex++;
-                    continue;
+                    continue; // Skip failed lecture
                 }
+                setPlaybackState('playing');
+                setStatusMessage("Playing");
 
                 textParts = lecture.sections.map((s: any) => ({
                     speaker: s.speaker === 'Teacher' ? lecture.professorName : lecture.studentName,
@@ -253,17 +231,12 @@ const MobileFeedCard = ({
             }
 
             // 2. Play Parts
-            setLoadingMessage(''); // Clear loading text
             for (let i = 0; i < textParts.length; i++) {
-                if (!mountedRef.current || !isActive || sessionId !== playbackSessionRef.current) {
-                    return;
-                }
+                if (!mountedRef.current || !isActive || sessionId !== playbackSessionRef.current) return;
 
                 const part = textParts[i];
-                // Update transcript for every new part
                 setTranscript({ speaker: part.speaker, text: part.text });
                 
-                // Speak and Wait
                 await playText(part.text, part.voice, sessionId);
                 
                 // Small gap between speakers
@@ -273,11 +246,6 @@ const MobileFeedCard = ({
             // 3. Increment
             currentIndex++;
         }
-
-        // Only turn off playing if we finished naturally and haven't started a new session
-        if (sessionId === playbackSessionRef.current) {
-            setIsPlaying(false);
-        }
     };
 
     const playText = async (text: string, voice: string, sessionId: number): Promise<void> => {
@@ -286,21 +254,11 @@ const MobileFeedCard = ({
 
             try {
                 const ctx = getAudioContext();
-                
-                // Try resume one more time just in case
-                if (ctx.state === 'suspended') {
-                    try { await ctx.resume(); } catch(e) {}
-                }
+                if (ctx.state === 'suspended') try { await ctx.resume(); } catch(e) {}
 
-                if (ctx.state === 'suspended') {
-                    setIsAudioReady(false); // Show Play Button again
-                    resolve(); 
-                    return;
-                }
-
+                // synthesizeSpeech handles caching and network calls
                 const result = await synthesizeSpeech(text, voice, ctx);
                 
-                // Re-check session after async call
                 if (sessionId !== playbackSessionRef.current) { resolve(); return; }
 
                 if (result.buffer && mountedRef.current && isActive) {
@@ -309,19 +267,16 @@ const MobileFeedCard = ({
                     source.connect(ctx.destination);
                     
                     source.onended = () => {
+                        sourceRef.current = null;
                         resolve();
                     };
                     
                     sourceRef.current = source;
                     source.start(0);
                 } else {
-                    console.warn("TTS Gen failed or no buffer", result.errorMessage);
-                    // Visual feedback for error
-                    setLoadingMessage("Audio Error - Skipping...");
-                    setTimeout(() => {
-                        setLoadingMessage("");
-                        resolve();
-                    }, 1000); 
+                    console.warn("TTS Gen failed", result.errorMessage);
+                    setStatusMessage("Audio Error (Skipping)");
+                    setTimeout(resolve, 1000); 
                 }
             } catch (e) {
                 console.error("Playback error", e);
@@ -333,9 +288,7 @@ const MobileFeedCard = ({
     const fetchLectureData = async (meta: any) => {
         const cacheKey = `lecture_${channel.id}_${meta.id}_en`;
         let data = await getCachedLectureScript(cacheKey);
-        
         if (!data) {
-            setLoadingMessage(`Generating: ${meta.title}...`);
             data = await generateLectureScript(meta.title, `Podcast: ${channel.title}. ${channel.description}`, 'en');
             if (data) await cacheLectureScript(cacheKey, data);
         }
@@ -345,49 +298,32 @@ const MobileFeedCard = ({
     return (
         <div className="h-full w-full snap-start relative flex flex-col justify-center bg-slate-900 border-b border-slate-800">
             
-            {/* Visual Background (Interactive for Play/Pause) */}
-            <div 
-                className="absolute inset-0"
-                onClick={handleManualPlay}
-            >
+            {/* 1. Visual Background */}
+            <div className="absolute inset-0">
                 <img 
                     src={channel.imageUrl} 
                     alt={channel.title} 
                     className="w-full h-full object-cover opacity-60"
                     loading={isActive ? "eager" : "lazy"}
                 />
-                <div className="absolute inset-0 bg-gradient-to-b from-black/30 via-transparent to-black/95"></div>
+                <div className="absolute inset-0 bg-gradient-to-b from-black/30 via-transparent to-black/90"></div>
                 
-                {/* Big Play Button Overlay (If Context Suspended OR Not Playing) */}
-                {!isPlaying && !loadingMessage && (
-                    <div className="absolute inset-0 flex items-center justify-center z-30 bg-black/20 backdrop-blur-[2px]">
-                        <button 
-                            className="w-20 h-20 bg-white/20 backdrop-blur-md rounded-full flex items-center justify-center border-2 border-white/50 shadow-2xl animate-pulse hover:scale-105 transition-transform"
-                        >
-                            <Play size={40} fill="white" className="text-white ml-1" />
-                        </button>
-                    </div>
-                )}
-
-                {/* Loading State */}
-                {loadingMessage && (
-                    <div className="absolute inset-0 flex items-center justify-center z-30 pointer-events-none">
-                        <div className="bg-black/60 backdrop-blur-md px-6 py-3 rounded-2xl flex flex-col items-center gap-2 border border-white/10 shadow-xl">
-                            <Loader2 size={24} className="text-indigo-400 animate-spin" />
-                            <span className="text-xs font-bold text-white uppercase tracking-wider">{loadingMessage}</span>
+                {/* Status Overlay (Loading / Error) */}
+                {(playbackState === 'buffering' || statusMessage) && (
+                    <div className="absolute top-20 left-0 w-full flex justify-center pointer-events-none z-20">
+                        <div className="bg-black/60 backdrop-blur-md px-4 py-2 rounded-full flex items-center gap-2 border border-white/10 shadow-lg">
+                            {playbackState === 'buffering' ? <Loader2 size={14} className="animate-spin text-indigo-400" /> : <Music size={14} className="text-emerald-400" />}
+                            <span className="text-xs font-bold text-white uppercase tracking-wider">{statusMessage || "Active"}</span>
                         </div>
                     </div>
                 )}
 
-                {/* Live Transcript Overlay */}
-                {transcript && !loadingMessage && (
-                    <div className="absolute top-1/2 left-4 right-20 -translate-y-1/2 pointer-events-none z-10">
-                        <div className="bg-black/60 backdrop-blur-md p-6 rounded-3xl border-l-4 border-indigo-500 shadow-2xl animate-fade-in-up">
-                            <div className="flex items-center gap-2 mb-3">
-                                <div className={`p-1.5 rounded-full ${transcript.speaker === 'Host' || transcript.speaker === 'System' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-indigo-500/20 text-indigo-400'}`}>
-                                    <Mic size={14} />
-                                </div>
-                                <span className={`text-xs font-bold uppercase tracking-wider ${transcript.speaker === 'Host' || transcript.speaker === 'System' ? 'text-emerald-400' : 'text-indigo-400'}`}>
+                {/* Transcript */}
+                {transcript && (
+                    <div className="absolute top-1/2 left-4 right-16 -translate-y-1/2 pointer-events-none z-10">
+                        <div className="bg-black/40 backdrop-blur-sm p-6 rounded-3xl border-l-4 border-indigo-500/50 shadow-2xl animate-fade-in-up">
+                            <div className="flex items-center gap-2 mb-2">
+                                <span className={`text-[10px] font-bold uppercase tracking-wider ${transcript.speaker === 'Host' ? 'text-emerald-400' : 'text-indigo-400'}`}>
                                     {transcript.speaker}
                                 </span>
                             </div>
@@ -399,30 +335,17 @@ const MobileFeedCard = ({
                 )}
             </div>
 
-            {/* Playing Indicator (Top Right) */}
-            {isPlaying && !loadingMessage && (
-                <div className="absolute top-4 right-4 z-20 flex gap-1 items-end h-6 pointer-events-none">
-                    <span className="w-1 bg-emerald-400 animate-[bounce_1s_infinite] h-3"></span>
-                    <span className="w-1 bg-emerald-400 animate-[bounce_1.2s_infinite] h-5"></span>
-                    <span className="w-1 bg-emerald-400 animate-[bounce_0.8s_infinite] h-4"></span>
-                    <span className="w-1 bg-emerald-400 animate-[bounce_1.1s_infinite] h-6"></span>
-                </div>
-            )}
-
-            {/* Sidebar Actions */}
-            <div className="absolute right-2 bottom-32 flex flex-col items-center gap-6 z-30">
+            {/* 2. Sidebar Actions (Right) */}
+            <div className="absolute right-2 bottom-40 flex flex-col items-center gap-6 z-30">
                 <div className="relative mb-2 cursor-pointer" onClick={(e) => { e.stopPropagation(); onProfileClick(e, channel); }}>
                     <img 
                         src={channel.imageUrl} 
-                        className={`w-12 h-12 rounded-full border-2 object-cover ${isActive && isPlaying ? 'animate-spin-slow' : ''}`}
+                        className={`w-12 h-12 rounded-full border-2 object-cover ${isActive && playbackState === 'playing' ? 'animate-spin-slow' : ''}`}
                         alt="Creator"
-                        style={{animationPlayState: isPlaying ? 'running' : 'paused'}}
+                        style={{animationPlayState: playbackState === 'playing' ? 'running' : 'paused'}}
                     />
                     {!isFollowed && channel.ownerId && (
-                        <div 
-                            className="absolute -bottom-2 left-1/2 -translate-x-1/2 bg-red-500 rounded-full p-0.5 border border-white" 
-                            onClick={(e) => onToggleFollow(e, channel.id, channel.ownerId)}
-                        >
+                        <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 bg-red-500 rounded-full p-0.5 border border-white" onClick={(e) => onToggleFollow(e, channel.id, channel.ownerId)}>
                             <Plus size={12} color="white" strokeWidth={4} />
                         </div>
                     )}
@@ -442,13 +365,6 @@ const MobileFeedCard = ({
                     <span className="text-white text-xs font-bold shadow-black drop-shadow-md">{channel.comments?.length || 0}</span>
                 </button>
 
-                <button onClick={(e) => onToggleBookmark(e, channel.id)} className="flex flex-col items-center gap-1">
-                    <div className="p-2 rounded-full bg-black/20 backdrop-blur-sm transition-transform active:scale-75">
-                        <Bookmark size={32} fill={isBookmarked ? "#f59e0b" : "rgba(255,255,255,0.9)"} className={isBookmarked ? "text-amber-500" : "text-white"} />
-                    </div>
-                    <span className="text-white text-xs font-bold shadow-black drop-shadow-md">Save</span>
-                </button>
-
                 <button onClick={(e) => onShare(e, channel)} className="flex flex-col items-center gap-1">
                     <div className="p-2 rounded-full bg-black/20 backdrop-blur-sm transition-transform active:scale-75">
                         <Share2 size={32} fill="rgba(255,255,255,0.9)" className="text-white" />
@@ -457,45 +373,60 @@ const MobileFeedCard = ({
                 </button>
             </div>
 
-            {/* Bottom Info - Click here navigates to details */}
-            <div className="absolute left-0 bottom-0 w-full p-4 pb-6 bg-gradient-to-t from-black/90 via-black/60 to-transparent pointer-events-none pr-20 z-30">
-                <div className="pointer-events-auto" onClick={(e) => { e.stopPropagation(); onChannelClick(channel.id); }}>
-                    
-                    {/* Status Badge */}
-                    <div className="flex items-center gap-2 mb-2">
-                        {trackIndex === -1 ? (
-                            <div className="bg-emerald-600/90 backdrop-blur-md px-3 py-1 rounded-full text-[10px] font-bold text-white flex items-center gap-2 border border-emerald-500/50 shadow-lg">
-                                <AlignLeft size={12} />
-                                <span>Introduction</span>
-                            </div>
+            {/* 3. Bottom Info & Play Controls */}
+            <div className="absolute left-0 bottom-0 w-full p-4 pb-6 bg-gradient-to-t from-black via-black/80 to-transparent z-30 pr-20">
+                
+                {/* Introduction Badge (Clickable) */}
+                <div 
+                    onClick={(e) => { e.stopPropagation(); onChannelClick(channel.id); }}
+                    className="inline-flex items-center gap-2 mb-3 bg-slate-800/80 backdrop-blur-md px-3 py-1.5 rounded-lg border border-slate-700 cursor-pointer active:scale-95 transition-transform"
+                >
+                    {trackIndex === -1 ? (
+                        <span className="text-[10px] font-bold text-emerald-400 uppercase flex items-center gap-1">
+                            <AlignLeft size={10} /> Introduction
+                        </span>
+                    ) : (
+                        <span className="text-[10px] font-bold text-indigo-400 uppercase flex items-center gap-1">
+                            <GraduationCap size={10} /> Lesson {trackIndex + 1}/{totalLessons}
+                        </span>
+                    )}
+                    <ChevronRight size={12} className="text-slate-500" />
+                </div>
+
+                {/* Host Line with Play Button */}
+                <div className="flex items-center gap-3 mb-2">
+                    <button 
+                        onClick={handleTogglePlay}
+                        className={`w-10 h-10 rounded-full flex items-center justify-center transition-all shadow-lg ${playbackState === 'playing' ? 'bg-slate-800 text-red-400 border border-slate-600' : 'bg-white text-black hover:scale-105'}`}
+                    >
+                        {playbackState === 'buffering' ? (
+                            <Loader2 size={20} className="animate-spin" />
+                        ) : playbackState === 'playing' ? (
+                            <Pause size={20} fill="currentColor" />
                         ) : (
-                            <div className="bg-indigo-600/90 backdrop-blur-md px-3 py-1 rounded-full text-[10px] font-bold text-white flex items-center gap-2 border border-indigo-500/50 shadow-lg animate-pulse">
-                                <GraduationCap size={12} />
-                                <span>Lesson {trackIndex + 1}/{totalLessons}</span>
-                                <span className="opacity-50">|</span>
-                                <span className="truncate max-w-[150px]">{flatCurriculum[trackIndex]?.title}</span>
-                            </div>
+                            <Play size={20} fill="currentColor" className="ml-0.5" />
                         )}
-                    </div>
-
-                    <div className="flex items-center gap-2 mb-1">
-                        <h3 className="text-white font-bold text-lg drop-shadow-md cursor-pointer hover:underline">
-                            @{channel.author}
-                        </h3>
-                    </div>
+                    </button>
                     
-                    <p className="text-white/90 text-sm mb-3 line-clamp-1 leading-relaxed drop-shadow-sm">
-                        {channel.description}
-                    </p>
-
-                    <div className="flex items-center gap-2 text-white/80 text-xs font-medium overflow-hidden whitespace-nowrap">
-                        <Music size={12} className={isPlaying ? "animate-pulse" : ""} />
-                        <div className="flex gap-4 animate-marquee">
-                            <span>Chapter: {channel.chapters?.[0]?.title || "Intro"}</span>
-                            <span>•</span>
-                            <span>Voice: {channel.voiceName}</span>
-                            {channel.tags.map((t: string) => <span key={t}>#{t}</span>)}
+                    <div onClick={(e) => { e.stopPropagation(); onChannelClick(channel.id); }}>
+                        <div className="flex items-center gap-1.5 text-white font-bold text-lg drop-shadow-md cursor-pointer hover:underline">
+                            <User size={14} className="text-indigo-400" />
+                            <span>@{channel.author}</span>
                         </div>
+                        <p className="text-[10px] text-slate-400 uppercase tracking-wider font-bold">Host</p>
+                    </div>
+                </div>
+                
+                <p className="text-white/80 text-sm mb-3 line-clamp-2 leading-relaxed drop-shadow-sm font-light">
+                    {channel.description}
+                </p>
+
+                <div className="flex items-center gap-2 text-white/60 text-xs font-medium overflow-hidden whitespace-nowrap">
+                    <Music size={12} className={playbackState === 'playing' ? "animate-pulse text-emerald-400" : ""} />
+                    <div className="flex gap-4 animate-marquee">
+                        <span>Voice: {channel.voiceName}</span>
+                        <span>•</span>
+                        {channel.tags.map((t: string) => <span key={t}>#{t}</span>)}
                     </div>
                 </div>
             </div>
