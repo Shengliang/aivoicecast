@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { getPublicChannels, deleteChannelFromFirestore } from '../services/firestoreService';
 import { Channel } from '../types';
@@ -18,9 +19,10 @@ export const PublicChannelInspector: React.FC<PublicChannelInspectorProps> = ({ 
     try {
       const data = await getPublicChannels();
       setChannels(data);
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
-      alert("Failed to load public channels.");
+      // Improved error message: Displays exact error (e.g. Missing Index link)
+      alert(`Failed to load public channels: ${e.message}`);
     } finally {
       setIsLoading(false);
     }

@@ -204,12 +204,30 @@ export async function publishChannelToFirestore(channel: Channel) {
 }
 
 export async function getPublicChannels(): Promise<Channel[]> {
-  const snap = await db.collection(CHANNELS_COLLECTION)
-    .where('visibility', 'in', ['public', 'group'])
-    .orderBy('createdAt', 'desc')
-    .limit(50)
-    .get();
-  return snap.docs.map(d => d.data() as Channel);
+  try {
+    // Attempt optimized query (Requires Composite Index)
+    const snap = await db.collection(CHANNELS_COLLECTION)
+      .where('visibility', 'in', ['public', 'group'])
+      .orderBy('createdAt', 'desc')
+      .limit(50)
+      .get();
+    return snap.docs.map(d => d.data() as Channel);
+  } catch (e: any) {
+    // Fallback: If index is missing, query without sort and sort in memory
+    // This allows the app to work for developers without manually creating the index first
+    if (e.code === 'failed-precondition' || e.message?.includes('index')) {
+        console.warn("Firestore Index missing for Public Channels. Falling back to client-side sort.");
+        const snap = await db.collection(CHANNELS_COLLECTION)
+          .where('visibility', 'in', ['public', 'group'])
+          .limit(50)
+          .get();
+        const data = snap.docs.map(d => d.data() as Channel);
+        // Manual Sort
+        return data.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+    }
+    // Re-throw if it's a permission error or other issue
+    throw e;
+  }
 }
 
 export function subscribeToPublicChannels(onUpdate: (channels: Channel[]) => void, onError: (error: any) => void) {
