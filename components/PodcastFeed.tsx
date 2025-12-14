@@ -28,7 +28,6 @@ export const PodcastFeed: React.FC<PodcastFeedProps> = ({
 }) => {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
-  const [playingId, setPlayingId] = useState<string | null>(null);
   
   // Interaction States for Mobile View
   const [likedChannels, setLikedChannels] = useState<Set<string>>(new Set());
@@ -37,6 +36,13 @@ export const PodcastFeed: React.FC<PodcastFeedProps> = ({
   
   // Creator Profile Modal State
   const [viewingCreator, setViewingCreator] = useState<Channel | null>(null);
+
+  // Initialize liked channels from profile
+  useEffect(() => {
+      if (userProfile?.likedChannelIds) {
+          setLikedChannels(new Set(userProfile.likedChannelIds));
+      }
+  }, [userProfile?.likedChannelIds]);
 
   // Logic to rank/filter channels based on interests
   const recommendedChannels = useMemo(() => {
@@ -69,6 +75,10 @@ export const PodcastFeed: React.FC<PodcastFeedProps> = ({
 
   const toggleLike = (e: React.MouseEvent, channelId: string) => {
       e.stopPropagation();
+      if (!currentUser) {
+          alert("Please sign in to like.");
+          return;
+      }
       const newSet = new Set(likedChannels);
       // Toggle local visual state
       if (newSet.has(channelId)) {
@@ -142,6 +152,7 @@ export const PodcastFeed: React.FC<PodcastFeedProps> = ({
                         globalVoice={globalVoice}
                         t={t || { host: 'Host' }}
                         onCommentClick={onCommentClick || (() => {})}
+                        isLiked={userProfile?.likedChannelIds?.includes(channel.id)}
                     />
                 ))}
             </div>
@@ -206,7 +217,7 @@ export const PodcastFeed: React.FC<PodcastFeedProps> = ({
                     {/* Creator Profile */}
                     <div className="relative mb-2 cursor-pointer" onClick={(e) => handleCreatorClick(e, channel)}>
                         <img 
-                            src={channel.imageUrl} // Ideally author avatar, fallback to channel image
+                            src={channel.imageUrl} 
                             className="w-12 h-12 rounded-full border-2 border-white object-cover" 
                             alt="Creator"
                         />

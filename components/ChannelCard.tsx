@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Channel } from '../types';
 import { Play, Heart, MessageSquare, Lock, Globe, Users, Edit, Share2, Bookmark } from 'lucide-react';
 import { OFFLINE_CHANNEL_ID } from '../utils/offlineContent';
@@ -15,16 +15,22 @@ interface ChannelCardProps {
   globalVoice: string;
   t: any;
   onCommentClick: (channel: Channel) => void;
+  isLiked?: boolean; // New prop to sync state
 }
 
 export const ChannelCard: React.FC<ChannelCardProps> = ({ 
   channel, handleChannelClick, handleVote, currentUser, 
   setChannelToEdit, setIsSettingsModalOpen, globalVoice, t,
-  onCommentClick
+  onCommentClick, isLiked = false
 }) => {
   const isOwner = currentUser && (channel.ownerId === currentUser.uid || currentUser.email === 'shengliang.song@gmail.com');
   const [isBookmarked, setIsBookmarked] = useState(false);
-  const [hasLiked, setHasLiked] = useState(false); // Local state for immediate toggle effect
+  const [hasLiked, setHasLiked] = useState(isLiked);
+
+  // Sync state when prop updates (e.g. after profile load)
+  useEffect(() => {
+      setHasLiked(isLiked);
+  }, [isLiked]);
 
   const handleShareClick = async (e: React.MouseEvent) => {
       e.stopPropagation();
@@ -48,11 +54,15 @@ export const ChannelCard: React.FC<ChannelCardProps> = ({
   const handleBookmarkClick = (e: React.MouseEvent) => {
       e.stopPropagation();
       setIsBookmarked(!isBookmarked);
-      // Persist to local storage if needed in future
   };
 
   const handleLikeClick = (e: React.MouseEvent) => {
       e.stopPropagation();
+      if (!currentUser) {
+          alert("Please sign in to like.");
+          return;
+      }
+      
       if (hasLiked) {
           handleVote(channel.id, 'dislike', e);
           setHasLiked(false);

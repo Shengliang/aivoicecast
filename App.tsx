@@ -55,7 +55,7 @@ import { HANDCRAFTED_CHANNELS, CATEGORY_STYLES, TOPIC_CATEGORIES } from './utils
 import { OFFLINE_CHANNEL_ID } from './utils/offlineContent';
 import { GEMINI_API_KEY } from './services/private_keys';
 
-const APP_VERSION = "v3.66.1"; // Bump version
+const APP_VERSION = "v3.66.2"; // Bump version
 
 const UI_TEXT = {
   en: {
@@ -290,18 +290,34 @@ const App: React.FC = () => {
   const handleVote = async (id: string, type: 'like' | 'dislike', e: React.MouseEvent) => {
     e.stopPropagation();
     
-    // 1. Optimistic UI Update
+    // 1. Optimistic UI Update (Channel Count)
     setChannels(prev => prev.map(c => {
       if (c.id === id) {
+        // Simple increment for visual feedback
         return type === 'like' ? { ...c, likes: c.likes + 1 } : { ...c, dislikes: c.dislikes + 1 };
       }
       return c;
     }));
 
-    // 2. Persist to Firestore (Handling promotion of static channels)
+    // 2. Persist to Firestore
     const channel = channels.find(c => c.id === id);
     if (channel) {
         await voteChannel(channel, type);
+        
+        // 3. Update User Profile Locally (Optimistic)
+        // This ensures visual "Heart" state stays consistent across the app
+        if (currentUser && userProfile) {
+            const currentLikes = userProfile.likedChannelIds || [];
+            let newLikesList = [...currentLikes];
+            
+            if (type === 'like') {
+                if (!newLikesList.includes(id)) newLikesList.push(id);
+            } else {
+                newLikesList = newLikesList.filter(lid => lid !== id);
+            }
+            
+            setUserProfile({ ...userProfile, likedChannelIds: newLikesList });
+        }
     }
   };
 

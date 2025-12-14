@@ -49,7 +49,8 @@ export async function syncUserProfile(user: firebase.User): Promise<void> {
       createdAt: Date.now(),
       subscriptionTier: 'free',
       followers: [],
-      following: []
+      following: [],
+      likedChannelIds: []
     };
     await userRef.set(newProfile);
     
@@ -149,13 +150,14 @@ export async function deleteChannelFromFirestore(channelId: string) {
 export async function voteChannel(channel: Channel, type: 'like' | 'dislike') {
     const ref = db.collection('channels').doc(channel.id);
     const doc = await ref.get();
+    const user = auth.currentUser;
     
+    // Update Channel Stats
     if (doc.exists) {
         if (type === 'like') await ref.update({ likes: firebase.firestore.FieldValue.increment(1) });
         else await ref.update({ dislikes: firebase.firestore.FieldValue.increment(1) });
     } else {
         // Document doesn't exist (Static Channel). Create it to persist the vote.
-        // We set it to 'public' so it appears in the live feed for everyone.
         const newLikes = type === 'like' ? (channel.likes || 0) + 1 : (channel.likes || 0);
         const newDislikes = type === 'dislike' ? (channel.dislikes || 0) + 1 : (channel.dislikes || 0);
         
@@ -165,6 +167,20 @@ export async function voteChannel(channel: Channel, type: 'like' | 'dislike') {
             dislikes: newDislikes,
             visibility: 'public', // Promote to public DB channel
             ownerId: channel.ownerId || 'system' // Ensure owner exists
+        });
+    }
+
+    // Update User Profile (Liked Channels List)
+    if (user && type === 'like') {
+        const userRef = db.collection('users').doc(user.uid);
+        await userRef.update({
+            likedChannelIds: firebase.firestore.FieldValue.arrayUnion(channel.id)
+        });
+    } else if (user && type === 'dislike') {
+        // Assume dislike means remove like in context of "toggle" behavior often requested
+        const userRef = db.collection('users').doc(user.uid);
+        await userRef.update({
+            likedChannelIds: firebase.firestore.FieldValue.arrayRemove(channel.id)
         });
     }
 }
@@ -232,6 +248,24 @@ export async function getGroupChannels(groupIds: string[]): Promise<Channel[]> {
     let results: Channel[] = [];
     for (const chunk of chunks) {
         const snap = await db.collection('channels').where('visibility', '==', 'group').where('groupId', 'in', chunk).get();
+        const chunkChannels = snap.docs.map(doc => doc.data() as Channel);
+        results = [...results, ...chunkChannels];
+    }
+    return results;
+}
+
+export async function getChannelsByIds(channelIds: string[]): Promise<Channel[]> {
+    if (!channelIds || channelIds.length === 0) return [];
+    
+    // Firestore 'in' query limit is 10. Split if needed.
+    const chunks = [];
+    for (let i = 0; i < channelIds.length; i += 10) {
+        chunks.push(channelIds.slice(i, i + 10));
+    }
+    
+    let results: Channel[] = [];
+    for (const chunk of chunks) {
+        const snap = await db.collection('channels').where(firebase.firestore.FieldPath.documentId(), 'in', chunk).get();
         const chunkChannels = snap.docs.map(doc => doc.data() as Channel);
         results = [...results, ...chunkChannels];
     }

@@ -53,6 +53,7 @@ export interface TranscriptItem {
   role: 'user' | 'ai';
   text: string;
   timestamp: number;
+  // ... existing fields ...
 }
 
 export interface SubTopic {
@@ -154,6 +155,7 @@ export interface UserProfile {
   defaultRepoUrl?: string; // User preferred git repo
   followers?: string[]; // IDs of users following this user
   following?: string[]; // IDs of users this user is following
+  likedChannelIds?: string[]; // IDs of channels liked by user
 }
 
 export interface RecordingSession {
