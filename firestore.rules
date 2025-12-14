@@ -24,7 +24,8 @@ service cloud.firestore {
     match /users/{userId} {
       allow read: if isAuthenticated(); 
       allow create: if isOwner(userId);
-      allow update: if isOwner(userId); 
+      // Allow owner to update profile OR any auth user to update ONLY the followers list (e.g. Follow button)
+      allow update: if isOwner(userId) || (isAuthenticated() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['followers'])); 
     }
 
     // ----------------------------------------------------------------------

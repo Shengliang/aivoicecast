@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { X, User, MessageSquare, Heart, Users, Check, Bell, Play } from 'lucide-react';
 import { Channel, UserProfile } from '../types';
-import { getUserProfile, followUser, unfollowUser } from '../services/firestoreService';
+import { getUserProfile, followUser, unfollowUser, getUserProfileByEmail } from '../services/firestoreService';
 
 interface CreatorProfileModalProps {
   isOpen: boolean;
@@ -18,28 +18,52 @@ export const CreatorProfileModal: React.FC<CreatorProfileModalProps> = ({ isOpen
   const [followerCount, setFollowerCount] = useState(0);
   const [activeTab, setActiveTab] = useState<'posts' | 'community'>('posts');
   const [isLoading, setIsLoading] = useState(false);
+  const [targetOwnerId, setTargetOwnerId] = useState<string | null>(null);
 
   // Load creator profile data
   useEffect(() => {
-    if (isOpen && channel.ownerId) {
+    if (!isOpen) return;
+
+    let isActive = true;
+    
+    const loadProfile = async () => {
         setIsLoading(true);
-        getUserProfile(channel.ownerId).then(profile => {
-            if (profile) {
-                setCreatorProfile(profile);
-                setFollowerCount(profile.followers?.length || 0);
-                if (currentUser && profile.followers?.includes(currentUser.uid)) {
-                    setIsFollowing(true);
-                }
+        let oid = channel.ownerId;
+
+        // If system channel (no ownerId), default to Admin (shengliang.song@gmail.com)
+        if (!oid) {
+            try {
+                const adminProfile = await getUserProfileByEmail('shengliang.song@gmail.com');
+                if (adminProfile) oid = adminProfile.uid;
+            } catch (e) {
+                console.warn("Failed to resolve admin profile for system channel", e);
             }
-            setIsLoading(false);
-        }).catch(err => {
-            console.error("Failed to load creator profile", err);
-            setIsLoading(false);
-        });
-    } else {
-        // Fallback for static/system channels
-        setFollowerCount(1205); // Mock for offline
-    }
+        }
+
+        if (oid) {
+            if (isActive) setTargetOwnerId(oid);
+            try {
+                const profile = await getUserProfile(oid);
+                if (profile && isActive) {
+                    setCreatorProfile(profile);
+                    setFollowerCount(profile.followers?.length || 0);
+                    if (currentUser && profile.followers?.includes(currentUser.uid)) {
+                        setIsFollowing(true);
+                    }
+                }
+            } catch (err) {
+                console.error("Failed to load creator profile", err);
+            }
+        } else {
+            // Fallback purely for display if no owner found at all
+            if (isActive) setFollowerCount(1205); 
+        }
+        if (isActive) setIsLoading(false);
+    };
+
+    loadProfile();
+
+    return () => { isActive = false; };
   }, [isOpen, channel.ownerId, currentUser]);
 
   if (!isOpen) return null;
@@ -49,32 +73,40 @@ export const CreatorProfileModal: React.FC<CreatorProfileModalProps> = ({ isOpen
         alert("Please sign in to follow creators.");
         return;
     }
-    if (!channel.ownerId) {
-        alert("This is a system channel and cannot be followed.");
+    
+    // If we haven't resolved an owner yet, we can't follow
+    if (!targetOwnerId) {
+        alert("Creator profile not found. Cannot follow at this time.");
         return;
     }
 
+    const prevIsFollowing = isFollowing;
+    const prevCount = followerCount;
+
+    // Optimistic Update
     if (isFollowing) {
         setIsFollowing(false);
         setFollowerCount(prev => Math.max(0, prev - 1));
         try {
-            await unfollowUser(currentUser.uid, channel.ownerId);
+            await unfollowUser(currentUser.uid, targetOwnerId);
         } catch (e) {
             console.error("Unfollow failed", e);
-            // Revert on failure
-            setIsFollowing(true);
-            setFollowerCount(prev => prev + 1);
+            // Revert
+            setIsFollowing(prevIsFollowing);
+            setFollowerCount(prevCount);
+            alert("Failed to unfollow. Please try again.");
         }
     } else {
         setIsFollowing(true);
         setFollowerCount(prev => prev + 1);
         try {
-            await followUser(currentUser.uid, channel.ownerId);
+            await followUser(currentUser.uid, targetOwnerId);
         } catch (e) {
             console.error("Follow failed", e);
-            // Revert on failure
-            setIsFollowing(false);
-            setFollowerCount(prev => Math.max(0, prev - 1));
+            // Revert
+            setIsFollowing(prevIsFollowing);
+            setFollowerCount(prevCount);
+            alert("Failed to follow. Please check your connection.");
         }
     }
   };
@@ -108,7 +140,10 @@ export const CreatorProfileModal: React.FC<CreatorProfileModalProps> = ({ isOpen
                 )}
             </div>
 
-            <h2 className="text-xl font-bold text-white mt-3">{creatorProfile?.displayName || channel.author}</h2>
+            <h2 className="text-xl font-bold text-white mt-3">
+                {creatorProfile?.displayName || channel.author}
+                {!channel.ownerId && <span className="ml-1 text-[10px] text-indigo-400 bg-indigo-900/30 px-1 rounded border border-indigo-500/30 align-top">OFFICIAL</span>}
+            </h2>
             <p className="text-sm text-slate-400">@{channel.voiceName.toLowerCase()}_official</p>
 
             {/* Stats Row */}
@@ -131,11 +166,12 @@ export const CreatorProfileModal: React.FC<CreatorProfileModalProps> = ({ isOpen
             <div className="flex gap-2 w-full mt-6">
                 <button 
                     onClick={handleFollow}
+                    disabled={isLoading || !targetOwnerId}
                     className={`flex-1 py-3 rounded-lg font-bold transition-all flex items-center justify-center gap-2 ${
                         isFollowing 
                         ? 'bg-slate-800 text-slate-200 border border-slate-700' 
                         : 'bg-red-600 hover:bg-red-500 text-white shadow-lg shadow-red-900/20'
-                    }`}
+                    } ${isLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
                 >
                     {isFollowing ? (
                         <>Following</>
