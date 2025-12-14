@@ -1,7 +1,7 @@
 
 import React, { useMemo, useRef, useState, useEffect, useCallback } from 'react';
 import { Channel, UserProfile, GeneratedLecture } from '../types';
-import { Play, MessageSquare, Heart, Share2, Bookmark, Music, Plus, Pause, Loader2, Volume2, VolumeX } from 'lucide-react';
+import { Play, MessageSquare, Heart, Share2, Bookmark, Music, Plus, Pause, Loader2, Volume2, VolumeX, GraduationCap, ChevronRight } from 'lucide-react';
 import { ChannelCard } from './ChannelCard';
 import { CreatorProfileModal } from './CreatorProfileModal';
 import { followUser, unfollowUser } from '../services/firestoreService';
@@ -43,30 +43,69 @@ const MobileFeedCard = ({
     onShare, 
     onComment, 
     onProfileClick,
-    onChannelClick
+    onChannelClick,
+    onChannelFinish // New callback for auto-scroll
 }: any) => {
+    // Playback State
     const [isPlaying, setIsPlaying] = useState(false);
     const [isBuffering, setIsBuffering] = useState(false);
     const [loadingText, setLoadingText] = useState('');
+    
+    // Content Cursor
+    const [chapterIndex, setChapterIndex] = useState(0);
+    const [lessonIndex, setLessonIndex] = useState(0);
+    const [sectionIndex, setSectionIndex] = useState(0);
+    
+    // Current Data
+    const [currentLecture, setCurrentLecture] = useState<GeneratedLecture | null>(null);
+    const [currentTranscript, setCurrentTranscript] = useState<{speaker: string, text: string} | null>(null);
+
+    // Refs for Audio Control
     const audioContextRef = useRef<AudioContext | null>(null);
     const sourceRef = useRef<AudioBufferSourceNode | null>(null);
     const mountedRef = useRef(true);
+    const playbackTimeoutRef = useRef<any>(null);
+
+    // Flatten Curriculum helper
+    const getFlattenedCurriculum = () => {
+        if (!channel.chapters) return [];
+        return channel.chapters.flatMap((ch: any, cIdx: number) => 
+            (ch.subTopics || []).map((sub: any, lIdx: number) => ({
+                chapterIndex: cIdx,
+                lessonIndex: lIdx,
+                title: sub.title,
+                id: sub.id,
+                chapterTitle: ch.title
+            }))
+        );
+    };
+
+    const flatCurriculum = useMemo(() => getFlattenedCurriculum(), [channel]);
 
     useEffect(() => {
         mountedRef.current = true;
-        return () => { mountedRef.current = false; stopAudio(); };
+        return () => { 
+            mountedRef.current = false; 
+            stopAudio(); 
+            if (playbackTimeoutRef.current) clearTimeout(playbackTimeoutRef.current);
+        };
     }, []);
 
-    // Auto-Play Logic when Active
+    // Master Auto-Play Watcher
     useEffect(() => {
         if (isActive) {
-            // Slight delay to allow smooth scroll snap before heavy processing
-            const timer = setTimeout(() => {
-                if (mountedRef.current) startAutoPlay();
-            }, 500);
-            return () => clearTimeout(timer);
+            // Reset cursor if starting fresh
+            if (!isPlaying && !currentLecture) {
+                // Slight delay to allow smooth scroll snap before heavy API calls
+                playbackTimeoutRef.current = setTimeout(() => {
+                    if (mountedRef.current) playSequence();
+                }, 500);
+            } else if (audioContextRef.current?.state === 'suspended') {
+                audioContextRef.current.resume();
+            }
         } else {
             stopAudio();
+            if (playbackTimeoutRef.current) clearTimeout(playbackTimeoutRef.current);
         }
     }, [isActive]);
 
@@ -75,91 +114,150 @@ const MobileFeedCard = ({
             try { sourceRef.current.stop(); } catch(e) {}
             sourceRef.current = null;
         }
-        if (audioContextRef.current) {
-            try { audioContextRef.current.close(); } catch(e) {}
-            audioContextRef.current = null;
-        }
         setIsPlaying(false);
         setIsBuffering(false);
     };
 
-    const startAutoPlay = async () => {
-        if (isPlaying) return;
+    const playSequence = async () => {
+        if (!mountedRef.current) return;
         
+        // 1. Get Current Lesson Metadata
+        // We use a flat index concept derived from current chapter/lesson indices
+        const currentMeta = flatCurriculum.find(item => item.chapterIndex === chapterIndex && item.lessonIndex === lessonIndex);
+        
+        if (!currentMeta) {
+            // End of Channel Content reached
+            console.log("Channel finished, requesting next...");
+            if (onChannelFinish) onChannelFinish();
+            return;
+        }
+
         try {
-            // 1. Initialize Audio Context
-            const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
-            audioContextRef.current = ctx;
-            if (ctx.state === 'suspended') await ctx.resume();
+            setIsPlaying(true);
+            
+            // 2. Init Audio Context if needed
+            if (!audioContextRef.current || audioContextRef.current.state === 'closed') {
+                audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+            }
+            if (audioContextRef.current?.state === 'suspended') await audioContextRef.current.resume();
 
-            // 2. Identify Content (First Lesson)
-            let scriptText = "";
-            let voice = channel.voiceName || 'Puck';
-
-            // Check if curriculum exists
-            if (channel.chapters && channel.chapters.length > 0 && channel.chapters[0].subTopics.length > 0) {
-                const firstLesson = channel.chapters[0].subTopics[0];
-                const cacheKey = `lecture_${channel.id}_${firstLesson.id}_en`; // Default to EN for feed preview
+            // 3. Load Script (If not already loaded for this lesson)
+            let lectureData = currentLecture;
+            
+            // If we changed lessons or haven't loaded yet
+            if (!lectureData || lectureData.topic !== currentMeta.title) {
+                const cacheKey = `lecture_${channel.id}_${currentMeta.id}_en`;
                 
-                // A. Check Cache
                 setIsBuffering(true);
-                setLoadingText('Loading Lecture...');
-                let lecture = await getCachedLectureScript(cacheKey);
+                setLoadingText(`Loading: ${currentMeta.title}`);
+                setCurrentTranscript(null);
 
-                // B. If not in cache, Generate Teaser
-                if (!lecture) {
-                    setLoadingText('AI Generating...');
-                    // Generate a "Teaser" script - simpler/faster than full lecture
-                    lecture = await generateLectureScript(firstLesson.title, `Introduction to ${channel.title}. ${channel.description}`, 'en');
-                    if (lecture) {
-                        // Cache it for next time
-                        await cacheLectureScript(cacheKey, lecture);
-                    }
+                // Check Cache
+                lectureData = await getCachedLectureScript(cacheKey);
+
+                if (!lectureData) {
+                    setLoadingText('Generating Script...');
+                    // Generate Full Script (not just teaser)
+                    lectureData = await generateLectureScript(currentMeta.title, `Podcast: ${channel.title}. ${channel.description}`, 'en');
+                    if (lectureData) await cacheLectureScript(cacheKey, lectureData);
                 }
 
-                if (lecture && lecture.sections.length > 0) {
-                    // Combine first few sections for the "Teaser"
-                    scriptText = lecture.sections.slice(0, 3).map((s: any) => s.text).join(' ');
-                    // Use correct voice if teacher speaks first
-                    if (lecture.sections[0].speaker === 'Teacher') {
-                        // Keep channel voice
-                    }
+                if (!lectureData || !lectureData.sections || lectureData.sections.length === 0) {
+                    // Fallback if generation failed - Skip to next lesson
+                    advanceToNextLesson();
+                    return;
                 }
+
+                setCurrentLecture(lectureData);
+                setSectionIndex(0); // Reset section for new lesson
             }
 
-            // Fallback if no script could be generated
-            if (!scriptText) {
-                scriptText = `Welcome to ${channel.title}. ${channel.description}`;
-            }
+            // 4. Play Current Section
+            if (lectureData && lectureData.sections[sectionIndex]) {
+                const section = lectureData.sections[sectionIndex];
+                
+                // Update UI Text
+                setCurrentTranscript({
+                    speaker: section.speaker === 'Teacher' ? lectureData.professorName : lectureData.studentName,
+                    text: section.text
+                });
+                
+                setIsBuffering(true);
+                setLoadingText('Synthesizing...');
 
-            // 3. Synthesize
-            setLoadingText('Synthesizing...');
-            const result = await synthesizeSpeech(scriptText, voice, ctx);
+                // Determine Voice
+                // If simple config, Teacher = channel.voiceName, Student = 'Puck' (or alternate)
+                const voice = section.speaker === 'Teacher' ? (channel.voiceName || 'Fenrir') : 'Puck';
 
-            if (!mountedRef.current) return;
+                const result = await synthesizeSpeech(section.text, voice, audioContextRef.current!);
+                
+                if (!mountedRef.current || !isActive) return;
 
-            if (result.buffer) {
-                const source = ctx.createBufferSource();
-                source.buffer = result.buffer;
-                source.connect(ctx.destination);
-                source.onended = () => { if(mountedRef.current) setIsPlaying(false); };
-                source.start(0);
-                sourceRef.current = source;
-                setIsPlaying(true);
-                setIsBuffering(false);
+                if (result.buffer) {
+                    const source = audioContextRef.current!.createBufferSource();
+                    source.buffer = result.buffer;
+                    source.connect(audioContextRef.current!.destination);
+                    
+                    source.onended = () => {
+                        if (mountedRef.current && isActive) {
+                            advanceCursor(lectureData!);
+                        }
+                    };
+                    
+                    sourceRef.current = source;
+                    source.start(0);
+                    setIsBuffering(false);
+                } else {
+                    // Fallback TTS
+                    const u = new SpeechSynthesisUtterance(section.text);
+                    u.onend = () => { if (mountedRef.current && isActive) advanceCursor(lectureData!); };
+                    window.speechSynthesis.speak(u);
+                    setIsBuffering(false);
+                }
             } else {
-                // System Voice Fallback
-                console.warn("Falling back to system voice");
-                const u = new SpeechSynthesisUtterance(scriptText);
-                u.onend = () => setIsPlaying(false);
-                window.speechSynthesis.speak(u);
-                setIsPlaying(true);
-                setIsBuffering(false);
+                // Section index out of bounds? Move next
+                advanceToNextLesson();
             }
 
         } catch (e) {
-            console.error("Auto-play failed", e);
+            console.error("Playback error", e);
             setIsBuffering(false);
+            // On error, try skip to next
+            setTimeout(() => advanceToNextLesson(), 2000);
+        }
+    };
+
+    const advanceCursor = (currentScript: GeneratedLecture) => {
+        // Move to next section
+        if (sectionIndex + 1 < currentScript.sections.length) {
+            setSectionIndex(prev => prev + 1);
+            // Effect will trigger re-run of playSequence due to state change? 
+            // No, strictly we need to call it or depend on state. 
+            // Better to just recursively call playSequence, but state updates are async.
+            // We use a timeout to let state settle then call sequence.
+            setTimeout(() => playSequence(), 0);
+        } else {
+            // End of this lesson
+            advanceToNextLesson();
+        }
+    };
+
+    const advanceToNextLesson = () => {
+        const currentMeta = flatCurriculum.find(item => item.chapterIndex === chapterIndex && item.lessonIndex === lessonIndex);
+        if (!currentMeta) return;
+
+        // Find next in flat list
+        const flatIdx = flatCurriculum.indexOf(currentMeta);
+        if (flatIdx !== -1 && flatIdx < flatCurriculum.length - 1) {
+            const next = flatCurriculum[flatIdx + 1];
+            setChapterIndex(next.chapterIndex);
+            setLessonIndex(next.lessonIndex);
+            setSectionIndex(0);
+            setCurrentLecture(null); // Force reload
+            setTimeout(() => playSequence(), 0);
+        } else {
+            // End of Channel
+            if (onChannelFinish) onChannelFinish();
         }
     };
 
@@ -177,15 +275,15 @@ const MobileFeedCard = ({
             if (audioContextRef.current?.state === 'suspended') {
                 audioContextRef.current.resume();
                 setIsPlaying(true);
-            } else if (audioContextRef.current) {
-                // If context exists but stopped, restart
-                startAutoPlay();
             } else {
-                // Cold start
-                startAutoPlay();
+                playSequence();
             }
         }
     };
+
+    // Calculate progress
+    const totalLessons = flatCurriculum.length;
+    const currentFlatIndex = flatCurriculum.findIndex(item => item.chapterIndex === chapterIndex && item.lessonIndex === lessonIndex) + 1;
 
     return (
         <div className="h-full w-full snap-start relative flex flex-col justify-center bg-slate-900 border-b border-slate-800">
@@ -197,40 +295,47 @@ const MobileFeedCard = ({
                 <img 
                     src={channel.imageUrl} 
                     alt={channel.title} 
-                    className="w-full h-full object-cover opacity-60"
+                    className="w-full h-full object-cover opacity-50"
                     loading={isActive ? "eager" : "lazy"}
                 />
-                <div className="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-black/95"></div>
+                <div className="absolute inset-0 bg-gradient-to-b from-transparent via-black/20 to-black/95"></div>
                 
-                {/* Center Feedback */}
-                <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                    {isBuffering ? (
-                        <div className="flex flex-col items-center gap-2">
-                            <Loader2 size={48} className="text-indigo-400 animate-spin" />
-                            <span className="text-xs font-bold text-indigo-200 bg-black/50 px-3 py-1 rounded-full backdrop-blur-sm">{loadingText}</span>
+                {/* Center Loading Indicator (Only if buffering) */}
+                {isBuffering && (
+                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
+                        <div className="flex flex-col items-center gap-2 bg-black/60 backdrop-blur-md p-4 rounded-2xl border border-white/10">
+                            <Loader2 size={32} className="text-indigo-400 animate-spin" />
+                            <span className="text-xs font-bold text-white">{loadingText}</span>
                         </div>
-                    ) : !isPlaying ? (
-                        <Play size={64} fill="white" className="text-white/80 opacity-50 scale-125" />
-                    ) : (
-                        // Subtle equalizer or nothing when playing
-                        <div className="flex gap-1 h-8 items-end opacity-50">
-                            <div className="w-1 bg-white animate-pulse" style={{height: '40%'}}></div>
-                            <div className="w-1 bg-white animate-pulse" style={{height: '100%'}}></div>
-                            <div className="w-1 bg-white animate-pulse" style={{height: '60%'}}></div>
-                            <div className="w-1 bg-white animate-pulse" style={{height: '80%'}}></div>
+                    </div>
+                )}
+
+                {/* Play Icon Overlay (Only if paused and not buffering) */}
+                {!isPlaying && !isBuffering && (
+                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
+                        <Play size={64} fill="white" className="text-white/80 opacity-70 scale-125 drop-shadow-lg" />
+                    </div>
+                )}
+
+                {/* TRANSCRIPT OVERLAY */}
+                {isPlaying && currentTranscript && (
+                    <div className="absolute top-1/2 left-4 right-20 -translate-y-1/2 pointer-events-none">
+                        <div className="bg-black/60 backdrop-blur-sm p-4 rounded-xl border-l-4 border-indigo-500 shadow-xl animate-fade-in-up">
+                            <p className="text-xs font-bold text-indigo-300 uppercase mb-1">{currentTranscript.speaker}</p>
+                            <p className="text-lg md:text-xl text-white font-medium leading-relaxed drop-shadow-md">
+                                "{currentTranscript.text}"
+                            </p>
                         </div>
-                    )}
-                </div>
+                    </div>
+                )}
             </div>
 
             {/* Right Sidebar Actions */}
-            <div className="absolute right-2 bottom-24 flex flex-col items-center gap-6 z-20">
-                
-                {/* Creator Profile */}
+            <div className="absolute right-2 bottom-32 flex flex-col items-center gap-6 z-20">
                 <div className="relative mb-2 cursor-pointer" onClick={(e) => onProfileClick(e, channel)}>
                     <img 
                         src={channel.imageUrl} 
-                        className={`w-12 h-12 rounded-full border-2 object-cover ${isActive ? 'animate-spin-slow' : ''}`}
+                        className={`w-12 h-12 rounded-full border-2 object-cover ${isActive && isPlaying ? 'animate-spin-slow' : ''}`}
                         alt="Creator"
                         style={{animationPlayState: isPlaying ? 'running' : 'paused'}}
                     />
@@ -244,7 +349,6 @@ const MobileFeedCard = ({
                     )}
                 </div>
 
-                {/* Like */}
                 <button onClick={(e) => onToggleLike(e, channel.id)} className="flex flex-col items-center gap-1 group">
                     <div className={`p-2 rounded-full transition-transform active:scale-75 ${isLiked ? '' : 'bg-black/20 backdrop-blur-sm'}`}>
                         <Heart size={32} fill={isLiked ? "#ef4444" : "rgba(255,255,255,0.9)"} className={isLiked ? "text-red-500" : "text-white"} />
@@ -252,7 +356,6 @@ const MobileFeedCard = ({
                     <span className="text-white text-xs font-bold shadow-black drop-shadow-md">{channel.likes}</span>
                 </button>
 
-                {/* Comments */}
                 <button onClick={(e) => onComment(e, channel)} className="flex flex-col items-center gap-1">
                     <div className="p-2 rounded-full bg-black/20 backdrop-blur-sm transition-transform active:scale-75">
                         <MessageSquare size={32} fill="white" className="text-white" />
@@ -260,7 +363,6 @@ const MobileFeedCard = ({
                     <span className="text-white text-xs font-bold shadow-black drop-shadow-md">{channel.comments?.length || 0}</span>
                 </button>
 
-                {/* Bookmark */}
                 <button onClick={(e) => onToggleBookmark(e, channel.id)} className="flex flex-col items-center gap-1">
                     <div className="p-2 rounded-full bg-black/20 backdrop-blur-sm transition-transform active:scale-75">
                         <Bookmark size={32} fill={isBookmarked ? "#f59e0b" : "rgba(255,255,255,0.9)"} className={isBookmarked ? "text-amber-500" : "text-white"} />
@@ -268,7 +370,6 @@ const MobileFeedCard = ({
                     <span className="text-white text-xs font-bold shadow-black drop-shadow-md">Save</span>
                 </button>
 
-                {/* Share */}
                 <button onClick={(e) => onShare(e, channel)} className="flex flex-col items-center gap-1">
                     <div className="p-2 rounded-full bg-black/20 backdrop-blur-sm transition-transform active:scale-75">
                         <Share2 size={32} fill="rgba(255,255,255,0.9)" className="text-white" />
@@ -278,17 +379,25 @@ const MobileFeedCard = ({
             </div>
 
             {/* Bottom Info Overlay */}
-            <div className="absolute left-0 bottom-0 w-full p-4 pb-6 bg-gradient-to-t from-black/90 via-black/40 to-transparent pointer-events-none pr-20">
+            <div className="absolute left-0 bottom-0 w-full p-4 pb-6 bg-gradient-to-t from-black/90 via-black/60 to-transparent pointer-events-none pr-20">
                 <div className="pointer-events-auto" onClick={(e) => { e.stopPropagation(); onChannelClick(channel.id); }}>
+                    {/* Chapter / Lesson Indicator */}
+                    <div className="flex items-center gap-2 mb-2">
+                        <div className="bg-indigo-600/80 backdrop-blur-md px-2 py-1 rounded text-[10px] font-bold text-white flex items-center gap-1 border border-indigo-500/30">
+                            <GraduationCap size={12} />
+                            <span>Lesson {Math.max(1, currentFlatIndex)}/{Math.max(1, totalLessons)}</span>
+                        </div>
+                        {currentLecture && (
+                            <span className="text-indigo-200 text-xs font-bold truncate max-w-[200px]">
+                                {currentLecture.topic}
+                            </span>
+                        )}
+                    </div>
+
                     <div className="flex items-center gap-2 mb-2">
                         <h3 className="text-white font-bold text-lg drop-shadow-md cursor-pointer hover:underline">
                             @{channel.author}
                         </h3>
-                        {channel.likes > 500 && (
-                            <span className="bg-red-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded flex items-center gap-1">
-                                TRENDING
-                            </span>
-                        )}
                     </div>
                     
                     <p className="text-white/90 text-sm mb-3 line-clamp-2 leading-relaxed drop-shadow-sm">
@@ -299,7 +408,7 @@ const MobileFeedCard = ({
                     <div className="flex items-center gap-2 text-white/80 text-xs font-medium overflow-hidden whitespace-nowrap">
                         <Music size={12} className={isPlaying ? "animate-pulse" : ""} />
                         <div className="flex gap-4 animate-marquee">
-                            <span>Lecture: {channel.chapters?.[0]?.subTopics?.[0]?.title || "Intro"}</span>
+                            <span>Chapter: {channel.chapters?.[chapterIndex]?.title || "Intro"}</span>
                             <span>•</span>
                             <span>Voice: {channel.voiceName}</span>
                             {channel.tags.map(t => <span key={t}>#{t}</span>)}
@@ -432,6 +541,18 @@ export const PodcastFeed: React.FC<PodcastFeedProps> = ({
       if(onCommentClick) onCommentClick(channel);
   };
 
+  // Programmatic Scroll for Auto-Play Chain
+  const handleScrollToNext = (currentChannelId: string) => {
+      const idx = recommendedChannels.findIndex(c => c.id === currentChannelId);
+      if (idx !== -1 && idx < recommendedChannels.length - 1) {
+          const nextId = recommendedChannels[idx + 1].id;
+          const nextEl = document.querySelector(`[data-id="${nextId}"]`);
+          if (nextEl) {
+              nextEl.scrollIntoView({ behavior: 'smooth' });
+          }
+      }
+  };
+
   return (
     <>
     {/* DESKTOP VIEW */}
@@ -489,6 +610,7 @@ export const PodcastFeed: React.FC<PodcastFeedProps> = ({
                     onComment={handleComment}
                     onProfileClick={(e: any, ch: any) => { e.stopPropagation(); setViewingCreator(ch); }}
                     onChannelClick={onChannelClick}
+                    onChannelFinish={() => handleScrollToNext(channel.id)}
                 />
             </div>
         ))}
