@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useMemo } from 'react';
 import { Channel, ViewState, UserProfile, TranscriptItem, SubscriptionTier } from './types';
 import { 
@@ -691,7 +692,7 @@ const App: React.FC = () => {
       
       {/* Navbar - Desktop Only */}
       {viewState !== 'chat' && viewState !== 'live_session' && (
-      <nav className="hidden md:block sticky top-0 z-30 bg-slate-900/90 backdrop-blur-md border-b border-slate-800">
+      <nav className="hidden md:block sticky top-0 z-50 bg-slate-900/90 backdrop-blur-md border-b border-slate-800">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
             <div className="flex items-center cursor-pointer" onClick={() => { setViewState('directory'); }}>
@@ -785,6 +786,7 @@ const App: React.FC = () => {
                 >
                   <Menu size={24} />
                 </button>
+                {isUserMenuOpen && (
                 <StudioMenu 
                    isUserMenuOpen={isUserMenuOpen} 
                    setIsUserMenuOpen={setIsUserMenuOpen}
@@ -803,6 +805,7 @@ const App: React.FC = () => {
                    onNavigate={(view: any) => setViewState(view)}
                    t={t}
                 />
+                )}
               </div>
             </div>
           </div>
