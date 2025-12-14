@@ -1,9 +1,8 @@
 
-
 import React, { useState, useEffect } from 'react';
 import { UserProfile, SubscriptionTier, GlobalStats } from '../types';
 import { getUserProfile, getGlobalStats } from '../services/firestoreService';
-import { Sparkles, BarChart2, Plus, Wand2, Key, Database, Crown, Settings, Book, Users, LogIn } from 'lucide-react';
+import { Sparkles, BarChart2, Plus, Wand2, Key, Database, Crown, Settings, Book, Users, LogIn, Terminal, Cloud, Globe } from 'lucide-react';
 import { VOICES } from '../utils/initialData';
 import { PricingModal } from './PricingModal';
 
@@ -22,13 +21,14 @@ interface StudioMenuProps {
   setIsSyncModalOpen: (open: boolean) => void;
   setIsSettingsModalOpen: (open: boolean) => void;
   onOpenUserGuide: () => void;
+  onNavigate: (view: string) => void;
   t: any;
 }
 
 export const StudioMenu: React.FC<StudioMenuProps> = ({
   isUserMenuOpen, setIsUserMenuOpen, userProfile, setUserProfile, currentUser,
   globalVoice, setGlobalVoice, hasApiKey, 
-  setIsCreateModalOpen, setIsVoiceCreateOpen, setIsApiKeyModalOpen, setIsSyncModalOpen, setIsSettingsModalOpen, onOpenUserGuide, t
+  setIsCreateModalOpen, setIsVoiceCreateOpen, setIsApiKeyModalOpen, setIsSyncModalOpen, setIsSettingsModalOpen, onOpenUserGuide, onNavigate, t
 }) => {
   const [isPricingOpen, setIsPricingOpen] = useState(false);
   const [globalStats, setGlobalStats] = useState<GlobalStats>({ totalLogins: 0, uniqueUsers: 0 });
@@ -172,6 +172,27 @@ export const StudioMenu: React.FC<StudioMenuProps> = ({
                <Settings size={16} />
                <span>Account Settings</span>
             </button>
+
+            <div className="h-px bg-slate-800 my-2 mx-2" />
+            
+            {/* Developer Tools Footer */}
+            <div className="px-2 pb-2">
+                <p className="px-2 text-[10px] font-bold text-slate-500 uppercase mb-1">Developer Tools</p>
+                <div className="grid grid-cols-2 gap-1">
+                    <button onClick={() => { onNavigate('debug'); setIsUserMenuOpen(false); }} className="p-2 bg-slate-800 hover:bg-slate-700 rounded text-xs text-slate-400 hover:text-white flex flex-col items-center justify-center gap-1">
+                        <Database size={12}/> <span>Local DB</span>
+                    </button>
+                    <button onClick={() => { onNavigate('firestore_debug'); setIsUserMenuOpen(false); }} className="p-2 bg-slate-800 hover:bg-slate-700 rounded text-xs text-slate-400 hover:text-white flex flex-col items-center justify-center gap-1">
+                        <Terminal size={12}/> <span>Firestore</span>
+                    </button>
+                    <button onClick={() => { onNavigate('cloud_debug'); setIsUserMenuOpen(false); }} className="p-2 bg-slate-800 hover:bg-slate-700 rounded text-xs text-slate-400 hover:text-white flex flex-col items-center justify-center gap-1">
+                        <Cloud size={12}/> <span>Storage</span>
+                    </button>
+                    <button onClick={() => { onNavigate('public_debug'); setIsUserMenuOpen(false); }} className="p-2 bg-slate-800 hover:bg-slate-700 rounded text-xs text-slate-400 hover:text-white flex flex-col items-center justify-center gap-1">
+                        <Globe size={12}/> <span>Registry</span>
+                    </button>
+                </div>
+            </div>
          </div>
       </div>
 

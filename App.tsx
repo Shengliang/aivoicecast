@@ -55,7 +55,7 @@ import { HANDCRAFTED_CHANNELS, CATEGORY_STYLES, TOPIC_CATEGORIES } from './utils
 import { OFFLINE_CHANNEL_ID } from './utils/offlineContent';
 import { GEMINI_API_KEY } from './services/private_keys';
 
-const APP_VERSION = "v3.66.2"; // Bump version
+const APP_VERSION = "v3.66.3"; // Bump version
 
 const UI_TEXT = {
   en: {
@@ -777,6 +777,7 @@ const App: React.FC = () => {
                    setIsSyncModalOpen={setIsSyncModalOpen}
                    setIsSettingsModalOpen={setIsAccountSettingsOpen}
                    onOpenUserGuide={() => setViewState('user_guide')}
+                   onNavigate={(view: any) => setViewState(view)}
                    t={t}
                 />
               </div>
