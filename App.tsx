@@ -1,227 +1,415 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { Podcast, Search, Menu, X, Plus, Home, Mic, Video, LayoutGrid, List, Calendar, MessageSquare, FileText, Code, Briefcase, PenTool, Settings, Shield, HardDrive, Cloud, Book, Rocket, Users } from 'lucide-react';
-import { Channel, ViewState, UserProfile, TranscriptItem } from './types';
-import { HANDCRAFTED_CHANNELS } from './utils/initialData';
-import { auth, isFirebaseConfigured as isServiceConfigured } from './services/firebaseConfig';
-import { getPublicChannels, subscribeToPublicChannels, getUserProfile, voteChannel, syncUserProfile } from './services/firestoreService';
-import { saveUserChannel } from './utils/db';
-import { UserAuth } from './components/UserAuth';
-import { PodcastFeed } from './components/PodcastFeed';
-import { PodcastDetail } from './components/PodcastDetail';
+import { Channel, ViewState, UserProfile, TranscriptItem, SubscriptionTier } from './types';
+import { 
+  Podcast, Mic, Layout, Search, Sparkles, LogOut, 
+  Settings, Menu, X, Plus, Github, Database, Cloud, Globe, 
+  Calendar, Briefcase, Users, Disc, FileText, AlertTriangle, List, BookOpen, ChevronDown, Table as TableIcon, LayoutGrid, Rocket, Code, Wand2, PenTool, Rss, Loader2, MessageSquare,
+  Home, Video as VideoIcon, Inbox, User, PlusSquare, ArrowLeft, Play
+} from 'lucide-react';
 import { LiveSession } from './components/LiveSession';
-import { CalendarView } from './components/CalendarView';
-import { StudioMenu } from './components/StudioMenu';
-import { Notifications } from './components/Notifications';
+import { PodcastDetail } from './components/PodcastDetail';
+import { ChannelCard } from './components/ChannelCard';
+import { UserAuth } from './components/UserAuth';
 import { CreateChannelModal } from './components/CreateChannelModal';
 import { VoiceCreateModal } from './components/VoiceCreateModal';
 import { ApiKeyModal } from './components/ApiKeyModal';
 import { DataSyncModal } from './components/DataSyncModal';
 import { FirebaseConfigModal } from './components/FirebaseConfigModal';
-import { SettingsModal } from './components/SettingsModal';
+import { DebugView } from './components/DebugView';
+import { CloudDebugView } from './components/CloudDebugView';
+import { PublicChannelInspector } from './components/PublicChannelInspector';
+import { FirestoreInspector } from './components/FirestoreInspector';
+import { StudioMenu } from './components/StudioMenu';
+import { ChannelSettingsModal } from './components/ChannelSettingsModal';
+import { CommentsModal } from './components/CommentsModal';
+import { Notifications } from './components/Notifications';
 import { GroupManager } from './components/GroupManager';
-import { DocumentList } from './components/DocumentList';
-import { RecordingList } from './components/RecordingList';
 import { MentorBooking } from './components/MentorBooking';
+import { RecordingList } from './components/RecordingList';
+import { DocumentList } from './components/DocumentList';
+import { CalendarView } from './components/CalendarView';
+import { PodcastListTable, SortKey } from './components/PodcastListTable';
+import { PodcastFeed } from './components/PodcastFeed'; // New Import
+import { MissionManifesto } from './components/MissionManifesto';
 import { CodeStudio } from './components/CodeStudio';
 import { Whiteboard } from './components/Whiteboard';
 import { BlogView } from './components/BlogView';
 import { WorkplaceChat } from './components/WorkplaceChat';
+import { LoginPage } from './components/LoginPage'; 
+import { SettingsModal } from './components/SettingsModal'; 
+import { PricingModal } from './components/PricingModal'; 
 import { CareerCenter } from './components/CareerCenter';
-import { UserManual } from './components/UserManual';
-import { MissionManifesto } from './components/MissionManifesto';
+import { UserManual } from './components/UserManual'; 
 import { PrivacyPolicy } from './components/PrivacyPolicy';
-import { FirestoreInspector } from './components/FirestoreInspector';
-import { PublicChannelInspector } from './components/PublicChannelInspector';
-import { DebugView } from './components/DebugView';
-import { CloudDebugView } from './components/CloudDebugView';
-import { LoginPage } from './components/LoginPage';
-import { ChannelSettingsModal } from './components/ChannelSettingsModal';
-import { CommentsModal } from './components/CommentsModal';
-import { PodcastListTable, SortKey } from './components/PodcastListTable';
+
+import { auth, isFirebaseConfigured } from './services/firebaseConfig';
+import { 
+  voteChannel, publishChannelToFirestore, updateCommentInChannel, 
+  deleteCommentFromChannel, addCommentToChannel, getPublicChannels, 
+  subscribeToPublicChannels, getGroupChannels, getUserProfile,
+  setupSubscriptionListener
+} from './services/firestoreService';
+import { getUserChannels, saveUserChannel, deleteUserChannel } from './utils/db';
+import { HANDCRAFTED_CHANNELS, CATEGORY_STYLES, TOPIC_CATEGORIES } from './utils/initialData';
+import { OFFLINE_CHANNEL_ID } from './utils/offlineContent';
+import { GEMINI_API_KEY } from './services/private_keys';
+
+const APP_VERSION = "v3.66.1"; // Bump version
 
 const UI_TEXT = {
   en: {
     appTitle: "AIVoiceCast",
-    search: "Search podcasts, topics, or mentors...",
+    directory: "Explore", // Changed back to Explore
+    myFeed: "My Feed",
+    live: "Live Studio",
+    search: "Search topics...",
+    create: "New Podcast",
     host: "Host",
+    listeners: "Listeners",
+    featured: "Featured",
+    categories: "Categories",
+    all: "All Podcasts",
+    calendar: "Calendar",
+    mentorship: "Mentorship",
+    groups: "Groups",
+    recordings: "Recordings",
+    docs: "Documents",
+    lectures: "Lectures",
+    podcasts: "Podcasts",
+    mission: "Mission",
+    code: "Code Studio",
+    whiteboard: "Whiteboard",
+    blog: "Community Blog",
+    chat: "Team Chat",
+    careers: "Careers"
   },
   zh: {
-    appTitle: "AIVoiceCast",
-    search: "搜索播客，主题或导师...",
+    appTitle: "AI 播客",
+    directory: "探索",
+    myFeed: "我的订阅",
+    live: "直播间",
+    search: "搜索主题...",
+    create: "创建播客",
     host: "主播",
+    listeners: "听众",
+    featured: "精选",
+    categories: "分类",
+    all: "全部播客",
+    calendar: "日历",
+    mentorship: "导师",
+    groups: "群组",
+    recordings: "录音",
+    docs: "文档",
+    lectures: "课程",
+    podcasts: "播客",
+    mission: "使命",
+    code: "代码工作室",
+    whiteboard: "白板",
+    blog: "社区博客",
+    chat: "团队聊天",
+    careers: "职业发展"
   }
 };
 
-export default function App() {
+type ExtendedViewState = ViewState | 'firestore_debug';
+
+const App: React.FC = () => {
   const [language, setLanguage] = useState<'en' | 'zh'>('en');
   const t = UI_TEXT[language];
-  
-  // State
-  const [viewState, setViewState] = useState<ViewState>('directory');
-  const [searchQuery, setSearchQuery] = useState('');
-  const [channels, setChannels] = useState<Channel[]>([]);
+  const [viewState, setViewState] = useState<ExtendedViewState>('directory');
   const [activeChannelId, setActiveChannelId] = useState<string | null>(null);
+  const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
+  const [isAppsMenuOpen, setIsAppsMenuOpen] = useState(false);
+  
+  // Mobile Navigation State
+  const [mobileFeedTab, setMobileFeedTab] = useState<'foryou' | 'following'>('foryou');
+  const [isMobileSearchOpen, setIsMobileSearchOpen] = useState(false);
+  const [mobileSearchQuery, setMobileSearchQuery] = useState('');
+  
+  // Auth State
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
-  const [globalVoice, setGlobalVoice] = useState('Auto');
-  const [hasApiKey, setHasApiKey] = useState(!!localStorage.getItem('gemini_api_key'));
-  
-  // Config State: Initialize based on what the Service reports (Private Keys OR LocalStorage)
-  const [isFirebaseConfigured, setIsFirebaseConfigured] = useState(isServiceConfigured); 
+  const [authLoading, setAuthLoading] = useState(true);
 
+  // Privacy Policy Public View
+  const [isPrivacyOpen, setIsPrivacyOpen] = useState(false);
+
+  const [activeTab, setActiveTab] = useState('categories');
+  const [selectedCategory, setSelectedCategory] = useState('All');
+  const [searchQuery, setSearchQuery] = useState('');
+  
+  // Layout & Sorting (Kept for fallback, but main view is now Feed)
+  const [layoutMode, setLayoutMode] = useState<'grid' | 'table'>('grid');
+  const [sortConfig, setSortConfig] = useState<{ key: SortKey; direction: 'asc' | 'desc' }>({ key: 'createdAt', direction: 'desc' });
+
+  // Data State
+  const [channels, setChannels] = useState<Channel[]>(HANDCRAFTED_CHANNELS);
+  const [publicChannels, setPublicChannels] = useState<Channel[]>([]);
+  const [userChannels, setUserChannels] = useState<Channel[]>([]);
+  const [groupChannels, setGroupChannels] = useState<Channel[]>([]);
+  
   // Modals
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isVoiceCreateOpen, setIsVoiceCreateOpen] = useState(false);
   const [isApiKeyModalOpen, setIsApiKeyModalOpen] = useState(false);
   const [isSyncModalOpen, setIsSyncModalOpen] = useState(false);
-  const [isFirebaseConfigOpen, setIsFirebaseConfigOpen] = useState(false);
+  const [isFirebaseModalOpen, setIsFirebaseModalOpen] = useState(false);
+  const [isAccountSettingsOpen, setIsAccountSettingsOpen] = useState(false); 
+  const [isPricingOpen, setIsPricingOpen] = useState(false); 
+  
+  const [hasApiKey, setHasApiKey] = useState(false);
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
-  const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
   const [channelToEdit, setChannelToEdit] = useState<Channel | null>(null);
-  const [commentChannel, setCommentChannel] = useState<Channel | null>(null);
+  const [isCommentsModalOpen, setIsCommentsModalOpen] = useState(false);
+  const [commentsChannel, setCommentsChannel] = useState<Channel | null>(null);
 
-  // Live Session Props (passed when starting session)
-  const [liveSessionProps, setLiveSessionProps] = useState<any>(null);
+  // Collaboration State
+  const [sharedSessionId, setSharedSessionId] = useState<string | undefined>(undefined);
+  const [accessKey, setAccessKey] = useState<string | undefined>(undefined);
 
-  // View Mode for List (Grid vs List)
-  const [listViewMode, setListViewMode] = useState<'grid' | 'list'>('grid');
-  const [sortConfig, setSortConfig] = useState<{ key: SortKey; direction: 'asc' | 'desc' }>({ key: 'likes', direction: 'desc' });
+  // Live Session Config
+  const [liveConfig, setLiveConfig] = useState<{
+    context?: string;
+    bookingId?: string;
+    recording?: boolean;
+    video?: boolean;
+    camera?: boolean;
+    segment?: { index: number, lectureId: string };
+    initialTranscript?: TranscriptItem[];
+  }>({});
 
-  // Load User
+  // Ad-hoc Meeting Channel (Ephemeral)
+  const [tempChannel, setTempChannel] = useState<Channel | null>(null);
+
+  const [globalVoice, setGlobalVoice] = useState('Auto');
+
   useEffect(() => {
-    const unsubscribe = auth.onAuthStateChanged(async (user) => {
-      setCurrentUser(user);
-      if (user) {
-        const profile = await getUserProfile(user.uid);
-        setUserProfile(profile);
-      } else {
-        setUserProfile(null);
-      }
-    });
-    return () => unsubscribe();
-  }, []);
+    const key = localStorage.getItem('gemini_api_key') || GEMINI_API_KEY || process.env.API_KEY;
+    setHasApiKey(!!key);
 
-  // Load Channels
-  useEffect(() => {
-    // Merge Handcrafted with Public Channels from Firestore
-    // For demo simplicity, we load handcrafted + public snapshot
-    const loadChannels = async () => {
-        let publicChannels: Channel[] = [];
-        try {
-            publicChannels = await getPublicChannels();
-        } catch(e) {
-            console.warn("Offline or failed to fetch public channels");
-        }
+    const params = new URLSearchParams(window.location.search);
+    const session = params.get('session');
+    const keyParam = params.get('key'); 
+    const mode = params.get('mode');
+
+    if (session) {
+        setSharedSessionId(session);
+        if (keyParam) setAccessKey(keyParam);
         
-        // Merge without duplicates (ID check)
-        const combined = [...HANDCRAFTED_CHANNELS];
-        publicChannels.forEach(pc => {
-            if (!combined.find(c => c.id === pc.id)) {
-                combined.push(pc);
+        if (viewState !== 'code_studio' && viewState !== 'whiteboard') {
+            if (mode === 'whiteboard') {
+                 setViewState('whiteboard');
+            } else {
+                 setViewState('code_studio');
             }
+        }
+    }
+
+    let unsubscribeAuth = () => {};
+
+    if (isFirebaseConfigured) {
+        unsubscribeAuth = auth.onAuthStateChanged(async (user) => {
+          setCurrentUser(user);
+          if (user) {
+            try {
+              const profile = await getUserProfile(user.uid);
+              setUserProfile(profile);
+            } catch (e) {
+              console.error("Profile fetch error", e);
+            }
+          } else {
+            setUserProfile(null);
+            setGroupChannels([]);
+          }
+          setAuthLoading(false); 
         });
-        setChannels(combined);
-    };
-    loadChannels();
-    
-    // Subscribe for updates
-    const unsub = subscribeToPublicChannels((updated) => {
-         setChannels(prev => {
-             // Keep handcrafted, update public ones
-             const handcrafted = prev.filter(c => HANDCRAFTED_CHANNELS.some(hc => hc.id === c.id));
-             // Remove handcrafted duplicates from updated if any
-             const validUpdates = updated.filter(u => !handcrafted.some(h => h.id === u.id));
-             return [...handcrafted, ...validUpdates];
-         });
-    });
-    return () => unsub();
+    } else {
+        setIsFirebaseModalOpen(true);
+        setAuthLoading(false);
+    }
+
+    return () => unsubscribeAuth();
   }, []);
 
-  const filteredChannels = useMemo(() => {
-      let result = channels;
-      if (searchQuery) {
-          const q = searchQuery.toLowerCase();
-          result = result.filter(c => 
-              c.title.toLowerCase().includes(q) || 
-              c.description.toLowerCase().includes(q) ||
-              c.tags.some(tag => tag.toLowerCase().includes(q))
-          );
-      }
-      
-      if (listViewMode === 'list') {
-          result.sort((a, b) => {
-              const valA = a[sortConfig.key] || '';
-              const valB = b[sortConfig.key] || '';
-              if (valA < valB) return sortConfig.direction === 'asc' ? -1 : 1;
-              if (valA > valB) return sortConfig.direction === 'asc' ? 1 : -1;
-              return 0;
+  useEffect(() => {
+      if (currentUser && isFirebaseConfigured) {
+          const unsub = setupSubscriptionListener(currentUser.uid, (newTier) => {
+              console.log("Subscription status updated:", newTier);
+              setUserProfile(prev => prev ? { ...prev, subscriptionTier: newTier } : prev);
           });
-      } else {
-          // Default sort for grid (likes)
-          result.sort((a, b) => b.likes - a.likes);
+          return () => unsub();
       }
-      return result;
-  }, [channels, searchQuery, listViewMode, sortConfig]);
+  }, [currentUser]);
 
-  const handleChannelClick = (id: string) => {
-      setActiveChannelId(id);
-      setViewState('podcast_detail');
+  useEffect(() => {
+    getUserChannels().then(setUserChannels);
+  }, []);
+
+  useEffect(() => {
+    if (isFirebaseConfigured && currentUser) {
+        const unsubPublic = subscribeToPublicChannels(
+          (data) => setPublicChannels(data),
+          (err: any) => {
+              if (err.code === 'permission-denied' || err.message?.includes('permission')) {
+                  console.warn("Public channels access denied. Waiting for authentication.");
+              } else {
+                  console.error("Public channels error", err);
+              }
+          }
+        );
+        return () => { unsubPublic(); };
+    }
+  }, [currentUser]);
+
+  useEffect(() => {
+    if (userProfile && userProfile.groups && userProfile.groups.length > 0) {
+       getGroupChannels(userProfile.groups).then(setGroupChannels);
+    }
+  }, [userProfile]);
+
+  useEffect(() => {
+    const all = [...HANDCRAFTED_CHANNELS, ...userChannels, ...publicChannels, ...groupChannels];
+    const unique = Array.from(new Map(all.map(item => [item.id, item])).values());
+    
+    unique.sort((a, b) => {
+        const isAHand = HANDCRAFTED_CHANNELS.some(h => h.id === a.id);
+        const isBHand = HANDCRAFTED_CHANNELS.some(h => h.id === b.id);
+        if (isAHand && !isBHand) return -1;
+        if (!isAHand && isBHand) return 1;
+        return (b.createdAt || 0) - (a.createdAt || 0);
+    });
+    
+    setChannels(unique);
+  }, [userChannels, publicChannels, groupChannels]);
+
+  const activeChannel = useMemo(() => {
+      return tempChannel || channels.find(c => c.id === activeChannelId);
+  }, [channels, activeChannelId, tempChannel]);
+
+  const handleVote = async (id: string, type: 'like' | 'dislike', e: React.MouseEvent) => {
+    e.stopPropagation();
+    setChannels(prev => prev.map(c => {
+      if (c.id === id) {
+        return type === 'like' ? { ...c, likes: c.likes + 1 } : { ...c, dislikes: c.dislikes + 1 };
+      }
+      return c;
+    }));
+    await voteChannel(id, type);
   };
 
-  const handleStartLiveSession = (
-      channel: Channel, 
-      context?: string, 
-      recordingEnabled?: boolean, 
-      bookingId?: string, 
-      videoEnabled?: boolean, 
-      cameraEnabled?: boolean,
-      activeSegment?: { index: number, lectureId: string },
-      initialTranscript?: TranscriptItem[],
-      discussionId?: string
-  ) => {
-      setLiveSessionProps({
-          channel,
-          initialContext: context,
-          lectureId: bookingId,
-          recordingEnabled,
-          videoEnabled,
-          cameraEnabled,
-          activeSegment,
-          initialTranscript,
-          existingDiscussionId: discussionId,
-          onEndSession: () => {
-              setViewState('directory');
-              setLiveSessionProps(null);
-          },
-          language
+  const handleCreateChannel = async (newChannel: Channel) => {
+    if (newChannel.visibility === 'public') {
+        await publishChannelToFirestore(newChannel);
+    } else if (newChannel.visibility === 'group') {
+        await publishChannelToFirestore(newChannel); 
+    } else {
+        await saveUserChannel(newChannel);
+        setUserChannels(prev => [newChannel, ...prev]);
+    }
+    setChannels(prev => [newChannel, ...prev]);
+  };
+
+  const handleUpdateChannel = async (updatedChannel: Channel) => {
+      if (updatedChannel.visibility === 'public' || updatedChannel.visibility === 'group') {
+          await publishChannelToFirestore(updatedChannel);
+      } else {
+          await saveUserChannel(updatedChannel);
+          setUserChannels(prev => prev.map(c => c.id === updatedChannel.id ? updatedChannel : c));
+      }
+      setChannels(prev => prev.map(c => c.id === updatedChannel.id ? updatedChannel : c));
+  };
+
+  const handleDeleteChannel = async () => {
+      if (!channelToEdit) return;
+      if (channelToEdit.visibility === 'public' || channelToEdit.visibility === 'group') {
+          alert("Public channels must be deleted via the Inspector for now."); 
+      } else {
+          await deleteUserChannel(channelToEdit.id);
+          setUserChannels(prev => prev.filter(c => c.id !== channelToEdit.id));
+      }
+      setChannelToEdit(null);
+  };
+
+  const handleCommentClick = (channel: Channel) => {
+      setCommentsChannel(channel);
+      setIsCommentsModalOpen(true);
+  };
+
+  const handleAddComment = async (text: string, attachments: any[]) => {
+      if (!commentsChannel || !currentUser) return;
+      
+      const newComment = {
+          id: crypto.randomUUID(),
+          userId: currentUser.uid,
+          user: currentUser.displayName || 'Anonymous',
+          text,
+          timestamp: Date.now(),
+          attachments
+      };
+      
+      const updatedChannel = { 
+          ...commentsChannel, 
+          comments: [...commentsChannel.comments, newComment] 
+      };
+      
+      setCommentsChannel(updatedChannel);
+      setChannels(prev => prev.map(c => c.id === commentsChannel.id ? updatedChannel : c));
+      
+      if (commentsChannel.visibility === 'public' || commentsChannel.visibility === 'group') {
+          await addCommentToChannel(commentsChannel.id, newComment);
+      } else {
+          await saveUserChannel(updatedChannel);
+          setUserChannels(prev => prev.map(c => c.id === updatedChannel.id ? updatedChannel : c));
+      }
+  };
+
+  const handleStartLiveSession = (channel: Channel, context?: string, recordingEnabled?: boolean, bookingId?: string, videoEnabled?: boolean, cameraEnabled?: boolean) => {
+      const existing = channels.find(c => c.id === channel.id);
+      
+      if (!existing) {
+          setTempChannel(channel); 
+      } else {
+          setTempChannel(null);
+      }
+      
+      setActiveChannelId(channel.id);
+      setLiveConfig({
+          context,
+          bookingId,
+          recording: recordingEnabled,
+          video: videoEnabled,
+          camera: cameraEnabled
       });
       setViewState('live_session');
   };
 
-  const handleCreateChannel = async (newChannel: Channel) => {
-      setChannels(prev => [newChannel, ...prev]);
-      if (newChannel.visibility === 'public') {
-          // Additional logic for public channels if needed
-      }
-      if (currentUser) {
-          await saveUserChannel(newChannel);
-      }
-      handleChannelClick(newChannel.id);
+  const handleSessionStart = (id: string) => {
+      setSharedSessionId(id);
+      setAccessKey(undefined);
+      
+      const url = new URL(window.location.href);
+      url.searchParams.delete('session');
+      url.searchParams.delete('code_session');
+      url.searchParams.delete('whiteboard_session');
+      url.searchParams.delete('view');
+      url.searchParams.delete('key');
+      url.searchParams.delete('mode');
+
+      url.searchParams.set('session', id);
+      window.history.pushState({}, '', url.toString());
   };
 
-  const handleVote = async (id: string, type: 'like' | 'dislike', e: React.MouseEvent) => {
-      e.stopPropagation();
-      await voteChannel(id, type);
-      // Optimistic update
-      setChannels(prev => prev.map(c => {
-          if (c.id === id) {
-              return { ...c, likes: type === 'like' ? c.likes + 1 : c.likes, dislikes: type === 'dislike' ? c.dislikes + 1 : c.dislikes };
-          }
-          return c;
-      }));
+  const handleSessionStop = () => {
+      setSharedSessionId(undefined);
+      setAccessKey(undefined);
+      const url = new URL(window.location.href);
+      url.searchParams.delete('session');
+      url.searchParams.delete('key');
+      window.history.pushState({}, '', url.toString());
   };
 
+  // --- Sorting Logic ---
   const handleSort = (key: SortKey) => {
       setSortConfig(current => ({
           key,
@@ -229,277 +417,627 @@ export default function App() {
       }));
   };
 
-  const renderView = () => {
-      switch(viewState) {
-          case 'directory':
-              return (
-                  <div className="flex flex-col h-full">
-                      {/* View Toggles */}
-                      <div className="flex justify-end px-6 pt-4">
-                          <div className="flex bg-slate-900 rounded-lg p-1 border border-slate-800">
-                              <button onClick={() => setListViewMode('grid')} className={`p-2 rounded ${listViewMode === 'grid' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'}`}><LayoutGrid size={16}/></button>
-                              <button onClick={() => setListViewMode('list')} className={`p-2 rounded ${listViewMode === 'list' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'}`}><List size={16}/></button>
-                          </div>
-                      </div>
-                      
-                      {listViewMode === 'grid' ? (
-                          <PodcastFeed 
-                              channels={filteredChannels}
-                              onChannelClick={handleChannelClick}
-                              onStartLiveSession={(ch) => handleStartLiveSession(ch)}
-                              userProfile={userProfile}
-                              globalVoice={globalVoice}
-                              onRefresh={() => { /* re-fetch */ }}
-                              t={t}
-                              currentUser={currentUser}
-                              setChannelToEdit={setChannelToEdit}
-                              setIsSettingsModalOpen={setIsSettingsModalOpen}
-                              onCommentClick={setCommentChannel}
-                              handleVote={handleVote}
-                          />
-                      ) : (
-                          <div className="p-6 overflow-y-auto">
-                              <PodcastListTable 
-                                  channels={filteredChannels}
-                                  onChannelClick={handleChannelClick}
-                                  sortConfig={sortConfig}
-                                  onSort={handleSort}
-                                  globalVoice={globalVoice}
-                              />
-                          </div>
-                      )}
-                  </div>
-              );
-          case 'podcast_detail':
-              const channel = channels.find(c => c.id === activeChannelId);
-              if (!channel) return <div>Channel not found</div>;
-              return (
-                  <PodcastDetail 
-                      channel={channel} 
-                      onBack={() => setViewState('directory')}
-                      onStartLiveSession={(ctx, lid, rec, vid, seg, cam) => handleStartLiveSession(channel, ctx, rec, lid, vid, cam, seg)}
-                      language={language}
-                      currentUser={currentUser}
-                      onEditChannel={() => { setChannelToEdit(channel); setIsSettingsModalOpen(true); }}
-                      onViewComments={() => setCommentChannel(channel)}
-                  />
-              );
-          case 'live_session':
-              if (!liveSessionProps) return <div>No active session</div>;
-              return <LiveSession {...liveSessionProps} />;
-          case 'calendar':
-              return <CalendarView 
-                        channels={channels} 
-                        handleChannelClick={handleChannelClick}
-                        handleVote={handleVote}
-                        currentUser={currentUser}
-                        setChannelToEdit={setChannelToEdit}
-                        setIsSettingsModalOpen={setIsSettingsModalOpen}
-                        globalVoice={globalVoice}
-                        t={t}
-                        onCommentClick={setCommentChannel}
-                        onStartLiveSession={handleStartLiveSession}
-                        onCreateChannel={handleCreateChannel}
-                     />;
-          case 'recordings':
-              return <div className="p-6 overflow-y-auto h-full"><RecordingList onBack={() => setViewState('directory')} onStartLiveSession={handleStartLiveSession} /></div>;
-          case 'mentorship':
-              return <div className="overflow-y-auto h-full"><MentorBooking currentUser={currentUser} channels={channels} onStartLiveSession={handleStartLiveSession}/></div>;
-          case 'groups':
-              return <div className="p-6 overflow-y-auto h-full"><GroupManager /></div>;
-          case 'documents':
-              return <div className="p-6 overflow-y-auto h-full"><DocumentList onBack={() => setViewState('directory')} /></div>;
-          case 'code_studio':
-              return <CodeStudio onBack={() => setViewState('directory')} currentUser={currentUser} userProfile={userProfile} onStartLiveSession={handleStartLiveSession} />;
-          case 'whiteboard':
-              return <Whiteboard onBack={() => setViewState('directory')} />;
-          case 'blog':
-              return <BlogView currentUser={currentUser} onBack={() => setViewState('directory')} />;
-          case 'chat':
-              return <WorkplaceChat onBack={() => setViewState('directory')} currentUser={currentUser} />;
-          case 'careers':
-              return <CareerCenter onBack={() => setViewState('directory')} currentUser={currentUser} />;
-          case 'user_guide':
-              return <UserManual onBack={() => setViewState('directory')} />;
-          case 'mission':
-              return <MissionManifesto onBack={() => setViewState('directory')} />;
-          case 'privacy':
-              return <PrivacyPolicy onBack={() => setViewState('directory')} />;
-          case 'debug':
-              return <DebugView onBack={() => setViewState('directory')} />;
-          case 'cloud_debug':
-              return <CloudDebugView onBack={() => setViewState('directory')} />;
-          case 'public_debug':
-              return <PublicChannelInspector onBack={() => setViewState('directory')} />;
-          case 'firestore_debug':
-              return <FirestoreInspector onBack={() => setViewState('directory')} />;
-          default:
-              return <div>View not found</div>;
+  // Combined Channel List for Feed
+  const feedChannels = useMemo(() => {
+      let data = [...channels];
+      
+      // Filter for "Following" tab (Mobile)
+      if (mobileFeedTab === 'following' && currentUser) {
+          // Simple logic: Only group channels or public channels user has interacted with
+          // Real app would have a 'subscribedChannels' array
+          data = data.filter(c => c.visibility === 'group' || c.likes > 50);
+      }
+
+      if (searchQuery) {
+          const lowerQ = searchQuery.toLowerCase();
+          data = data.filter(c => 
+              c.title.toLowerCase().includes(lowerQ) || 
+              c.description.toLowerCase().includes(lowerQ) ||
+              c.tags.some(t => t.toLowerCase().includes(lowerQ))
+          );
+      }
+      
+      // Shuffle logic for "refresh" handled in component state usually, 
+      // but here we just re-sort for "For You"
+      if (mobileFeedTab === 'foryou') {
+          // Default sorting logic handled inside PodcastFeed for ranking
+      }
+
+      return data;
+  }, [channels, searchQuery, mobileFeedTab, currentUser]);
+
+  const handleRefreshFeed = () => {
+      // Simulate fetch new data by reshuffling locally for demo
+      setChannels(prev => [...prev.sort(() => 0.5 - Math.random())]);
+  };
+
+  const handleUpgradeSuccess = async (newTier: SubscriptionTier) => {
+      if (userProfile) {
+          setUserProfile({ ...userProfile, subscriptionTier: newTier });
+      }
+      if (currentUser) {
+        try {
+            const fresh = await getUserProfile(currentUser.uid);
+            if (fresh) setUserProfile(fresh);
+        } catch(e) {}
       }
   };
 
-  // If Firebase not configured, show modal
-  if (!isFirebaseConfigured) {
+  if (authLoading) {
       return (
-          <FirebaseConfigModal 
-              isOpen={true} 
-              onClose={() => {}} 
-              onConfigUpdate={(configured) => setIsFirebaseConfigured(configured)} 
-          />
+          <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center text-indigo-400">
+              <Loader2 size={48} className="animate-spin mb-4" />
+              <p className="text-sm font-bold tracking-widest uppercase">Initializing AIVoiceCast...</p>
+          </div>
       );
   }
 
+  if (isPrivacyOpen) {
+      return <PrivacyPolicy onBack={() => setIsPrivacyOpen(false)} />;
+  }
+
+  if (!currentUser) {
+      return <LoginPage onPrivacyClick={() => setIsPrivacyOpen(true)} />;
+  }
+
+  // Mobile Bottom Nav Component
+  const MobileBottomNav = () => (
+      <div className="md:hidden fixed bottom-0 left-0 w-full bg-slate-950/90 backdrop-blur-md border-t border-slate-800 z-50 px-6 py-2 flex justify-between items-center safe-area-bottom">
+          <button 
+              onClick={() => { setViewState('directory'); setActiveTab('categories'); setIsAppsMenuOpen(false); }}
+              className={`flex flex-col items-center gap-1 ${viewState === 'directory' && activeTab === 'categories' && !isAppsMenuOpen ? 'text-white' : 'text-slate-500'}`}
+          >
+              <Home size={24} fill={viewState === 'directory' && activeTab === 'categories' && !isAppsMenuOpen ? "currentColor" : "none"} />
+              <span className="text-[10px]">Home</span>
+          </button>
+          
+          <button 
+              onClick={() => { setViewState('directory'); setActiveTab('groups'); setIsAppsMenuOpen(false); }}
+              className={`flex-1 flex-col items-center gap-1 hidden ${activeTab === 'groups' && !isAppsMenuOpen ? 'text-white' : 'text-slate-500'}`}
+          >
+              {/* Hidden in simplified layout to fix spacing, or use flex-1 properly */}
+          </button>
+          
+          <button 
+              onClick={() => { setViewState('directory'); setActiveTab('groups'); setIsAppsMenuOpen(false); }}
+              className={`flex flex-col items-center gap-1 ${activeTab === 'groups' && !isAppsMenuOpen ? 'text-white' : 'text-slate-500'}`}
+          >
+              <Users size={24} fill={activeTab === 'groups' && !isAppsMenuOpen ? "currentColor" : "none"} />
+              <span className="text-[10px]">Friends</span>
+          </button>
+
+          <button 
+              onClick={() => setIsVoiceCreateOpen(true)}
+              className="flex flex-col items-center justify-center -mt-6"
+          >
+              <div className="bg-gradient-to-r from-blue-500 to-red-500 p-0.5 rounded-xl w-12 h-8 flex items-center justify-center shadow-lg hover:scale-105 transition-transform">
+                  <div className="bg-black w-full h-full rounded-lg flex items-center justify-center">
+                      <Plus size={20} className="text-white"/>
+                  </div>
+              </div>
+          </button>
+
+          <button 
+              onClick={() => setIsAppsMenuOpen(true)}
+              className={`flex flex-col items-center gap-1 ${isAppsMenuOpen ? 'text-white' : 'text-slate-500'}`}
+          >
+              <LayoutGrid size={24} fill={isAppsMenuOpen ? "currentColor" : "none"} />
+              <span className="text-[10px]">Apps</span>
+          </button>
+
+          <button 
+              onClick={() => { setIsAccountSettingsOpen(true); setIsAppsMenuOpen(false); }}
+              className={`flex flex-col items-center gap-1 ${isAccountSettingsOpen ? 'text-white' : 'text-slate-500'}`}
+          >
+              <User size={24} fill={isAccountSettingsOpen ? "currentColor" : "none"} />
+              <span className="text-[10px]">Profile</span>
+          </button>
+      </div>
+  );
+
+  // Mobile Top Nav Component (Overlay on Feed)
+  const MobileTopNav = () => {
+      if (viewState !== 'directory' || activeTab !== 'categories') return null;
+      return (
+          <div className="md:hidden fixed top-0 left-0 w-full z-40 bg-gradient-to-b from-black/80 to-transparent p-4 flex items-center justify-between pointer-events-none">
+              <button onClick={() => setViewState('live_session')} className="pointer-events-auto text-white/80 hover:text-white">
+                  <VideoIcon size={24} />
+              </button>
+              
+              <div className="flex gap-4 font-bold text-base pointer-events-auto">
+                  <button 
+                      onClick={() => setMobileFeedTab('following')}
+                      className={`${mobileFeedTab === 'following' ? 'text-white border-b-2 border-white pb-1' : 'text-white/60'}`}
+                  >
+                      Following
+                  </button>
+                  <span className="text-white/20">|</span>
+                  <button 
+                      onClick={() => setMobileFeedTab('foryou')}
+                      className={`${mobileFeedTab === 'foryou' ? 'text-white border-b-2 border-white pb-1' : 'text-white/60'}`}
+                  >
+                      For You
+                  </button>
+              </div>
+
+              <button onClick={() => setIsMobileSearchOpen(true)} className="pointer-events-auto text-white/80 hover:text-white">
+                  <Search size={24} />
+              </button>
+          </div>
+      );
+  };
+
+  // Mobile Search Overlay
+  const MobileSearchOverlay = () => {
+      if (!isMobileSearchOpen) return null;
+      
+      const filteredChannels = channels.filter(c => 
+          c.title.toLowerCase().includes(mobileSearchQuery.toLowerCase()) || 
+          c.description.toLowerCase().includes(mobileSearchQuery.toLowerCase()) ||
+          c.tags.some(t => t.toLowerCase().includes(mobileSearchQuery.toLowerCase()))
+      );
+
+      return (
+          <div className="fixed inset-0 z-50 bg-slate-950 flex flex-col animate-fade-in">
+              <div className="flex items-center gap-4 p-4 border-b border-slate-800 bg-slate-900">
+                  <button onClick={() => setIsMobileSearchOpen(false)} className="p-2 hover:bg-slate-800 rounded-full text-slate-400">
+                      <ArrowLeft size={24} />
+                  </button>
+                  <div className="flex-1 relative">
+                      <input 
+                          autoFocus
+                          type="text" 
+                          placeholder="Search podcasts..." 
+                          value={mobileSearchQuery}
+                          onChange={(e) => setMobileSearchQuery(e.target.value)}
+                          className="w-full bg-slate-800 border border-slate-700 rounded-full py-2 pl-4 pr-10 text-white focus:outline-none focus:border-indigo-500"
+                      />
+                      {mobileSearchQuery && (
+                          <button onClick={() => setMobileSearchQuery('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500">
+                              <X size={16} />
+                          </button>
+                      )}
+                  </div>
+              </div>
+              
+              <div className="flex-1 overflow-y-auto p-4">
+                  {mobileSearchQuery ? (
+                      <div className="space-y-4">
+                          <p className="text-xs font-bold text-slate-500 uppercase">Results</p>
+                          {filteredChannels.length === 0 ? (
+                              <p className="text-center text-slate-500 py-8">No results found.</p>
+                          ) : (
+                              filteredChannels.map(channel => (
+                                  <div 
+                                      key={channel.id} 
+                                      onClick={() => {
+                                          setActiveChannelId(channel.id);
+                                          setViewState('podcast_detail');
+                                          setIsMobileSearchOpen(false);
+                                      }}
+                                      className="flex items-center gap-4 p-3 bg-slate-900 border border-slate-800 rounded-xl active:scale-95 transition-transform"
+                                  >
+                                      <img src={channel.imageUrl} className="w-12 h-12 rounded-lg object-cover" alt="" />
+                                      <div className="flex-1 min-w-0">
+                                          <h4 className="font-bold text-white truncate">{channel.title}</h4>
+                                          <p className="text-xs text-slate-400 truncate">{channel.author}</p>
+                                      </div>
+                                      <button className="p-2 bg-indigo-600 rounded-full text-white">
+                                          <Play size={12} fill="currentColor"/>
+                                      </button>
+                                  </div>
+                              ))
+                          )}
+                      </div>
+                  ) : (
+                      <div className="text-center text-slate-500 mt-20">
+                          <Search size={48} className="mx-auto mb-4 opacity-20" />
+                          <p>Type to search podcasts</p>
+                      </div>
+                  )}
+              </div>
+          </div>
+      );
+  };
+
   return (
-    <div className="flex flex-col h-screen bg-slate-950 text-slate-100 overflow-hidden">
-        {/* Navbar */}
-        {!['live_session', 'code_studio', 'whiteboard'].includes(viewState) && (
-            <header className="h-16 bg-slate-950/80 backdrop-blur-md border-b border-slate-800 flex items-center justify-between px-4 sm:px-6 z-50 shrink-0">
-                
-                <div className="flex items-center cursor-pointer" onClick={() => { setViewState('directory'); }}>
-                  <div className="bg-gradient-to-tr from-indigo-600 to-purple-600 p-2 rounded-xl shadow-lg shadow-indigo-500/20">
-                    <Podcast className="text-white w-6 h-6" />
-                  </div>
-                  <span className="ml-3 text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-white to-slate-400 hidden sm:block">
-                    {t.appTitle}
-                  </span>
-                </div>
-                
-                {/* Search Bar */}
-                <div className="flex-1 max-w-md mx-4 relative hidden md:block">
-                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                    <Search className="h-4 w-4 text-slate-500" />
-                  </div>
-                  <input
-                    type="text"
-                    className="block w-full pl-10 pr-3 py-2 border border-slate-700 rounded-full leading-5 bg-slate-800/50 text-slate-300 placeholder-slate-500 focus:outline-none focus:bg-slate-800 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 sm:text-sm transition-all"
-                    placeholder={t.search}
-                    value={searchQuery}
-                    onChange={(e) => {
-                        setSearchQuery(e.target.value);
-                        if (e.target.value && viewState !== 'directory') setViewState('directory');
-                    }}
-                  />
-                </div>
+    <div className="min-h-screen supports-[min-height:100dvh]:min-h-[100dvh] bg-slate-950 text-slate-100 font-sans overflow-hidden">
+      
+      {/* Navbar - Desktop Only */}
+      {viewState !== 'chat' && viewState !== 'live_session' && (
+      <nav className="hidden md:block sticky top-0 z-30 bg-slate-900/90 backdrop-blur-md border-b border-slate-800">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex items-center justify-between h-16">
+            <div className="flex items-center cursor-pointer" onClick={() => { setViewState('directory'); }}>
+              <div className="bg-gradient-to-tr from-indigo-600 to-purple-600 p-2 rounded-xl shadow-lg shadow-indigo-500/20">
+                <Podcast className="text-white w-6 h-6" />
+              </div>
+              <span className="ml-3 text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-white to-slate-400">
+                {t.appTitle}
+              </span>
+            </div>
+            
+            {(viewState as string) !== 'directory' && (
+            <div className="flex flex-1 max-w-md mx-8 relative">
+              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                <Search className="h-4 w-4 text-slate-500" />
+              </div>
+              <input
+                type="text"
+                className="block w-full pl-10 pr-3 py-2 border border-slate-700 rounded-full leading-5 bg-slate-800/50 text-slate-300 placeholder-slate-500 focus:outline-none focus:bg-slate-800 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 sm:text-sm transition-all"
+                placeholder={t.search}
+                value={searchQuery}
+                onChange={(e) => {
+                    setSearchQuery(e.target.value);
+                    if (e.target.value && viewState !== 'directory') setViewState('directory');
+                }}
+              />
+            </div>
+            )}
 
-                <div className="flex items-center space-x-2 sm:space-x-4">
-                    {/* Navigation Icons (Desktop) */}
-                    <div className="hidden lg:flex items-center gap-1 bg-slate-900/50 p-1 rounded-lg border border-slate-800">
-                        <button onClick={() => setViewState('directory')} className={`p-2 rounded-lg transition-colors ${viewState === 'directory' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'}`} title="Home"><Home size={18}/></button>
-                        <button onClick={() => setViewState('calendar')} className={`p-2 rounded-lg transition-colors ${viewState === 'calendar' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'}`} title="Calendar"><Calendar size={18}/></button>
-                        <button onClick={() => setViewState('mentorship')} className={`p-2 rounded-lg transition-colors ${viewState === 'mentorship' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'}`} title="Mentors"><Briefcase size={18}/></button>
-                        <button onClick={() => setViewState('code_studio')} className={`p-2 rounded-lg transition-colors ${viewState === 'code_studio' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'}`} title="Code Studio"><Code size={18}/></button>
-                    </div>
+            <div className="flex items-center space-x-2 sm:space-x-4">
+              
+              {/* Desktop Creation Buttons (Restored) */}
+              <div className="hidden lg:flex items-center space-x-2 mr-2">
+                  <button
+                      onClick={() => setIsCreateModalOpen(true)}
+                      className="flex items-center space-x-2 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-lg transition-colors shadow-sm"
+                  >
+                      <Plus size={14} />
+                      <span>New Podcast</span>
+                  </button>
+                  <button
+                      onClick={() => setIsVoiceCreateOpen(true)}
+                      className="flex items-center space-x-2 px-3 py-1.5 bg-pink-600 hover:bg-pink-500 text-white text-xs font-bold rounded-lg transition-colors shadow-sm"
+                  >
+                      <Sparkles size={14} />
+                      <span>Magic Create</span>
+                  </button>
+              </div>
 
-                    <Notifications />
-                    
-                    <button onClick={() => setIsUserMenuOpen(!isUserMenuOpen)} className="relative">
-                        <UserAuth />
-                    </button>
+              <div className="flex gap-2">
+                  <button 
+                    onClick={() => setViewState('code_studio')} 
+                    className="flex items-center space-x-2 px-3 py-1.5 bg-slate-800/50 hover:bg-emerald-900/30 text-emerald-400 text-xs font-bold rounded-lg transition-colors"
+                  >
+                    <Code size={14}/><span>{t.code}</span>
+                  </button>
+                  <button 
+                    onClick={() => setViewState('whiteboard')} 
+                    className="flex items-center space-x-2 px-3 py-1.5 bg-slate-800/50 hover:bg-pink-900/30 text-pink-400 text-xs font-bold rounded-lg transition-colors"
+                  >
+                    <PenTool size={14}/><span>{t.whiteboard}</span>
+                  </button>
+              </div>
+
+              <button 
+                onClick={() => setLanguage(prev => prev === 'en' ? 'zh' : 'en')}
+                className="w-9 h-9 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-xs font-bold text-slate-300 hover:text-white hover:border-slate-500 transition-all"
+                title="Switch Language"
+              >
+                {language === 'en' ? '中' : 'EN'}
+              </button>
+
+              {!isFirebaseConfigured && (
+                  <button onClick={() => setIsFirebaseModalOpen(true)} className="p-2 text-amber-500 bg-amber-900/20 rounded-full hover:bg-amber-900/40 border border-amber-900/50 animate-pulse">
+                      <AlertTriangle size={18} />
+                  </button>
+              )}
+
+              {currentUser && (
+                  <div className="hidden sm:block">
+                      <Notifications />
+                  </div>
+              )}
+              
+              <UserAuth />
+              
+              <div className="relative">
+                <button 
+                  onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
+                  className="p-2 rounded-full hover:bg-slate-800 text-slate-400 hover:text-white transition-colors"
+                >
+                  <Menu size={24} />
+                </button>
+                <StudioMenu 
+                   isUserMenuOpen={isUserMenuOpen} 
+                   setIsUserMenuOpen={setIsUserMenuOpen}
+                   userProfile={userProfile}
+                   setUserProfile={setUserProfile}
+                   currentUser={currentUser}
+                   globalVoice={globalVoice}
+                   setGlobalVoice={setGlobalVoice}
+                   hasApiKey={hasApiKey}
+                   setIsCreateModalOpen={setIsCreateModalOpen}
+                   setIsVoiceCreateOpen={setIsVoiceCreateOpen}
+                   setIsApiKeyModalOpen={setIsApiKeyModalOpen}
+                   setIsSyncModalOpen={setIsSyncModalOpen}
+                   setIsSettingsModalOpen={setIsAccountSettingsOpen}
+                   onOpenUserGuide={() => setViewState('user_guide')}
+                   t={t}
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+      </nav>
+      )}
+
+      <MobileTopNav />
+      <MobileSearchOverlay />
+
+      {/* Main Content */}
+      <div className="flex-1 overflow-hidden h-[calc(100vh-64px)] md:h-[calc(100vh-64px)] pb-16 md:pb-0">
+        {viewState === 'mission' && <MissionManifesto onBack={() => setViewState('directory')} />}
+        {viewState === 'user_guide' && <UserManual onBack={() => setViewState('directory')} />}
+        
+        {viewState === 'code_studio' && (
+            <CodeStudio 
+                onBack={() => { setViewState('directory'); }} 
+                currentUser={currentUser} 
+                userProfile={userProfile}
+                sessionId={sharedSessionId}
+                accessKey={accessKey}
+                onSessionStart={handleSessionStart} 
+                onSessionStop={handleSessionStop} 
+                onStartLiveSession={(channel, context) => handleStartLiveSession(channel, context)} 
+            />
+        )}
+        
+        {viewState === 'whiteboard' && (
+            <Whiteboard 
+                onBack={() => { setViewState('directory'); }}
+                sessionId={sharedSessionId}
+                accessKey={accessKey}
+                onSessionStart={handleSessionStart} 
+            />
+        )}
+        
+        {viewState === 'blog' && <BlogView onBack={() => setViewState('directory')} currentUser={currentUser} />}
+        {viewState === 'chat' && <WorkplaceChat onBack={() => setViewState('directory')} currentUser={currentUser} />}
+        {viewState === 'careers' && <CareerCenter onBack={() => setViewState('directory')} currentUser={currentUser} />}
+
+        {viewState === 'directory' && (
+          <div className="h-full flex flex-col">
+            
+            {/* Secondary Nav / Tabs (Horizontal Scroll) - Hidden on Mobile Feed */}
+            <div className={`bg-slate-900/50 backdrop-blur-md border-b border-slate-800 p-2 overflow-x-auto shrink-0 scrollbar-hide ${activeTab === 'categories' ? 'hidden md:block' : ''}`}>
+                <div className="flex space-x-2 w-max px-2">
+                   {[
+                     { id: 'categories', label: t.directory, icon: Layout }, // Main Feed
+                     { id: 'calendar', label: t.calendar, icon: Calendar },
+                     { id: 'careers', label: t.careers, icon: Briefcase },
+                     { id: 'chat', label: t.chat, icon: MessageSquare },
+                     { id: 'code', label: t.code, icon: Code },
+                     { id: 'blog', label: t.blog, icon: Rss },
+                     { id: 'mentorship', label: t.mentorship, icon: Users },
+                     { id: 'groups', label: t.groups, icon: Users },
+                     { id: 'recordings', label: t.recordings, icon: Disc },
+                     { id: 'docs', label: t.docs, icon: FileText },
+                   ].map(tab => (
+                     <button
+                       key={tab.id}
+                       onClick={() => {
+                           if (tab.id === 'code') setViewState('code_studio');
+                           else if (tab.id === 'blog') setViewState('blog');
+                           else if (tab.id === 'chat') setViewState('chat');
+                           else if (tab.id === 'careers') setViewState('careers');
+                           else setActiveTab(tab.id);
+                       }}
+                       className={`flex items-center space-x-2 px-4 py-2 rounded-full text-xs font-bold whitespace-nowrap transition-all ${activeTab === tab.id ? 'bg-white text-slate-900 shadow-md' : 'bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-white'}`}
+                     >
+                       <tab.icon size={14} />
+                       <span>{tab.label}</span>
+                     </button>
+                   ))}
                 </div>
-            </header>
+            </div>
+
+            {/* Content Area */}
+            <div className="flex-1 overflow-hidden relative">
+               
+               {/* 1. Main Feed (Hybrid Layout) */}
+               {activeTab === 'categories' && (
+                   <PodcastFeed 
+                       channels={feedChannels}
+                       onChannelClick={(id) => { setActiveChannelId(id); setViewState('podcast_detail'); }}
+                       onStartLiveSession={(channel) => handleStartLiveSession(channel)}
+                       userProfile={userProfile}
+                       globalVoice={globalVoice}
+                       onRefresh={handleRefreshFeed}
+                       t={t}
+                       currentUser={currentUser}
+                       setChannelToEdit={setChannelToEdit}
+                       setIsSettingsModalOpen={setIsSettingsModalOpen}
+                       onCommentClick={handleCommentClick}
+                       handleVote={handleVote}
+                   />
+               )}
+
+               {/* 2. Other Tabs (Standard Layout) */}
+               {activeTab !== 'categories' && (
+                   <div className="h-full overflow-y-auto p-4 md:p-8 animate-fade-in max-w-7xl mx-auto w-full pb-20">
+                       {activeTab === 'calendar' && (
+                          <CalendarView 
+                             channels={channels}
+                             handleChannelClick={(id) => { setActiveChannelId(id); setViewState('podcast_detail'); }}
+                             handleVote={handleVote}
+                             currentUser={currentUser}
+                             setChannelToEdit={setChannelToEdit}
+                             setIsSettingsModalOpen={setIsSettingsModalOpen}
+                             globalVoice={globalVoice}
+                             t={t}
+                             onCommentClick={handleCommentClick}
+                             onStartLiveSession={handleStartLiveSession}
+                             onCreateChannel={handleCreateChannel}
+                          />
+                       )}
+
+                       {activeTab === 'mentorship' && (
+                          <MentorBooking 
+                             currentUser={currentUser} 
+                             channels={channels}
+                             onStartLiveSession={handleStartLiveSession}
+                          />
+                       )}
+
+                       {activeTab === 'groups' && <GroupManager />}
+                       {activeTab === 'recordings' && <RecordingList onStartLiveSession={handleStartLiveSession} />}
+                       {activeTab === 'docs' && <DocumentList />}
+                   </div>
+               )}
+            </div>
+          </div>
         )}
 
-        {/* Main Content */}
-        <main className="flex-1 overflow-hidden relative">
-            {renderView()}
-        </main>
+        {viewState === 'podcast_detail' && activeChannel && (
+          <PodcastDetail 
+            channel={activeChannel} 
+            onBack={() => setViewState('directory')}
+            onStartLiveSession={(context, lectureId, recordingEnabled, videoEnabled, activeSegment, cameraEnabled) => {
+               setLiveConfig({
+                   context,
+                   bookingId: lectureId, 
+                   recording: recordingEnabled,
+                   video: videoEnabled,
+                   camera: cameraEnabled,
+                   segment: activeSegment
+               });
+               setViewState('live_session');
+            }}
+            language={language}
+            onEditChannel={() => {
+                setChannelToEdit(activeChannel);
+                setIsSettingsModalOpen(true);
+            }}
+            onViewComments={() => handleCommentClick(activeChannel)}
+            currentUser={currentUser}
+          />
+        )}
 
-        {/* Mobile Navigation Bar */}
-        {!['live_session', 'code_studio', 'whiteboard'].includes(viewState) && (
-            <div className="md:hidden h-16 bg-slate-950 border-t border-slate-800 flex items-center justify-around shrink-0 z-50">
-                <button onClick={() => setViewState('directory')} className={`flex flex-col items-center gap-1 ${viewState === 'directory' ? 'text-indigo-400' : 'text-slate-500'}`}>
-                    <Home size={20}/> <span className="text-[10px]">Home</span>
-                </button>
-                <button onClick={() => setViewState('calendar')} className={`flex flex-col items-center gap-1 ${viewState === 'calendar' ? 'text-indigo-400' : 'text-slate-500'}`}>
-                    <Calendar size={20}/> <span className="text-[10px]">Agenda</span>
-                </button>
-                <button onClick={() => setViewState('code_studio')} className={`flex flex-col items-center gap-1 ${viewState === 'code_studio' ? 'text-indigo-400' : 'text-slate-500'}`}>
-                    <Code size={20}/> <span className="text-[10px]">Code</span>
-                </button>
-                <button onClick={() => setViewState('mentorship')} className={`flex flex-col items-center gap-1 ${viewState === 'mentorship' ? 'text-indigo-400' : 'text-slate-500'}`}>
-                    <Users size={20}/> <span className="text-[10px]">Peers</span>
-                </button>
-                <button onClick={() => setIsUserMenuOpen(true)} className={`flex flex-col items-center gap-1 text-slate-500`}>
-                    <Menu size={20}/> <span className="text-[10px]">Menu</span>
+        {viewState === 'live_session' && activeChannel && (
+          <div className="fixed inset-0 z-[100] bg-slate-950">
+             <LiveSession 
+               channel={activeChannel}
+               initialContext={liveConfig.context}
+               lectureId={liveConfig.bookingId}
+               recordingEnabled={liveConfig.recording}
+               videoEnabled={liveConfig.video}
+               cameraEnabled={liveConfig.camera}
+               activeSegment={liveConfig.segment}
+               initialTranscript={liveConfig.initialTranscript}
+               onEndSession={() => {
+                   if (tempChannel) {
+                       setTempChannel(null);
+                       setActiveChannelId(null);
+                       setViewState('directory');
+                       setActiveTab('recordings');
+                   } else {
+                       setViewState('podcast_detail');
+                   }
+               }}
+               language={language}
+             />
+          </div>
+        )}
+
+        {viewState === 'debug' && <DebugView onBack={() => setViewState('directory')} />}
+        {viewState === 'cloud_debug' && <CloudDebugView onBack={() => setViewState('directory')} />}
+        {viewState === 'public_debug' && <PublicChannelInspector onBack={() => setViewState('directory')} />}
+        {viewState === 'firestore_debug' && <FirestoreInspector onBack={() => setViewState('directory')} />}
+      </div>
+
+      {isAppsMenuOpen && (
+        <div className="fixed inset-0 z-[60] bg-slate-950/95 backdrop-blur-md flex flex-col animate-fade-in md:hidden">
+            <div className="p-4 flex justify-between items-center border-b border-slate-800 bg-slate-900/50">
+                <h2 className="text-lg font-bold text-white flex items-center gap-2">
+                    <LayoutGrid size={20} className="text-indigo-400" />
+                    All Apps
+                </h2>
+                <button onClick={() => setIsAppsMenuOpen(false)} className="p-2 bg-slate-800 rounded-full text-slate-400 hover:text-white">
+                    <X size={20} />
                 </button>
             </div>
-        )}
+            <div className="p-6 grid grid-cols-3 gap-4 overflow-y-auto pb-24">
+                {[
+                    { label: 'Workspace', icon: MessageSquare, action: () => setViewState('chat'), color: 'text-indigo-400' },
+                    { label: 'Calendar', icon: Calendar, action: () => { setViewState('directory'); setActiveTab('calendar'); }, color: 'text-emerald-400' },
+                    { label: 'CodeStudio', icon: Code, action: () => setViewState('code_studio'), color: 'text-blue-400' },
+                    { label: 'Whiteboard', icon: PenTool, action: () => setViewState('whiteboard'), color: 'text-pink-400' },
+                    { label: 'Blog', icon: Rss, action: () => setViewState('blog'), color: 'text-orange-400' },
+                    { label: 'Mentorship', icon: Users, action: () => { setViewState('directory'); setActiveTab('mentorship'); }, color: 'text-purple-400' },
+                    { label: 'Groups', icon: Users, action: () => { setViewState('directory'); setActiveTab('groups'); }, color: 'text-cyan-400' },
+                    { label: 'Recordings', icon: Disc, action: () => { setViewState('directory'); setActiveTab('recordings'); }, color: 'text-red-400' },
+                    { label: 'Careers', icon: Briefcase, action: () => setViewState('careers'), color: 'text-yellow-400' },
+                    { label: 'Documents', icon: FileText, action: () => { setViewState('directory'); setActiveTab('docs'); }, color: 'text-gray-400' },
+                ].map((app) => (
+                    <button 
+                        key={app.label}
+                        onClick={() => {
+                            app.action();
+                            setIsAppsMenuOpen(false);
+                        }}
+                        className="flex flex-col items-center justify-center gap-3 p-4 bg-slate-900 border border-slate-800 rounded-2xl hover:bg-slate-800 active:scale-95 transition-all aspect-square shadow-lg"
+                    >
+                        <div className={`p-3 bg-slate-800 rounded-xl ${app.color} shadow-inner`}>
+                            <app.icon size={28} />
+                        </div>
+                        <span className="text-xs font-bold text-slate-300">{app.label}</span>
+                    </button>
+                ))}
+            </div>
+        </div>
+      )}
 
-        {/* Modals */}
-        <StudioMenu 
-            isUserMenuOpen={isUserMenuOpen}
-            setIsUserMenuOpen={setIsUserMenuOpen}
-            userProfile={userProfile}
-            setUserProfile={setUserProfile}
+      <MobileBottomNav />
+
+      <CreateChannelModal isOpen={isCreateModalOpen} onClose={() => setIsCreateModalOpen(false)} onCreate={handleCreateChannel} />
+      <VoiceCreateModal isOpen={isVoiceCreateOpen} onClose={() => setIsVoiceCreateOpen(false)} onCreate={handleCreateChannel} />
+      <ApiKeyModal isOpen={isApiKeyModalOpen} onClose={() => setIsApiKeyModalOpen(false)} onKeyUpdate={setHasApiKey} />
+      <DataSyncModal isOpen={isSyncModalOpen} onClose={() => setIsSyncModalOpen(false)} />
+      <FirebaseConfigModal isOpen={isFirebaseModalOpen} onClose={() => setIsFirebaseModalOpen(false)} onConfigUpdate={(valid) => { if(valid) window.location.reload(); }} />
+
+      {isAccountSettingsOpen && userProfile && (
+          <SettingsModal 
+             isOpen={true} 
+             onClose={() => setIsAccountSettingsOpen(false)} 
+             user={userProfile} 
+             onUpdateProfile={(updated) => setUserProfile(updated)}
+             onUpgradeClick={() => setIsPricingOpen(true)}
+          />
+      )}
+
+      {isPricingOpen && userProfile && (
+          <PricingModal 
+             isOpen={true} 
+             onClose={() => setIsPricingOpen(false)} 
+             user={userProfile} 
+             onSuccess={handleUpgradeSuccess}
+          />
+      )}
+
+      {channelToEdit && (
+        <ChannelSettingsModal 
+           isOpen={isSettingsModalOpen}
+           onClose={() => { setIsSettingsModalOpen(false); setChannelToEdit(null); }}
+           channel={channelToEdit}
+           onUpdate={handleUpdateChannel}
+           onDelete={handleDeleteChannel}
+        />
+      )}
+
+      {commentsChannel && (
+         <CommentsModal 
+            isOpen={isCommentsModalOpen}
+            onClose={() => { setIsCommentsModalOpen(false); setCommentsChannel(null); }}
+            channel={commentsChannel}
+            onAddComment={handleAddComment}
             currentUser={currentUser}
-            globalVoice={globalVoice}
-            setGlobalVoice={setGlobalVoice}
-            hasApiKey={hasApiKey}
-            setIsCreateModalOpen={setIsCreateModalOpen}
-            setIsVoiceCreateOpen={setIsVoiceCreateOpen}
-            setIsApiKeyModalOpen={setIsApiKeyModalOpen}
-            setIsSyncModalOpen={setIsSyncModalOpen}
-            setIsSettingsModalOpen={setIsSettingsModalOpen}
-            onOpenUserGuide={() => setViewState('user_guide')}
-            t={t}
-        />
-
-        <CreateChannelModal
-            isOpen={isCreateModalOpen}
-            onClose={() => setIsCreateModalOpen(false)}
-            onCreate={handleCreateChannel}
-        />
-
-        <VoiceCreateModal
-            isOpen={isVoiceCreateOpen}
-            onClose={() => setIsVoiceCreateOpen(false)}
-            onCreate={handleCreateChannel}
-        />
-
-        <ApiKeyModal 
-            isOpen={isApiKeyModalOpen}
-            onClose={() => setIsApiKeyModalOpen(false)}
-            onKeyUpdate={(val) => setHasApiKey(val)}
-        />
-
-        <DataSyncModal 
-            isOpen={isSyncModalOpen}
-            onClose={() => setIsSyncModalOpen(false)}
-        />
-
-        {currentUser && (
-            <SettingsModal 
-                isOpen={isSettingsModalOpen} 
-                onClose={() => setIsSettingsModalOpen(false)} 
-                user={userProfile || { uid: currentUser.uid, email: currentUser.email || '', displayName: currentUser.displayName || '', photoURL: currentUser.photoURL || '', groups: [], createdAt: Date.now() }}
-                onUpdateProfile={(updated) => setUserProfile(updated)}
-            />
-        )}
-
-        {channelToEdit && (
-            <ChannelSettingsModal 
-                isOpen={!!channelToEdit}
-                onClose={() => setChannelToEdit(null)}
-                channel={channelToEdit}
-                onUpdate={(updated) => {
-                    setChannels(prev => prev.map(c => c.id === updated.id ? updated : c));
-                    if (currentUser) saveUserChannel(updated);
-                }}
-            />
-        )}
-
-        {commentChannel && (
-            <CommentsModal 
-                isOpen={!!commentChannel}
-                onClose={() => setCommentChannel(null)}
-                channel={commentChannel}
-                currentUser={currentUser}
-                onAddComment={(text, attachments) => {
-                    // Handled inside modal via firestore, just refreshing UI state handled by listener
-                }}
-            />
-        )}
+         />
+      )}
 
     </div>
   );
-}
+};
+
+export default App;
