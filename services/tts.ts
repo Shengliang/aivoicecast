@@ -81,6 +81,10 @@ export function clearMemoryCache() {
 // Keep the old name as alias for backward compatibility if needed, though clearMemoryCache is preferred.
 export const clearAudioCache = clearMemoryCache;
 
+function isOpenAIVoice(voiceName: string): boolean {
+    return OPENAI_VOICES.includes(voiceName.toLowerCase());
+}
+
 async function synthesizeOpenAI(text: string, voice: string, apiKey: string): Promise<ArrayBuffer> {
   const response = await fetch("https://api.openai.com/v1/audio/speech", {
     method: "POST",
@@ -155,7 +159,18 @@ export async function synthesizeSpeech(
       // 3a. Check Persistent Cache (IndexedDB)
       const cachedArrayBuffer = await getCachedAudioBuffer(cacheKey);
       if (cachedArrayBuffer) {
-        const audioBuffer = await decodeAudioData(new Uint8Array(cachedArrayBuffer), audioContext);
+        let audioBuffer: AudioBuffer;
+        
+        // Correctly handle decoding based on provider type inferred from voice name
+        if (isOpenAIVoice(voiceName)) {
+            // OpenAI = MP3 = Native Browser Decode
+            // Slice(0) creates a copy to avoid detachment issues if buffer is reused later
+            audioBuffer = await audioContext.decodeAudioData(cachedArrayBuffer.slice(0));
+        } else {
+            // Gemini = PCM = Custom Manual Decode
+            audioBuffer = await decodeAudioData(new Uint8Array(cachedArrayBuffer), audioContext);
+        }
+
         memoryCache.set(cacheKey, audioBuffer);
         return { buffer: audioBuffer, errorType: 'none' };
       }
@@ -165,7 +180,7 @@ export async function synthesizeSpeech(
       let usedProvider: 'gemini' | 'openai' = 'gemini';
 
       // Check if requested voice is OpenAI
-      if (OPENAI_VOICES.includes(voiceName.toLowerCase())) {
+      if (isOpenAIVoice(voiceName)) {
           const openAiKey = localStorage.getItem('openai_api_key') || OPENAI_API_KEY || '';
           if (!openAiKey) {
               return { buffer: null, errorType: 'auth', errorMessage: 'OpenAI API Key missing' };
@@ -189,7 +204,15 @@ export async function synthesizeSpeech(
       incrementDailyTtsUsage();
 
       // 3d. Decode for playback
-      const audioBuffer = await decodeAudioData(new Uint8Array(rawBuffer), audioContext);
+      let audioBuffer: AudioBuffer;
+      if (usedProvider === 'openai') {
+          // OpenAI returns MP3 -> Use native decode
+          // Note: decodeAudioData detaches the buffer, so we pass a slice if we needed rawBuffer again (we don't here, but good practice)
+          audioBuffer = await audioContext.decodeAudioData(rawBuffer.slice(0));
+      } else {
+          // Gemini returns Raw PCM -> Use manual decode
+          audioBuffer = await decodeAudioData(new Uint8Array(rawBuffer), audioContext);
+      }
       
       // Save to Memory Cache
       memoryCache.set(cacheKey, audioBuffer);
