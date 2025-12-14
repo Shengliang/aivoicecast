@@ -115,7 +115,7 @@ const MobileFeedCard = ({
     };
 
     const getAudioContext = () => {
-        if (!audioCtxRef.current) {
+        if (!audioCtxRef.current || audioCtxRef.current.state === 'closed') {
             audioCtxRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
         }
         return audioCtxRef.current;
@@ -149,14 +149,35 @@ const MobileFeedCard = ({
 
     const handleManualPlay = async (e: React.MouseEvent) => {
         e.stopPropagation();
-        const ctx = getAudioContext();
-        await ctx.resume();
+        
+        // Force unlock with a new context if needed or resume existing
+        let ctx = audioCtxRef.current;
+        if (!ctx || ctx.state === 'closed') {
+            ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+            audioCtxRef.current = ctx;
+        }
+        
+        try {
+            await ctx.resume();
+            
+            // Play silent sound to force-unlock iOS/Android audio stack
+            const buffer = ctx.createBuffer(1, 1, 22050);
+            const source = ctx.createBufferSource();
+            source.buffer = buffer;
+            source.connect(ctx.destination);
+            source.start(0);
+        } catch (err) {
+            console.error("Audio resume failed", err);
+        }
         
         if (ctx.state === 'running') {
             setIsAudioReady(true);
             // If we were stuck or paused, start/resume now
             if (!isProcessRunningRef.current) {
-                runTrackSequence(trackIndex === -1 ? -1 : trackIndex);
+                // If trackIndex is -1, start from beginning. If > -1, resume from that lesson.
+                // We use -1 default to ensure full intro plays if it was stuck there.
+                const start = trackIndex === -1 ? -1 : trackIndex;
+                runTrackSequence(start);
             }
         }
     };
@@ -282,7 +303,12 @@ const MobileFeedCard = ({
                     source.start(0);
                 } else {
                     console.warn("TTS Gen failed or no buffer", result.errorMessage);
-                    setTimeout(resolve, 1000); 
+                    // Visual feedback for error
+                    setLoadingMessage("Audio Gen Error - Skipping...");
+                    setTimeout(() => {
+                        setLoadingMessage("");
+                        resolve();
+                    }, 1500); 
                 }
             } catch (e) {
                 console.error("Playback error", e);
