@@ -87,7 +87,7 @@ export const HANDCRAFTED_CHANNELS: Channel[] = [
     dislikes: 0,
     comments: [],
     tags: ['Architecture', 'Offline', 'React', 'Coding'],
-    imageUrl: 'https://images.unsplash.com/photo-1518770660439-4636190af475?w=600&q=80&auto=format&fit=crop',
+    imageUrl: 'https://image.pollinations.ai/prompt/futuristic%20digital%20brain%20neural%20network%20architecture%20glowing%20blue%20and%20purple%20nodes?width=600&height=400&nologo=true',
     welcomeMessage: "Welcome to the backend of the frontend. Let's explore the code.",
     starterPrompts: [
       "Why use IndexedDB?",
