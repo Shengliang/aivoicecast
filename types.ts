@@ -1,5 +1,35 @@
 
+export interface Invitation {
+  id: string;
+  fromUserId: string;
+  fromName: string;
+  toEmail: string;
+  groupId: string; // For 'group' invites, this is Group ID. For 'session', this can be placeholder or Session ID.
+  groupName: string;
+  status: 'pending' | 'accepted' | 'rejected';
+  createdAt: number;
+  type?: 'group' | 'session'; // Distinguish invite types
+  link?: string; // URL for session invites
+}
 
+export interface Booking {
+  id: string;
+  userId: string;
+  hostName?: string; // Name of the person booking (for P2P)
+  mentorId: string; // Corresponds to Channel ID OR 'p2p-meeting'
+  mentorName: string; // Channel Title OR 'Peer Meeting'
+  mentorImage: string;
+  date: string; // YYYY-MM-DD
+  time: string; // HH:mm
+  topic: string;
+  invitedEmail?: string; // For inviting another member or the P2P Guest
+  status: 'scheduled' | 'completed' | 'cancelled' | 'pending' | 'rejected';
+  type?: 'ai' | 'p2p';
+  createdAt: number;
+  recordingUrl?: string; // URL to audio recording
+  transcriptUrl?: string; // URL to transcript markdown
+}
+// ... rest of file is unchanged, but included for context ...
 export type AttachmentType = 'image' | 'audio' | 'video' | 'file';
 
 export interface Attachment {
@@ -120,35 +150,6 @@ export interface UserProfile {
   subscriptionTier?: SubscriptionTier;
   subscriptionStatus?: 'active' | 'past_due' | 'canceled';
   defaultRepoUrl?: string; // User preferred git repo
-}
-
-export interface Invitation {
-  id: string;
-  fromUserId: string;
-  fromName: string;
-  toEmail: string;
-  groupId: string;
-  groupName: string;
-  status: 'pending' | 'accepted' | 'rejected';
-  createdAt: number;
-}
-
-export interface Booking {
-  id: string;
-  userId: string;
-  hostName?: string; // Name of the person booking (for P2P)
-  mentorId: string; // Corresponds to Channel ID OR 'p2p-meeting'
-  mentorName: string; // Channel Title OR 'Peer Meeting'
-  mentorImage: string;
-  date: string; // YYYY-MM-DD
-  time: string; // HH:mm
-  topic: string;
-  invitedEmail?: string; // For inviting another member or the P2P Guest
-  status: 'scheduled' | 'completed' | 'cancelled' | 'pending' | 'rejected';
-  type?: 'ai' | 'p2p';
-  createdAt: number;
-  recordingUrl?: string; // URL to audio recording
-  transcriptUrl?: string; // URL to transcript markdown
 }
 
 export interface RecordingSession {

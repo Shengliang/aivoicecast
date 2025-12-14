@@ -37,6 +37,29 @@ export const WorkplaceChat: React.FC<WorkplaceChatProps> = ({ onBack, currentUse
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
+  // Helper to render text with clickable links
+  const renderMessageText = (text: string) => {
+      if (!text) return null;
+      const urlRegex = /(https?:\/\/[^\s]+)/g;
+      return text.split(urlRegex).map((part, index) => {
+          if (part.match(urlRegex)) {
+              return (
+                  <a
+                      key={index}
+                      href={part}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-indigo-300 hover:text-white underline break-all font-medium z-10 relative"
+                      onClick={(e) => e.stopPropagation()}
+                  >
+                      {part}
+                  </a>
+              );
+          }
+          return part;
+      });
+  };
+
   useEffect(() => {
     if (currentUser) {
       getUserGroups(currentUser.uid).then(setGroups);
@@ -324,7 +347,7 @@ export const WorkplaceChat: React.FC<WorkplaceChatProps> = ({ onBack, currentUse
                                           </div>
                                       )}
                                       
-                                      {msg.text}
+                                      {renderMessageText(msg.text)}
 
                                       {attachments.length > 0 && (
                                           <div className="mt-2 space-y-2">

@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { Bell, Check, X, Loader2, Users, Calendar } from 'lucide-react';
+import { Bell, Check, X, Loader2, Users, Calendar, Link, ExternalLink } from 'lucide-react';
 import { getPendingInvitations, respondToInvitation, getPendingBookings, respondToBooking } from '../services/firestoreService';
 import { Invitation, Booking } from '../types';
 import { auth } from '../services/firebaseConfig';
@@ -43,11 +43,25 @@ export const Notifications: React.FC = () => {
   const handleRespondInvite = async (invitation: Invitation, accept: boolean) => {
     setProcessingId(invitation.id);
     try {
-      await respondToInvitation(invitation, accept);
-      setInvites(prev => prev.filter(i => i.id !== invitation.id));
-      if (accept) {
-         alert(`You joined ${invitation.groupName}! Refreshing...`);
-         window.location.reload();
+      // For session invites, 'accept' simply means clearing the notification and opening the link
+      // For group invites, it executes logic to add user to group DB
+      
+      if (invitation.type === 'session') {
+          // Just mark as accepted/rejected to remove from list
+          await respondToInvitation(invitation, accept);
+          setInvites(prev => prev.filter(i => i.id !== invitation.id));
+          
+          if (accept && invitation.link) {
+              window.location.href = invitation.link;
+          }
+      } else {
+          // Standard Group Invite
+          await respondToInvitation(invitation, accept);
+          setInvites(prev => prev.filter(i => i.id !== invitation.id));
+          if (accept) {
+             alert(`You joined ${invitation.groupName}! Refreshing...`);
+             window.location.reload();
+          }
       }
     } catch (e) {
       alert("Error processing invitation.");
@@ -142,16 +156,16 @@ export const Notifications: React.FC = () => {
                         </div>
                     ))}
 
-                    {/* Group Invites */}
+                    {/* Group & Session Invites */}
                     {invites.map(invite => (
-                       <div key={invite.id} className="p-4 hover:bg-slate-800/30 transition-colors border-l-2 border-indigo-500">
+                       <div key={invite.id} className={`p-4 hover:bg-slate-800/30 transition-colors border-l-2 ${invite.type === 'session' ? 'border-emerald-500' : 'border-indigo-500'}`}>
                           <div className="flex items-start space-x-3">
-                             <div className="p-2 bg-indigo-900/30 rounded-full text-indigo-400">
-                                <Users size={16} />
+                             <div className={`p-2 rounded-full ${invite.type === 'session' ? 'bg-emerald-900/30 text-emerald-400' : 'bg-indigo-900/30 text-indigo-400'}`}>
+                                {invite.type === 'session' ? <Link size={16} /> : <Users size={16} />}
                              </div>
                              <div className="flex-1">
                                 <p className="text-sm text-slate-200">
-                                   <span className="font-bold">{invite.fromName}</span> invited you to group <span className="font-bold text-indigo-300">{invite.groupName}</span>.
+                                   <span className="font-bold">{invite.fromName}</span> invited you to {invite.type === 'session' ? 'collaborate' : 'join'}: <span className={`font-bold ${invite.type === 'session' ? 'text-emerald-300' : 'text-indigo-300'}`}>{invite.groupName}</span>.
                                 </p>
                                 <p className="text-xs text-slate-500 mt-1">
                                    {new Date(invite.createdAt).toLocaleDateString()}
@@ -161,10 +175,10 @@ export const Notifications: React.FC = () => {
                                    <button 
                                       onClick={() => handleRespondInvite(invite, true)}
                                       disabled={processingId === invite.id}
-                                      className="flex-1 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded flex items-center justify-center space-x-1"
+                                      className={`flex-1 py-1.5 text-white text-xs font-bold rounded flex items-center justify-center space-x-1 ${invite.type === 'session' ? 'bg-emerald-600 hover:bg-emerald-500' : 'bg-indigo-600 hover:bg-indigo-500'}`}
                                    >
-                                      {processingId === invite.id ? <Loader2 size={12} className="animate-spin"/> : <Check size={12}/>}
-                                      <span>Join</span>
+                                      {processingId === invite.id ? <Loader2 size={12} className="animate-spin"/> : (invite.type === 'session' ? <ExternalLink size={12}/> : <Check size={12}/>)}
+                                      <span>{invite.type === 'session' ? 'Open' : 'Join'}</span>
                                    </button>
                                    <button 
                                       onClick={() => handleRespondInvite(invite, false)}
