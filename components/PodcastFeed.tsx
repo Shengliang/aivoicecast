@@ -60,7 +60,7 @@ const MobileFeedCard = ({
     const audioCtxRef = useRef<AudioContext | null>(null);
     const sourceRef = useRef<AudioBufferSourceNode | null>(null);
     const mountedRef = useRef(true);
-    const isProcessRunningRef = useRef(false); // Prevent double loops
+    const playbackSessionRef = useRef(0); // Incremented to invalidate old loops
 
     // Data Helpers
     const flatCurriculum = useMemo(() => {
@@ -103,7 +103,8 @@ const MobileFeedCard = ({
             stopAudio();
             setIsPlaying(false);
             setIsAudioReady(false);
-            isProcessRunningRef.current = false;
+            // Invalidate session
+            playbackSessionRef.current++;
         }
     }, [isActive, channel.id]);
 
@@ -127,7 +128,8 @@ const MobileFeedCard = ({
         // If already running (from previous card), we are good
         if (ctx.state === 'running') {
             setIsAudioReady(true);
-            runTrackSequence(-1); 
+            const sessionId = ++playbackSessionRef.current;
+            runTrackSequence(-1, sessionId); 
             return;
         }
 
@@ -140,7 +142,8 @@ const MobileFeedCard = ({
 
         if (ctx.state === 'running') {
             setIsAudioReady(true);
-            runTrackSequence(-1); 
+            const sessionId = ++playbackSessionRef.current;
+            runTrackSequence(-1, sessionId); 
         } else {
             // BLOCKED: Show Play Button
             setIsAudioReady(false);
@@ -150,7 +153,13 @@ const MobileFeedCard = ({
     const handleManualPlay = async (e: React.MouseEvent) => {
         e.stopPropagation();
         
-        // Force unlock with a new context if needed or resume existing
+        // 1. Setup new session
+        const sessionId = ++playbackSessionRef.current;
+        stopAudio();
+        setIsPlaying(true);
+        setLoadingMessage("Starting Audio...");
+        
+        // 2. Force unlock with a new context if needed or resume existing
         let ctx = audioCtxRef.current;
         if (!ctx || ctx.state === 'closed') {
             ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
@@ -172,19 +181,17 @@ const MobileFeedCard = ({
         
         if (ctx.state === 'running') {
             setIsAudioReady(true);
-            // If we were stuck or paused, start/resume now
-            if (!isProcessRunningRef.current) {
-                // If trackIndex is -1, start from beginning. If > -1, resume from that lesson.
-                // We use -1 default to ensure full intro plays if it was stuck there.
-                const start = trackIndex === -1 ? -1 : trackIndex;
-                runTrackSequence(start);
-            }
+            // Restart from current track or intro
+            const start = trackIndex === -1 ? -1 : trackIndex;
+            runTrackSequence(start, sessionId);
+        } else {
+            setIsPlaying(false);
+            setLoadingMessage("");
+            setIsAudioReady(false); // Should show play button again
         }
     };
 
-    const runTrackSequence = async (startIndex: number) => {
-        if (isProcessRunningRef.current) return; // Prevent overlapping loops
-        isProcessRunningRef.current = true;
+    const runTrackSequence = async (startIndex: number, sessionId: number) => {
         setIsPlaying(true);
 
         // Check API Key
@@ -192,13 +199,13 @@ const MobileFeedCard = ({
         if (!apiKey) {
             setTranscript({ speaker: 'System', text: "API Key Missing. Please set it in Settings to hear audio." });
             setIsPlaying(false);
-            isProcessRunningRef.current = false;
+            setLoadingMessage("");
             return;
         }
 
         let currentIndex = startIndex;
 
-        while (mountedRef.current && isActive) {
+        while (mountedRef.current && isActive && sessionId === playbackSessionRef.current) {
             setTrackIndex(currentIndex); // Update UI
             
             // 1. Determine Content
@@ -210,6 +217,9 @@ const MobileFeedCard = ({
                 if (transcript?.text !== introText) {
                     setTranscript({ speaker: 'Host', text: introText });
                 }
+                
+                // Show loading for intro too so user knows it's working
+                setLoadingMessage("Generating Intro...");
                 
                 textParts = [{
                     speaker: 'Host',
@@ -245,8 +255,7 @@ const MobileFeedCard = ({
             // 2. Play Parts
             setLoadingMessage(''); // Clear loading text
             for (let i = 0; i < textParts.length; i++) {
-                if (!mountedRef.current || !isActive) {
-                    isProcessRunningRef.current = false;
+                if (!mountedRef.current || !isActive || sessionId !== playbackSessionRef.current) {
                     return;
                 }
 
@@ -255,7 +264,7 @@ const MobileFeedCard = ({
                 setTranscript({ speaker: part.speaker, text: part.text });
                 
                 // Speak and Wait
-                await playText(part.text, part.voice);
+                await playText(part.text, part.voice, sessionId);
                 
                 // Small gap between speakers
                 await new Promise(r => setTimeout(r, 300));
@@ -265,13 +274,15 @@ const MobileFeedCard = ({
             currentIndex++;
         }
 
-        isProcessRunningRef.current = false;
-        setIsPlaying(false);
+        // Only turn off playing if we finished naturally and haven't started a new session
+        if (sessionId === playbackSessionRef.current) {
+            setIsPlaying(false);
+        }
     };
 
-    const playText = async (text: string, voice: string): Promise<void> => {
+    const playText = async (text: string, voice: string, sessionId: number): Promise<void> => {
         return new Promise(async (resolve) => {
-            if (!mountedRef.current || !isActive) { resolve(); return; }
+            if (!mountedRef.current || !isActive || sessionId !== playbackSessionRef.current) { resolve(); return; }
 
             try {
                 const ctx = getAudioContext();
@@ -283,13 +294,15 @@ const MobileFeedCard = ({
 
                 if (ctx.state === 'suspended') {
                     setIsAudioReady(false); // Show Play Button again
-                    isProcessRunningRef.current = false; // Break loop
                     resolve(); 
                     return;
                 }
 
                 const result = await synthesizeSpeech(text, voice, ctx);
                 
+                // Re-check session after async call
+                if (sessionId !== playbackSessionRef.current) { resolve(); return; }
+
                 if (result.buffer && mountedRef.current && isActive) {
                     const source = ctx.createBufferSource();
                     source.buffer = result.buffer;
@@ -304,11 +317,11 @@ const MobileFeedCard = ({
                 } else {
                     console.warn("TTS Gen failed or no buffer", result.errorMessage);
                     // Visual feedback for error
-                    setLoadingMessage("Audio Gen Error - Skipping...");
+                    setLoadingMessage("Audio Error - Skipping...");
                     setTimeout(() => {
                         setLoadingMessage("");
                         resolve();
-                    }, 1500); 
+                    }, 1000); 
                 }
             } catch (e) {
                 console.error("Playback error", e);
@@ -345,8 +358,8 @@ const MobileFeedCard = ({
                 />
                 <div className="absolute inset-0 bg-gradient-to-b from-black/30 via-transparent to-black/95"></div>
                 
-                {/* Big Play Button Overlay (If Context Suspended) */}
-                {!isAudioReady && (
+                {/* Big Play Button Overlay (If Context Suspended OR Not Playing) */}
+                {!isPlaying && !loadingMessage && (
                     <div className="absolute inset-0 flex items-center justify-center z-30 bg-black/20 backdrop-blur-[2px]">
                         <button 
                             className="w-20 h-20 bg-white/20 backdrop-blur-md rounded-full flex items-center justify-center border-2 border-white/50 shadow-2xl animate-pulse hover:scale-105 transition-transform"
@@ -357,9 +370,9 @@ const MobileFeedCard = ({
                 )}
 
                 {/* Loading State */}
-                {loadingMessage && isAudioReady && (
-                    <div className="absolute inset-0 flex items-center justify-center z-10 pointer-events-none">
-                        <div className="bg-black/60 backdrop-blur-md px-6 py-3 rounded-2xl flex flex-col items-center gap-2 border border-white/10">
+                {loadingMessage && (
+                    <div className="absolute inset-0 flex items-center justify-center z-30 pointer-events-none">
+                        <div className="bg-black/60 backdrop-blur-md px-6 py-3 rounded-2xl flex flex-col items-center gap-2 border border-white/10 shadow-xl">
                             <Loader2 size={24} className="text-indigo-400 animate-spin" />
                             <span className="text-xs font-bold text-white uppercase tracking-wider">{loadingMessage}</span>
                         </div>
@@ -387,7 +400,7 @@ const MobileFeedCard = ({
             </div>
 
             {/* Playing Indicator (Top Right) */}
-            {isPlaying && isAudioReady && (
+            {isPlaying && !loadingMessage && (
                 <div className="absolute top-4 right-4 z-20 flex gap-1 items-end h-6 pointer-events-none">
                     <span className="w-1 bg-emerald-400 animate-[bounce_1s_infinite] h-3"></span>
                     <span className="w-1 bg-emerald-400 animate-[bounce_1.2s_infinite] h-5"></span>
