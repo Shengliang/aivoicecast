@@ -10,8 +10,8 @@ export const ARCHITECTURE_BLOG_POST: BlogPost = {
   title: 'Under the Hood: The Architecture of AIVoiceCast',
   excerpt: 'A technical deep dive into how we built the world\'s first generative audio knowledge community. Learn about our React 19 frontend, Firebase backend, and Gemini AI integration.',
   status: 'published',
-  publishedAt: Date.now(),
-  createdAt: Date.now(),
+  publishedAt: 1716000000000, // Fixed Date: May 18, 2024 (To keep it sorted correctly)
+  createdAt: 1716000000000,
   likes: 999,
   commentCount: 0,
   tags: ['Engineering', 'Architecture', 'Open Source'],

@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { Blog, BlogPost, Comment } from '../types';
 import { ensureUserBlog, getCommunityPosts, getUserPosts, createBlogPost, updateBlogPost, deleteBlogPost, updateBlogSettings, addPostComment, getBlogPost } from '../services/firestoreService';
 import { auth } from '../services/firebaseConfig';
-import { Edit3, Plus, Trash2, Globe, User, MessageSquare, Loader2, ArrowLeft, Save, Image as ImageIcon, Search, LayoutList, PenTool, Rss, X } from 'lucide-react';
+import { Edit3, Plus, Trash2, Globe, User, MessageSquare, Loader2, ArrowLeft, Save, Image as ImageIcon, Search, LayoutList, PenTool, Rss, X, Pin } from 'lucide-react';
 import { MarkdownView } from './MarkdownView';
 import { CommentsModal } from './CommentsModal';
 
@@ -177,11 +177,22 @@ export const BlogView: React.FC<BlogViewProps> = ({ currentUser, onBack }) => {
 
   // --- RENDERERS ---
 
-  const renderPostCard = (post: BlogPost, isOwner = false) => (
-      <div key={post.id} className="bg-slate-900 border border-slate-800 rounded-xl p-5 hover:border-indigo-500/30 transition-all flex flex-col gap-3 group">
+  const renderPostCard = (post: BlogPost, isOwner = false) => {
+      const isPinned = post.id === 'arch-deep-dive-v1';
+      
+      return (
+      <div key={post.id} className={`bg-slate-900 border ${isPinned ? 'border-indigo-500 shadow-lg shadow-indigo-500/10' : 'border-slate-800'} rounded-xl p-5 hover:border-indigo-500/30 transition-all flex flex-col gap-3 group relative`}>
+          {isPinned && (
+              <div className="absolute top-0 right-0 p-2">
+                  <span className="bg-indigo-600 text-white text-[10px] uppercase font-bold px-2 py-0.5 rounded flex items-center gap-1 shadow-md">
+                      <Pin size={10} fill="currentColor" /> Pinned
+                  </span>
+              </div>
+          )}
+          
           <div className="flex justify-between items-start">
               <div>
-                  <h3 onClick={() => handleViewPost(post)} className="text-lg font-bold text-white hover:text-indigo-400 cursor-pointer transition-colors line-clamp-1">{post.title}</h3>
+                  <h3 onClick={() => handleViewPost(post)} className={`text-lg font-bold hover:text-indigo-400 cursor-pointer transition-colors line-clamp-1 ${isPinned ? 'text-indigo-100' : 'text-white'}`}>{post.title}</h3>
                   <div className="flex items-center gap-2 text-xs text-slate-500 mt-1">
                       <span>By {post.authorName}</span>
                       <span>•</span>
@@ -201,14 +212,15 @@ export const BlogView: React.FC<BlogViewProps> = ({ currentUser, onBack }) => {
           
           <div className="flex items-center justify-between mt-auto pt-2">
               <div className="flex gap-2">
-                  {post.tags?.map(t => <span key={t} className="text-[10px] bg-slate-800 px-2 py-1 rounded text-slate-400">#{t}</span>)}
+                  {post.tags?.map(t => <span key={t} className="text-[10px] bg-slate-800 px-2 py-1 rounded text-slate-400 border border-slate-700">#{t}</span>)}
               </div>
               <button onClick={() => handleViewPost(post)} className="flex items-center gap-1 text-xs text-indigo-400 font-bold hover:text-white transition-colors">
                   Read More
               </button>
           </div>
       </div>
-  );
+      );
+  };
 
   return (
     <div className="flex flex-col h-full bg-slate-950 text-slate-100">

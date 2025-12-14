@@ -851,13 +851,18 @@ export async function ensureUserBlog(user: firebase.User): Promise<Blog> {
 }
 
 export async function getCommunityPosts(): Promise<BlogPost[]> {
-    const snap = await db.collection('blog_posts')
-        .where('status', '==', 'published')
-        .orderBy('publishedAt', 'desc')
-        .limit(20)
-        .get();
-    
-    const dbPosts = snap.docs.map(d => ({ id: d.id, ...d.data() } as BlogPost));
+    let dbPosts: BlogPost[] = [];
+    try {
+        const snap = await db.collection('blog_posts')
+            .where('status', '==', 'published')
+            .orderBy('publishedAt', 'desc')
+            .limit(20)
+            .get();
+        
+        dbPosts = snap.docs.map(d => ({ id: d.id, ...d.data() } as BlogPost));
+    } catch (e) {
+        console.warn("Firestore fetch failed (likely missing permissions or offline). Returning static content only.", e);
+    }
     
     // Inject Static Architecture Blog Post
     return [ARCHITECTURE_BLOG_POST, ...dbPosts];
