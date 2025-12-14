@@ -1,7 +1,7 @@
 
 import React, { useMemo, useRef, useState, useEffect, useCallback } from 'react';
 import { Channel, UserProfile, GeneratedLecture } from '../types';
-import { Play, MessageSquare, Heart, Share2, Bookmark, Music, Plus, Pause, Loader2, Volume2, VolumeX, GraduationCap, ChevronRight, Mic, AlignLeft, BarChart3, User, AlertCircle, Zap, Radio } from 'lucide-react';
+import { Play, MessageSquare, Heart, Share2, Bookmark, Music, Plus, Pause, Loader2, Volume2, VolumeX, GraduationCap, ChevronRight, Mic, AlignLeft, BarChart3, User, AlertCircle, Zap, Radio, Square } from 'lucide-react';
 import { ChannelCard } from './ChannelCard';
 import { CreatorProfileModal } from './CreatorProfileModal';
 import { followUser, unfollowUser } from '../services/firestoreService';
@@ -168,11 +168,21 @@ const MobileFeedCard = ({
         }
     };
 
+    const handleStop = (e: React.MouseEvent) => {
+        e.stopPropagation();
+        stopAudio();
+        playbackSessionRef.current++; // Invalidate loop
+        setPlaybackState('idle');
+        setStatusMessage("Stopped");
+        setTrackIndex(-1); // Reset
+    };
+
     const handleTogglePlay = async (e: React.MouseEvent) => {
         e.stopPropagation();
         
         if (playbackState === 'playing' || playbackState === 'buffering') {
             stopAudio();
+            playbackSessionRef.current++; // Invalidate loop
             setPlaybackState('idle');
             setStatusMessage("Paused");
             return;
@@ -529,7 +539,7 @@ const MobileFeedCard = ({
                 <div className="flex items-center gap-3 mb-2">
                     <button 
                         onClick={handleTogglePlay}
-                        className={`w-10 h-10 rounded-full flex items-center justify-center transition-all shadow-lg ${playbackState === 'playing' ? 'bg-slate-800 text-red-400 border border-slate-600' : 'bg-white text-black hover:scale-105'}`}
+                        className={`w-10 h-10 rounded-full flex items-center justify-center transition-all shadow-lg ${playbackState === 'playing' ? 'bg-slate-800 text-indigo-400 border border-slate-600' : 'bg-white text-black hover:scale-105'}`}
                     >
                         {playbackState === 'buffering' ? (
                             <Loader2 size={20} className="animate-spin" />
@@ -539,6 +549,15 @@ const MobileFeedCard = ({
                             <Play size={20} fill="currentColor" className="ml-0.5" />
                         )}
                     </button>
+
+                    {(playbackState === 'playing' || playbackState === 'buffering') && (
+                        <button 
+                            onClick={handleStop}
+                            className="w-10 h-10 rounded-full flex items-center justify-center transition-all shadow-lg bg-slate-800 text-red-400 border border-slate-600 hover:scale-105 animate-fade-in"
+                        >
+                            <Square size={16} fill="currentColor" />
+                        </button>
+                    )}
                     
                     <div onClick={(e) => { e.stopPropagation(); onChannelClick(channel.id); }}>
                         <div className="flex items-center gap-1.5 text-white font-bold text-lg drop-shadow-md cursor-pointer hover:underline">
