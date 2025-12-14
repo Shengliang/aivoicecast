@@ -1,7 +1,7 @@
 
 import React, { useMemo, useRef, useState, useEffect, useCallback } from 'react';
 import { Channel, UserProfile, GeneratedLecture } from '../types';
-import { Play, MessageSquare, Heart, Share2, Bookmark, Music, Plus, Pause, Loader2, Volume2, VolumeX, GraduationCap, ChevronRight, Mic, AlignLeft } from 'lucide-react';
+import { Play, MessageSquare, Heart, Share2, Bookmark, Music, Plus, Pause, Loader2, Volume2, VolumeX, GraduationCap, ChevronRight, Mic, AlignLeft, BarChart3 } from 'lucide-react';
 import { ChannelCard } from './ChannelCard';
 import { CreatorProfileModal } from './CreatorProfileModal';
 import { followUser, unfollowUser } from '../services/firestoreService';
@@ -49,7 +49,7 @@ const MobileFeedCard = ({
 }: any) => {
     // UI State
     const [isPlaying, setIsPlaying] = useState(false);
-    const [needsInteraction, setNeedsInteraction] = useState(false);
+    const [isAudioReady, setIsAudioReady] = useState(false); // False = Click to Play, True = Context Running
     const [loadingMessage, setLoadingMessage] = useState('');
     const [transcript, setTranscript] = useState<{speaker: string, text: string} | null>(null);
     
@@ -93,6 +93,7 @@ const MobileFeedCard = ({
             const introText = channel.welcomeMessage || channel.description || `Welcome to ${channel.title}.`;
             setTranscript({ speaker: 'Host', text: introText });
             
+            // Reset for new card
             setTrackIndex(-1);
             
             // 2. Start Audio Sequence
@@ -101,7 +102,7 @@ const MobileFeedCard = ({
             // Stop everything when swiping away
             stopAudio();
             setIsPlaying(false);
-            setNeedsInteraction(false);
+            setIsAudioReady(false);
             isProcessRunningRef.current = false;
         }
     }, [isActive, channel.id]);
@@ -123,31 +124,37 @@ const MobileFeedCard = ({
     const attemptAutoPlay = async () => {
         const ctx = getAudioContext();
         
+        // If already running (from previous card), we are good
+        if (ctx.state === 'running') {
+            setIsAudioReady(true);
+            runTrackSequence(-1); 
+            return;
+        }
+
         // Try to resume if suspended (browsers block this without gesture)
-        if (ctx.state === 'suspended') {
-            try {
-                await ctx.resume();
-            } catch (e) {
-                // Ignore, will be caught in state check
-            }
+        try {
+            await ctx.resume();
+        } catch (e) {
+            // Likely blocked
         }
 
         if (ctx.state === 'running') {
-            setNeedsInteraction(false);
-            runTrackSequence(-1); // Start from Intro
+            setIsAudioReady(true);
+            runTrackSequence(-1); 
         } else {
-            // BLOCKED: Show visual cue but keep text visible
-            setNeedsInteraction(true);
-            // We do NOT start runTrackSequence yet because it relies on onended which won't fire if suspended.
+            // BLOCKED: Show Play Button
+            setIsAudioReady(false);
         }
     };
 
-    const handleUserInteraction = async () => {
+    const handleManualPlay = async (e: React.MouseEvent) => {
+        e.stopPropagation();
         const ctx = getAudioContext();
         await ctx.resume();
+        
         if (ctx.state === 'running') {
-            setNeedsInteraction(false);
-            // If we were stuck, start now. If already running, do nothing.
+            setIsAudioReady(true);
+            // If we were stuck or paused, start/resume now
             if (!isProcessRunningRef.current) {
                 runTrackSequence(trackIndex === -1 ? -1 : trackIndex);
             }
@@ -179,7 +186,6 @@ const MobileFeedCard = ({
             if (currentIndex === -1) {
                 // INTRO
                 const introText = channel.welcomeMessage || channel.description || `Welcome to ${channel.title}.`;
-                // Ensure intro text is displayed if not already
                 if (transcript?.text !== introText) {
                     setTranscript({ speaker: 'Host', text: introText });
                 }
@@ -192,7 +198,6 @@ const MobileFeedCard = ({
             } else {
                 // LESSON
                 if (currentIndex >= flatCurriculum.length) {
-                    // End of Channel
                     console.log("Channel Finished");
                     if (onChannelFinish) onChannelFinish();
                     break;
@@ -217,7 +222,7 @@ const MobileFeedCard = ({
             }
 
             // 2. Play Parts
-            setLoadingMessage(''); // Clear loading text once data is ready
+            setLoadingMessage(''); // Clear loading text
             for (let i = 0; i < textParts.length; i++) {
                 if (!mountedRef.current || !isActive) {
                     isProcessRunningRef.current = false;
@@ -256,8 +261,8 @@ const MobileFeedCard = ({
                 }
 
                 if (ctx.state === 'suspended') {
-                    setNeedsInteraction(true);
-                    isProcessRunningRef.current = false; // Break the loop
+                    setIsAudioReady(false); // Show Play Button again
+                    isProcessRunningRef.current = false; // Break loop
                     resolve(); 
                     return;
                 }
@@ -291,7 +296,6 @@ const MobileFeedCard = ({
         let data = await getCachedLectureScript(cacheKey);
         
         if (!data) {
-            // Generate real-time
             setLoadingMessage(`Generating: ${meta.title}...`);
             data = await generateLectureScript(meta.title, `Podcast: ${channel.title}. ${channel.description}`, 'en');
             if (data) await cacheLectureScript(cacheKey, data);
@@ -302,10 +306,10 @@ const MobileFeedCard = ({
     return (
         <div className="h-full w-full snap-start relative flex flex-col justify-center bg-slate-900 border-b border-slate-800">
             
-            {/* Visual Background */}
+            {/* Visual Background (Interactive for Play/Pause) */}
             <div 
-                className="absolute inset-0 cursor-pointer"
-                onClick={handleUserInteraction}
+                className="absolute inset-0"
+                onClick={handleManualPlay}
             >
                 <img 
                     src={channel.imageUrl} 
@@ -315,18 +319,20 @@ const MobileFeedCard = ({
                 />
                 <div className="absolute inset-0 bg-gradient-to-b from-black/30 via-transparent to-black/95"></div>
                 
-                {/* Interaction / Mute Overlay */}
-                {needsInteraction && (
-                    <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-30 pointer-events-none">
-                        <div className="bg-black/50 backdrop-blur-md p-4 rounded-full border border-white/20 animate-pulse">
-                            <VolumeX size={32} className="text-white" />
-                        </div>
-                        <p className="text-white text-xs font-bold mt-2 text-center shadow-black drop-shadow-md">Tap to Unmute</p>
+                {/* Big Play Button Overlay (If Context Suspended) */}
+                {!isAudioReady && (
+                    <div className="absolute inset-0 flex items-center justify-center z-30 bg-black/20 backdrop-blur-[2px]">
+                        <button 
+                            className="w-20 h-20 bg-white/20 backdrop-blur-md rounded-full flex items-center justify-center border-2 border-white/50 shadow-2xl animate-pulse hover:scale-105 transition-transform"
+                        >
+                            <Play size={40} fill="white" className="text-white ml-1" />
+                        </button>
                     </div>
                 )}
 
-                {loadingMessage && !needsInteraction && (
-                    <div className="absolute inset-0 flex items-center justify-center z-10">
+                {/* Loading State */}
+                {loadingMessage && isAudioReady && (
+                    <div className="absolute inset-0 flex items-center justify-center z-10 pointer-events-none">
                         <div className="bg-black/60 backdrop-blur-md px-6 py-3 rounded-2xl flex flex-col items-center gap-2 border border-white/10">
                             <Loader2 size={24} className="text-indigo-400 animate-spin" />
                             <span className="text-xs font-bold text-white uppercase tracking-wider">{loadingMessage}</span>
@@ -334,7 +340,7 @@ const MobileFeedCard = ({
                     </div>
                 )}
 
-                {/* Live Transcript Overlay - ALWAYS VISIBLE if there is text, even if paused/muted */}
+                {/* Live Transcript Overlay */}
                 {transcript && !loadingMessage && (
                     <div className="absolute top-1/2 left-4 right-20 -translate-y-1/2 pointer-events-none z-10">
                         <div className="bg-black/60 backdrop-blur-md p-6 rounded-3xl border-l-4 border-indigo-500 shadow-2xl animate-fade-in-up">
@@ -353,6 +359,16 @@ const MobileFeedCard = ({
                     </div>
                 )}
             </div>
+
+            {/* Playing Indicator (Top Right) */}
+            {isPlaying && isAudioReady && (
+                <div className="absolute top-4 right-4 z-20 flex gap-1 items-end h-6 pointer-events-none">
+                    <span className="w-1 bg-emerald-400 animate-[bounce_1s_infinite] h-3"></span>
+                    <span className="w-1 bg-emerald-400 animate-[bounce_1.2s_infinite] h-5"></span>
+                    <span className="w-1 bg-emerald-400 animate-[bounce_0.8s_infinite] h-4"></span>
+                    <span className="w-1 bg-emerald-400 animate-[bounce_1.1s_infinite] h-6"></span>
+                </div>
+            )}
 
             {/* Sidebar Actions */}
             <div className="absolute right-2 bottom-32 flex flex-col items-center gap-6 z-30">
@@ -402,7 +418,7 @@ const MobileFeedCard = ({
                 </button>
             </div>
 
-            {/* Bottom Info */}
+            {/* Bottom Info - Click here navigates to details */}
             <div className="absolute left-0 bottom-0 w-full p-4 pb-6 bg-gradient-to-t from-black/90 via-black/60 to-transparent pointer-events-none pr-20 z-30">
                 <div className="pointer-events-auto" onClick={(e) => { e.stopPropagation(); onChannelClick(channel.id); }}>
                     
