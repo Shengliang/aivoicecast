@@ -725,7 +725,6 @@ const App: React.FC = () => {
               </span>
             </div>
             
-            {(viewState as string) !== 'directory' && (
             <div className="flex flex-1 max-w-md mx-8 relative">
               <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                 <Search className="h-4 w-4 text-slate-500" />
@@ -741,7 +740,6 @@ const App: React.FC = () => {
                 }}
               />
             </div>
-            )}
 
             <div className="flex items-center space-x-2 sm:space-x-4">
               
