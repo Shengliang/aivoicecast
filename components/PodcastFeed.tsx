@@ -274,13 +274,19 @@ const MobileFeedCard = ({
     };
 
     const playAudioBuffer = (buffer: AudioBuffer, sessionId: number): Promise<void> => {
-        return new Promise((resolve) => {
+        return new Promise(async (resolve) => {
             if (!mountedRef.current || !isActiveRef.current || sessionId !== playbackSessionRef.current) {
                 resolve();
                 return;
             }
 
             const ctx = getSharedAudioContext();
+            
+            // CRITICAL FIX: Ensure Context is running. Mobile browsers suspend it aggressively.
+            if (ctx.state === 'suspended') {
+                try { await ctx.resume(); } catch(e) { console.warn("Resume failed", e); }
+            }
+
             const source = ctx.createBufferSource();
             source.buffer = buffer;
             source.connect(ctx.destination);
@@ -338,123 +344,136 @@ const MobileFeedCard = ({
         let currentIndex = startIndex;
 
         while (mountedRef.current && isActiveRef.current && sessionId === playbackSessionRef.current) {
-            setTrackIndex(currentIndex); 
-            
-            let textParts: {speaker: string, text: string, voice: string}[] = [];
-            
-            // Determine Voice Names based on Provider
-            let hostVoice = channel.voiceName || 'Puck';
-            let studentVoice = 'Zephyr';
-
-            if (providerRef.current === 'openai') {
-                hostVoice = 'Alloy';
-                studentVoice = 'Echo';
-            } else if (providerRef.current === 'system') {
-                // System voice selection handled inside playSystemAudio by finding name match or default
-            }
-
-            if (currentIndex === -1) {
-                // INTRO
-                const introText = channel.welcomeMessage || channel.description || `Welcome to ${channel.title}.`;
-                if (transcript?.text !== introText) setTranscript({ speaker: 'Host', text: introText });
+            try {
+                setTrackIndex(currentIndex); 
                 
-                setStatusMessage("Intro...");
-                textParts = [{
-                    speaker: 'Host',
-                    text: introText,
-                    voice: hostVoice
-                }];
-
-                if (flatCurriculum.length > 0) {
-                    preloadedScriptRef.current = preloadScript(flatCurriculum[0]);
-                }
-
-            } else {
-                // LESSON
-                if (currentIndex >= flatCurriculum.length) {
-                    setStatusMessage("Finished");
-                    setPlaybackState('idle');
-                    if (onChannelFinish) onChannelFinish();
-                    break;
-                }
-
-                const lessonMeta = flatCurriculum[currentIndex];
-                let lecture = null;
+                let textParts: {speaker: string, text: string, voice: string}[] = [];
                 
-                if (preloadedScriptRef.current) {
-                    setStatusMessage(`Loading ${lessonMeta.title.substring(0,15)}...`);
-                    lecture = await preloadedScriptRef.current;
-                    preloadedScriptRef.current = null;
-                } else {
-                    setStatusMessage(`Generating: ${lessonMeta.title.substring(0, 20)}...`);
-                    setPlaybackState('buffering');
-                    lecture = await fetchLectureData(lessonMeta);
+                // Determine Voice Names based on Provider
+                let hostVoice = channel.voiceName || 'Puck';
+                let studentVoice = 'Zephyr';
+
+                if (providerRef.current === 'openai') {
+                    hostVoice = 'Alloy';
+                    studentVoice = 'Echo';
                 }
 
-                if (!lecture || !lecture.sections || lecture.sections.length === 0) {
-                    setStatusMessage("Skipping...");
-                    await new Promise(r => setTimeout(r, 2000));
-                    currentIndex++;
-                    continue;
-                }
-                
-                setPlaybackState('playing');
-                setStatusMessage("Playing");
-
-                textParts = lecture.sections.map((s: any) => ({
-                    speaker: s.speaker === 'Teacher' ? lecture.professorName : lecture.studentName,
-                    text: s.text,
-                    voice: s.speaker === 'Teacher' ? hostVoice : studentVoice
-                }));
-
-                if (currentIndex + 1 < flatCurriculum.length) {
-                    preloadedScriptRef.current = preloadScript(flatCurriculum[currentIndex + 1]);
-                }
-            }
-
-            // PLAY PARTS
-            for (let i = 0; i < textParts.length; i++) {
-                if (!mountedRef.current || !isActiveRef.current || sessionId !== playbackSessionRef.current) return;
-
-                const part = textParts[i];
-                setTranscript({ speaker: part.speaker, text: part.text });
-                
-                const currentMode = providerRef.current;
-
-                if (currentMode === 'system') {
-                    await playSystemAudio(part.text, part.voice);
-                } else {
-                    let audioResult = null;
+                if (currentIndex === -1) {
+                    // INTRO
+                    const introText = channel.welcomeMessage || channel.description || `Welcome to ${channel.title}.`;
+                    if (transcript?.text !== introText) setTranscript({ speaker: 'Host', text: introText });
                     
-                    if (i === 0 && preloadedAudioRef.current) {
-                        audioResult = await preloadedAudioRef.current;
-                        preloadedAudioRef.current = null;
-                    } else {
-                        const bufferTimer = setTimeout(() => setPlaybackState('buffering'), 100);
-                        audioResult = await preloadAudio(part.text, part.voice);
-                        clearTimeout(bufferTimer);
-                        setPlaybackState('playing');
+                    setStatusMessage("Intro...");
+                    textParts = [{
+                        speaker: 'Host',
+                        text: introText,
+                        voice: hostVoice
+                    }];
+
+                    if (flatCurriculum.length > 0) {
+                        preloadedScriptRef.current = preloadScript(flatCurriculum[0]);
                     }
 
-                    if (i + 1 < textParts.length) {
-                        const nextPart = textParts[i+1];
-                        preloadedAudioRef.current = preloadAudio(nextPart.text, nextPart.voice);
-                    } else {
-                        preloadedAudioRef.current = null;
+                } else {
+                    // LESSON
+                    if (currentIndex >= flatCurriculum.length) {
+                        setStatusMessage("Finished");
+                        setPlaybackState('idle');
+                        if (onChannelFinish) onChannelFinish();
+                        break;
                     }
 
-                    if (audioResult && audioResult.buffer) {
-                        await playAudioBuffer(audioResult.buffer, sessionId);
+                    const lessonMeta = flatCurriculum[currentIndex];
+                    let lecture = null;
+                    
+                    if (preloadedScriptRef.current) {
+                        setStatusMessage(`Loading ${lessonMeta.title.substring(0,15)}...`);
+                        lecture = await preloadedScriptRef.current;
+                        preloadedScriptRef.current = null;
                     } else {
-                        console.warn("Audio failed, switching to System Voice fallback");
-                        await playSystemAudio(part.text, part.voice);
+                        setStatusMessage(`Generating: ${lessonMeta.title.substring(0, 20)}...`);
+                        setPlaybackState('buffering');
+                        lecture = await fetchLectureData(lessonMeta);
+                    }
+
+                    if (!lecture || !lecture.sections || lecture.sections.length === 0) {
+                        setStatusMessage("Skipping...");
+                        await new Promise(r => setTimeout(r, 2000));
+                        currentIndex++;
+                        continue;
+                    }
+                    
+                    setPlaybackState('playing');
+                    setStatusMessage("Playing");
+
+                    textParts = lecture.sections.map((s: any) => ({
+                        speaker: s.speaker === 'Teacher' ? lecture.professorName : lecture.studentName,
+                        text: s.text,
+                        voice: s.speaker === 'Teacher' ? hostVoice : studentVoice
+                    }));
+
+                    if (currentIndex + 1 < flatCurriculum.length) {
+                        preloadedScriptRef.current = preloadScript(flatCurriculum[currentIndex + 1]);
                     }
                 }
-                
-                await new Promise(r => setTimeout(r, 200));
-            }
 
-            currentIndex++;
+                // PLAY PARTS
+                for (let i = 0; i < textParts.length; i++) {
+                    if (!mountedRef.current || !isActiveRef.current || sessionId !== playbackSessionRef.current) return;
+
+                    const part = textParts[i];
+                    setTranscript({ speaker: part.speaker, text: part.text });
+                    
+                    const currentMode = providerRef.current;
+
+                    if (currentMode === 'system') {
+                        await playSystemAudio(part.text, part.voice);
+                    } else {
+                        let audioResult = null;
+                        
+                        if (i === 0 && preloadedAudioRef.current) {
+                            audioResult = await preloadedAudioRef.current;
+                            preloadedAudioRef.current = null;
+                        } else {
+                            const bufferTimer = setTimeout(() => setPlaybackState('buffering'), 100);
+                            audioResult = await preloadAudio(part.text, part.voice);
+                            clearTimeout(bufferTimer);
+                            setPlaybackState('playing');
+                        }
+
+                        if (i + 1 < textParts.length) {
+                            const nextPart = textParts[i+1];
+                            preloadedAudioRef.current = preloadAudio(nextPart.text, nextPart.voice);
+                        } else {
+                            preloadedAudioRef.current = null;
+                        }
+
+                        if (audioResult && audioResult.buffer) {
+                            await playAudioBuffer(audioResult.buffer, sessionId);
+                        } else {
+                            // Check for Quota Error or Network
+                            if (audioResult && (audioResult.errorType === 'quota' || audioResult.errorType === 'auth')) {
+                                setStatusMessage(audioResult.errorType === 'quota' ? "Limit Reached" : "Auth Error");
+                                setProvider('system'); 
+                                providerRef.current = 'system';
+                                await new Promise(r => setTimeout(r, 1000));
+                            } else {
+                                console.warn("Audio failed, switching to System Voice fallback");
+                            }
+                            await playSystemAudio(part.text, part.voice);
+                        }
+                    }
+                    
+                    await new Promise(r => setTimeout(r, 200));
+                }
+
+                currentIndex++;
+            } catch (e: any) {
+                console.error("Playback Loop Error", e);
+                setStatusMessage("Error");
+                setPlaybackState('error');
+                break; // Break loop to prevent infinite crash loops
+            }
         }
     };
 
@@ -699,7 +718,8 @@ export const PodcastFeed: React.FC<PodcastFeedProps> = ({
           });
       }, {
           root: container,
-          threshold: 0.8 
+          // CRITICAL: Lower threshold to ensure playback triggers even if browser bars cover part of the screen
+          threshold: 0.5
       });
 
       const cards = container.querySelectorAll('.feed-card');
