@@ -151,6 +151,8 @@ export interface UserProfile {
   subscriptionTier?: SubscriptionTier;
   subscriptionStatus?: 'active' | 'past_due' | 'canceled';
   defaultRepoUrl?: string; // User preferred git repo
+  followers?: string[]; // IDs of users following this user
+  following?: string[]; // IDs of users this user is following
 }
 
 export interface RecordingSession {

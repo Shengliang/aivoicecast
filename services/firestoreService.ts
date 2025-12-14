@@ -45,7 +45,9 @@ export async function syncUserProfile(user: firebase.User): Promise<void> {
       groups: [],
       interests: [], 
       createdAt: Date.now(),
-      subscriptionTier: 'free'
+      subscriptionTier: 'free',
+      followers: [],
+      following: []
     };
     await userRef.set(newProfile);
     
@@ -83,6 +85,40 @@ export async function logUserActivity(action: string, details: any) {
     } catch(e) {
         console.warn("Log failed", e);
     }
+}
+
+// --- Social Graph (Following) ---
+
+export async function followUser(currentUserId: string, targetUserId: string) {
+    const batch = db.batch();
+    const currentUserRef = db.collection('users').doc(currentUserId);
+    const targetUserRef = db.collection('users').doc(targetUserId);
+
+    batch.update(currentUserRef, {
+        following: firebase.firestore.FieldValue.arrayUnion(targetUserId)
+    });
+    
+    batch.update(targetUserRef, {
+        followers: firebase.firestore.FieldValue.arrayUnion(currentUserId)
+    });
+
+    await batch.commit();
+}
+
+export async function unfollowUser(currentUserId: string, targetUserId: string) {
+    const batch = db.batch();
+    const currentUserRef = db.collection('users').doc(currentUserId);
+    const targetUserRef = db.collection('users').doc(targetUserId);
+
+    batch.update(currentUserRef, {
+        following: firebase.firestore.FieldValue.arrayRemove(targetUserId)
+    });
+    
+    batch.update(targetUserRef, {
+        followers: firebase.firestore.FieldValue.arrayRemove(currentUserId)
+    });
+
+    await batch.commit();
 }
 
 // --- Channels (Public & Private) ---

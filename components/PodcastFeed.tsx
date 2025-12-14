@@ -70,6 +70,7 @@ export const PodcastFeed: React.FC<PodcastFeedProps> = ({
   const toggleLike = (e: React.MouseEvent, channelId: string) => {
       e.stopPropagation();
       const newSet = new Set(likedChannels);
+      // Toggle local visual state
       if (newSet.has(channelId)) {
           newSet.delete(channelId);
           // Call parent handler for dislike
@@ -221,7 +222,8 @@ export const PodcastFeed: React.FC<PodcastFeedProps> = ({
                         <div className={`p-2 rounded-full transition-transform active:scale-75 ${isLiked ? '' : 'bg-black/20 backdrop-blur-sm'}`}>
                             <Heart size={32} fill={isLiked ? "#ef4444" : "rgba(255,255,255,0.9)"} className={isLiked ? "text-red-500" : "text-white"} />
                         </div>
-                        <span className="text-white text-xs font-bold shadow-black drop-shadow-md">{channel.likes + (isLiked ? 1 : 0)}</span>
+                        {/* Display the likes from the channel prop directly. Optimistic update handled by parent. */}
+                        <span className="text-white text-xs font-bold shadow-black drop-shadow-md">{channel.likes}</span>
                     </button>
 
                     {/* Comments */}
@@ -301,6 +303,7 @@ export const PodcastFeed: React.FC<PodcastFeedProps> = ({
                 alert("Redirecting to messages...");
                 setViewingCreator(null);
             }}
+            currentUser={currentUser}
         />
     )}
     </>
