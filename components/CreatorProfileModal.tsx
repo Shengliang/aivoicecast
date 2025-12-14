@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { X, User, MessageSquare, Heart, Users, Check, Bell, Play } from 'lucide-react';
 import { Channel, UserProfile } from '../types';
-import { getUserProfile, followUser, unfollowUser, getUserProfileByEmail, getChannelsByIds } from '../services/firestoreService';
+import { getUserProfile, followUser, unfollowUser, getUserProfileByEmail } from '../services/firestoreService';
 
 interface CreatorProfileModalProps {
   isOpen: boolean;
@@ -19,10 +19,6 @@ export const CreatorProfileModal: React.FC<CreatorProfileModalProps> = ({ isOpen
   const [activeTab, setActiveTab] = useState<'posts' | 'community'>('posts');
   const [isLoading, setIsLoading] = useState(false);
   const [targetOwnerId, setTargetOwnerId] = useState<string | null>(null);
-  
-  // Liked History
-  const [likedChannels, setLikedChannels] = useState<Channel[]>([]);
-  const [loadingLikes, setLoadingLikes] = useState(false);
 
   // Load creator profile data
   useEffect(() => {
@@ -54,15 +50,6 @@ export const CreatorProfileModal: React.FC<CreatorProfileModalProps> = ({ isOpen
                     if (currentUser && profile.followers?.includes(currentUser.uid)) {
                         setIsFollowing(true);
                     }
-                    
-                    // Fetch Liked Channels
-                    if (profile.likedChannelIds && profile.likedChannelIds.length > 0) {
-                        setLoadingLikes(true);
-                        getChannelsByIds(profile.likedChannelIds).then(channels => {
-                            if (isActive) setLikedChannels(channels);
-                            setLoadingLikes(false);
-                        });
-                    }
                 }
             } catch (err) {
                 console.error("Failed to load creator profile", err);
@@ -87,6 +74,7 @@ export const CreatorProfileModal: React.FC<CreatorProfileModalProps> = ({ isOpen
         return;
     }
     
+    // If we haven't resolved an owner yet, we can't follow
     if (!targetOwnerId) {
         alert("Creator profile not found. Cannot follow at this time.");
         return;
@@ -95,6 +83,7 @@ export const CreatorProfileModal: React.FC<CreatorProfileModalProps> = ({ isOpen
     const prevIsFollowing = isFollowing;
     const prevCount = followerCount;
 
+    // Optimistic Update
     if (isFollowing) {
         setIsFollowing(false);
         setFollowerCount(prev => Math.max(0, prev - 1));
@@ -102,6 +91,7 @@ export const CreatorProfileModal: React.FC<CreatorProfileModalProps> = ({ isOpen
             await unfollowUser(currentUser.uid, targetOwnerId);
         } catch (e) {
             console.error("Unfollow failed", e);
+            // Revert
             setIsFollowing(prevIsFollowing);
             setFollowerCount(prevCount);
             alert("Failed to unfollow. Please try again.");
@@ -113,6 +103,7 @@ export const CreatorProfileModal: React.FC<CreatorProfileModalProps> = ({ isOpen
             await followUser(currentUser.uid, targetOwnerId);
         } catch (e) {
             console.error("Follow failed", e);
+            // Revert
             setIsFollowing(prevIsFollowing);
             setFollowerCount(prevCount);
             alert("Failed to follow. Please check your connection.");
@@ -166,8 +157,8 @@ export const CreatorProfileModal: React.FC<CreatorProfileModalProps> = ({ isOpen
                     <span className="text-slate-500 text-xs">Followers</span>
                 </div>
                 <div className="flex flex-col items-center">
-                    <span className="font-bold text-white">{creatorProfile?.likedChannelIds?.length || 0}</span>
-                    <span className="text-slate-500 text-xs">Loved</span>
+                    <span className="font-bold text-white">{(channel.likes * 12).toLocaleString()}</span>
+                    <span className="text-slate-500 text-xs">Likes</span>
                 </div>
             </div>
 
@@ -238,31 +229,9 @@ export const CreatorProfileModal: React.FC<CreatorProfileModalProps> = ({ isOpen
                     </div>
                 </>
             ) : (
-                <div className="pb-4">
-                    <div className="px-4 py-2 text-xs font-bold text-slate-500 uppercase tracking-wider sticky top-0 bg-slate-900 z-10 border-b border-slate-800">
-                        Loved Podcasts
-                    </div>
-                    {loadingLikes ? (
-                        <div className="p-8 text-center text-slate-500">Loading...</div>
-                    ) : likedChannels.length === 0 ? (
-                        <div className="p-8 text-center text-slate-500 flex flex-col items-center">
-                            <Heart size={32} className="mb-2 opacity-20"/>
-                            <p className="text-sm">No loved podcasts yet.</p>
-                        </div>
-                    ) : (
-                        <div className="grid grid-cols-1 gap-2 p-2">
-                            {likedChannels.map(ch => (
-                                <div key={ch.id} className="flex items-center gap-3 p-2 bg-slate-800/50 rounded-lg">
-                                    <img src={ch.imageUrl} className="w-10 h-10 rounded object-cover" />
-                                    <div className="flex-1 min-w-0">
-                                        <p className="text-sm font-bold text-white truncate">{ch.title}</p>
-                                        <p className="text-xs text-slate-400">{ch.author}</p>
-                                    </div>
-                                    <div className="text-red-500"><Heart size={14} fill="currentColor"/></div>
-                                </div>
-                            ))}
-                        </div>
-                    )}
+                <div className="p-8 text-center text-slate-500 flex flex-col items-center">
+                    <Heart size={32} className="mb-2 opacity-20"/>
+                    <p className="text-sm">Liked content hidden.</p>
                 </div>
             )}
         </div>
