@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
-import { getDebugCollectionDocs, seedDatabase, recalculateGlobalStats } from '../services/firestoreService';
-import { ArrowLeft, RefreshCw, Database, Table, Code, Search, UploadCloud, Users } from 'lucide-react';
+import { getDebugCollectionDocs, seedDatabase, recalculateGlobalStats, claimSystemChannels, setUserSubscriptionTier } from '../services/firestoreService';
+import { ArrowLeft, RefreshCw, Database, Table, Code, Search, UploadCloud, Users, ShieldCheck, Crown, XCircle } from 'lucide-react';
 
 interface FirestoreInspectorProps {
   onBack: () => void;
@@ -54,6 +54,22 @@ export const FirestoreInspector: React.FC<FirestoreInspectorProps> = ({ onBack }
     }
   };
 
+  const handleClaimOwnership = async () => {
+      const email = prompt("Enter email address to assign ownership to:", "shengliang.song@gmail.com");
+      if (!email) return;
+      
+      setIsLoading(true);
+      try {
+          const count = await claimSystemChannels(email);
+          alert(`Successfully assigned ${count} channels to ${email}.`);
+          await fetchCollection('channels');
+      } catch (e: any) {
+          alert("Error: " + e.message);
+      } finally {
+          setIsLoading(false);
+      }
+  };
+
   const handleRecalculateStats = async () => {
       setIsLoading(true);
       try {
@@ -62,6 +78,21 @@ export const FirestoreInspector: React.FC<FirestoreInspectorProps> = ({ onBack }
           await fetchCollection('stats');
       } catch(e: any) {
           alert("Failed: " + e.message);
+      } finally {
+          setIsLoading(false);
+      }
+  };
+
+  const handleSetTier = async (uid: string, tier: 'free' | 'pro') => {
+      if(!confirm(`Force change user ${uid} to ${tier}? This will override their current subscription status.`)) return;
+      setIsLoading(true);
+      try {
+          await setUserSubscriptionTier(uid, tier);
+          // Update local state to reflect change immediately
+          setDocs(prev => prev.map(d => d.id === uid ? { ...d, subscriptionTier: tier } : d));
+          alert(`Success: User is now ${tier}.`);
+      } catch(e: any) {
+          alert("Error updating tier: " + e.message);
       } finally {
           setIsLoading(false);
       }
@@ -140,15 +171,26 @@ export const FirestoreInspector: React.FC<FirestoreInspectorProps> = ({ onBack }
                                 {isLoading ? '...' : `${docs.length} docs (limit 20)`}
                             </span>
                             {activeCollection === 'channels' && (
-                                <button 
-                                    onClick={handleSeed} 
-                                    disabled={isLoading}
-                                    className="flex items-center space-x-2 px-3 py-1 bg-emerald-900/30 hover:bg-emerald-900/50 border border-emerald-900 text-emerald-400 hover:text-emerald-200 rounded text-xs font-bold ml-2 transition-colors"
-                                    title="Upload built-in channels to Firestore"
-                                >
-                                    <UploadCloud size={14} />
-                                    <span>Seed DB</span>
-                                </button>
+                                <>
+                                    <button 
+                                        onClick={handleSeed} 
+                                        disabled={isLoading}
+                                        className="flex items-center space-x-2 px-3 py-1 bg-emerald-900/30 hover:bg-emerald-900/50 border border-emerald-900 text-emerald-400 hover:text-emerald-200 rounded text-xs font-bold ml-2 transition-colors"
+                                        title="Upload built-in channels to Firestore"
+                                    >
+                                        <UploadCloud size={14} />
+                                        <span>Seed DB</span>
+                                    </button>
+                                    <button 
+                                        onClick={handleClaimOwnership} 
+                                        disabled={isLoading}
+                                        className="flex items-center space-x-2 px-3 py-1 bg-amber-900/30 hover:bg-amber-900/50 border border-amber-900 text-amber-400 hover:text-amber-200 rounded text-xs font-bold ml-2 transition-colors"
+                                        title="Assign all system channels to Admin"
+                                    >
+                                        <ShieldCheck size={14} />
+                                        <span>Claim All</span>
+                                    </button>
+                                </>
                             )}
                         </div>
                         <div className="flex items-center space-x-2">
@@ -181,6 +223,7 @@ export const FirestoreInspector: React.FC<FirestoreInspectorProps> = ({ onBack }
                                             {allKeys.map(k => (
                                                 <th key={k} className="px-4 py-3 border-b border-slate-800 whitespace-nowrap">{k}</th>
                                             ))}
+                                            {activeCollection === 'users' && <th className="px-4 py-3 border-b border-slate-800 whitespace-nowrap text-right">Actions</th>}
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-slate-800 bg-slate-900/30">
@@ -191,6 +234,28 @@ export const FirestoreInspector: React.FC<FirestoreInspectorProps> = ({ onBack }
                                                         {doc[k] !== undefined ? renderValue(doc[k]) : <span className="text-slate-700">-</span>}
                                                     </td>
                                                 ))}
+                                                {activeCollection === 'users' && (
+                                                    <td className="px-4 py-2 text-right whitespace-nowrap">
+                                                        <div className="flex gap-2 justify-end">
+                                                            <button 
+                                                                onClick={() => handleSetTier(doc.id, 'pro')} 
+                                                                className={`p-1.5 rounded flex items-center gap-1 text-[10px] font-bold border transition-colors ${doc.subscriptionTier === 'pro' ? 'bg-emerald-900/50 text-emerald-400 border-emerald-500/50' : 'bg-slate-800 text-slate-400 border-slate-700 hover:text-white'}`}
+                                                                title="Set as Pro"
+                                                            >
+                                                                <Crown size={12} fill={doc.subscriptionTier === 'pro' ? 'currentColor' : 'none'}/>
+                                                                Pro
+                                                            </button>
+                                                            <button 
+                                                                onClick={() => handleSetTier(doc.id, 'free')} 
+                                                                className={`p-1.5 rounded flex items-center gap-1 text-[10px] font-bold border transition-colors ${doc.subscriptionTier === 'free' || !doc.subscriptionTier ? 'bg-slate-700 text-white border-slate-600' : 'bg-slate-800 text-slate-400 border-slate-700 hover:text-white'}`}
+                                                                title="Set as Free"
+                                                            >
+                                                                <XCircle size={12}/>
+                                                                Free
+                                                            </button>
+                                                        </div>
+                                                    </td>
+                                                )}
                                             </tr>
                                         ))}
                                     </tbody>
