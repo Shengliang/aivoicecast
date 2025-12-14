@@ -12,6 +12,7 @@ import { cacheLectureScript, getCachedLectureScript, deleteCachedLectureScript }
 import { saveLectureToFirestore, getLectureFromFirestore, saveCurriculumToFirestore, getCurriculumFromFirestore, deleteLectureFromFirestore, uploadFileToStorage, addChannelAttachment, getUserProfile } from '../services/firestoreService';
 import { LiveSession } from './LiveSession';
 import { DiscussionModal } from './DiscussionModal';
+import { GEMINI_API_KEY } from '../services/private_keys';
 
 interface PodcastDetailProps {
   channel: Channel;
@@ -180,9 +181,15 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
   const [isBuffering, setIsBuffering] = useState(false);
   const [currentSectionIndex, setCurrentSectionIndex] = useState<number | null>(null);
   const [showVoiceSettings, setShowVoiceSettings] = useState(false);
-  const [teacherVoice, setTeacherVoice] = useState('Fenrir');
+  
+  // Voice State: Default to channel voice if available
+  const [teacherVoice, setTeacherVoice] = useState(channel.voiceName || 'Puck');
   const [studentVoice, setStudentVoice] = useState('Puck');
-  const [useSystemVoice, setUseSystemVoice] = useState(true);
+  
+  // Check for API Key to determine default system voice usage
+  const hasApiKey = !!(localStorage.getItem('gemini_api_key') || GEMINI_API_KEY || process.env.API_KEY);
+  const [useSystemVoice, setUseSystemVoice] = useState(!hasApiKey);
+  
   const [systemVoices, setSystemVoices] = useState<SpeechSynthesisVoice[]>([]);
   const [allRawVoices, setAllRawVoices] = useState<SpeechSynthesisVoice[]>([]);
   const [sysTeacherVoiceURI, setSysTeacherVoiceURI] = useState('');
@@ -235,13 +242,6 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
           getUserProfile(currentUser.uid).then(setUserProfile);
       }
   }, [currentUser]);
-
-  useEffect(() => {
-      // Auto-enable Neural Voice for Owner/SuperAdmin
-      if (isSuperAdmin) {
-          setUseSystemVoice(false);
-      }
-  }, [isSuperAdmin]);
 
   const flatCurriculum = useMemo(() => {
       if(!chapters) return [];
