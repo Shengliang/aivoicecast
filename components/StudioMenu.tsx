@@ -23,12 +23,14 @@ interface StudioMenuProps {
   onOpenUserGuide: () => void;
   onNavigate: (view: string) => void;
   t: any;
+  className?: string;
 }
 
 export const StudioMenu: React.FC<StudioMenuProps> = ({
   isUserMenuOpen, setIsUserMenuOpen, userProfile, setUserProfile, currentUser,
   globalVoice, setGlobalVoice, hasApiKey, 
-  setIsCreateModalOpen, setIsVoiceCreateOpen, setIsApiKeyModalOpen, setIsSyncModalOpen, setIsSettingsModalOpen, onOpenUserGuide, onNavigate, t
+  setIsCreateModalOpen, setIsVoiceCreateOpen, setIsApiKeyModalOpen, setIsSyncModalOpen, setIsSettingsModalOpen, onOpenUserGuide, onNavigate, t,
+  className
 }) => {
   const [isPricingOpen, setIsPricingOpen] = useState(false);
   const [globalStats, setGlobalStats] = useState<GlobalStats>({ totalLogins: 0, uniqueUsers: 0 });
@@ -76,8 +78,8 @@ export const StudioMenu: React.FC<StudioMenuProps> = ({
   return (
     <>
       <div className="fixed inset-0 z-40" onClick={() => setIsUserMenuOpen(false)}></div>
-      <div className="absolute right-0 mt-2 w-72 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl z-50 overflow-hidden animate-fade-in-up">
-         <div className="p-3 border-b border-slate-800 bg-slate-950/50 flex justify-between items-center">
+      <div className={`${className ? className : 'absolute right-0 mt-2'} w-72 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl z-50 overflow-hidden animate-fade-in-up max-h-[80vh] overflow-y-auto scrollbar-thin scrollbar-thumb-slate-800`}>
+         <div className="p-3 border-b border-slate-800 bg-slate-950/50 flex justify-between items-center sticky top-0 z-10 backdrop-blur-sm">
             <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center space-x-2">
                <Sparkles size={12} className="text-indigo-400" />
                <span>Creator Studio</span>

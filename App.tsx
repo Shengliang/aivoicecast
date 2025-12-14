@@ -527,25 +527,25 @@ const App: React.FC = () => {
   const MobileBottomNav = () => (
       <div className="md:hidden fixed bottom-0 left-0 w-full bg-slate-950/90 backdrop-blur-md border-t border-slate-800 z-50 px-6 py-2 flex justify-between items-center safe-area-bottom">
           <button 
-              onClick={() => { setViewState('directory'); setActiveTab('categories'); setIsAppsMenuOpen(false); }}
-              className={`flex flex-col items-center gap-1 ${viewState === 'directory' && activeTab === 'categories' && !isAppsMenuOpen ? 'text-white' : 'text-slate-500'}`}
+              onClick={() => { setViewState('directory'); setActiveTab('categories'); setIsAppsMenuOpen(false); setIsUserMenuOpen(false); }}
+              className={`flex flex-col items-center gap-1 ${viewState === 'directory' && activeTab === 'categories' && !isAppsMenuOpen && !isUserMenuOpen ? 'text-white' : 'text-slate-500'}`}
           >
-              <Home size={24} fill={viewState === 'directory' && activeTab === 'categories' && !isAppsMenuOpen ? "currentColor" : "none"} />
+              <Home size={24} fill={viewState === 'directory' && activeTab === 'categories' && !isAppsMenuOpen && !isUserMenuOpen ? "currentColor" : "none"} />
               <span className="text-[10px]">Home</span>
           </button>
           
           <button 
-              onClick={() => { setViewState('directory'); setActiveTab('groups'); setIsAppsMenuOpen(false); }}
-              className={`flex-1 flex-col items-center gap-1 hidden ${activeTab === 'groups' && !isAppsMenuOpen ? 'text-white' : 'text-slate-500'}`}
+              onClick={() => { setViewState('directory'); setActiveTab('groups'); setIsAppsMenuOpen(false); setIsUserMenuOpen(false); }}
+              className={`flex-1 flex-col items-center gap-1 hidden ${activeTab === 'groups' && !isAppsMenuOpen && !isUserMenuOpen ? 'text-white' : 'text-slate-500'}`}
           >
               {/* Hidden in simplified layout to fix spacing, or use flex-1 properly */}
           </button>
           
           <button 
-              onClick={() => { setViewState('directory'); setActiveTab('groups'); setIsAppsMenuOpen(false); }}
-              className={`flex flex-col items-center gap-1 ${activeTab === 'groups' && !isAppsMenuOpen ? 'text-white' : 'text-slate-500'}`}
+              onClick={() => { setViewState('directory'); setActiveTab('groups'); setIsAppsMenuOpen(false); setIsUserMenuOpen(false); }}
+              className={`flex flex-col items-center gap-1 ${activeTab === 'groups' && !isAppsMenuOpen && !isUserMenuOpen ? 'text-white' : 'text-slate-500'}`}
           >
-              <Users size={24} fill={activeTab === 'groups' && !isAppsMenuOpen ? "currentColor" : "none"} />
+              <Users size={24} fill={activeTab === 'groups' && !isAppsMenuOpen && !isUserMenuOpen ? "currentColor" : "none"} />
               <span className="text-[10px]">Friends</span>
           </button>
 
@@ -561,7 +561,7 @@ const App: React.FC = () => {
           </button>
 
           <button 
-              onClick={() => setIsAppsMenuOpen(true)}
+              onClick={() => { setIsAppsMenuOpen(true); setIsUserMenuOpen(false); }}
               className={`flex flex-col items-center gap-1 ${isAppsMenuOpen ? 'text-white' : 'text-slate-500'}`}
           >
               <LayoutGrid size={24} fill={isAppsMenuOpen ? "currentColor" : "none"} />
@@ -569,10 +569,10 @@ const App: React.FC = () => {
           </button>
 
           <button 
-              onClick={() => { setIsAccountSettingsOpen(true); setIsAppsMenuOpen(false); }}
-              className={`flex flex-col items-center gap-1 ${isAccountSettingsOpen ? 'text-white' : 'text-slate-500'}`}
+              onClick={() => { setIsUserMenuOpen(true); setIsAppsMenuOpen(false); }}
+              className={`flex flex-col items-center gap-1 ${isUserMenuOpen ? 'text-white' : 'text-slate-500'}`}
           >
-              <User size={24} fill={isAccountSettingsOpen ? "currentColor" : "none"} />
+              <User size={24} fill={isUserMenuOpen ? "currentColor" : "none"} />
               <span className="text-[10px]">Profile</span>
           </button>
       </div>
@@ -1032,6 +1032,29 @@ const App: React.FC = () => {
                 ))}
             </div>
         </div>
+      )}
+
+      {/* Mobile-only Studio Menu Instance */}
+      {isUserMenuOpen && (
+        <StudioMenu 
+           isUserMenuOpen={isUserMenuOpen} 
+           setIsUserMenuOpen={setIsUserMenuOpen}
+           userProfile={userProfile}
+           setUserProfile={setUserProfile}
+           currentUser={currentUser}
+           globalVoice={globalVoice}
+           setGlobalVoice={setGlobalVoice}
+           hasApiKey={hasApiKey}
+           setIsCreateModalOpen={setIsCreateModalOpen}
+           setIsVoiceCreateOpen={setIsVoiceCreateOpen}
+           setIsApiKeyModalOpen={setIsApiKeyModalOpen}
+           setIsSyncModalOpen={setIsSyncModalOpen}
+           setIsSettingsModalOpen={setIsAccountSettingsOpen}
+           onOpenUserGuide={() => setViewState('user_guide')}
+           onNavigate={(view: any) => setViewState(view)}
+           t={t}
+           className="fixed bottom-24 right-4 z-50 md:hidden shadow-2xl border-slate-700"
+        />
       )}
 
       <MobileBottomNav />
