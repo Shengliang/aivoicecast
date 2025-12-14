@@ -4,6 +4,7 @@ import { Channel, UserProfile } from '../types';
 import { Play, MessageSquare, ThumbsUp, Star, Info, RefreshCw, Loader2, Heart, Share2, Bookmark, Music, Plus } from 'lucide-react';
 import { ChannelCard } from './ChannelCard';
 import { CreatorProfileModal } from './CreatorProfileModal';
+import { followUser, unfollowUser } from '../services/firestoreService';
 
 interface PodcastFeedProps {
   channels: Channel[];
@@ -21,11 +22,14 @@ interface PodcastFeedProps {
   setIsSettingsModalOpen?: (open: boolean) => void;
   onCommentClick?: (channel: Channel) => void;
   handleVote?: (id: string, type: 'like' | 'dislike', e: React.MouseEvent) => void;
+  
+  // New Prop for filtering logic
+  filterMode?: 'foryou' | 'following';
 }
 
 export const PodcastFeed: React.FC<PodcastFeedProps> = ({ 
   channels, onChannelClick, onStartLiveSession, userProfile, globalVoice, onRefresh, onMessageCreator,
-  t, currentUser, setChannelToEdit, setIsSettingsModalOpen, onCommentClick, handleVote
+  t, currentUser, setChannelToEdit, setIsSettingsModalOpen, onCommentClick, handleVote, filterMode = 'foryou'
 }) => {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -38,15 +42,32 @@ export const PodcastFeed: React.FC<PodcastFeedProps> = ({
   // Creator Profile Modal State
   const [viewingCreator, setViewingCreator] = useState<Channel | null>(null);
 
-  // Initialize liked channels from profile
+  // Initialize states from profile
   useEffect(() => {
       if (userProfile?.likedChannelIds) {
           setLikedChannels(new Set(userProfile.likedChannelIds));
       }
-  }, [userProfile?.likedChannelIds]);
+      if (userProfile?.following) {
+          // Map followed UIDs to channels visible in feed (Optimization)
+          // This allows the UI to show '+' or checkmark correctly
+          const followedOwners = new Set(userProfile.following);
+          const channelIds = channels
+              .filter(c => c.ownerId && followedOwners.has(c.ownerId))
+              .map(c => c.id);
+          setFollowedChannels(new Set(channelIds));
+      }
+  }, [userProfile, channels]);
 
-  // Logic to rank/filter channels based on interests
+  // Logic to rank/filter channels
   const recommendedChannels = useMemo(() => {
+      // If we are in "Following" mode, the parent component (App.tsx) has likely already
+      // filtered the list to only include followed channels.
+      // In this case, we just want to sort by latest date, NOT by algorithmic score.
+      if (filterMode === 'following') {
+          return [...channels].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+      }
+
+      // "For You" Logic: Rank by Interest & Popularity
       if (!userProfile?.interests || userProfile.interests.length === 0) {
           const sorted = [...channels].sort((a, b) => b.likes - a.likes);
           return sorted;
@@ -60,7 +81,7 @@ export const PodcastFeed: React.FC<PodcastFeedProps> = ({
       });
       scored.sort((a, b) => b.score - a.score);
       return scored.map(s => s.channel);
-  }, [channels, userProfile]);
+  }, [channels, userProfile, filterMode]);
 
   const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
       if (e.currentTarget.scrollTop < -50 && !isRefreshing && onRefresh) {
@@ -102,12 +123,41 @@ export const PodcastFeed: React.FC<PodcastFeedProps> = ({
       setBookmarkedChannels(newSet);
   };
 
-  const toggleFollow = (e: React.MouseEvent, channelId: string) => {
+  const toggleFollow = async (e: React.MouseEvent, channelId: string, ownerId?: string) => {
       e.stopPropagation();
+      if (!currentUser) {
+          alert("Please sign in to follow creators.");
+          return;
+      }
+      if (!ownerId) {
+          alert("This channel has no owner profile to follow.");
+          return;
+      }
+
       const newSet = new Set(followedChannels);
-      if (newSet.has(channelId)) newSet.delete(channelId);
-      else newSet.add(channelId);
-      setFollowedChannels(newSet);
+      const isFollowing = newSet.has(channelId); // Check purely based on channel ID for UI state
+
+      if (isFollowing) {
+          newSet.delete(channelId);
+          setFollowedChannels(newSet);
+          try {
+              await unfollowUser(currentUser.uid, ownerId);
+          } catch(err) {
+              console.error(err);
+              newSet.add(channelId); // Revert on failure
+              setFollowedChannels(new Set(newSet));
+          }
+      } else {
+          newSet.add(channelId);
+          setFollowedChannels(newSet);
+          try {
+              await followUser(currentUser.uid, ownerId);
+          } catch(err) {
+              console.error(err);
+              newSet.delete(channelId); // Revert on failure
+              setFollowedChannels(new Set(newSet));
+          }
+      }
   };
 
   const handleShare = async (e: React.MouseEvent, channel: Channel) => {
@@ -169,7 +219,9 @@ export const PodcastFeed: React.FC<PodcastFeedProps> = ({
             </div>
             {recommendedChannels.length === 0 && (
                 <div className="py-20 text-center text-slate-500">
-                    No podcasts found.
+                    {filterMode === 'following' 
+                        ? "You aren't following anyone yet. Tap the '+' on a creator to follow!"
+                        : "No podcasts found."}
                 </div>
             )}
         </div>
@@ -191,15 +243,22 @@ export const PodcastFeed: React.FC<PodcastFeedProps> = ({
         </div>
 
         {recommendedChannels.length === 0 && (
-            <div className="h-full w-full flex items-center justify-center text-slate-500 snap-start">
-                <p>No podcasts found.</p>
+            <div className="h-full w-full flex items-center justify-center text-slate-500 snap-start px-8 text-center">
+                <p>
+                    {filterMode === 'following' 
+                        ? "You aren't following anyone yet. Switch to 'For You' to find creators!"
+                        : "No podcasts found."}
+                </p>
             </div>
         )}
         
         {recommendedChannels.map((channel, index) => {
             const isLiked = likedChannels.has(channel.id);
             const isBookmarked = bookmarkedChannels.has(channel.id);
-            const isFollowed = followedChannels.has(channel.id);
+            // Check if we are following the OWNER of this channel
+            // In a real app, 'isFollowed' checks relation (user -> owner).
+            // Here we use local state initialized from profile
+            const isFollowed = followedChannels.has(channel.id) || (userProfile?.following?.includes(channel.ownerId || ''));
             
             return (
             <div key={channel.id} className="h-full w-full snap-start relative flex flex-col justify-center bg-slate-900 border-b border-slate-800">
@@ -232,10 +291,18 @@ export const PodcastFeed: React.FC<PodcastFeedProps> = ({
                             className="w-12 h-12 rounded-full border-2 border-white object-cover" 
                             alt="Creator"
                         />
-                        {!isFollowed && (
-                            <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 bg-red-500 rounded-full p-0.5 border border-white" onClick={(e) => toggleFollow(e, channel.id)}>
+                        {!isFollowed && channel.ownerId && (
+                            <div 
+                                className="absolute -bottom-2 left-1/2 -translate-x-1/2 bg-red-500 rounded-full p-0.5 border border-white" 
+                                onClick={(e) => toggleFollow(e, channel.id, channel.ownerId)}
+                            >
                                 <Plus size={12} color="white" strokeWidth={4} />
                             </div>
+                        )}
+                        {isFollowed && (
+                             <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 bg-white rounded-full p-0.5 border border-slate-500">
+                                <span className="block w-3 h-3 bg-white rounded-full"></span> 
+                             </div>
                         )}
                     </div>
 
@@ -290,7 +357,7 @@ export const PodcastFeed: React.FC<PodcastFeedProps> = ({
                             <h3 className="text-white font-bold text-lg drop-shadow-md cursor-pointer hover:underline" onClick={(e) => handleCreatorClick(e, channel)}>
                                 @{channel.author}
                             </h3>
-                            {index < 2 && (
+                            {index < 2 && filterMode === 'foryou' && (
                                 <span className="bg-red-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded">
                                     TOP PICK
                                 </span>

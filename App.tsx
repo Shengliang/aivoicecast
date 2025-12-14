@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo } from 'react';
 import { Channel, ViewState, UserProfile, TranscriptItem, SubscriptionTier } from './types';
 import { 
@@ -465,10 +464,14 @@ const App: React.FC = () => {
       let data = [...channels];
       
       // Filter for "Following" tab (Mobile)
-      if (mobileFeedTab === 'following' && currentUser) {
-          // Simple logic: Only group channels or public channels user has interacted with
-          // Real app would have a 'subscribedChannels' array
-          data = data.filter(c => c.visibility === 'group' || c.likes > 50);
+      if (mobileFeedTab === 'following' && userProfile) {
+          const followingIds = userProfile.following || [];
+          if (followingIds.length > 0) {
+              data = data.filter(c => c.ownerId && followingIds.includes(c.ownerId));
+          } else {
+              // If following no one, return empty or fallback
+              data = [];
+          }
       }
 
       if (searchQuery) {
@@ -487,7 +490,7 @@ const App: React.FC = () => {
       }
 
       return data;
-  }, [channels, searchQuery, mobileFeedTab, currentUser]);
+  }, [channels, searchQuery, mobileFeedTab, userProfile]);
 
   const handleRefreshFeed = () => {
       // Simulate fetch new data by reshuffling locally for demo
@@ -896,6 +899,7 @@ const App: React.FC = () => {
                        onCommentClick={handleCommentClick}
                        handleVote={handleVote}
                        onMessageCreator={handleMessageCreator}
+                       filterMode={mobileFeedTab}
                    />
                )}
 
