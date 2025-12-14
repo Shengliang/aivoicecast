@@ -48,14 +48,14 @@ import {
   voteChannel, publishChannelToFirestore, updateCommentInChannel, 
   deleteCommentFromChannel, addCommentToChannel, getPublicChannels, 
   subscribeToPublicChannels, getGroupChannels, getUserProfile,
-  setupSubscriptionListener
+  setupSubscriptionListener, createOrGetDMChannel
 } from './services/firestoreService';
 import { getUserChannels, saveUserChannel, deleteUserChannel } from './utils/db';
 import { HANDCRAFTED_CHANNELS, CATEGORY_STYLES, TOPIC_CATEGORIES } from './utils/initialData';
 import { OFFLINE_CHANNEL_ID } from './utils/offlineContent';
 import { GEMINI_API_KEY } from './services/private_keys';
 
-const APP_VERSION = "v3.66.3"; // Bump version
+const APP_VERSION = "v3.66.4"; // Bump version
 
 const UI_TEXT = {
   en: {
@@ -183,6 +183,9 @@ const App: React.FC = () => {
   const [tempChannel, setTempChannel] = useState<Channel | null>(null);
 
   const [globalVoice, setGlobalVoice] = useState('Auto');
+  
+  // Messaging Target
+  const [chatTargetId, setChatTargetId] = useState<string | null>(null);
 
   useEffect(() => {
     const key = localStorage.getItem('gemini_api_key') || GEMINI_API_KEY || process.env.API_KEY;
@@ -430,6 +433,23 @@ const App: React.FC = () => {
       url.searchParams.delete('session');
       url.searchParams.delete('key');
       window.history.pushState({}, '', url.toString());
+  };
+
+  // --- Messaging Logic ---
+  const handleMessageCreator = async (creatorId: string, creatorName: string) => {
+      if (!currentUser) { 
+          alert("Please sign in to message creators.");
+          return;
+      }
+      
+      try {
+          const dmId = await createOrGetDMChannel(creatorId, creatorName);
+          setChatTargetId(dmId);
+          setViewState('chat');
+      } catch(e) {
+          console.error("Failed to create DM:", e);
+          alert("Could not start chat.");
+      }
   };
 
   // --- Sorting Logic ---
@@ -818,7 +838,7 @@ const App: React.FC = () => {
         )}
         
         {viewState === 'blog' && <BlogView onBack={() => setViewState('directory')} currentUser={currentUser} />}
-        {viewState === 'chat' && <WorkplaceChat onBack={() => setViewState('directory')} currentUser={currentUser} />}
+        {viewState === 'chat' && <WorkplaceChat onBack={() => setViewState('directory')} currentUser={currentUser} initialChannelId={chatTargetId} />}
         {viewState === 'careers' && <CareerCenter onBack={() => setViewState('directory')} currentUser={currentUser} />}
 
         {viewState === 'directory' && (
@@ -875,6 +895,7 @@ const App: React.FC = () => {
                        setIsSettingsModalOpen={setIsSettingsModalOpen}
                        onCommentClick={handleCommentClick}
                        handleVote={handleVote}
+                       onMessageCreator={handleMessageCreator}
                    />
                )}
 

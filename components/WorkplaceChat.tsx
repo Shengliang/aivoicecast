@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { ChatChannel, RealTimeMessage, Group, UserProfile } from '../types';
 import { sendMessage, subscribeToMessages, getUserGroups, getAllUsers, createOrGetDMChannel, getUserDMChannels, getUniqueGroupMembers, deleteMessage, uploadFileToStorage } from '../services/firestoreService';
@@ -8,9 +7,10 @@ import { Send, Hash, Lock, User, Plus, Search, MessageSquare, MoreVertical, Pape
 interface WorkplaceChatProps {
   onBack: () => void;
   currentUser: any;
+  initialChannelId?: string | null;
 }
 
-export const WorkplaceChat: React.FC<WorkplaceChatProps> = ({ onBack, currentUser }) => {
+export const WorkplaceChat: React.FC<WorkplaceChatProps> = ({ onBack, currentUser, initialChannelId }) => {
   const [activeChannelId, setActiveChannelId] = useState<string>('general');
   const [activeChannelType, setActiveChannelType] = useState<'public' | 'group' | 'dm'>('public');
   const [activeChannelName, setActiveChannelName] = useState<string>('General');
@@ -63,10 +63,24 @@ export const WorkplaceChat: React.FC<WorkplaceChatProps> = ({ onBack, currentUse
   useEffect(() => {
     if (currentUser) {
       getUserGroups(currentUser.uid).then(setGroups);
-      getUserDMChannels().then(setDms);
+      getUserDMChannels().then(dmData => {
+          setDms(dmData);
+          // If deep link provided, switch to it
+          if (initialChannelId) {
+              const target = dmData.find(d => d.id === initialChannelId);
+              if (target) {
+                  setActiveChannelId(target.id);
+                  setActiveChannelType(target.type as any);
+                  setActiveChannelName(target.name.replace(currentUser?.displayName || '', '').replace('&', '').trim() || 'Chat');
+                  
+                  // On mobile, close sidebar if deep linked
+                  if (window.innerWidth < 768) setIsSidebarOpen(false);
+              }
+          }
+      });
       getAllUsers().then(users => setAllUsers(users.filter(u => u.uid !== currentUser.uid)));
     }
-  }, [currentUser]);
+  }, [currentUser, initialChannelId]);
 
   useEffect(() => {
     let collectionPath;

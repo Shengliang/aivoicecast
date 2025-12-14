@@ -8,10 +8,11 @@ interface CreatorProfileModalProps {
   onClose: () => void;
   channel: Channel;
   onMessage: () => void;
+  onChannelClick: (id: string) => void;
   currentUser?: any;
 }
 
-export const CreatorProfileModal: React.FC<CreatorProfileModalProps> = ({ isOpen, onClose, channel, onMessage, currentUser }) => {
+export const CreatorProfileModal: React.FC<CreatorProfileModalProps> = ({ isOpen, onClose, channel, onMessage, onChannelClick, currentUser }) => {
   const [creatorProfile, setCreatorProfile] = useState<UserProfile | null>(null);
   const [isFollowing, setIsFollowing] = useState(false);
   const [followerCount, setFollowerCount] = useState(0);
@@ -254,7 +255,11 @@ export const CreatorProfileModal: React.FC<CreatorProfileModalProps> = ({ isOpen
                     ) : (
                         <div className="grid grid-cols-3 gap-0.5">
                             {recentChannels.map(ch => (
-                                <div key={ch.id} className="aspect-[3/4] bg-slate-800 relative group cursor-pointer border border-slate-900">
+                                <div 
+                                    key={ch.id} 
+                                    onClick={() => onChannelClick(ch.id)}
+                                    className="aspect-[3/4] bg-slate-800 relative group cursor-pointer border border-slate-900"
+                                >
                                     <img 
                                         src={ch.imageUrl} 
                                         alt={ch.title}
@@ -291,7 +296,11 @@ export const CreatorProfileModal: React.FC<CreatorProfileModalProps> = ({ isOpen
                     ) : (
                         <div className="flex flex-col">
                             {likedChannels.map(ch => (
-                                <div key={ch.id} className="flex items-center gap-3 p-3 border-b border-slate-800 hover:bg-slate-800/50 transition-colors cursor-pointer">
+                                <div 
+                                    key={ch.id} 
+                                    onClick={() => onChannelClick(ch.id)}
+                                    className="flex items-center gap-3 p-3 border-b border-slate-800 hover:bg-slate-800/50 transition-colors cursor-pointer"
+                                >
                                     <img src={ch.imageUrl} className="w-12 h-12 rounded-lg object-cover bg-slate-800" />
                                     <div className="flex-1 min-w-0">
                                         <p className="text-sm font-bold text-white truncate">{ch.title}</p>

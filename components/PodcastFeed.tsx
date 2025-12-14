@@ -1,4 +1,3 @@
-
 import React, { useMemo, useRef, useState, useEffect } from 'react';
 import { Channel, UserProfile } from '../types';
 import { Play, MessageSquare, ThumbsUp, Star, Info, RefreshCw, Loader2, Heart, Share2, Bookmark, Music, Plus } from 'lucide-react';
@@ -12,6 +11,7 @@ interface PodcastFeedProps {
   userProfile: UserProfile | null;
   globalVoice: string;
   onRefresh?: () => void;
+  onMessageCreator?: (creatorId: string, creatorName: string) => void;
   
   // Props for ChannelCard (Desktop View)
   t?: any;
@@ -23,7 +23,7 @@ interface PodcastFeedProps {
 }
 
 export const PodcastFeed: React.FC<PodcastFeedProps> = ({ 
-  channels, onChannelClick, onStartLiveSession, userProfile, globalVoice, onRefresh,
+  channels, onChannelClick, onStartLiveSession, userProfile, globalVoice, onRefresh, onMessageCreator,
   t, currentUser, setChannelToEdit, setIsSettingsModalOpen, onCommentClick, handleVote
 }) => {
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -129,6 +129,15 @@ export const PodcastFeed: React.FC<PodcastFeedProps> = ({
   const handleCreatorClick = (e: React.MouseEvent, channel: Channel) => {
       e.stopPropagation();
       setViewingCreator(channel);
+  };
+
+  const handleMessage = () => {
+      if (viewingCreator && onMessageCreator) {
+          onMessageCreator(viewingCreator.ownerId || '', viewingCreator.author || 'Unknown');
+          setViewingCreator(null);
+      } else {
+          alert("Messaging not available for this creator.");
+      }
   };
 
   return (
@@ -310,9 +319,10 @@ export const PodcastFeed: React.FC<PodcastFeedProps> = ({
             isOpen={true}
             onClose={() => setViewingCreator(null)}
             channel={viewingCreator}
-            onMessage={() => {
-                alert("Redirecting to messages...");
+            onMessage={handleMessage}
+            onChannelClick={(id) => {
                 setViewingCreator(null);
+                onChannelClick(id);
             }}
             currentUser={currentUser}
         />
