@@ -104,13 +104,13 @@ export async function updateUserProfile(uid: string, data: Partial<UserProfile>)
 
 export async function getAllUsers(): Promise<UserProfile[]> {
     const snap = await db.collection(USERS_COLLECTION).limit(100).get(); // Limit for safety
-    return snap.docs.map(d => d.data() as UserProfile);
+    return snap.docs.map(d => ({ ...d.data(), uid: d.id }) as UserProfile);
 }
 
 export async function getUserProfileByEmail(email: string): Promise<UserProfile | null> {
     const snap = await db.collection(USERS_COLLECTION).where('email', '==', email).limit(1).get();
     if (!snap.empty) {
-        return snap.docs[0].data() as UserProfile;
+        return { ...snap.docs[0].data(), uid: snap.docs[0].id } as UserProfile;
     }
     return null;
 }
@@ -229,6 +229,8 @@ export async function setUserSubscriptionTier(uid: string, tier: 'free' | 'pro')
 // --- Channels ---
 
 export async function publishChannelToFirestore(channel: Channel) {
+  if (!channel.id) throw new Error("Channel ID is missing. Cannot publish.");
+  
   // Use sanitizeData to ensure no 'undefined' fields break Firestore
   const safeChannel = sanitizeData(channel);
   await db.collection(CHANNELS_COLLECTION).doc(channel.id).set(safeChannel);
@@ -249,7 +251,8 @@ export async function getPublicChannels(): Promise<Channel[]> {
       .orderBy('createdAt', 'desc')
       .limit(50)
       .get();
-    return snap.docs.map(d => d.data() as Channel);
+    // Map with ID explicit spread to ensure ID presence
+    return snap.docs.map(d => ({ id: d.id, ...d.data() } as Channel));
   } catch (e: any) {
     // Fallback: If index is missing, query without sort and sort in memory
     if (e.code === 'failed-precondition' || e.message?.includes('index')) {
@@ -258,7 +261,7 @@ export async function getPublicChannels(): Promise<Channel[]> {
           .where('visibility', 'in', ['public', 'group'])
           .limit(50)
           .get();
-        const data = snap.docs.map(d => d.data() as Channel);
+        const data = snap.docs.map(d => ({ id: d.id, ...d.data() } as Channel));
         // Manual Sort
         return data.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
     }
@@ -275,7 +278,7 @@ export async function getCreatorChannels(ownerId: string): Promise<Channel[]> {
       .orderBy('createdAt', 'desc')
       .limit(21) // 3 columns * 7 rows typical max
       .get();
-    return snap.docs.map(d => d.data() as Channel);
+    return snap.docs.map(d => ({ id: d.id, ...d.data() } as Channel));
   } catch (e: any) {
     // Fallback if index missing
     if (e.code === 'failed-precondition' || e.message?.includes('index')) {
@@ -284,7 +287,7 @@ export async function getCreatorChannels(ownerId: string): Promise<Channel[]> {
           .where('visibility', '==', 'public')
           .limit(50)
           .get();
-        const data = snap.docs.map(d => d.data() as Channel);
+        const data = snap.docs.map(d => ({ id: d.id, ...d.data() } as Channel));
         return data.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)).slice(0, 21);
     }
     console.error("Error fetching creator channels:", e);
@@ -301,7 +304,7 @@ export function subscribeToPublicChannels(onUpdate: (channels: Channel[]) => voi
     .where('visibility', '==', 'public')
     .limit(100)
     .onSnapshot(snap => {
-      const data = snap.docs.map(d => d.data() as Channel);
+      const data = snap.docs.map(d => ({ id: d.id, ...d.data() } as Channel));
       // Client-side Sort
       data.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
       onUpdate(data);
@@ -333,7 +336,7 @@ export async function getGroupChannels(groupIds: string[]): Promise<Channel[]> {
         .where('visibility', '==', 'group')
         .where('groupId', 'in', chunk)
         .get();
-      results = [...results, ...snap.docs.map(d => d.data() as Channel)];
+      results = [...results, ...snap.docs.map(d => ({ id: d.id, ...d.data() } as Channel))];
   }
   return results;
 }
@@ -408,7 +411,7 @@ export async function getChannelsByIds(ids: string[]): Promise<Channel[]> {
     let results: Channel[] = [];
     for (const chunk of chunks) {
         const snap = await db.collection(CHANNELS_COLLECTION).where(firebase.firestore.FieldPath.documentId(), 'in', chunk).get();
-        results = [...results, ...snap.docs.map(d => d.data() as Channel)];
+        results = [...results, ...snap.docs.map(d => ({ id: d.id, ...d.data() } as Channel))];
     }
     return results;
 }
@@ -614,7 +617,7 @@ export async function getGroupMembers(memberIds: string[]): Promise<UserProfile[
     let users: UserProfile[] = [];
     for (const chunk of chunks) {
         const snap = await db.collection(USERS_COLLECTION).where('uid', 'in', chunk).get();
-        users = [...users, ...snap.docs.map(d => d.data() as UserProfile)];
+        users = [...users, ...snap.docs.map(d => ({ ...d.data(), uid: d.id }) as UserProfile)];
     }
     return users;
 }
