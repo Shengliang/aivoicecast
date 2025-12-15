@@ -87,7 +87,7 @@ export const HANDCRAFTED_CHANNELS: Channel[] = [
     dislikes: 0,
     comments: [],
     tags: ['Architecture', 'Offline', 'React', 'Coding'],
-    imageUrl: 'https://image.pollinations.ai/prompt/futuristic%20digital%20brain%20neural%20network%20architecture%20glowing%20blue%20and%20purple%20nodes?width=600&height=400&nologo=true',
+    imageUrl: 'https://image.pollinations.ai/prompt/isometric%203d%20software%20architecture%20blueprint%20glowing%20holographic%20data%20streams%20serverless%20cloud%20infrastructure%20react%20code%20nodes%20dark%20cyberpunk%20background%20cinematic%20lighting%208k?width=600&height=400&nologo=true',
     welcomeMessage: "Welcome to the backend of the frontend. Let's explore the code.",
     starterPrompts: [
       "Why use IndexedDB?",
