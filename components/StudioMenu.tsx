@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { UserProfile, SubscriptionTier, GlobalStats, Channel } from '../types';
 import { getUserProfile, getGlobalStats } from '../services/firestoreService';
-import { Sparkles, BarChart2, Plus, Wand2, Key, Database, Crown, Settings, Book, Users, LogIn, Terminal, Cloud, Globe, Mic, LayoutGrid, HardDrive } from 'lucide-react';
+import { Sparkles, BarChart2, Plus, Wand2, Key, Database, Crown, Settings, Book, Users, LogIn, Terminal, Cloud, Globe, Mic, LayoutGrid, HardDrive, AlertCircle } from 'lucide-react';
 import { VOICES } from '../utils/initialData';
 import { PricingModal } from './PricingModal';
 
@@ -31,7 +31,7 @@ export const StudioMenu: React.FC<StudioMenuProps> = ({
   isUserMenuOpen, setIsUserMenuOpen, userProfile, setUserProfile, currentUser,
   globalVoice, setGlobalVoice, hasApiKey, 
   setIsCreateModalOpen, setIsVoiceCreateOpen, setIsApiKeyModalOpen, setIsSyncModalOpen, setIsSettingsModalOpen, onOpenUserGuide, onNavigate, t,
-  className, channels
+  className, channels = []
 }) => {
   const [isPricingOpen, setIsPricingOpen] = useState(false);
   const [globalStats, setGlobalStats] = useState<GlobalStats>({ totalLogins: 0, uniqueUsers: 0 });
@@ -42,7 +42,26 @@ export const StudioMenu: React.FC<StudioMenuProps> = ({
       }
   }, [isUserMenuOpen]);
 
-  if (!isUserMenuOpen || !currentUser) return null;
+  if (!isUserMenuOpen) return null;
+
+  // Handle Unauthenticated State gracefully
+  if (!currentUser) {
+      return (
+        <>
+            <div className="fixed inset-0 z-20" onClick={() => setIsUserMenuOpen(false)}></div>
+            <div className={`${className ? className : 'absolute right-0 mt-2'} w-64 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl z-50 p-4 animate-fade-in-up`}>
+                <div className="flex items-center gap-2 mb-2 text-slate-300 font-bold">
+                    <AlertCircle size={16} className="text-amber-400" />
+                    <span>Creator Studio</span>
+                </div>
+                <p className="text-slate-400 text-sm mb-3">Please sign in to access creator tools, cloud sync, and settings.</p>
+                <div className="text-xs text-slate-500 bg-slate-800 p-2 rounded">
+                    Tip: Use the "Sign In" button in the navbar.
+                </div>
+            </div>
+        </>
+      );
+  }
 
   const handleUpgradeSuccess = async (newTier: SubscriptionTier) => {
       // 1. Optimistic Update locally so UI reflects change instantly
@@ -67,8 +86,13 @@ export const StudioMenu: React.FC<StudioMenuProps> = ({
 
   const tierInfo = getTierLabel();
   
-  const totalPodcasts = channels.length;
-  const totalLectures = channels.reduce((acc, ch) => acc + (ch.chapters?.reduce((cAcc, chap) => cAcc + (chap.subTopics?.length || 0), 0) || 0), 0);
+  // Safe calculation of stats
+  const safeChannels = Array.isArray(channels) ? channels : [];
+  const totalPodcasts = safeChannels.length;
+  const totalLectures = safeChannels.reduce((acc, ch) => {
+      if (!ch || !ch.chapters || !Array.isArray(ch.chapters)) return acc;
+      return acc + ch.chapters.reduce((cAcc, chap) => cAcc + (chap.subTopics?.length || 0), 0);
+  }, 0);
 
   // Helper for stat boxes
   const StatBox = ({ icon: Icon, label, value }: { icon: any, label: string, value: number | string }) => (
