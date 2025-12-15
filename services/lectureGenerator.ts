@@ -1,9 +1,9 @@
 
 import { GoogleGenAI } from '@google/genai';
 import { GeneratedLecture, SubTopic, TranscriptItem } from '../types';
-import { incrementApiUsage } from './firestoreService';
+import { incrementApiUsage, getUserProfile } from './firestoreService';
 import { auth } from './firebaseConfig';
-import { GEMINI_API_KEY } from './private_keys';
+import { GEMINI_API_KEY, OPENAI_API_KEY } from './private_keys';
 
 // Helper to safely parse JSON from AI response
 function safeJsonParse(text: string): any {
@@ -20,29 +20,95 @@ function safeJsonParse(text: string): any {
   }
 }
 
+// --- OPENAI HELPER ---
+async function callOpenAI(
+    systemPrompt: string, 
+    userPrompt: string, 
+    apiKey: string,
+    model: string = 'gpt-4o'
+): Promise<string | null> {
+    try {
+        const response = await fetch("https://api.openai.com/v1/chat/completions", {
+            method: "POST",
+            headers: {
+                "Authorization": `Bearer ${apiKey}`,
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+                model: model,
+                messages: [
+                    { role: "system", content: systemPrompt },
+                    { role: "user", content: userPrompt }
+                ],
+                response_format: { type: "json_object" } // Force JSON
+            })
+        });
+
+        if (!response.ok) {
+            const err = await response.json();
+            console.error("OpenAI API Error:", err);
+            return null;
+        }
+
+        const data = await response.json();
+        return data.choices[0]?.message?.content || null;
+    } catch (e) {
+        console.error("OpenAI Fetch Error:", e);
+        return null;
+    }
+}
+
+// Helper to decide provider
+async function getAIProvider(): Promise<'gemini' | 'openai'> {
+    let provider: 'gemini' | 'openai' = 'gemini';
+    
+    if (auth.currentUser) {
+        try {
+            const profile = await getUserProfile(auth.currentUser.uid);
+            // PRO CHECK: Only pro members can use OpenAI preference
+            if (profile?.subscriptionTier === 'pro' && profile?.preferredAiProvider === 'openai') {
+                provider = 'openai';
+            }
+        } catch (e) {
+            console.warn("Failed to check user profile for AI provider preference", e);
+        }
+    }
+    
+    return provider;
+}
+
 export async function generateLectureScript(
   topic: string, 
   channelContext: string,
   language: 'en' | 'zh' = 'en'
 ): Promise<GeneratedLecture | null> {
   try {
-    // Initialize client inside function to pick up latest API Key
-    const apiKey = localStorage.getItem('gemini_api_key') || GEMINI_API_KEY || process.env.API_KEY || '';
-    if (!apiKey) {
-      console.warn("API Key missing");
-      return null;
+    const provider = await getAIProvider();
+    
+    // Check Keys
+    const geminiKey = localStorage.getItem('gemini_api_key') || GEMINI_API_KEY || process.env.API_KEY || '';
+    const openaiKey = localStorage.getItem('openai_api_key') || OPENAI_API_KEY || process.env.OPENAI_API_KEY || '';
+
+    // If preferred is OpenAI but key missing, fallback to Gemini
+    let activeProvider = provider;
+    if (provider === 'openai' && !openaiKey) {
+        console.warn("OpenAI Key missing, falling back to Gemini");
+        activeProvider = 'gemini';
     }
-    const ai = new GoogleGenAI({ apiKey });
+    if (activeProvider === 'gemini' && !geminiKey) {
+        console.warn("Gemini API Key missing");
+        return null;
+    }
 
     const langInstruction = language === 'zh' 
       ? 'Output Language: Simplified Chinese (Mandarin). Ensure natural phrasing appropriate for Chinese speakers.' 
       : 'Output Language: English.';
 
-    const prompt = `
-      You are an expert educational content creator.
+    const systemPrompt = `You are an expert educational content creator. ${langInstruction}`;
+    
+    const userPrompt = `
       Topic: "${topic}"
       Context: "${channelContext}"
-      ${langInstruction}
       
       Task:
       1. Identify a famous expert, scientist, or historical figure relevant to this topic to act as the "Teacher" (e.g., Richard Feynman for Physics, Li Bai for Poetry).
@@ -64,15 +130,20 @@ export async function generateLectureScript(
       }
     `;
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash', // Optimized for speed
-      contents: prompt,
-      config: {
-        responseMimeType: 'application/json'
-      }
-    });
+    let text: string | null = null;
 
-    const text = response.text;
+    if (activeProvider === 'openai') {
+        text = await callOpenAI(systemPrompt, userPrompt, openaiKey);
+    } else {
+        const ai = new GoogleGenAI({ apiKey: geminiKey });
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash', 
+            contents: `${systemPrompt}\n\n${userPrompt}`,
+            config: { responseMimeType: 'application/json' }
+        });
+        text = response.text || null;
+    }
+
     if (!text) return null;
 
     const parsed = safeJsonParse(text);
@@ -98,28 +169,30 @@ export async function generateLectureScript(
 
 export async function generateBatchLectures(
   chapterTitle: string,
-  subTopics: SubTopic[], // Must contain { id, title }
+  subTopics: SubTopic[], 
   channelContext: string,
   language: 'en' | 'zh' = 'en'
 ): Promise<Record<string, GeneratedLecture> | null> {
   try {
     if (subTopics.length === 0) return {};
 
-    // Initialize client inside function to pick up latest API Key
-    const apiKey = localStorage.getItem('gemini_api_key') || GEMINI_API_KEY || process.env.API_KEY || '';
-    if (!apiKey) return null;
-    const ai = new GoogleGenAI({ apiKey });
+    const provider = await getAIProvider();
+    const geminiKey = localStorage.getItem('gemini_api_key') || GEMINI_API_KEY || process.env.API_KEY || '';
+    const openaiKey = localStorage.getItem('openai_api_key') || OPENAI_API_KEY || process.env.OPENAI_API_KEY || '';
+
+    let activeProvider = provider;
+    if (provider === 'openai' && !openaiKey) activeProvider = 'gemini';
+    if (activeProvider === 'gemini' && !geminiKey) return null;
 
     const langInstruction = language === 'zh' 
       ? 'Output Language: Simplified Chinese (Mandarin).' 
       : 'Output Language: English.';
 
-    // Construct a prompt that asks for multiple lectures at once
-    const prompt = `
-      You are an expert educational content creator.
+    const systemPrompt = `You are an expert educational content creator. ${langInstruction}`;
+    
+    const userPrompt = `
       Channel Context: "${channelContext}"
       Chapter Title: "${chapterTitle}"
-      ${langInstruction}
 
       Task: Generate a short educational dialogue (lecture) for EACH of the following sub-topics.
       
@@ -148,15 +221,20 @@ export async function generateBatchLectures(
       }
     `;
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash', // Optimized for speed
-      contents: prompt,
-      config: {
-        responseMimeType: 'application/json'
-      }
-    });
+    let text: string | null = null;
 
-    const text = response.text;
+    if (activeProvider === 'openai') {
+        text = await callOpenAI(systemPrompt, userPrompt, openaiKey);
+    } else {
+        const ai = new GoogleGenAI({ apiKey: geminiKey });
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash', 
+            contents: `${systemPrompt}\n\n${userPrompt}`,
+            config: { responseMimeType: 'application/json' }
+        });
+        text = response.text || null;
+    }
+
     if (!text) return null;
 
     const parsed = safeJsonParse(text);
@@ -179,7 +257,6 @@ export async function generateBatchLectures(
       });
     }
     
-    // Track Usage if logged in (counts as 1 batch call)
     if (auth.currentUser) {
        incrementApiUsage(auth.currentUser.uid);
     }
@@ -198,15 +275,19 @@ export async function summarizeDiscussionAsSection(
   language: 'en' | 'zh'
 ): Promise<GeneratedLecture['sections'] | null> {
   try {
-    const apiKey = localStorage.getItem('gemini_api_key') || GEMINI_API_KEY || process.env.API_KEY || '';
-    if (!apiKey) return null;
-    const ai = new GoogleGenAI({ apiKey });
+    const provider = await getAIProvider();
+    const geminiKey = localStorage.getItem('gemini_api_key') || GEMINI_API_KEY || process.env.API_KEY || '';
+    const openaiKey = localStorage.getItem('openai_api_key') || OPENAI_API_KEY || process.env.OPENAI_API_KEY || '';
+
+    let activeProvider = provider;
+    if (provider === 'openai' && !openaiKey) activeProvider = 'gemini';
+    if (activeProvider === 'gemini' && !geminiKey) return null;
 
     const chatLog = transcript.map(t => `${t.role}: ${t.text}`).join('\n');
     const langInstruction = language === 'zh' ? 'Output Chinese' : 'Output English';
 
-    const prompt = `
-      You are an editor summarazing a student-teacher Q&A session.
+    const systemPrompt = `You are an editor summarazing a student-teacher Q&A session. ${langInstruction}`;
+    const userPrompt = `
       Original Topic: "${currentLecture.topic}"
       
       Chat Transcript:
@@ -218,8 +299,6 @@ export async function summarizeDiscussionAsSection(
       - Summarize the key insights from the chat.
       - Format it as a dialogue (sections).
       - Add a section header like "--- Discussion Summary ---" at the start.
-      
-      ${langInstruction}
 
       Return JSON:
       {
@@ -227,15 +306,21 @@ export async function summarizeDiscussionAsSection(
       }
     `;
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash', // Optimized for speed
-      contents: prompt,
-      config: { responseMimeType: 'application/json' }
-    });
+    let text: string | null = null;
 
-    const text = response.text;
+    if (activeProvider === 'openai') {
+        text = await callOpenAI(systemPrompt, userPrompt, openaiKey);
+    } else {
+        const ai = new GoogleGenAI({ apiKey: geminiKey });
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash', 
+            contents: `${systemPrompt}\n\n${userPrompt}`,
+            config: { responseMimeType: 'application/json' }
+        });
+        text = response.text || null;
+    }
+
     if (!text) return null;
-    
     if (auth.currentUser) incrementApiUsage(auth.currentUser.uid);
 
     const parsed = safeJsonParse(text);
@@ -256,15 +341,19 @@ export async function generateDesignDocFromTranscript(
   language: 'en' | 'zh' = 'en'
 ): Promise<string | null> {
   try {
-    const apiKey = localStorage.getItem('gemini_api_key') || GEMINI_API_KEY || process.env.API_KEY || '';
-    if (!apiKey) return null;
-    const ai = new GoogleGenAI({ apiKey });
+    const provider = await getAIProvider();
+    const geminiKey = localStorage.getItem('gemini_api_key') || GEMINI_API_KEY || process.env.API_KEY || '';
+    const openaiKey = localStorage.getItem('openai_api_key') || OPENAI_API_KEY || process.env.OPENAI_API_KEY || '';
+
+    let activeProvider = provider;
+    if (provider === 'openai' && !openaiKey) activeProvider = 'gemini';
+    if (activeProvider === 'gemini' && !geminiKey) return null;
 
     const chatLog = transcript.map(t => `${t.role.toUpperCase()}: ${t.text}`).join('\n');
     const langInstruction = language === 'zh' ? 'Output Language: Chinese.' : 'Output Language: English.';
 
-    const prompt = `
-      You are a Senior Technical Writer.
+    const systemPrompt = `You are a Senior Technical Writer. ${langInstruction}`;
+    const userPrompt = `
       Task: Convert the following casual discussion transcript into a Formal Design Document (Markdown).
       
       CRITICAL: Use the exact date provided in the metadata. Do not generate a fake date.
@@ -276,8 +365,6 @@ export async function generateDesignDocFromTranscript(
 
       Transcript:
       ${chatLog}
-      
-      ${langInstruction}
       
       Structure the output clearly with the following sections (use Markdown headers):
       # Design Document: ${meta.topic}
@@ -302,14 +389,41 @@ export async function generateDesignDocFromTranscript(
       Note: Remove filler words and conversational fluff. Make it professional.
     `;
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-3-pro-preview',
-      contents: prompt
-    });
+    let text: string | null = null;
+
+    if (activeProvider === 'openai') {
+        // OpenAI Chat Completion (Text Mode)
+        const response = await fetch("https://api.openai.com/v1/chat/completions", {
+            method: "POST",
+            headers: {
+                "Authorization": `Bearer ${openaiKey}`,
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+                model: 'gpt-4o',
+                messages: [
+                    { role: "system", content: systemPrompt },
+                    { role: "user", content: userPrompt }
+                ]
+            })
+        });
+        if(response.ok) {
+            const data = await response.json();
+            text = data.choices[0]?.message?.content || null;
+        }
+    } else {
+        // Gemini
+        const ai = new GoogleGenAI({ apiKey: geminiKey });
+        const response = await ai.models.generateContent({
+            model: 'gemini-3-pro-preview', // Better for large context docs
+            contents: `${systemPrompt}\n\n${userPrompt}`
+        });
+        text = response.text || null;
+    }
 
     if (auth.currentUser) incrementApiUsage(auth.currentUser.uid);
 
-    return response.text || null;
+    return text;
   } catch (error) {
     console.error("Design Doc generation failed", error);
     return null;

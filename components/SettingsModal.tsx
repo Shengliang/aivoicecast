@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { UserProfile } from '../types';
-import { X, User, Shield, CreditCard, LogOut, CheckCircle, AlertTriangle, Bell, Lock, Database, Trash2, Edit2, Save, FileText, ExternalLink, Loader2, DollarSign, HelpCircle, ChevronDown, ChevronUp, Github, Heart, Hash } from 'lucide-react';
+import { X, User, Shield, CreditCard, LogOut, CheckCircle, AlertTriangle, Bell, Lock, Database, Trash2, Edit2, Save, FileText, ExternalLink, Loader2, DollarSign, HelpCircle, ChevronDown, ChevronUp, Github, Heart, Hash, Cpu, Sparkles } from 'lucide-react';
 import { logUserActivity, getBillingHistory, createStripePortalSession, updateUserProfile } from '../services/firestoreService';
 import { signOut } from '../services/authService';
 import { clearAudioCache } from '../services/tts';
@@ -25,6 +25,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [isEditingName, setIsEditingName] = useState(false);
   const [emailNotifs, setEmailNotifs] = useState(true);
   const [publicProfile, setPublicProfile] = useState(true);
+  const [aiProvider, setAiProvider] = useState<'gemini' | 'openai'>(user.preferredAiProvider || 'gemini');
   const [error, setError] = useState<string | null>(null);
   
   // Interests State
@@ -41,9 +42,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       }
   }, [activeTab, user]);
 
-  // Sync initial interests
+  // Sync initial interests and settings
   useEffect(() => {
-      if (isOpen) setSelectedInterests(user.interests || []);
+      if (isOpen) {
+          setSelectedInterests(user.interests || []);
+          setAiProvider(user.preferredAiProvider || 'gemini');
+      }
   }, [isOpen, user]);
 
   if (!isOpen) return null;
@@ -74,17 +78,21 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           await updateUserProfile(user.uid, { 
               displayName: displayName, 
               defaultRepoUrl: defaultRepo,
-              interests: selectedInterests
+              interests: selectedInterests,
+              preferredAiProvider: aiProvider
           });
 
           // Update Local State
-          const updatedProfile = { ...user, displayName, defaultRepoUrl: defaultRepo, interests: selectedInterests };
+          const updatedProfile = { ...user, displayName, defaultRepoUrl: defaultRepo, interests: selectedInterests, preferredAiProvider: aiProvider };
           if (onUpdateProfile) {
               onUpdateProfile(updatedProfile);
           }
           setIsEditingName(false);
-          logUserActivity('update_profile', { displayName, defaultRepo, interests: selectedInterests });
+          logUserActivity('update_profile', { displayName, defaultRepo, interests: selectedInterests, aiProvider });
+          
           if(activeTab === 'interests') alert("Interests saved! Your feed will be updated.");
+          if(activeTab === 'preferences') alert("Preferences saved!");
+          
       } catch(e: any) {
           console.error("Save failed", e);
           alert("Failed to save settings: " + e.message);
@@ -268,6 +276,61 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
             {activeTab === 'preferences' && (
                 <div className="space-y-6">
+                    {/* AI Provider Section */}
+                    <div className="space-y-4">
+                        <div className="flex justify-between items-center">
+                            <h4 className="text-sm font-bold text-slate-400 uppercase tracking-wider flex items-center gap-2"><Cpu size={16}/> AI Model API</h4>
+                            <button onClick={handleSaveProfile} className="text-xs text-indigo-400 font-bold hover:text-white transition-colors">Save Changes</button>
+                        </div>
+                        <div className="bg-slate-800/30 border border-slate-700 rounded-xl p-4 space-y-4">
+                            <div>
+                                <p className="text-sm font-bold text-white mb-2">Default Generation Model</p>
+                                <p className="text-xs text-slate-400 mb-3">Choose which AI provider generates your lectures, curriculums, and design docs.</p>
+                                
+                                <div className="space-y-2">
+                                    <label className={`flex items-center justify-between p-3 rounded-lg border cursor-pointer transition-all ${aiProvider === 'gemini' ? 'bg-indigo-900/20 border-indigo-500' : 'bg-slate-900/50 border-slate-700 hover:bg-slate-800'}`}>
+                                        <div className="flex items-center gap-3">
+                                            <input 
+                                                type="radio" 
+                                                name="ai_provider" 
+                                                value="gemini"
+                                                checked={aiProvider === 'gemini'}
+                                                onChange={() => setAiProvider('gemini')}
+                                                className="accent-indigo-500"
+                                            />
+                                            <div>
+                                                <p className="text-sm font-bold text-white flex items-center gap-2">Google Gemini <span className="text-[10px] bg-slate-700 px-1.5 py-0.5 rounded text-slate-300">Default</span></p>
+                                                <p className="text-xs text-slate-500">Fast, reliable, multimodal. Powered by Gemini 2.5 Flash/Pro.</p>
+                                            </div>
+                                        </div>
+                                    </label>
+
+                                    <label className={`flex items-center justify-between p-3 rounded-lg border transition-all ${!isPaid ? 'opacity-60 cursor-not-allowed bg-slate-900/30 border-slate-800' : 'cursor-pointer'} ${isPaid && aiProvider === 'openai' ? 'bg-emerald-900/20 border-emerald-500' : isPaid ? 'bg-slate-900/50 border-slate-700 hover:bg-slate-800' : ''}`}>
+                                        <div className="flex items-center gap-3">
+                                            <input 
+                                                type="radio" 
+                                                name="ai_provider" 
+                                                value="openai"
+                                                checked={aiProvider === 'openai'}
+                                                onChange={() => isPaid && setAiProvider('openai')}
+                                                disabled={!isPaid}
+                                                className="accent-emerald-500"
+                                            />
+                                            <div>
+                                                <p className="text-sm font-bold text-white flex items-center gap-2">
+                                                    OpenAI GPT-4o 
+                                                    {!isPaid && <span className="text-[10px] bg-amber-900/50 text-amber-400 px-1.5 py-0.5 rounded flex items-center gap-1 border border-amber-500/30"><Lock size={8}/> Pro Only</span>}
+                                                </p>
+                                                <p className="text-xs text-slate-500">Advanced reasoning. Requires Pro Membership.</p>
+                                            </div>
+                                        </div>
+                                        {aiProvider === 'openai' && isPaid && <Sparkles size={16} className="text-emerald-400" />}
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
                     <div className="space-y-4">
                         <h4 className="text-sm font-bold text-slate-400 uppercase tracking-wider flex items-center gap-2"><Bell size={16}/> Notifications</h4>
                         <div className="bg-slate-800/30 border border-slate-700 rounded-xl p-4 space-y-4">
@@ -317,7 +380,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                 {isPaid && <span className="bg-emerald-900/30 text-emerald-400 px-2 py-0.5 rounded text-xs font-bold border border-emerald-500/30">Active</span>}
                             </div>
                             <p className="text-xs text-slate-400 mt-2 max-w-sm">
-                                {isPaid ? "You have access to all premium features including Neural Voices and Private Groups." : "Upgrade to Pro to unlock Neural Voices, Private Channels, and Unlimited Generation."}
+                                {isPaid ? "You have access to all premium features including Neural Voices, OpenAI Models, and Private Groups." : "Upgrade to Pro to unlock Neural Voices, Private Channels, OpenAI Models, and Unlimited Generation."}
                             </p>
                         </div>
                         

@@ -1,12 +1,46 @@
+
 import { GoogleGenAI } from '@google/genai';
 import { Channel, Chapter } from '../types';
-import { incrementApiUsage } from './firestoreService';
+import { incrementApiUsage, getUserProfile } from './firestoreService';
 import { auth } from './firebaseConfig';
 import { generateLectureScript } from './lectureGenerator';
 import { cacheLectureScript } from '../utils/db';
-import { GEMINI_API_KEY } from './private_keys';
+import { GEMINI_API_KEY, OPENAI_API_KEY } from './private_keys';
 
 const VOICES = ['Puck', 'Charon', 'Kore', 'Fenrir', 'Zephyr'];
+
+// Helper to decide provider
+async function getAIProvider(): Promise<'gemini' | 'openai'> {
+    let provider: 'gemini' | 'openai' = 'gemini';
+    if (auth.currentUser) {
+        try {
+            const profile = await getUserProfile(auth.currentUser.uid);
+            // PRO CHECK: Only pro members can use OpenAI preference
+            if (profile?.subscriptionTier === 'pro' && profile?.preferredAiProvider === 'openai') {
+                provider = 'openai';
+            }
+        } catch (e) { console.warn("Failed to check user profile for AI provider preference", e); }
+    }
+    return provider;
+}
+
+// OpenAI Helper
+async function callOpenAI(systemPrompt: string, userPrompt: string, apiKey: string, model: string = 'gpt-4o'): Promise<string | null> {
+    try {
+        const response = await fetch("https://api.openai.com/v1/chat/completions", {
+            method: "POST",
+            headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json" },
+            body: JSON.stringify({
+                model: model,
+                messages: [{ role: "system", content: systemPrompt }, { role: "user", content: userPrompt }],
+                response_format: { type: "json_object" }
+            })
+        });
+        if (!response.ok) { console.error("OpenAI Error:", await response.json()); return null; }
+        const data = await response.json();
+        return data.choices[0]?.message?.content || null;
+    } catch (e) { console.error("OpenAI Fetch Error:", e); return null; }
+}
 
 export async function generateChannelFromPrompt(
   userPrompt: string, 
@@ -14,18 +48,21 @@ export async function generateChannelFromPrompt(
   language: 'en' | 'zh' = 'en'
 ): Promise<Channel | null> {
   try {
-    const apiKey = localStorage.getItem('gemini_api_key') || GEMINI_API_KEY || process.env.API_KEY || '';
-    if (!apiKey) throw new Error("API Key missing");
-    const ai = new GoogleGenAI({ apiKey });
+    const provider = await getAIProvider();
+    const geminiKey = localStorage.getItem('gemini_api_key') || GEMINI_API_KEY || process.env.API_KEY || '';
+    const openaiKey = localStorage.getItem('openai_api_key') || OPENAI_API_KEY || process.env.OPENAI_API_KEY || '';
+
+    let activeProvider = provider;
+    if (provider === 'openai' && !openaiKey) activeProvider = 'gemini';
+    if (activeProvider === 'gemini' && !geminiKey) throw new Error("API Key missing");
 
     const langInstruction = language === 'zh' 
       ? 'Output Language: Simplified Chinese (Mandarin) for all content.' 
       : 'Output Language: English.';
 
-    const prompt = `
-      You are a creative Podcast Producer AI.
+    const systemPrompt = `You are a creative Podcast Producer AI. ${langInstruction}`;
+    const userRequest = `
       User Request: "${userPrompt}"
-      ${langInstruction}
 
       Task: 
       1. Create a complete concept for a podcast channel based on the user's request.
@@ -56,42 +93,43 @@ export async function generateChannelFromPrompt(
       }
     `;
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-3-pro-preview',
-      contents: prompt,
-      config: { responseMimeType: 'application/json' }
-    });
+    let text: string | null = null;
 
-    const text = response.text;
+    if (activeProvider === 'openai') {
+        text = await callOpenAI(systemPrompt, userRequest, openaiKey);
+    } else {
+        const ai = new GoogleGenAI({ apiKey: geminiKey });
+        const response = await ai.models.generateContent({
+            model: 'gemini-3-pro-preview',
+            contents: `${systemPrompt}\n\n${userRequest}`,
+            config: { responseMimeType: 'application/json' }
+        });
+        text = response.text || null;
+    }
+
     if (!text) return null;
 
     const parsed = JSON.parse(text);
     const channelId = crypto.randomUUID();
     
-    // Track Usage
-    if (auth.currentUser) {
-       incrementApiUsage(auth.currentUser.uid);
-    }
+    if (auth.currentUser) incrementApiUsage(auth.currentUser.uid);
 
-    // Map AI output to Channel interface
     const newChannel: Channel = {
       id: channelId,
       title: parsed.title,
       description: parsed.description,
       author: currentUser?.displayName || 'Anonymous Creator',
       ownerId: currentUser?.uid,
-      visibility: 'private', // Default to private
+      visibility: 'private',
       voiceName: parsed.voiceName,
       systemInstruction: parsed.systemInstruction,
       likes: 0,
       dislikes: 0,
       comments: [],
       tags: parsed.tags || ['AI', 'Generated'],
-      // Generate dynamic image URL
       imageUrl: `https://image.pollinations.ai/prompt/${encodeURIComponent(parsed.imagePrompt || parsed.title)}?width=600&height=400&nologo=true`,
       welcomeMessage: parsed.welcomeMessage,
       starterPrompts: parsed.starterPrompts,
-      // Map chapters to include IDs
       chapters: parsed.chapters?.map((ch: any, cIdx: number) => ({
         id: `ch-${channelId}-${cIdx}`,
         title: ch.title,
@@ -102,16 +140,10 @@ export async function generateChannelFromPrompt(
       })) || []
     };
 
-    // --- Auto-Generate First Lecture Content (Text Only) ---
-    // This ensures that when the user clicks the card, the first lesson is ready to read/play immediately.
+    // Auto-Generate First Lecture Content (Recursively calls generateLectureScript which also checks provider)
     if (newChannel.chapters.length > 0 && newChannel.chapters[0].subTopics.length > 0) {
         const firstTopic = newChannel.chapters[0].subTopics[0];
-        console.log("Auto-generating first lecture script:", firstTopic.title);
-        
-        // Generate in background (don't await strictly if we want UI to be faster, 
-        // but here we await to ensure it's ready for the 'Publish' click)
         const lecture = await generateLectureScript(firstTopic.title, newChannel.description, language);
-        
         if (lecture) {
             const cacheKey = `lecture_${channelId}_${firstTopic.id}_${language}`;
             await cacheLectureScript(cacheKey, lecture);
@@ -132,20 +164,22 @@ export async function modifyCurriculumWithAI(
   language: 'en' | 'zh' = 'en'
 ): Promise<Chapter[] | null> {
   try {
-    const apiKey = localStorage.getItem('gemini_api_key') || GEMINI_API_KEY || process.env.API_KEY || '';
-    if (!apiKey) throw new Error("API Key missing");
-    const ai = new GoogleGenAI({ apiKey });
+    const provider = await getAIProvider();
+    const geminiKey = localStorage.getItem('gemini_api_key') || GEMINI_API_KEY || process.env.API_KEY || '';
+    const openaiKey = localStorage.getItem('openai_api_key') || OPENAI_API_KEY || process.env.OPENAI_API_KEY || '';
+
+    let activeProvider = provider;
+    if (provider === 'openai' && !openaiKey) activeProvider = 'gemini';
+    if (activeProvider === 'gemini' && !geminiKey) throw new Error("API Key missing");
 
     const langInstruction = language === 'zh' ? 'Output Language: Chinese.' : 'Output Language: English.';
-
-    const prompt = `
-      You are a Curriculum Editor AI.
+    const systemPrompt = `You are a Curriculum Editor AI. ${langInstruction}`;
+    
+    const userRequest = `
       User Instruction: "${userPrompt}"
       
       Current Curriculum JSON:
       ${JSON.stringify(currentChapters.map(c => ({ title: c.title, subTopics: c.subTopics.map(s => s.title) })))}
-
-      ${langInstruction}
 
       Task:
       1. Modify the curriculum structure based strictly on the User Instruction.
@@ -164,24 +198,26 @@ export async function modifyCurriculumWithAI(
       }
     `;
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-3-pro-preview',
-      contents: prompt,
-      config: { responseMimeType: 'application/json' }
-    });
+    let text: string | null = null;
 
-    const text = response.text;
-    if (!text) return null;
-    
-    // Track Usage
-    if (auth.currentUser) {
-       incrementApiUsage(auth.currentUser.uid);
+    if (activeProvider === 'openai') {
+        text = await callOpenAI(systemPrompt, userRequest, openaiKey);
+    } else {
+        const ai = new GoogleGenAI({ apiKey: geminiKey });
+        const response = await ai.models.generateContent({
+            model: 'gemini-3-pro-preview',
+            contents: `${systemPrompt}\n\n${userRequest}`,
+            config: { responseMimeType: 'application/json' }
+        });
+        text = response.text || null;
     }
+
+    if (!text) return null;
+    if (auth.currentUser) incrementApiUsage(auth.currentUser.uid);
     
     const parsed = JSON.parse(text);
     
     if (parsed && parsed.chapters && Array.isArray(parsed.chapters)) {
-        // Remap to ensure IDs are present (using timestamps to avoid collisions during edits)
         const timestamp = Date.now();
         return parsed.chapters.map((ch: any, cIdx: number) => ({
             id: `ch-edit-${timestamp}-${cIdx}`,
@@ -208,25 +244,23 @@ export async function generateChannelFromDocument(
   language: 'en' | 'zh' = 'en'
 ): Promise<Channel | null> {
   try {
-    const apiKey = localStorage.getItem('gemini_api_key') || GEMINI_API_KEY || process.env.API_KEY || '';
-    if (!apiKey) throw new Error("API Key missing");
-    const ai = new GoogleGenAI({ apiKey });
+    const provider = await getAIProvider();
+    const geminiKey = localStorage.getItem('gemini_api_key') || GEMINI_API_KEY || process.env.API_KEY || '';
+    const openaiKey = localStorage.getItem('openai_api_key') || OPENAI_API_KEY || process.env.OPENAI_API_KEY || '';
 
-    const langInstruction = language === 'zh' 
-      ? 'Output Language: Simplified Chinese (Mandarin).' 
-      : 'Output Language: English.';
+    let activeProvider = provider;
+    if (provider === 'openai' && !openaiKey) activeProvider = 'gemini';
+    if (activeProvider === 'gemini' && !geminiKey) throw new Error("API Key missing");
 
-    // Safely truncate text to avoid context limit issues (approx 30k chars is plenty for metadata + structure)
+    const langInstruction = language === 'zh' ? 'Output Language: Simplified Chinese (Mandarin).' : 'Output Language: English.';
     const safeText = documentText.substring(0, 30000);
 
-    const prompt = `
-      You are a Podcast Producer.
+    const systemPrompt = `You are a Podcast Producer. ${langInstruction}`;
+    const userRequest = `
       Analyze the following document and convert it into a Podcast Channel structure.
       
       Document:
       "${safeText}"
-
-      ${langInstruction}
 
       Task:
       1. Extract a suitable Title and Description for the Podcast Channel based on the document.
@@ -257,21 +291,26 @@ export async function generateChannelFromDocument(
       }
     `;
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-3-pro-preview',
-      contents: prompt,
-      config: { responseMimeType: 'application/json' }
-    });
+    let text: string | null = null;
 
-    const text = response.text;
+    if (activeProvider === 'openai') {
+        text = await callOpenAI(systemPrompt, userRequest, openaiKey, 'gpt-4o'); // Use 4o for large context
+    } else {
+        const ai = new GoogleGenAI({ apiKey: geminiKey });
+        const response = await ai.models.generateContent({
+            model: 'gemini-3-pro-preview',
+            contents: `${systemPrompt}\n\n${userRequest}`,
+            config: { responseMimeType: 'application/json' }
+        });
+        text = response.text || null;
+    }
+
     if (!text) return null;
 
     const parsed = JSON.parse(text);
     const channelId = crypto.randomUUID();
     
-    if (auth.currentUser) {
-       incrementApiUsage(auth.currentUser.uid);
-    }
+    if (auth.currentUser) incrementApiUsage(auth.currentUser.uid);
 
     const newChannel: Channel = {
       id: channelId,

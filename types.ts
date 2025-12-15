@@ -161,6 +161,7 @@ export interface UserProfile {
   followers?: string[];
   following?: string[];
   likedChannelIds?: string[];
+  preferredAiProvider?: 'gemini' | 'openai';
 }
 
 export interface RecordingSession {
