@@ -57,7 +57,7 @@ import { HANDCRAFTED_CHANNELS, CATEGORY_STYLES, TOPIC_CATEGORIES } from './utils
 import { OFFLINE_CHANNEL_ID } from './utils/offlineContent';
 import { GEMINI_API_KEY } from './services/private_keys';
 
-const APP_VERSION = "v3.68.5"; // Bump version
+const APP_VERSION = "v3.68.6"; // Bump version
 
 const UI_TEXT = {
   en: {
@@ -892,7 +892,7 @@ const App: React.FC = () => {
                    onOpenUserGuide={() => setViewState('user_guide')}
                    onNavigate={(view: any) => setViewState(view)}
                    t={t}
-                   className="fixed bottom-24 right-4 z-50 md:hidden shadow-2xl border-slate-700"
+                   className="absolute top-12 right-0 w-72 z-50 shadow-2xl border-slate-700"
                    channels={channels}
                 />
                 )}
