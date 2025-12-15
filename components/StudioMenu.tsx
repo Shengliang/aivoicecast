@@ -49,7 +49,10 @@ export const StudioMenu: React.FC<StudioMenuProps> = ({
       return (
         <>
             <div className="fixed inset-0 z-[90]" onClick={() => setIsUserMenuOpen(false)}></div>
-            <div className={`${className ? className : 'absolute right-0 top-full mt-2'} w-64 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl z-[100] p-4 animate-fade-in-up`}>
+            <div 
+                className={`${className ? className : 'absolute right-0 top-full mt-2'} w-64 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl z-[100] p-4 animate-fade-in-up`}
+                onClick={(e) => e.stopPropagation()} // Stop click propagation to prevent closing
+            >
                 <div className="flex items-center gap-2 mb-2 text-slate-300 font-bold">
                     <AlertCircle size={16} className="text-amber-400" />
                     <span>Creator Studio</span>
@@ -117,7 +120,10 @@ export const StudioMenu: React.FC<StudioMenuProps> = ({
           - Else (Mobile), use absolute positioning relative to parent.
           - We enforce high z-index and scrolling behaviors here.
       */}
-      <div className={`${className ? className : 'absolute right-0 top-full mt-2 w-72'} bg-slate-900 border border-slate-700 rounded-xl shadow-2xl animate-fade-in-up max-h-[calc(100vh-6rem)] overflow-y-auto overflow-x-hidden scrollbar-thin scrollbar-thumb-slate-800 z-[100]`}>
+      <div 
+          className={`${className ? className : 'absolute right-0 top-full mt-2 w-72'} bg-slate-900 border border-slate-700 rounded-xl shadow-2xl animate-fade-in-up max-h-[calc(100vh-6rem)] overflow-y-auto overflow-x-hidden scrollbar-thin scrollbar-thumb-slate-800 z-[100]`}
+          onClick={(e) => e.stopPropagation()} // Stop propagation here
+      >
          <div className="p-3 border-b border-slate-800 bg-slate-950/90 flex justify-between items-center sticky top-0 z-10 backdrop-blur-sm">
             <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center space-x-2">
                <Sparkles size={12} className="text-indigo-400" />

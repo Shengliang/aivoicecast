@@ -57,7 +57,7 @@ import { HANDCRAFTED_CHANNELS, CATEGORY_STYLES, TOPIC_CATEGORIES } from './utils
 import { OFFLINE_CHANNEL_ID } from './utils/offlineContent';
 import { GEMINI_API_KEY } from './services/private_keys';
 
-const APP_VERSION = "v3.68.7"; // Bump version
+const APP_VERSION = "v3.68.8"; // Bump version
 
 const UI_TEXT = {
   en: {
@@ -874,29 +874,10 @@ const App: React.FC = () => {
                 >
                   <Menu size={24} />
                 </button>
-                {isUserMenuOpen && (
-                <StudioMenu 
-                   isUserMenuOpen={isUserMenuOpen} 
-                   setIsUserMenuOpen={setIsUserMenuOpen}
-                   userProfile={userProfile}
-                   setUserProfile={setUserProfile}
-                   currentUser={currentUser}
-                   globalVoice={globalVoice}
-                   setGlobalVoice={setGlobalVoice}
-                   hasApiKey={hasApiKey}
-                   setIsCreateModalOpen={setIsCreateModalOpen}
-                   setIsVoiceCreateOpen={setIsVoiceCreateOpen}
-                   setIsApiKeyModalOpen={setIsApiKeyModalOpen}
-                   setIsSyncModalOpen={setIsSyncModalOpen}
-                   setIsSettingsModalOpen={setIsAccountSettingsOpen}
-                   onOpenUserGuide={() => setViewState('user_guide')}
-                   onNavigate={(view: any) => setViewState(view)}
-                   t={t}
-                   // FIXED: Use 'fixed' position to break out of stacking context and ensure it sits above overlays
-                   className="fixed top-16 right-4 w-72 z-[100] shadow-2xl border-slate-700"
-                   channels={channels}
-                />
-                )}
+                {/* 
+                   MOVED OUTSIDE: StudioMenu is no longer rendered here to avoid z-index stacking context issues.
+                   It is now rendered at the root level of App.tsx 
+                */}
               </div>
             </div>
           </div>
@@ -1090,7 +1071,11 @@ const App: React.FC = () => {
         </div>
       )}
 
-      {/* Mobile-only Studio Menu Instance */}
+      {/* 
+          STUDIO MENU (ROOT LEVEL)
+          This single instance handles both desktop and mobile positioning responsively.
+          It is placed here to escape the stacking context of the navbar and other containers.
+      */}
       {isUserMenuOpen && (
         <StudioMenu 
            isUserMenuOpen={isUserMenuOpen} 
@@ -1109,7 +1094,7 @@ const App: React.FC = () => {
            onOpenUserGuide={() => setViewState('user_guide')}
            onNavigate={(view: any) => setViewState(view)}
            t={t}
-           className="fixed bottom-24 right-4 z-50 md:hidden shadow-2xl border-slate-700"
+           className="fixed bottom-24 right-4 md:bottom-auto md:top-16 md:right-4 z-[100] shadow-2xl border-slate-700"
            channels={channels}
         />
       )}
