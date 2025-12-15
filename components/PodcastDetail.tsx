@@ -523,11 +523,11 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
   };
 
   useEffect(() => {
+    const sessionId = playSessionIdRef.current;
     if (isPlaying) {
       if (voiceProvider !== 'system') {
         const schedule = async () => {
           if (!isPlayingRef.current) return;
-          const sessionId = playSessionIdRef.current;
           const ctx = getAudioContext();
           
           if (ctx.state === 'suspended') { try { await ctx.resume(); } catch(e) {} }
@@ -646,7 +646,10 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
         playSystem();
       }
     }
-    return () => { if (schedulerTimerRef.current) clearTimeout(schedulerTimerRef.current); };
+    return () => { 
+        if (schedulerTimerRef.current) clearTimeout(schedulerTimerRef.current);
+        playSessionIdRef.current++; // Invalidates async operations of this effect instance
+    };
   }, [isPlaying, activeLecture, voiceProvider, teacherVoice, studentVoice, sysTeacherVoiceURI, sysStudentVoiceURI]);
 
   const handleTopicClick = async (topicTitle: string, subTopicId?: string) => {
@@ -687,6 +690,20 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
         setIsGenerating(false); 
         alert(`Error loading lesson: ${e.message}`); 
     } finally { setIsLoadingLecture(false); }
+  };
+
+  const handlePrevLesson = () => {
+      if (currentLectureIndex > 0) {
+          const prevLesson = flatCurriculum[currentLectureIndex - 1];
+          handleTopicClick(prevLesson.title, prevLesson.id);
+      }
+  };
+
+  const handleNextLesson = () => {
+      if (currentLectureIndex !== -1 && currentLectureIndex < flatCurriculum.length - 1) {
+          const nextLesson = flatCurriculum[currentLectureIndex + 1];
+          handleTopicClick(nextLesson.title, nextLesson.id);
+      }
   };
 
   const togglePlayback = () => {
@@ -906,7 +923,7 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
                     )}
 
                     <div className="flex justify-between items-center mt-6 pt-6 border-t border-slate-800">
-                        <button onClick={() => {}} disabled={currentLectureIndex <= 0} className="text-slate-400 hover:text-white disabled:opacity-30 flex items-center space-x-2 text-sm font-bold transition-colors"><SkipBack size={20} /><span className="hidden sm:inline">{t.prev}</span></button>
+                        <button onClick={handlePrevLesson} disabled={currentLectureIndex <= 0} className="text-slate-400 hover:text-white disabled:opacity-30 flex items-center space-x-2 text-sm font-bold transition-colors"><SkipBack size={20} /><span className="hidden sm:inline">{t.prev}</span></button>
                         <div className="flex flex-col items-center gap-2">
                             {voiceProvider !== 'system' && !isAudioReady && !isPlaying ? (
                                 <button onClick={handleGenerateAudio} disabled={isGenerating} className="w-16 h-16 rounded-full flex items-center justify-center transition-all shadow-lg bg-indigo-600 text-white hover:bg-indigo-500 hover:scale-105 disabled:opacity-50 disabled:scale-100" title={t.preGenDesc}>
@@ -917,7 +934,7 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
                             )}
                             {isBuffering && <span className="text-xs text-slate-500">Processing...</span>}
                         </div>
-                        <button onClick={() => {}} disabled={currentLectureIndex === -1 || currentLectureIndex >= flatCurriculum.length - 1} className="text-slate-400 hover:text-white disabled:opacity-30 flex items-center space-x-2 text-sm font-bold transition-colors"><span className="hidden sm:inline">{t.next}</span><SkipForward size={20} /></button>
+                        <button onClick={handleNextLesson} disabled={currentLectureIndex === -1 || currentLectureIndex >= flatCurriculum.length - 1} className="text-slate-400 hover:text-white disabled:opacity-30 flex items-center space-x-2 text-sm font-bold transition-colors"><span className="hidden sm:inline">{t.next}</span><SkipForward size={20} /></button>
                     </div>
                 </div>
                 
