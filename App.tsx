@@ -57,7 +57,7 @@ import { HANDCRAFTED_CHANNELS, CATEGORY_STYLES, TOPIC_CATEGORIES } from './utils
 import { OFFLINE_CHANNEL_ID } from './utils/offlineContent';
 import { GEMINI_API_KEY } from './services/private_keys';
 
-const APP_VERSION = "v3.68.4"; // Bump version
+const APP_VERSION = "v3.68.5"; // Bump version
 
 const UI_TEXT = {
   en: {
@@ -569,6 +569,21 @@ const App: React.FC = () => {
         } catch(e) {}
       }
   };
+  
+  // Safe user profile for Settings Modal (fallback to basic auth data if profile fetch failed)
+  const safeUserProfile = useMemo(() => {
+      if (userProfile) return userProfile;
+      if (currentUser) {
+          return {
+              uid: currentUser.uid,
+              email: currentUser.email,
+              displayName: currentUser.displayName || 'User',
+              photoURL: currentUser.photoURL,
+              groups: []
+          } as UserProfile;
+      }
+      return null;
+  }, [userProfile, currentUser]);
 
   if (authLoading) {
       return (
@@ -1106,21 +1121,21 @@ const App: React.FC = () => {
       <DataSyncModal isOpen={isSyncModalOpen} onClose={() => setIsSyncModalOpen(false)} />
       <FirebaseConfigModal isOpen={isFirebaseModalOpen} onClose={() => setIsFirebaseModalOpen(false)} onConfigUpdate={(valid) => { if(valid) window.location.reload(); }} />
 
-      {isAccountSettingsOpen && userProfile && (
+      {isAccountSettingsOpen && safeUserProfile && (
           <SettingsModal 
              isOpen={true} 
              onClose={() => setIsAccountSettingsOpen(false)} 
-             user={userProfile} 
+             user={safeUserProfile} 
              onUpdateProfile={(updated) => setUserProfile(updated)}
              onUpgradeClick={() => setIsPricingOpen(true)}
           />
       )}
 
-      {isPricingOpen && userProfile && (
+      {isPricingOpen && safeUserProfile && (
           <PricingModal 
              isOpen={true} 
              onClose={() => setIsPricingOpen(false)} 
-             user={userProfile} 
+             user={safeUserProfile} 
              onSuccess={handleUpgradeSuccess}
           />
       )}
