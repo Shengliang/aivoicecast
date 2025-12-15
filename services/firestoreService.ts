@@ -293,12 +293,18 @@ export async function getCreatorChannels(ownerId: string): Promise<Channel[]> {
 }
 
 export function subscribeToPublicChannels(onUpdate: (channels: Channel[]) => void, onError: (error: any) => void) {
+  // ROBUST QUERY STRATEGY:
+  // We removed .orderBy('createdAt', 'desc') from the listener to avoid "Missing Index" errors on new deployments.
+  // This allows the app to fetch data immediately without manual index creation in Firebase Console.
+  // Sorting is handled client-side in the callback.
   return db.collection(CHANNELS_COLLECTION)
     .where('visibility', '==', 'public')
-    .orderBy('createdAt', 'desc')
-    .limit(50)
+    .limit(100)
     .onSnapshot(snap => {
-      onUpdate(snap.docs.map(d => d.data() as Channel));
+      const data = snap.docs.map(d => d.data() as Channel);
+      // Client-side Sort
+      data.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+      onUpdate(data);
     }, onError);
 }
 
