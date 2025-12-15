@@ -19,6 +19,7 @@ import { FirebaseConfigModal } from './components/FirebaseConfigModal';
 import { DebugView } from './components/DebugView';
 import { CloudDebugView } from './components/CloudDebugView';
 import { PublicChannelInspector } from './components/PublicChannelInspector';
+import { MyChannelInspector } from './components/MyChannelInspector';
 import { FirestoreInspector } from './components/FirestoreInspector';
 import { StudioMenu } from './components/StudioMenu';
 import { ChannelSettingsModal } from './components/ChannelSettingsModal';
@@ -115,7 +116,7 @@ const UI_TEXT = {
   }
 };
 
-type ExtendedViewState = ViewState | 'firestore_debug';
+type ExtendedViewState = ViewState | 'firestore_debug' | 'my_channel_debug';
 
 const App: React.FC = () => {
   const [language, setLanguage] = useState<'en' | 'zh'>('en');
@@ -1021,6 +1022,7 @@ const App: React.FC = () => {
         {viewState === 'debug' && <DebugView onBack={() => setViewState('directory')} />}
         {viewState === 'cloud_debug' && <CloudDebugView onBack={() => setViewState('directory')} />}
         {viewState === 'public_debug' && <PublicChannelInspector onBack={() => setViewState('directory')} />}
+        {viewState === 'my_channel_debug' && <MyChannelInspector onBack={() => setViewState('directory')} />}
         {viewState === 'firestore_debug' && <FirestoreInspector onBack={() => setViewState('directory')} />}
       </div>
 

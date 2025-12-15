@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { UserProfile, SubscriptionTier, GlobalStats, Channel } from '../types';
 import { getUserProfile, getGlobalStats } from '../services/firestoreService';
-import { Sparkles, BarChart2, Plus, Wand2, Key, Database, Crown, Settings, Book, Users, LogIn, Terminal, Cloud, Globe, Mic, LayoutGrid } from 'lucide-react';
+import { Sparkles, BarChart2, Plus, Wand2, Key, Database, Crown, Settings, Book, Users, LogIn, Terminal, Cloud, Globe, Mic, LayoutGrid, HardDrive } from 'lucide-react';
 import { VOICES } from '../utils/initialData';
 import { PricingModal } from './PricingModal';
 
@@ -202,6 +202,9 @@ export const StudioMenu: React.FC<StudioMenuProps> = ({
                     </button>
                     <button onClick={() => { onNavigate('public_debug'); setIsUserMenuOpen(false); }} className="p-2 bg-slate-800 hover:bg-slate-700 rounded text-xs text-slate-400 hover:text-white flex flex-col items-center justify-center gap-1">
                         <Globe size={12}/> <span>Registry</span>
+                    </button>
+                    <button onClick={() => { onNavigate('my_channel_debug'); setIsUserMenuOpen(false); }} className="p-2 bg-slate-800 hover:bg-slate-700 rounded text-xs text-slate-400 hover:text-white flex flex-col items-center justify-center gap-1 col-span-2">
+                        <HardDrive size={12}/> <span>My Channel Inspector</span>
                     </button>
                 </div>
             </div>
