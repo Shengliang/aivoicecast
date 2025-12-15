@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { Channel, Group, Chapter } from '../types';
-import { X, Podcast, Sparkles, Lock, Globe, Users, FileText, Loader2, Clipboard, Crown } from 'lucide-react';
+import { X, Podcast, Sparkles, Lock, Globe, Users, FileText, Loader2, Clipboard, Crown, Calendar } from 'lucide-react';
 import { getUserGroups, getUserProfile } from '../services/firestoreService';
 import { generateChannelFromDocument } from '../services/channelGenerator';
 import { auth } from '../services/firebaseConfig';
@@ -10,9 +10,10 @@ interface CreateChannelModalProps {
   isOpen: boolean;
   onClose: () => void;
   onCreate: (channel: Channel) => void;
+  initialDate?: Date | null;
 }
 
-export const CreateChannelModal: React.FC<CreateChannelModalProps> = ({ isOpen, onClose, onCreate }) => {
+export const CreateChannelModal: React.FC<CreateChannelModalProps> = ({ isOpen, onClose, onCreate, initialDate }) => {
   const [activeTab, setActiveTab] = useState<'manual' | 'import'>('manual');
   
   // Manual Form State
@@ -20,6 +21,7 @@ export const CreateChannelModal: React.FC<CreateChannelModalProps> = ({ isOpen, 
   const [description, setDescription] = useState('');
   const [instruction, setInstruction] = useState('');
   const [voice, setVoice] = useState('Puck');
+  const [releaseDate, setReleaseDate] = useState<string>(''); // YYYY-MM-DD
   
   // Import State
   const [scriptText, setScriptText] = useState('');
@@ -48,6 +50,10 @@ export const CreateChannelModal: React.FC<CreateChannelModalProps> = ({ isOpen, 
       setActiveTab('manual');
       setVisibility('public'); // Default to public for free users
       
+      // Set initial date if provided, else today
+      const dateToUse = initialDate || new Date();
+      setReleaseDate(dateToUse.toISOString().split('T')[0]);
+      
       // Check Membership
       getUserProfile(currentUser.uid).then(profile => {
           const pro = profile?.subscriptionTier === 'pro';
@@ -56,7 +62,7 @@ export const CreateChannelModal: React.FC<CreateChannelModalProps> = ({ isOpen, 
           if (pro) setVisibility('private');
       });
     }
-  }, [isOpen, currentUser]);
+  }, [isOpen, currentUser, initialDate]);
 
   useEffect(() => {
     if (isOpen && currentUser && visibility === 'group') {
@@ -78,6 +84,12 @@ export const CreateChannelModal: React.FC<CreateChannelModalProps> = ({ isOpen, 
     // Generate an image URL that reflects the user's content
     const imagePrompt = encodeURIComponent(`${title} ${description} digital art masterpiece`);
     
+    // Calculate timestamp from releaseDate input (local time -> timestamp)
+    // We add current time to the date to keep it somewhat ordered within the day
+    const now = new Date();
+    const targetDate = new Date(releaseDate);
+    targetDate.setHours(now.getHours(), now.getMinutes(), now.getSeconds());
+    
     const newChannel: Channel = {
       id: channelId,
       title,
@@ -93,7 +105,7 @@ export const CreateChannelModal: React.FC<CreateChannelModalProps> = ({ isOpen, 
       comments: [],
       tags: ['Community', 'AI'],
       imageUrl: `https://image.pollinations.ai/prompt/${imagePrompt}?width=600&height=400&nologo=true`,
-      createdAt: Date.now(),
+      createdAt: targetDate.getTime(),
       chapters: importedChapters // Include imported curriculum
     };
     onCreate(newChannel);
@@ -190,6 +202,19 @@ export const CreateChannelModal: React.FC<CreateChannelModalProps> = ({ isOpen, 
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
                 />
+              </div>
+              
+              <div className="flex gap-4">
+                  <div className="flex-1">
+                    <label className="block text-sm font-medium text-slate-400 mb-1 flex items-center gap-2"><Calendar size={14}/> Release Date</label>
+                    <input 
+                        type="date"
+                        required
+                        className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 text-white focus:ring-2 focus:ring-indigo-500 outline-none"
+                        value={releaseDate}
+                        onChange={(e) => setReleaseDate(e.target.value)}
+                    />
+                  </div>
               </div>
               
               <div>

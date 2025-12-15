@@ -42,7 +42,7 @@ import { PricingModal } from './components/PricingModal';
 import { CareerCenter } from './components/CareerCenter';
 import { UserManual } from './components/UserManual'; 
 import { PrivacyPolicy } from './components/PrivacyPolicy';
-import { NotebookViewer } from './components/NotebookViewer'; // New Import
+import { NotebookViewer } from './components/NotebookViewer'; 
 
 import { auth, isFirebaseConfigured } from './services/firebaseConfig';
 import { 
@@ -56,7 +56,7 @@ import { HANDCRAFTED_CHANNELS, CATEGORY_STYLES, TOPIC_CATEGORIES } from './utils
 import { OFFLINE_CHANNEL_ID } from './utils/offlineContent';
 import { GEMINI_API_KEY } from './services/private_keys';
 
-const APP_VERSION = "v3.67.0"; // Bump version
+const APP_VERSION = "v3.68.1"; // Bump version
 
 const UI_TEXT = {
   en: {
@@ -155,6 +155,8 @@ const App: React.FC = () => {
   
   // Modals
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [createModalDate, setCreateModalDate] = useState<Date | null>(null); // For Calendar Scheduling
+  
   const [isVoiceCreateOpen, setIsVoiceCreateOpen] = useState(false);
   const [isApiKeyModalOpen, setIsApiKeyModalOpen] = useState(false);
   const [isSyncModalOpen, setIsSyncModalOpen] = useState(false);
@@ -358,6 +360,11 @@ const App: React.FC = () => {
         console.error("Failed to create channel:", error);
         alert(`Failed to create podcast: ${error.message}`);
     }
+  };
+
+  const handleSchedulePodcast = (date: Date) => {
+      setCreateModalDate(date);
+      setIsCreateModalOpen(true);
   };
 
   const handleUpdateChannel = async (updatedChannel: Channel) => {
@@ -934,6 +941,7 @@ const App: React.FC = () => {
                              onCommentClick={handleCommentClick}
                              onStartLiveSession={handleStartLiveSession}
                              onCreateChannel={handleCreateChannel}
+                             onSchedulePodcast={handleSchedulePodcast}
                           />
                        )}
 
@@ -1067,7 +1075,7 @@ const App: React.FC = () => {
 
       <MobileBottomNav />
 
-      <CreateChannelModal isOpen={isCreateModalOpen} onClose={() => setIsCreateModalOpen(false)} onCreate={handleCreateChannel} />
+      <CreateChannelModal isOpen={isCreateModalOpen} onClose={() => { setIsCreateModalOpen(false); setCreateModalDate(null); }} onCreate={handleCreateChannel} initialDate={createModalDate} />
       <VoiceCreateModal isOpen={isVoiceCreateOpen} onClose={() => setIsVoiceCreateOpen(false)} onCreate={handleCreateChannel} />
       <ApiKeyModal isOpen={isApiKeyModalOpen} onClose={() => setIsApiKeyModalOpen(false)} onKeyUpdate={setHasApiKey} />
       <DataSyncModal isOpen={isSyncModalOpen} onClose={() => setIsSyncModalOpen(false)} />

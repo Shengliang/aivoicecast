@@ -1,7 +1,7 @@
 
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { Channel, Booking, TodoItem } from '../types';
-import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, Clock, Briefcase, Plus, Video, CheckCircle, X, Users, Loader2, Mic, Play, Mail, Sparkles, ArrowLeft, Monitor, Filter, LayoutGrid, List, Languages, CloudSun, Wind, BookOpen, CheckSquare, Square, Trash2, StopCircle, Download, FileText, Check } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, Clock, Briefcase, Plus, Video, CheckCircle, X, Users, Loader2, Mic, Play, Mail, Sparkles, ArrowLeft, Monitor, Filter, LayoutGrid, List, Languages, CloudSun, Wind, BookOpen, CheckSquare, Square, Trash2, StopCircle, Download, FileText, Check, Podcast } from 'lucide-react';
 import { ChannelCard } from './ChannelCard';
 import { getUserBookings, createBooking, updateBookingInvite, saveSavedWord, getSavedWordForUser } from '../services/firestoreService';
 import { fetchLocalWeather, getWeatherDescription, WeatherData } from '../utils/weatherService';
@@ -22,6 +22,7 @@ interface CalendarViewProps {
   onCommentClick: (channel: Channel) => void;
   onStartLiveSession: (channel: Channel, context?: string, recordingEnabled?: boolean, bookingId?: string, videoEnabled?: boolean, cameraEnabled?: boolean) => void;
   onCreateChannel: (channel: Channel) => void;
+  onSchedulePodcast: (date: Date) => void;
 }
 
 const MONTHS = [
@@ -87,7 +88,8 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
   t,
   onCommentClick,
   onStartLiveSession,
-  onCreateChannel
+  onCreateChannel,
+  onSchedulePodcast
 }) => {
   const [displayDate, setDisplayDate] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
@@ -645,12 +647,22 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                           >
                               <Video size={20} />
                           </button>
-                          <button 
-                             onClick={() => setIsBookingModalOpen(true)}
-                             className="p-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg shadow-lg shadow-indigo-900/20 transition-all hover:scale-105" title="Book Session"
-                          >
-                              <Plus size={20} />
-                          </button>
+                          
+                          {/* Split Action Button for Creation */}
+                          <div className="flex bg-indigo-600 rounded-lg shadow-lg shadow-indigo-900/20 overflow-hidden">
+                              <button 
+                                 onClick={() => setIsBookingModalOpen(true)}
+                                 className="p-2 hover:bg-indigo-500 text-white transition-all border-r border-indigo-500" title="Book Session"
+                              >
+                                  <Users size={20} />
+                              </button>
+                              <button 
+                                 onClick={() => onSchedulePodcast(selectedDate)}
+                                 className="p-2 hover:bg-indigo-500 text-white transition-all" title="Schedule Podcast Episode"
+                              >
+                                  <Podcast size={20} />
+                              </button>
+                          </div>
                       </div>
                   </div>
               </div>
