@@ -1,7 +1,7 @@
 
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { Channel, Booking, TodoItem } from '../types';
-import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, Clock, Briefcase, Plus, Video, CheckCircle, X, Users, Loader2, Mic, Play, Mail, Sparkles, ArrowLeft, Monitor, Filter, LayoutGrid, List, Languages, CloudSun, Wind, BookOpen, CheckSquare, Square, Trash2, StopCircle, Download, FileText, Check, Podcast } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, Clock, Briefcase, Plus, Video, CheckCircle, X, Users, Loader2, Mic, Play, Mail, Sparkles, ArrowLeft, Monitor, Filter, LayoutGrid, List, Languages, CloudSun, Wind, BookOpen, CheckSquare, Square, Trash2, StopCircle, Download, FileText, Check, Podcast, RefreshCw } from 'lucide-react';
 import { ChannelCard } from './ChannelCard';
 import { getUserBookings, createBooking, updateBookingInvite, saveSavedWord, getSavedWordForUser } from '../services/firestoreService';
 import { fetchLocalWeather, getWeatherDescription, WeatherData } from '../utils/weatherService';
@@ -94,6 +94,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
   const [displayDate, setDisplayDate] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [bookings, setBookings] = useState<Booking[]>([]);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   
   // Rich Context State
   const [weather, setWeather] = useState<WeatherData | null>(null);
@@ -144,13 +145,24 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
   // Filter mentors
   const mentors = useMemo(() => channels.filter(c => c.likes > 20 || !Number.isNaN(Number(c.id)) === false), [channels]);
 
+  const loadData = async () => {
+    setIsRefreshing(true);
+    if (currentUser) {
+      try {
+        const data = await getUserBookings(currentUser.uid, currentUser.email);
+        setBookings(data.filter(b => b.status !== 'cancelled' && b.status !== 'rejected'));
+      } catch (error) {
+        console.error("Failed to load bookings", error);
+      }
+    }
+    // Simulate refresh delay for visual feedback
+    setTimeout(() => setIsRefreshing(false), 600);
+  };
+
   // Load initial data
   useEffect(() => {
+    loadData();
     if (currentUser) {
-      getUserBookings(currentUser.uid, currentUser.email)
-        .then(data => setBookings(data.filter(b => b.status !== 'cancelled' && b.status !== 'rejected')))
-        .catch(console.error);
-        
       const savedTodos = localStorage.getItem(`todos_${currentUser.uid}`);
       if (savedTodos) setTodos(JSON.parse(savedTodos));
     } else {
@@ -158,6 +170,11 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
         setTodos([]);
     }
   }, [currentUser, isBookingModalOpen]);
+
+  // Auto-Refresh on View or Filter Change
+  useEffect(() => {
+      loadData();
+  }, [viewMode, filterScope]);
 
   // Save Todos on change
   useEffect(() => {
@@ -380,24 +397,43 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
       let filteredTodos = [] as TodoItem[];
 
       const startDay = getStartOfDay(selectedDate);
-      const startWeek = getStartOfWeek(selectedDate);
-      const endWeek = getEndOfWeek(selectedDate);
       const startMonth = getStartOfMonth(displayDate); 
       const endMonth = getEndOfMonth(displayDate);
 
-      const filterItem = (itemDate: Date) => {
-          if (viewMode === 'day') return isSameDate(itemDate, selectedDate);
-          else if (viewMode === 'week') return itemDate >= startWeek && itemDate <= endWeek;
-          else return itemDate >= startMonth && itemDate <= endMonth;
+      const filterItem = (itemDate: Date, channel?: Channel) => {
+          if (viewMode === 'day') {
+              return isSameDate(itemDate, selectedDate);
+          }
+          else if (viewMode === 'week') {
+              // 2 Weeks Range Logic: 1 week before + 1 week after selected date
+              const twoWeeksStart = new Date(selectedDate);
+              twoWeeksStart.setDate(selectedDate.getDate() - 7);
+              twoWeeksStart.setHours(0,0,0,0);
+
+              const twoWeeksEnd = new Date(selectedDate);
+              twoWeeksEnd.setDate(selectedDate.getDate() + 7);
+              twoWeeksEnd.setHours(23,59,59,999);
+
+              return itemDate >= twoWeeksStart && itemDate <= twoWeeksEnd;
+          }
+          else {
+              return itemDate >= startMonth && itemDate <= endMonth;
+          }
       };
 
       // Filter Channels
       filteredChannels = channels.filter(c => {
           if (!c.createdAt) return false;
-          const dateMatch = filterItem(new Date(c.createdAt));
+          const itemDate = new Date(c.createdAt);
+          
+          // Timezone / Recency Check: Include if created within last hour regardless of strict date
+          const isRecent = (Date.now() - c.createdAt) < 3600000; // 1 hour
+          const dateMatch = filterItem(itemDate, c);
           
           if (filterScope === 'mine') {
-              return dateMatch && currentUser && c.ownerId === currentUser.uid;
+              const isOwner = currentUser && c.ownerId === currentUser.uid;
+              if (isOwner && isRecent) return true; // Always show recent creations
+              return isOwner && dateMatch;
           }
           return dateMatch;
       });
@@ -534,6 +570,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
         setBookDate('');
         setBookTime('');
         setBookTopic('');
+        loadData(); // Refresh bookings
     } catch(e) {
         alert("Booking failed.");
     } finally {
@@ -749,7 +786,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
 
             <div className="flex flex-col gap-2">
                 <button onClick={() => setViewMode('day')} className={`p-2 text-xs font-bold rounded-lg text-left pl-4 transition-all ${viewMode === 'day' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-400 hover:bg-slate-900'}`}>Daily Agenda</button>
-                <button onClick={() => setViewMode('week')} className={`p-2 text-xs font-bold rounded-lg text-left pl-4 transition-all ${viewMode === 'week' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-400 hover:bg-slate-900'}`}>Weekly Overview</button>
+                <button onClick={() => setViewMode('week')} className={`p-2 text-xs font-bold rounded-lg text-left pl-4 transition-all ${viewMode === 'week' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-400 hover:bg-slate-900'}`}>Two-Week View</button>
                 <button onClick={() => setViewMode('month')} className={`p-2 text-xs font-bold rounded-lg text-left pl-4 transition-all ${viewMode === 'month' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-400 hover:bg-slate-900'}`}>Monthly Grid</button>
             </div>
 
@@ -882,31 +919,42 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                 <Clock size={18} className="text-slate-500" />
                 <h3 className="text-lg font-bold text-white">
                     {viewMode === 'day' && `Agenda: ${selectedDate.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}`}
-                    {viewMode === 'week' && `Agenda: Week of ${getStartOfWeek(selectedDate).toLocaleDateString()}`}
+                    {viewMode === 'week' && `Agenda: 2-Week Window`}
                     {viewMode === 'month' && `Agenda: ${displayDate.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })}`}
                 </h3>
            </div>
            
-           {/* Pagination Controls for Month View */}
-           {viewMode === 'month' && totalPages > 1 && (
-               <div className="flex items-center gap-2">
-                   <button 
-                       onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
-                       disabled={currentPage === 1}
-                       className="p-1 rounded bg-slate-800 text-slate-400 disabled:opacity-30 hover:text-white"
-                   >
-                       <ChevronLeft size={16}/>
-                   </button>
-                   <span className="text-xs text-slate-500 font-mono">Page {currentPage} / {totalPages}</span>
-                   <button 
-                       onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
-                       disabled={currentPage === totalPages}
-                       className="p-1 rounded bg-slate-800 text-slate-400 disabled:opacity-30 hover:text-white"
-                   >
-                       <ChevronRight size={16}/>
-                   </button>
-               </div>
-           )}
+           <div className="flex items-center gap-3">
+               <button 
+                   onClick={loadData}
+                   disabled={isRefreshing}
+                   className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white rounded-lg text-xs font-bold transition-colors border border-slate-700"
+               >
+                   <RefreshCw size={14} className={isRefreshing ? 'animate-spin' : ''}/>
+                   <span>Refresh</span>
+               </button>
+
+               {/* Pagination Controls for Month View */}
+               {viewMode === 'month' && totalPages > 1 && (
+                   <div className="flex items-center gap-2">
+                       <button 
+                           onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
+                           disabled={currentPage === 1}
+                           className="p-1 rounded bg-slate-800 text-slate-400 disabled:opacity-30 hover:text-white"
+                       >
+                           <ChevronLeft size={16}/>
+                       </button>
+                       <span className="text-xs text-slate-500 font-mono">Page {currentPage} / {totalPages}</span>
+                       <button 
+                           onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
+                           disabled={currentPage === totalPages}
+                           className="p-1 rounded bg-slate-800 text-slate-400 disabled:opacity-30 hover:text-white"
+                       >
+                           <ChevronRight size={16}/>
+                       </button>
+                   </div>
+               )}
+           </div>
         </div>
 
         {/* Bookings List */}

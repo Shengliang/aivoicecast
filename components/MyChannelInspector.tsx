@@ -1,8 +1,8 @@
 
 import React, { useState, useEffect } from 'react';
-import { getUserChannels, deleteUserChannel } from '../utils/db';
+import { getUserChannels, deleteUserChannel, saveUserChannel } from '../utils/db';
 import { Channel } from '../types';
-import { ArrowLeft, RefreshCw, Trash2, HardDrive } from 'lucide-react';
+import { ArrowLeft, RefreshCw, Trash2, HardDrive, Edit, Calendar } from 'lucide-react';
 
 interface MyChannelInspectorProps {
   onBack: () => void;
@@ -39,6 +39,31 @@ export const MyChannelInspector: React.FC<MyChannelInspectorProps> = ({ onBack }
     } catch (e) {
       alert("Failed to delete channel.");
     }
+  };
+
+  const handleEditDate = async (channel: Channel) => {
+      // Create a default string in local time for the input
+      const current = channel.createdAt ? new Date(channel.createdAt) : new Date();
+      // Format YYYY-MM-DDTHH:mm for datetime-local input, roughly
+      const pad = (n: number) => n < 10 ? '0' + n : n;
+      const defaultVal = `${current.getFullYear()}-${pad(current.getMonth() + 1)}-${pad(current.getDate())}T${pad(current.getHours())}:${pad(current.getMinutes())}`;
+      
+      const newVal = prompt("Enter Creation Date (YYYY-MM-DDTHH:mm):", defaultVal);
+      if (newVal) {
+          const timestamp = new Date(newVal).getTime();
+          if (isNaN(timestamp)) {
+              alert("Invalid date format.");
+              return;
+          }
+          
+          const updatedChannel = { ...channel, createdAt: timestamp };
+          try {
+              await saveUserChannel(updatedChannel);
+              setChannels(prev => prev.map(c => c.id === channel.id ? updatedChannel : c).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)));
+          } catch(e) {
+              alert("Failed to update date.");
+          }
+      }
   };
 
   return (
@@ -100,7 +125,18 @@ export const MyChannelInspector: React.FC<MyChannelInspectorProps> = ({ onBack }
                          </span>
                       </td>
                       <td className="px-6 py-4 font-mono text-xs">
-                         {ch.createdAt ? new Date(ch.createdAt).toLocaleString() : 'N/A'}
+                         <div className="flex items-center gap-2">
+                             <span className={!ch.createdAt ? "text-red-400 font-bold" : ""}>
+                                 {ch.createdAt ? new Date(ch.createdAt).toLocaleString() : 'N/A'}
+                             </span>
+                             <button 
+                                onClick={() => handleEditDate(ch)}
+                                className="p-1 text-indigo-400 hover:text-white hover:bg-slate-700 rounded"
+                                title="Edit Date"
+                             >
+                                 <Edit size={12} />
+                             </button>
+                         </div>
                       </td>
                       <td className="px-6 py-4 font-mono text-xs truncate max-w-[100px]" title={ch.id}>
                          {ch.id}

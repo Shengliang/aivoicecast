@@ -130,6 +130,7 @@ export async function generateChannelFromPrompt(
       imageUrl: `https://image.pollinations.ai/prompt/${encodeURIComponent(parsed.imagePrompt || parsed.title)}?width=600&height=400&nologo=true`,
       welcomeMessage: parsed.welcomeMessage,
       starterPrompts: parsed.starterPrompts,
+      createdAt: Date.now(), // Ensure creation time is set
       chapters: parsed.chapters?.map((ch: any, cIdx: number) => ({
         id: `ch-${channelId}-${cIdx}`,
         title: ch.title,
@@ -328,6 +329,7 @@ export async function generateChannelFromDocument(
       imageUrl: `https://image.pollinations.ai/prompt/${encodeURIComponent(parsed.imagePrompt || parsed.title)}?width=600&height=400&nologo=true`,
       welcomeMessage: parsed.welcomeMessage,
       starterPrompts: parsed.starterPrompts,
+      createdAt: Date.now(), // Ensure creation time is set
       chapters: parsed.chapters?.map((ch: any, cIdx: number) => ({
         id: `ch-${channelId}-${cIdx}`,
         title: ch.title,

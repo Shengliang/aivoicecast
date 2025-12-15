@@ -57,7 +57,7 @@ import { HANDCRAFTED_CHANNELS, CATEGORY_STYLES, TOPIC_CATEGORIES } from './utils
 import { OFFLINE_CHANNEL_ID } from './utils/offlineContent';
 import { GEMINI_API_KEY } from './services/private_keys';
 
-const APP_VERSION = "v3.68.2"; // Bump version
+const APP_VERSION = "v3.68.3"; // Bump version
 
 const UI_TEXT = {
   en: {
@@ -348,18 +348,24 @@ const App: React.FC = () => {
 
   const handleCreateChannel = async (newChannel: Channel) => {
     try {
+        // Ensure createdAt is present, fallback to now if missing
+        const channelToSave = {
+            ...newChannel,
+            createdAt: newChannel.createdAt || Date.now()
+        };
+
         // Always save to userChannels state so it appears in "My Podcast" filter and persists locally immediately
         setUserChannels(prev => {
-             const exists = prev.find(c => c.id === newChannel.id);
-             if (exists) return prev.map(c => c.id === newChannel.id ? newChannel : c);
-             return [newChannel, ...prev];
+             const exists = prev.find(c => c.id === channelToSave.id);
+             if (exists) return prev.map(c => c.id === channelToSave.id ? channelToSave : c);
+             return [channelToSave, ...prev];
         });
         
         // Also save to IndexedDB for "My Channels" persistence even if public
-        await saveUserChannel(newChannel);
+        await saveUserChannel(channelToSave);
         
-        if (newChannel.visibility === 'public' || newChannel.visibility === 'group') {
-            await publishChannelToFirestore(newChannel);
+        if (channelToSave.visibility === 'public' || channelToSave.visibility === 'group') {
+            await publishChannelToFirestore(channelToSave);
         }
     } catch (error: any) {
         console.error("Failed to create channel:", error);
