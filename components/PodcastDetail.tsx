@@ -80,10 +80,10 @@ const UI_TEXT = {
     reenableNeural: "Re-enable Neural Audio (Try Gemini API Again)",
     enableNeural: "Enable Neural Audio (Gemini API)",
     jump: "Double-click to play",
-    preGenAudio: "Generate Audio",
+    preGenAudio: "Stream Audio",
     preGenDesc: "Generate high-quality Neural Audio for this lecture (Pro Member Only).",
     communityInsights: "Community Discussions",
-    genAudio: "Generate Audio",
+    genAudio: "Stream Audio",
     genComplete: "Audio Ready!",
     errorPlayback: "Playback Error",
     resumeGen: "Resume Generation",
@@ -142,10 +142,10 @@ const UI_TEXT = {
     reenableNeural: "重新启用神经语音 (尝试 Gemini API)",
     enableNeural: "启用神经语音 (Gemini API)",
     jump: "双击播放",
-    preGenAudio: "生成音频",
+    preGenAudio: "流式播放",
     preGenDesc: "生成高质量神经语音（仅限Pro会员）。",
     communityInsights: "社区讨论",
-    genAudio: "生成音频",
+    genAudio: "流式播放",
     genComplete: "音频就绪！",
     errorPlayback: "播放错误",
     resumeGen: "恢复生成",
@@ -341,31 +341,19 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
   }, []);
 
   const unlockAudioContext = () => {
-      // iOS Safari Workaround:
-      // Simply resuming AudioContext isn't enough to bypass the hardware mute switch.
-      // We must play an HTML5 audio element to force the audio session category to 'Playback'.
-      
+      // iOS Safari Workaround
       const ctx = getAudioContext();
       if (ctx.state === 'suspended') ctx.resume().catch(console.error);
-      
       try {
-          // 1. Play a dummy buffer on Web Audio API (Legacy method, still good for state)
           const buffer = ctx.createBuffer(1, 1, 22050);
           const source = ctx.createBufferSource();
           source.buffer = buffer;
           source.connect(ctx.destination);
           source.start(0);
-
-          // 2. Play a silent HTML5 Audio element (Critical for iOS Mute Switch bypass)
           const audio = new Audio();
           audio.src = 'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA';
-          audio.volume = 0.01; // Must have volume > 0 to trigger session change
-          audio.play().then(() => {
-              // Once played, pause to save resources, the session is unlocked
-              setTimeout(() => audio.pause(), 100);
-          }).catch(e => {
-              // Ignore auto-play errors if interaction wasn't fast enough
-          });
+          audio.volume = 0.01; 
+          audio.play().then(() => setTimeout(() => audio.pause(), 100)).catch(e => {});
       } catch(e) {}
   };
 
@@ -460,7 +448,7 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
   const handleGenerateAudio = async () => {
     if (!activeLecture) return;
     
-    // Safety: Check Key for current provider
+    // Validate Keys
     if (voiceProvider === 'gemini' && !hasGeminiKey) { alert("Gemini API Key missing."); setVoiceProvider('system'); return; }
     if (voiceProvider === 'openai' && !hasOpenAiKey) { alert("OpenAI API Key missing."); setVoiceProvider('system'); return; }
 
@@ -482,45 +470,19 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
             return;
         }
         
-        // Increment immediately
         localStorage.setItem(usageKey, (usageCount + 1).toString());
     }
 
+    // STREAMING MODE: Don't batch download. Just set ready and play.
     setIsGenerating(true);
-    const total = activeLecture.sections.length;
-    const ctx = getAudioContext();
-    if (ctx.state === 'suspended') { try { await ctx.resume(); } catch(e) {} }
-
-    for (let i = 0; i < total; i++) {
-        setGenerationProgress({ current: i + 1, total });
-        const section = activeLecture.sections[i];
-        const voice = section.speaker === 'Teacher' ? teacherVoice : studentVoice;
-        const result = await synthesizeSpeech(section.text, voice, ctx);
-        
-        if (result.errorType === 'quota') {
-            alert(t.quotaError);
-            setVoiceProvider('system');
-            setIsGenerating(false);
-            setGenerationProgress(null);
-            return;
-        }
-        if (result.errorType === 'auth') {
-            alert(`Auth Error: ${result.errorMessage}. Switching to System.`);
-            setVoiceProvider('system');
-            setIsGenerating(false);
-            return;
-        }
-        if (result.errorType === 'network' || result.errorType === 'unknown') {
-             if (!confirm(`${t.networkError}\n\nDetails: ${result.errorMessage || 'Unknown Error'}`)) {
-                 setIsGenerating(false); setGenerationProgress(null); return;
-             }
-             i--;
-        }
-    }
     
-    setIsGenerating(false);
-    setGenerationProgress(null);
-    setIsAudioReady(true);
+    // Simulate a brief "preparing" state
+    setTimeout(() => {
+        setIsGenerating(false);
+        setIsAudioReady(true);
+        // Force start playback
+        togglePlayback();
+    }, 500);
   };
 
   const handleRegenerateLecture = async () => {
@@ -576,16 +538,41 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
           while (nextScheduleTimeRef.current < ctx.currentTime + lookahead && activeLecture) {
              const scheduleIdx = schedulingCursorRef.current; 
              if (playSessionIdRef.current !== sessionId) return; 
+             
              if (scheduleIdx >= activeLecture.sections.length) {
-                setTimeout(() => { if (isPlayingRef.current && playSessionIdRef.current === sessionId) { stopAudio(); setCurrentSectionIndex(0); } }, (nextScheduleTimeRef.current - ctx.currentTime) * 1000);
+                // End of lecture
+                setTimeout(() => { 
+                    if (isPlayingRef.current && playSessionIdRef.current === sessionId) { 
+                        stopAudio(); 
+                        setCurrentSectionIndex(0); 
+                    } 
+                }, (nextScheduleTimeRef.current - ctx.currentTime) * 1000);
                 return;
              }
+
              const section = activeLecture.sections[scheduleIdx];
-             const voice = section.speaker === 'Teacher' ? teacherVoice : studentVoice;
+             
+             // VOICE PROVIDER MAPPING BUG FIX: 
+             // Ensure we use the correct voice for the current provider.
+             // If provider is OpenAI, map 'Puck' (Gemini) to 'Alloy' (OpenAI) to avoid API errors.
+             let targetVoice = section.speaker === 'Teacher' ? teacherVoice : studentVoice;
+             
+             if (voiceProvider === 'openai') {
+                 if (!OPENAI_VOICES.includes(targetVoice)) {
+                     targetVoice = section.speaker === 'Teacher' ? 'Alloy' : 'Echo';
+                 }
+             } else if (voiceProvider === 'gemini') {
+                 if (!GEMINI_VOICES.includes(targetVoice)) {
+                     targetVoice = section.speaker === 'Teacher' ? 'Puck' : 'Zephyr';
+                 }
+             }
+
              try {
                 setIsBuffering(true);
-                const result = await synthesizeSpeech(section.text, voice, ctx);
+                // Fetch current chunk
+                const result = await synthesizeSpeech(section.text, targetVoice, ctx);
                 setIsBuffering(false);
+                
                 if (playSessionIdRef.current !== sessionId) return; 
                 
                 if (result.buffer) {
@@ -595,6 +582,8 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
                    activeSourcesRef.current.push(source);
                    source.onended = () => { activeSourcesRef.current = activeSourcesRef.current.filter(s => s !== source); };
                    source.start(nextScheduleTimeRef.current);
+                   
+                   // UI Sync Timer
                    const timerId = window.setTimeout(() => {
                        if (isPlayingRef.current && playSessionIdRef.current === sessionId) {
                            setCurrentSectionIndex(scheduleIdx); 
@@ -602,9 +591,25 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
                        }
                    }, Math.max(0, (nextScheduleTimeRef.current - ctx.currentTime) * 1000));
                    uiTimersRef.current.push(timerId); 
+                   
                    nextScheduleTimeRef.current += result.buffer.duration;
                    schedulingCursorRef.current++; 
-                   break; 
+                   
+                   // PREFETCH NEXT CHUNK LOGIC
+                   if (scheduleIdx + 1 < activeLecture.sections.length) {
+                       const nextSec = activeLecture.sections[scheduleIdx + 1];
+                       let nextVoice = nextSec.speaker === 'Teacher' ? teacherVoice : studentVoice;
+                       // Apply same voice mapping fix for prefetch
+                       if (voiceProvider === 'openai' && !OPENAI_VOICES.includes(nextVoice)) {
+                           nextVoice = nextSec.speaker === 'Teacher' ? 'Alloy' : 'Echo';
+                       } else if (voiceProvider === 'gemini' && !GEMINI_VOICES.includes(nextVoice)) {
+                           nextVoice = nextSec.speaker === 'Teacher' ? 'Puck' : 'Zephyr';
+                       }
+                       // Fire and forget prefetch to cache
+                       synthesizeSpeech(nextSec.text, nextVoice, ctx).catch(console.warn);
+                   }
+
+                   break; // Process one at a time for the loop, but schedule next iteration quickly
                 } else {
                    console.warn("TTS Failed. Switching to System Voice fallback.");
                    setVoiceProvider('system');
@@ -905,7 +910,7 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
                         <div className="flex flex-col items-center gap-2">
                             {voiceProvider !== 'system' && !isAudioReady && !isPlaying ? (
                                 <button onClick={handleGenerateAudio} disabled={isGenerating} className="w-16 h-16 rounded-full flex items-center justify-center transition-all shadow-lg bg-indigo-600 text-white hover:bg-indigo-500 hover:scale-105 disabled:opacity-50 disabled:scale-100" title={t.preGenDesc}>
-                                    {isGenerating ? <div className="flex flex-col items-center"><Loader2 className="animate-spin mb-1" size={20} /><span className="text-[10px] font-bold">{generationProgress ? `${Math.round((generationProgress.current / generationProgress.total) * 100)}%` : '...'}</span></div> : <Zap fill="currentColor" size={28} />}
+                                    {isGenerating ? <div className="flex flex-col items-center"><Loader2 className="animate-spin mb-1" size={20} /><span className="text-[10px] font-bold">...</span></div> : <Zap fill="currentColor" size={28} />}
                                 </button>
                             ) : (
                                 <button onClick={togglePlayback} className={`w-16 h-16 rounded-full flex items-center justify-center transition-all shadow-lg ${isPlaying ? 'bg-slate-800 text-red-400 hover:bg-slate-700' : 'bg-emerald-600 text-white hover:bg-emerald-500 hover:scale-105'}`}>{isPlaying ? (isBuffering ? <Loader2 className="animate-spin" size={28}/> : <Pause fill="currentColor" size={28} />) : <Play fill="currentColor" size={28} />}</button>
