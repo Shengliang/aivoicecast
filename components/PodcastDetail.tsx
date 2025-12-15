@@ -743,7 +743,7 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
   }, [channel, language]);
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col pb-24 relative overflow-hidden">
+    <div className="h-full bg-slate-950 text-slate-100 flex flex-col relative overflow-y-auto scrollbar-thin scrollbar-thumb-slate-800 pb-24">
       
       {/* Header */}
       <div className="relative h-64 md:h-80 w-full flex-shrink-0">
