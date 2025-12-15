@@ -4,7 +4,7 @@ import { Channel, Group } from '../types';
 import { generateChannelFromPrompt } from '../services/channelGenerator';
 import { auth } from '../services/firebaseConfig';
 import { getUserGroups } from '../services/firestoreService';
-import { Mic, MicOff, Sparkles, X, Loader2, Check, Lock, Globe, Users, AlertCircle, Keyboard } from 'lucide-react';
+import { Mic, MicOff, Sparkles, X, Loader2, Check, Lock, Globe, Users, AlertCircle, Keyboard, Send } from 'lucide-react';
 
 interface VoiceCreateModalProps {
   isOpen: boolean;
@@ -34,7 +34,7 @@ export const VoiceCreateModal: React.FC<VoiceCreateModalProps> = ({ isOpen, onCl
     if (isOpen) {
         if (!SpeechRecognition) {
             setIsSupported(false);
-            setError("Voice input is not supported in this browser. Please use Chrome, Edge, or Safari.");
+            // Don't show error immediately, just default to text mode UI
             return;
         }
 
@@ -59,19 +59,25 @@ export const VoiceCreateModal: React.FC<VoiceCreateModalProps> = ({ isOpen, onCl
             recognitionRef.current.onerror = (event: any) => {
                 console.error("Speech recognition error", event.error);
                 if (event.error === 'not-allowed') {
-                    setError("Microphone access denied. Please enable permissions.");
+                    setError("Microphone access denied. Check settings.");
+                    setIsListening(false);
                 } else if (event.error === 'no-speech') {
                     // Ignore no-speech errors, just stop listening visually
                     return; 
                 } else if (event.error === 'service-not-allowed') {
-                    setError("Voice service unavailable on this device. Please type your idea.");
-                    setIsSupported(false); // Disable mic button to prevent frustration
+                    // Critical iOS/Mobile Chrome fix:
+                    // This error means the browser engine refuses to provide speech-to-text.
+                    // We must fallback to text mode immediately.
+                    setError("Voice dictation is unavailable in this browser. Please type your idea.");
+                    setIsSupported(false); 
+                    setIsListening(false);
                 } else if (event.error === 'network') {
-                    setError("Network error. Voice recognition requires internet connection.");
+                    setError("Network error. Voice recognition requires internet.");
+                    setIsListening(false);
                 } else {
-                    setError("Voice recognition error: " + event.error);
+                    setError("Voice error: " + event.error);
+                    setIsListening(false);
                 }
-                setIsListening(false);
             };
             
             recognitionRef.current.onend = () => {
@@ -81,7 +87,6 @@ export const VoiceCreateModal: React.FC<VoiceCreateModalProps> = ({ isOpen, onCl
         } catch (e) {
             console.error("Speech Init Failed", e);
             setIsSupported(false);
-            setError("Failed to initialize voice engine.");
         }
     }
     
@@ -91,7 +96,7 @@ export const VoiceCreateModal: React.FC<VoiceCreateModalProps> = ({ isOpen, onCl
         setGeneratedChannel(null);
         setVisibility('private');
         setSelectedGroupId('');
-        if (isSupported) setError(null); // Clear error if supported
+        if (isSupported) setError(null); 
     }
     
     return () => {
@@ -118,21 +123,14 @@ export const VoiceCreateModal: React.FC<VoiceCreateModalProps> = ({ isOpen, onCl
       try { recognitionRef.current?.stop(); } catch(e) {}
       setIsListening(false);
     } else {
-      // Clear previous transcripts only if empty to allow appending? 
-      // Actually the previous logic cleared it. Let's keep it to allow new thought.
-      // But if user typed something, maybe we append? The previous logic cleared it.
-      // Let's stick to clearing for a "fresh start" feeling unless we want append mode.
-      // Given the UI is "Magic Voice Creator", usually you speak one big prompt.
-      // But clearing might be annoying if they pause. 
-      // I will remove setTranscript('') to allow appending/pausing.
-      
       setError(null);
       try {
           recognitionRef.current?.start();
           setIsListening(true);
       } catch(e) {
           console.error("Start failed", e);
-          setError("Could not start microphone. Try refreshing.");
+          setError("Could not start microphone.");
+          setIsSupported(false); // Assume broken if start throws immediately
       }
     }
   };
@@ -192,10 +190,10 @@ export const VoiceCreateModal: React.FC<VoiceCreateModalProps> = ({ isOpen, onCl
       <div className="relative bg-slate-900 border border-slate-700 rounded-3xl w-full max-w-lg shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
         
         {/* Header */}
-        <div className="p-6 border-b border-slate-800 flex justify-between items-center bg-slate-900">
+        <div className="p-6 border-b border-slate-800 flex justify-between items-center bg-slate-900 shrink-0">
           <h2 className="text-xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-pink-400 to-indigo-400 flex items-center space-x-2">
             <Sparkles className="text-pink-400 w-5 h-5" />
-            <span>Magic Voice Creator</span>
+            <span>Magic Creator</span>
           </h2>
           <button onClick={handleClose} className="text-slate-400 hover:text-white transition-colors">
             <X size={24} />
@@ -208,12 +206,14 @@ export const VoiceCreateModal: React.FC<VoiceCreateModalProps> = ({ isOpen, onCl
           {!generatedChannel && !isProcessing && (
             <>
               <div className="text-center space-y-2">
-                <p className="text-lg text-white font-medium">What do you want to learn about?</p>
+                <p className="text-lg text-white font-medium">
+                    {isSupported ? "Speak your idea to life." : "Type your idea below."}
+                </p>
                 <p className="text-sm text-slate-400">"I want a podcast about quantum physics for beginners..."</p>
               </div>
 
-              {/* Mic Button */}
-              {isSupported ? (
+              {/* Mic Button - Only show if supported */}
+              {isSupported && (
                   <button
                     onClick={toggleListening}
                     className={`w-24 h-24 rounded-full flex items-center justify-center transition-all duration-300 shadow-2xl ${
@@ -224,28 +224,32 @@ export const VoiceCreateModal: React.FC<VoiceCreateModalProps> = ({ isOpen, onCl
                   >
                     {isListening ? <MicOff size={40} className="text-white" /> : <Mic size={40} className="text-white" />}
                   </button>
-              ) : (
-                  <div className="w-24 h-24 rounded-full bg-slate-800 flex items-center justify-center text-slate-500 border border-slate-700">
-                      <Keyboard size={40} />
-                  </div>
               )}
 
-              <div className="w-full">
+              {/* Text Input - Always available, but highlighted if mic not supported */}
+              <div className="w-full relative">
                 <textarea
+                  autoFocus={!isSupported}
                   value={transcript}
                   onChange={(e) => setTranscript(e.target.value)}
-                  placeholder={isSupported ? (isListening ? "Listening..." : "Tap mic or type here...") : "Type your idea here..."}
-                  className="w-full bg-slate-800/50 border border-slate-700 rounded-xl p-4 text-white placeholder-slate-500 focus:ring-2 focus:ring-indigo-500 outline-none resize-none text-center"
-                  rows={3}
+                  placeholder={isSupported ? (isListening ? "Listening..." : "Or type here...") : "Describe your podcast topic here..."}
+                  className={`w-full bg-slate-800/50 border rounded-xl p-4 text-white placeholder-slate-500 focus:outline-none resize-none text-center transition-all ${isSupported ? 'border-slate-700 focus:ring-2 focus:ring-indigo-500' : 'border-indigo-500 ring-1 ring-indigo-500/50 h-32'}`}
+                  rows={isSupported ? 3 : 5}
                 />
+                {!isSupported && (
+                    <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-slate-900 px-2 text-xs text-indigo-400 font-bold uppercase tracking-wider">
+                        Text Mode
+                    </div>
+                )}
               </div>
 
               <button
                 onClick={handleGenerate}
                 disabled={!transcript.trim()}
-                className="w-full py-4 bg-gradient-to-r from-indigo-600 to-purple-600 rounded-xl font-bold text-white shadow-lg disabled:opacity-50 disabled:cursor-not-allowed hover:scale-[1.02] transition-transform"
+                className="w-full py-4 bg-gradient-to-r from-indigo-600 to-purple-600 rounded-xl font-bold text-white shadow-lg disabled:opacity-50 disabled:cursor-not-allowed hover:scale-[1.02] transition-transform flex items-center justify-center gap-2"
               >
-                Generate Podcast
+                {isSupported ? <Sparkles size={18} /> : <Send size={18} />}
+                <span>Generate Podcast</span>
               </button>
             </>
           )}
@@ -312,7 +316,7 @@ export const VoiceCreateModal: React.FC<VoiceCreateModalProps> = ({ isOpen, onCl
           )}
 
           {error && (
-            <div className="bg-red-900/20 text-red-300 p-4 rounded-xl text-center w-full flex items-center justify-center gap-2">
+            <div className="bg-red-900/20 text-red-300 p-4 rounded-xl text-center w-full flex items-center justify-center gap-2 border border-red-900/50">
               <AlertCircle size={16} />
               <span className="text-xs">{error}</span>
             </div>
