@@ -1,3 +1,4 @@
+
 import { 
   Channel, 
   GeneratedLecture, 
@@ -52,6 +53,24 @@ const ACTIVITY_LOGS_COLLECTION = 'activity_logs';
 
 // Helper to remove undefined fields which Firestore rejects
 const sanitizeData = (data: any) => JSON.parse(JSON.stringify(data));
+
+// Helper to normalize timestamp from Firestore (which might be Timestamp object or number or missing)
+const normalizeCreatedAt = (val: any): number => {
+    if (typeof val === 'number') return val;
+    if (val && typeof val.toMillis === 'function') return val.toMillis();
+    // If missing or invalid, default to Date.now() so it shows up at top of lists
+    return Date.now();
+};
+
+const mapChannelDoc = (doc: firebase.firestore.QueryDocumentSnapshot): Channel => {
+    const data = doc.data();
+    return {
+        id: doc.id,
+        ...data,
+        // Ensure createdAt is always a number
+        createdAt: normalizeCreatedAt(data.createdAt)
+    } as Channel;
+};
 
 // --- User & Profile ---
 
@@ -251,8 +270,7 @@ export async function getPublicChannels(): Promise<Channel[]> {
       .orderBy('createdAt', 'desc')
       .limit(50)
       .get();
-    // Map with ID explicit spread to ensure ID presence
-    return snap.docs.map(d => ({ id: d.id, ...d.data() } as Channel));
+    return snap.docs.map(mapChannelDoc);
   } catch (e: any) {
     // Fallback: If index is missing, query without sort and sort in memory
     if (e.code === 'failed-precondition' || e.message?.includes('index')) {
@@ -261,7 +279,7 @@ export async function getPublicChannels(): Promise<Channel[]> {
           .where('visibility', 'in', ['public', 'group'])
           .limit(50)
           .get();
-        const data = snap.docs.map(d => ({ id: d.id, ...d.data() } as Channel));
+        const data = snap.docs.map(mapChannelDoc);
         // Manual Sort
         return data.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
     }
@@ -278,7 +296,7 @@ export async function getCreatorChannels(ownerId: string): Promise<Channel[]> {
       .orderBy('createdAt', 'desc')
       .limit(21) // 3 columns * 7 rows typical max
       .get();
-    return snap.docs.map(d => ({ id: d.id, ...d.data() } as Channel));
+    return snap.docs.map(mapChannelDoc);
   } catch (e: any) {
     // Fallback if index missing
     if (e.code === 'failed-precondition' || e.message?.includes('index')) {
@@ -287,7 +305,7 @@ export async function getCreatorChannels(ownerId: string): Promise<Channel[]> {
           .where('visibility', '==', 'public')
           .limit(50)
           .get();
-        const data = snap.docs.map(d => ({ id: d.id, ...d.data() } as Channel));
+        const data = snap.docs.map(mapChannelDoc);
         return data.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)).slice(0, 21);
     }
     console.error("Error fetching creator channels:", e);
@@ -296,19 +314,28 @@ export async function getCreatorChannels(ownerId: string): Promise<Channel[]> {
 }
 
 export function subscribeToPublicChannels(onUpdate: (channels: Channel[]) => void, onError: (error: any) => void) {
-  // ROBUST QUERY STRATEGY:
-  // We removed .orderBy('createdAt', 'desc') from the listener to avoid "Missing Index" errors on new deployments.
-  // This allows the app to fetch data immediately without manual index creation in Firebase Console.
-  // Sorting is handled client-side in the callback.
+  // Public Feed: Shows Public + Group channels (user group filtering handled by security rules or client)
   return db.collection(CHANNELS_COLLECTION)
     .where('visibility', '==', 'public')
     .limit(100)
     .onSnapshot(snap => {
-      const data = snap.docs.map(d => ({ id: d.id, ...d.data() } as Channel));
+      const data = snap.docs.map(mapChannelDoc);
       // Client-side Sort
       data.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
       onUpdate(data);
     }, onError);
+}
+
+// NEW: Admin subscription that fetches EVERYTHING (no visibility filter)
+export function subscribeToAllChannelsAdmin(onUpdate: (channels: Channel[]) => void, onError: (error: any) => void) {
+    return db.collection(CHANNELS_COLLECTION)
+      .limit(500) // Increased limit for admin overview
+      .onSnapshot(snap => {
+        const data = snap.docs.map(mapChannelDoc);
+        // Sort by created desc
+        data.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+        onUpdate(data);
+      }, onError);
 }
 
 export function subscribeToChannelStats(channelId: string, onUpdate: (stats: ChannelStats) => void, defaultStats?: ChannelStats) {
@@ -336,7 +363,7 @@ export async function getGroupChannels(groupIds: string[]): Promise<Channel[]> {
         .where('visibility', '==', 'group')
         .where('groupId', 'in', chunk)
         .get();
-      results = [...results, ...snap.docs.map(d => ({ id: d.id, ...d.data() } as Channel))];
+      results = [...results, ...snap.docs.map(mapChannelDoc)];
   }
   return results;
 }
@@ -411,7 +438,7 @@ export async function getChannelsByIds(ids: string[]): Promise<Channel[]> {
     let results: Channel[] = [];
     for (const chunk of chunks) {
         const snap = await db.collection(CHANNELS_COLLECTION).where(firebase.firestore.FieldPath.documentId(), 'in', chunk).get();
-        results = [...results, ...snap.docs.map(d => ({ id: d.id, ...d.data() } as Channel))];
+        results = [...results, ...snap.docs.map(mapChannelDoc)];
     }
     return results;
 }

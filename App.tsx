@@ -50,14 +50,14 @@ import {
   voteChannel, publishChannelToFirestore, updateCommentInChannel, 
   deleteCommentFromChannel, addCommentToChannel, getPublicChannels, 
   subscribeToPublicChannels, getGroupChannels, getUserProfile,
-  setupSubscriptionListener, createOrGetDMChannel
+  setupSubscriptionListener, createOrGetDMChannel, subscribeToAllChannelsAdmin
 } from './services/firestoreService';
 import { getUserChannels, saveUserChannel, deleteUserChannel } from './utils/db';
 import { HANDCRAFTED_CHANNELS, CATEGORY_STYLES, TOPIC_CATEGORIES } from './utils/initialData';
 import { OFFLINE_CHANNEL_ID } from './utils/offlineContent';
 import { GEMINI_API_KEY } from './services/private_keys';
 
-const APP_VERSION = "v3.68.3"; // Bump version
+const APP_VERSION = "v3.68.4"; // Bump version
 
 const UI_TEXT = {
   en: {
@@ -273,6 +273,16 @@ const App: React.FC = () => {
 
   useEffect(() => {
     if (isFirebaseConfigured && currentUser) {
+        
+        // ADMIN OVERRIDE: If super admin, fetch everything regardless of visibility
+        if (currentUser.email === 'shengliang.song@gmail.com') {
+             const unsubAdmin = subscribeToAllChannelsAdmin(
+                 (data) => setPublicChannels(data), 
+                 (err) => console.error("Admin sub error", err)
+             );
+             return () => unsubAdmin();
+        }
+
         const unsubPublic = subscribeToPublicChannels(
           (data) => setPublicChannels(data),
           (err: any) => {
@@ -867,6 +877,7 @@ const App: React.FC = () => {
                    onOpenUserGuide={() => setViewState('user_guide')}
                    onNavigate={(view: any) => setViewState(view)}
                    t={t}
+                   className="fixed bottom-24 right-4 z-50 md:hidden shadow-2xl border-slate-700"
                    channels={channels}
                 />
                 )}
