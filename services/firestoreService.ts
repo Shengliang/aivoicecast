@@ -50,6 +50,9 @@ const STATS_COLLECTION = 'stats';
 const DM_CHANNELS_COLLECTION = 'chat_channels';
 const ACTIVITY_LOGS_COLLECTION = 'activity_logs';
 
+// Helper to remove undefined fields which Firestore rejects
+const sanitizeData = (data: any) => JSON.parse(JSON.stringify(data));
+
 // --- User & Profile ---
 
 export async function getUserProfile(uid: string): Promise<UserProfile | null> {
@@ -123,7 +126,7 @@ export async function logUserActivity(action: string, metadata: any = {}) {
     if (!auth.currentUser) return;
     await db.collection(ACTIVITY_LOGS_COLLECTION).add({
         action,
-        metadata,
+        metadata: sanitizeData(metadata),
         timestamp: firebase.firestore.FieldValue.serverTimestamp(),
         userId: auth.currentUser.uid
     });
@@ -177,11 +180,11 @@ export async function seedDatabase() {
         if (channel.id !== 'offline-architecture-101') {
             const ref = db.collection(CHANNELS_COLLECTION).doc(channel.id);
             // Set channel data
-            batch.set(ref, {
+            batch.set(ref, sanitizeData({
                 ...channel,
                 visibility: 'public', // Force public for seeded channels
                 ownerId: null // System owned
-            }, { merge: true });
+            }), { merge: true });
             
             // Init stats
             const statsRef = db.collection(CHANNEL_STATS_COLLECTION).doc(channel.id);
@@ -226,7 +229,10 @@ export async function setUserSubscriptionTier(uid: string, tier: 'free' | 'pro')
 // --- Channels ---
 
 export async function publishChannelToFirestore(channel: Channel) {
-  await db.collection(CHANNELS_COLLECTION).doc(channel.id).set(channel);
+  // Use sanitizeData to ensure no 'undefined' fields break Firestore
+  const safeChannel = sanitizeData(channel);
+  await db.collection(CHANNELS_COLLECTION).doc(channel.id).set(safeChannel);
+  
   // Initialize separate stats doc
   await db.collection(CHANNEL_STATS_COLLECTION).doc(channel.id).set({
       likes: channel.likes || 0,
@@ -402,25 +408,28 @@ export async function getChannelsByIds(ids: string[]): Promise<Channel[]> {
 }
 
 export async function addChannelAttachment(channelId: string, attachment: any) {
+    const safeAttachment = sanitizeData(attachment);
     await db.collection(CHANNELS_COLLECTION).doc(channelId).update({
-        appendix: firebase.firestore.FieldValue.arrayUnion(attachment)
+        appendix: firebase.firestore.FieldValue.arrayUnion(safeAttachment)
     });
 }
 
 // --- Comments ---
 
 export async function addCommentToChannel(channelId: string, comment: Comment) {
+  const safeComment = sanitizeData(comment);
   await db.collection(CHANNELS_COLLECTION).doc(channelId).update({
-    comments: firebase.firestore.FieldValue.arrayUnion(comment)
+    comments: firebase.firestore.FieldValue.arrayUnion(safeComment)
   });
 }
 
 export async function updateCommentInChannel(channelId: string, updatedComment: Comment) {
+    const safeComment = sanitizeData(updatedComment);
     const ref = db.collection(CHANNELS_COLLECTION).doc(channelId);
     await db.runTransaction(async (t) => {
         const doc = await t.get(ref);
         const data = doc.data() as Channel;
-        const newComments = data.comments.map(c => c.id === updatedComment.id ? updatedComment : c);
+        const newComments = data.comments.map(c => c.id === safeComment.id ? safeComment : c);
         t.update(ref, { comments: newComments });
     });
 }
@@ -444,7 +453,7 @@ export async function uploadCommentAttachment(file: File, path: string): Promise
 // --- Lectures & Curriculum ---
 
 export async function saveLectureToFirestore(channelId: string, lectureId: string, lecture: GeneratedLecture) {
-  await db.collection(CHANNELS_COLLECTION).doc(channelId).collection(LECTURES_COLLECTION).doc(lectureId).set(lecture);
+  await db.collection(CHANNELS_COLLECTION).doc(channelId).collection(LECTURES_COLLECTION).doc(lectureId).set(sanitizeData(lecture));
 }
 
 export async function getLectureFromFirestore(channelId: string, lectureId: string): Promise<GeneratedLecture | null> {
@@ -453,7 +462,8 @@ export async function getLectureFromFirestore(channelId: string, lectureId: stri
 }
 
 export async function saveCurriculumToFirestore(channelId: string, chapters: Chapter[]) {
-  await db.collection(CHANNELS_COLLECTION).doc(channelId).collection(CURRICULUM_COLLECTION).doc('main').set({ chapters });
+  const safeChapters = sanitizeData(chapters);
+  await db.collection(CHANNELS_COLLECTION).doc(channelId).collection(CURRICULUM_COLLECTION).doc('main').set({ chapters: safeChapters });
 }
 
 export async function getCurriculumFromFirestore(channelId: string): Promise<Chapter[] | null> {
@@ -470,13 +480,13 @@ export async function deleteLectureFromFirestore(channelId: string, lectureId: s
 export async function saveDiscussion(discussion: CommunityDiscussion): Promise<string> {
   const ref = db.collection(DISCUSSIONS_COLLECTION).doc();
   const discussionWithId = { ...discussion, id: ref.id };
-  await ref.set(discussionWithId);
+  await ref.set(sanitizeData(discussionWithId));
   return ref.id;
 }
 
 export async function updateDiscussion(id: string, transcript: any[]) {
   await db.collection(DISCUSSIONS_COLLECTION).doc(id).update({
-      transcript,
+      transcript: sanitizeData(transcript),
       updatedAt: Date.now()
   });
 }
@@ -617,7 +627,7 @@ export async function removeMemberFromGroup(groupId: string, memberId: string) {
 // --- Bookings ---
 
 export async function createBooking(booking: Booking) {
-    await db.collection(BOOKINGS_COLLECTION).add(booking);
+    await db.collection(BOOKINGS_COLLECTION).add(sanitizeData(booking));
 }
 
 export async function getUserBookings(uid: string, email: string): Promise<Booking[]> {
@@ -668,7 +678,7 @@ export async function uploadFileToStorage(path: string, file: Blob | File, metad
 }
 
 export async function saveRecordingReference(recording: RecordingSession) {
-    await db.collection(RECORDINGS_COLLECTION).add(recording);
+    await db.collection(RECORDINGS_COLLECTION).add(sanitizeData(recording));
 }
 
 export async function getUserRecordings(uid: string): Promise<RecordingSession[]> {
@@ -706,7 +716,7 @@ export async function deleteBookingRecording(bookingId: string, recordingUrl?: s
 // --- Daily Word ---
 
 export async function saveSavedWord(uid: string, wordData: any) {
-    await db.collection(USERS_COLLECTION).doc(uid).collection(SAVED_WORDS_COLLECTION).doc(wordData.word).set(wordData);
+    await db.collection(USERS_COLLECTION).doc(uid).collection(SAVED_WORDS_COLLECTION).doc(wordData.word).set(sanitizeData(wordData));
 }
 
 export async function getSavedWordForUser(uid: string, word: string) {
@@ -766,7 +776,7 @@ export function subscribeToCodeProject(sessionId: string, onUpdate: (project: Co
 }
 
 export async function saveCodeProject(project: CodeProject) {
-    await db.collection(PROJECTS_COLLECTION).doc(project.id).set(project, { merge: true });
+    await db.collection(PROJECTS_COLLECTION).doc(project.id).set(sanitizeData(project), { merge: true });
 }
 
 export async function updateCodeFile(projectId: string, file: CodeFile) {
@@ -777,8 +787,8 @@ export async function updateCodeFile(projectId: string, file: CodeFile) {
         const data = doc.data() as CodeProject;
         const files = data.files || [];
         const idx = files.findIndex(f => (f.path || f.name) === (file.path || file.name));
-        if (idx >= 0) files[idx] = file;
-        else files.push(file);
+        if (idx >= 0) files[idx] = sanitizeData(file);
+        else files.push(sanitizeData(file));
         t.update(ref, { files });
     });
 }
@@ -796,7 +806,7 @@ export async function deleteCodeFile(projectId: string, fileName: string) {
 
 export async function updateCursor(projectId: string, cursor: CursorPosition) {
     await db.collection(PROJECTS_COLLECTION).doc(projectId).update({
-        [`cursors.${cursor.clientId}`]: cursor
+        [`cursors.${cursor.clientId}`]: sanitizeData(cursor)
     });
 }
 
@@ -849,7 +859,7 @@ export async function sendShareNotification(uid: string, type: string, link: str
 // --- Whiteboard ---
 
 export async function saveWhiteboardSession(sessionId: string, elements: WhiteboardElement[]) {
-    await db.collection(WHITEBOARDS_COLLECTION).doc(sessionId).set({ elements }, { merge: true });
+    await db.collection(WHITEBOARDS_COLLECTION).doc(sessionId).set({ elements: sanitizeData(elements) }, { merge: true });
 }
 
 export function subscribeToWhiteboard(sessionId: string, onUpdate: (elements: WhiteboardElement[]) => void) {
@@ -863,13 +873,13 @@ export async function updateWhiteboardElement(sessionId: string, element: Whiteb
     await db.runTransaction(async (t) => {
         const doc = await t.get(ref);
         if (!doc.exists) {
-            t.set(ref, { elements: [element] });
+            t.set(ref, { elements: [sanitizeData(element)] });
             return;
         }
         const elements = doc.data()?.elements as WhiteboardElement[] || [];
         const idx = elements.findIndex(e => e.id === element.id);
-        if (idx >= 0) elements[idx] = element;
-        else elements.push(element);
+        if (idx >= 0) elements[idx] = sanitizeData(element);
+        else elements.push(sanitizeData(element));
         t.update(ref, { elements });
     });
 }
@@ -920,11 +930,11 @@ export async function getUserPosts(blogId: string): Promise<BlogPost[]> {
 }
 
 export async function createBlogPost(post: any) {
-    await db.collection(POSTS_COLLECTION).add(post);
+    await db.collection(POSTS_COLLECTION).add(sanitizeData(post));
 }
 
 export async function updateBlogPost(id: string, data: any) {
-    await db.collection(POSTS_COLLECTION).doc(id).update(data);
+    await db.collection(POSTS_COLLECTION).doc(id).update(sanitizeData(data));
 }
 
 export async function deleteBlogPost(id: string) {
@@ -932,12 +942,12 @@ export async function deleteBlogPost(id: string) {
 }
 
 export async function updateBlogSettings(blogId: string, settings: any) {
-    await db.collection(BLOGS_COLLECTION).doc(blogId).update(settings);
+    await db.collection(BLOGS_COLLECTION).doc(blogId).update(sanitizeData(settings));
 }
 
 export async function addPostComment(postId: string, comment: Comment) {
     await db.collection(POSTS_COLLECTION).doc(postId).update({
-        comments: firebase.firestore.FieldValue.arrayUnion(comment),
+        comments: firebase.firestore.FieldValue.arrayUnion(sanitizeData(comment)),
         commentCount: firebase.firestore.FieldValue.increment(1)
     });
 }
@@ -991,8 +1001,8 @@ export async function sendMessage(channelId: string, text: string, collectionPat
         senderName: auth.currentUser!.displayName || 'User',
         senderImage: auth.currentUser!.photoURL,
         timestamp: firebase.firestore.FieldValue.serverTimestamp(),
-        replyTo: replyTo || null,
-        attachments: attachments || []
+        replyTo: replyTo ? sanitizeData(replyTo) : null,
+        attachments: attachments ? sanitizeData(attachments) : []
     });
 }
 
@@ -1044,7 +1054,7 @@ export async function deleteMessage(channelId: string, messageId: string, collec
 // --- Career ---
 
 export async function submitCareerApplication(app: CareerApplication) {
-    await db.collection(APPLICATIONS_COLLECTION).add(app);
+    await db.collection(APPLICATIONS_COLLECTION).add(sanitizeData(app));
 }
 
 export async function uploadResumeToStorage(uid: string, file: File): Promise<string> {
@@ -1054,7 +1064,7 @@ export async function uploadResumeToStorage(uid: string, file: File): Promise<st
 }
 
 export async function createJobPosting(job: JobPosting) {
-    await db.collection(JOBS_COLLECTION).add(job);
+    await db.collection(JOBS_COLLECTION).add(sanitizeData(job));
 }
 
 export async function getJobPostings(): Promise<JobPosting[]> {

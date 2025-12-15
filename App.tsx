@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useMemo } from 'react';
 import { Channel, ViewState, UserProfile, TranscriptItem, SubscriptionTier } from './types';
 import { 
@@ -343,25 +344,35 @@ const App: React.FC = () => {
   };
 
   const handleCreateChannel = async (newChannel: Channel) => {
-    if (newChannel.visibility === 'public') {
-        await publishChannelToFirestore(newChannel);
-    } else if (newChannel.visibility === 'group') {
-        await publishChannelToFirestore(newChannel); 
-    } else {
-        await saveUserChannel(newChannel);
-        setUserChannels(prev => [newChannel, ...prev]);
+    try {
+        if (newChannel.visibility === 'public') {
+            await publishChannelToFirestore(newChannel);
+        } else if (newChannel.visibility === 'group') {
+            await publishChannelToFirestore(newChannel); 
+        } else {
+            await saveUserChannel(newChannel);
+            setUserChannels(prev => [newChannel, ...prev]);
+        }
+        setChannels(prev => [newChannel, ...prev]);
+    } catch (error: any) {
+        console.error("Failed to create channel:", error);
+        alert(`Failed to create podcast: ${error.message}`);
     }
-    setChannels(prev => [newChannel, ...prev]);
   };
 
   const handleUpdateChannel = async (updatedChannel: Channel) => {
-      if (updatedChannel.visibility === 'public' || updatedChannel.visibility === 'group') {
-          await publishChannelToFirestore(updatedChannel);
-      } else {
-          await saveUserChannel(updatedChannel);
-          setUserChannels(prev => prev.map(c => c.id === updatedChannel.id ? updatedChannel : c));
+      try {
+          if (updatedChannel.visibility === 'public' || updatedChannel.visibility === 'group') {
+              await publishChannelToFirestore(updatedChannel);
+          } else {
+              await saveUserChannel(updatedChannel);
+              setUserChannels(prev => prev.map(c => c.id === updatedChannel.id ? updatedChannel : c));
+          }
+          setChannels(prev => prev.map(c => c.id === updatedChannel.id ? updatedChannel : c));
+      } catch (error: any) {
+          console.error("Failed to update channel:", error);
+          alert(`Failed to update podcast: ${error.message}`);
       }
-      setChannels(prev => prev.map(c => c.id === updatedChannel.id ? updatedChannel : c));
   };
 
   const handleDeleteChannel = async () => {
