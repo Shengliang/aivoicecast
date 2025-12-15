@@ -111,8 +111,11 @@ export const StudioMenu: React.FC<StudioMenuProps> = ({
   return (
     <>
       <div className="fixed inset-0 z-[90]" onClick={() => setIsUserMenuOpen(false)}></div>
-      <div className={`${className ? className : 'absolute right-0 top-full mt-2'} w-72 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl z-[100] overflow-hidden animate-fade-in-up max-h-[80vh] overflow-y-auto scrollbar-thin scrollbar-thumb-slate-800`}>
-         <div className="p-3 border-b border-slate-800 bg-slate-950/50 flex justify-between items-center sticky top-0 z-10 backdrop-blur-sm">
+      {/* Removed 'overflow-hidden' which conflicts with overflow-y-auto. 
+          Using flex flex-col to allow inner content scrolling if needed, though this div is the scroll container.
+      */}
+      <div className={`${className ? className : 'absolute right-0 top-full mt-2'} w-72 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl z-[100] animate-fade-in-up max-h-[80vh] overflow-y-auto overflow-x-hidden scrollbar-thin scrollbar-thumb-slate-800`}>
+         <div className="p-3 border-b border-slate-800 bg-slate-950/90 flex justify-between items-center sticky top-0 z-10 backdrop-blur-sm">
             <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center space-x-2">
                <Sparkles size={12} className="text-indigo-400" />
                <span>Creator Studio</span>
