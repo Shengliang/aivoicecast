@@ -1,8 +1,8 @@
 
 import React, { useState, useEffect } from 'react';
-import { UserProfile, SubscriptionTier, GlobalStats } from '../types';
+import { UserProfile, SubscriptionTier, GlobalStats, Channel } from '../types';
 import { getUserProfile, getGlobalStats } from '../services/firestoreService';
-import { Sparkles, BarChart2, Plus, Wand2, Key, Database, Crown, Settings, Book, Users, LogIn, Terminal, Cloud, Globe } from 'lucide-react';
+import { Sparkles, BarChart2, Plus, Wand2, Key, Database, Crown, Settings, Book, Users, LogIn, Terminal, Cloud, Globe, Mic, LayoutGrid } from 'lucide-react';
 import { VOICES } from '../utils/initialData';
 import { PricingModal } from './PricingModal';
 
@@ -24,13 +24,14 @@ interface StudioMenuProps {
   onNavigate: (view: string) => void;
   t: any;
   className?: string;
+  channels: Channel[];
 }
 
 export const StudioMenu: React.FC<StudioMenuProps> = ({
   isUserMenuOpen, setIsUserMenuOpen, userProfile, setUserProfile, currentUser,
   globalVoice, setGlobalVoice, hasApiKey, 
   setIsCreateModalOpen, setIsVoiceCreateOpen, setIsApiKeyModalOpen, setIsSyncModalOpen, setIsSettingsModalOpen, onOpenUserGuide, onNavigate, t,
-  className
+  className, channels
 }) => {
   const [isPricingOpen, setIsPricingOpen] = useState(false);
   const [globalStats, setGlobalStats] = useState<GlobalStats>({ totalLogins: 0, uniqueUsers: 0 });
@@ -65,10 +66,13 @@ export const StudioMenu: React.FC<StudioMenuProps> = ({
   };
 
   const tierInfo = getTierLabel();
+  
+  const totalPodcasts = channels.length;
+  const totalLectures = channels.reduce((acc, ch) => acc + (ch.chapters?.reduce((cAcc, chap) => cAcc + (chap.subTopics?.length || 0), 0) || 0), 0);
 
   // Helper for stat boxes
   const StatBox = ({ icon: Icon, label, value }: { icon: any, label: string, value: number | string }) => (
-      <div className="flex flex-col items-center bg-slate-800/50 p-2 rounded-lg border border-slate-800">
+      <div className="flex flex-col items-center bg-slate-800/50 p-2 rounded-lg border border-slate-800 hover:bg-slate-800 transition-colors">
           <Icon size={14} className="text-indigo-400 mb-1" />
           <span className="text-[10px] text-slate-500 uppercase font-bold">{label}</span>
           <span className="text-sm font-bold text-white">{value}</span>
@@ -90,10 +94,16 @@ export const StudioMenu: React.FC<StudioMenuProps> = ({
          </div>
          
          {/* Stats Grid */}
-         <div className="grid grid-cols-3 gap-2 p-2 border-b border-slate-800 bg-slate-900/30">
-            <StatBox icon={BarChart2} label="API Usage" value={userProfile?.apiUsageCount || 0} />
-            <StatBox icon={Users} label="Members" value={globalStats.uniqueUsers} />
-            <StatBox icon={LogIn} label="Logins" value={globalStats.totalLogins} />
+         <div className="p-2 border-b border-slate-800 bg-slate-900/30">
+            <div className="grid grid-cols-2 gap-2 mb-2">
+                <StatBox icon={Mic} label="Total Podcasts" value={totalPodcasts} />
+                <StatBox icon={Book} label="Total Lectures" value={totalLectures} />
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+                <StatBox icon={BarChart2} label="API Usage" value={userProfile?.apiUsageCount || 0} />
+                <StatBox icon={Users} label="Members" value={globalStats.uniqueUsers} />
+                <StatBox icon={LogIn} label="Logins" value={globalStats.totalLogins} />
+            </div>
          </div>
 
          <div className="p-2 space-y-1">

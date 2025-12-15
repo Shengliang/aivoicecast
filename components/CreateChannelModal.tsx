@@ -50,9 +50,11 @@ export const CreateChannelModal: React.FC<CreateChannelModalProps> = ({ isOpen, 
       setActiveTab('manual');
       setVisibility('public'); // Default to public for free users
       
-      // Set initial date if provided, else today
+      // Set initial date if provided, else today.
+      // Format as YYYY-MM-DD in local time
       const dateToUse = initialDate || new Date();
-      setReleaseDate(dateToUse.toISOString().split('T')[0]);
+      const localIso = dateToUse.toLocaleDateString('en-CA'); // YYYY-MM-DD format
+      setReleaseDate(localIso);
       
       // Check Membership
       getUserProfile(currentUser.uid).then(profile => {
@@ -85,9 +87,11 @@ export const CreateChannelModal: React.FC<CreateChannelModalProps> = ({ isOpen, 
     const imagePrompt = encodeURIComponent(`${title} ${description} digital art masterpiece`);
     
     // Calculate timestamp from releaseDate input (local time -> timestamp)
-    // We add current time to the date to keep it somewhat ordered within the day
+    // We construct the date using local year/month/day to ensure it lands on the correct day in Calendar
+    const [year, month, day] = releaseDate.split('-').map(Number);
+    const targetDate = new Date(year, month - 1, day); // Month is 0-indexed
     const now = new Date();
-    const targetDate = new Date(releaseDate);
+    // Preserve current time of day
     targetDate.setHours(now.getHours(), now.getMinutes(), now.getSeconds());
     
     const newChannel: Channel = {

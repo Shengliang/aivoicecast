@@ -56,7 +56,7 @@ import { HANDCRAFTED_CHANNELS, CATEGORY_STYLES, TOPIC_CATEGORIES } from './utils
 import { OFFLINE_CHANNEL_ID } from './utils/offlineContent';
 import { GEMINI_API_KEY } from './services/private_keys';
 
-const APP_VERSION = "v3.68.1"; // Bump version
+const APP_VERSION = "v3.68.2"; // Bump version
 
 const UI_TEXT = {
   en: {
@@ -347,15 +347,19 @@ const App: React.FC = () => {
 
   const handleCreateChannel = async (newChannel: Channel) => {
     try {
-        if (newChannel.visibility === 'public') {
+        // Always save to userChannels state so it appears in "My Podcast" filter and persists locally immediately
+        setUserChannels(prev => {
+             const exists = prev.find(c => c.id === newChannel.id);
+             if (exists) return prev.map(c => c.id === newChannel.id ? newChannel : c);
+             return [newChannel, ...prev];
+        });
+        
+        // Also save to IndexedDB for "My Channels" persistence even if public
+        await saveUserChannel(newChannel);
+        
+        if (newChannel.visibility === 'public' || newChannel.visibility === 'group') {
             await publishChannelToFirestore(newChannel);
-        } else if (newChannel.visibility === 'group') {
-            await publishChannelToFirestore(newChannel); 
-        } else {
-            await saveUserChannel(newChannel);
-            setUserChannels(prev => [newChannel, ...prev]);
         }
-        setChannels(prev => [newChannel, ...prev]);
     } catch (error: any) {
         console.error("Failed to create channel:", error);
         alert(`Failed to create podcast: ${error.message}`);
@@ -856,6 +860,7 @@ const App: React.FC = () => {
                    onOpenUserGuide={() => setViewState('user_guide')}
                    onNavigate={(view: any) => setViewState(view)}
                    t={t}
+                   channels={channels}
                 />
                 )}
               </div>
@@ -1070,6 +1075,7 @@ const App: React.FC = () => {
            onNavigate={(view: any) => setViewState(view)}
            t={t}
            className="fixed bottom-24 right-4 z-50 md:hidden shadow-2xl border-slate-700"
+           channels={channels}
         />
       )}
 
