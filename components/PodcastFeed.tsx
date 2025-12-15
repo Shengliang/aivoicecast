@@ -29,8 +29,8 @@ interface PodcastFeedProps {
   onCommentClick?: (channel: Channel) => void;
   handleVote?: (id: string, type: 'like' | 'dislike', e: React.MouseEvent) => void;
   
-  // New Prop for filtering logic
-  filterMode?: 'foryou' | 'following';
+  // New Prop for filtering logic ('mine' added for my-podcast support)
+  filterMode?: 'foryou' | 'following' | 'mine';
 }
 
 // --- Singleton Audio Context & Global Controls ---
@@ -682,23 +682,51 @@ export const PodcastFeed: React.FC<PodcastFeedProps> = ({
 
   // Ranking Logic
   const recommendedChannels = useMemo(() => {
+      if (filterMode === 'mine') {
+          return channels.filter(c => currentUser && c.ownerId === currentUser.uid).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+      }
+
       if (filterMode === 'following') {
           return [...channels].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
       }
-      if (!userProfile?.interests || userProfile.interests.length === 0) {
-          const sorted = [...channels].sort((a, b) => b.likes - a.likes);
-          return sorted;
-      }
+
+      // Universal Scoring
       const scored = channels.map(ch => {
           let score = 0;
-          if (userProfile.interests?.some(i => ch.tags.includes(i))) score += 10;
-          if (userProfile.interests?.some(i => ch.title.toLowerCase().includes(i.toLowerCase()))) score += 5;
+          
+          // 1. Ownership Boost (Highest Priority)
+          // Ensure newly created channels by the user are ALWAYS top
+          if (currentUser && ch.ownerId === currentUser.uid) {
+              score += 100000;
+              // Secondary sort for user's own channels: newest first
+              if (ch.createdAt) score += ch.createdAt / 1000000000000; 
+          }
+
+          // 2. Interest Matching
+          if (userProfile?.interests && userProfile.interests.length > 0) {
+              if (userProfile.interests.some(i => ch.tags.includes(i))) score += 20;
+              if (userProfile.interests.some(i => ch.title.toLowerCase().includes(i.toLowerCase()))) score += 10;
+          }
+
+          // 3. Recency Boost (For everyone)
+          // Helps finding new content generally
+          if (ch.createdAt) {
+              const ageHours = (Date.now() - ch.createdAt) / (1000 * 60 * 60);
+              if (ageHours < 1) score += 50; // Brand new (last hour)
+              else if (ageHours < 24) score += 10; // Last day
+          }
+          
+          // 4. Popularity Baseline
           score += (ch.likes / 100); 
+          
           return { channel: ch, score };
       });
+      
+      // Sort desc by score
       scored.sort((a, b) => b.score - a.score);
+      
       return scored.map(s => s.channel);
-  }, [channels, userProfile, filterMode]);
+  }, [channels, userProfile, filterMode, currentUser]);
 
   // Initial Auto-Play (First item) - ONLY ON MOBILE
   useEffect(() => {
@@ -859,6 +887,8 @@ export const PodcastFeed: React.FC<PodcastFeedProps> = ({
                      <p className="text-slate-400 text-sm max-w-xs mx-auto">
                          {filterMode === 'following' 
                             ? "Follow creators or like channels to build your personal feed."
+                            : filterMode === 'mine'
+                            ? "You haven't created any podcasts yet."
                             : "We couldn't find any podcasts matching your criteria."}
                      </p>
                  </div>

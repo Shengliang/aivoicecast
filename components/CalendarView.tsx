@@ -106,10 +106,13 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
   const wordAudioCtxRef = useRef<AudioContext | null>(null);
   const wordSourceRef = useRef<AudioBufferSourceNode | null>(null);
   
-  // TODO List State
+  // Todo & Filtering State
   const [todos, setTodos] = useState<TodoItem[]>([]);
   const [newTodo, setNewTodo] = useState('');
   const [isPlanning, setIsPlanning] = useState(false);
+  
+  // Filter Scope: 'all' (Everyone's channels) | 'mine' (My created channels)
+  const [filterScope, setFilterScope] = useState<'all' | 'mine'>('all');
 
   // View State
   const [viewMode, setViewMode] = useState<'day' | 'week' | 'month'>('day');
@@ -338,11 +341,14 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
     return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
   };
 
-  // 1. Grid Indicators
+  // 1. Grid Indicators (Pre-filtered by ownership if needed)
   const eventsByDate = useMemo(() => {
     const map: Record<string, { channels: Channel[], bookings: Booking[], todos: TodoItem[] }> = {};
     
     channels.forEach(c => {
+      // Check ownership filter for indicators
+      if (filterScope === 'mine' && currentUser && c.ownerId !== currentUser.uid) return;
+
       if (c.createdAt) {
         const key = getDateKey(c.createdAt);
         if (!map[key]) map[key] = { channels: [], bookings: [], todos: [] };
@@ -363,9 +369,9 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
     });
 
     return map;
-  }, [channels, bookings, todos]);
+  }, [channels, bookings, todos, filterScope, currentUser]);
 
-  // 2. Filtered Events based on View Mode
+  // 2. Filtered Events based on View Mode AND Ownership
   const filteredData = useMemo(() => {
       let filteredChannels = [] as Channel[];
       let filteredBookings = [] as Booking[];
@@ -383,7 +389,17 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
           else return itemDate >= startMonth && itemDate <= endMonth;
       };
 
-      filteredChannels = channels.filter(c => c.createdAt && filterItem(new Date(c.createdAt)));
+      // Filter Channels
+      filteredChannels = channels.filter(c => {
+          if (!c.createdAt) return false;
+          const dateMatch = filterItem(new Date(c.createdAt));
+          
+          if (filterScope === 'mine') {
+              return dateMatch && currentUser && c.ownerId === currentUser.uid;
+          }
+          return dateMatch;
+      });
+
       filteredBookings = bookings.filter(b => {
           const bDate = new Date(`${b.date}T${b.time}`);
           return filterItem(bDate);
@@ -394,7 +410,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
       filteredBookings.sort((a, b) => new Date(`${a.date}T${a.time}`).getTime() - new Date(`${b.date}T${b.time}`).getTime());
 
       return { channels: filteredChannels, bookings: filteredBookings, todos: filteredTodos };
-  }, [channels, bookings, todos, selectedDate, displayDate, viewMode]);
+  }, [channels, bookings, todos, selectedDate, displayDate, viewMode, filterScope, currentUser]);
 
   // Pagination for Channels
   const paginatedChannels = useMemo(() => {
@@ -725,6 +741,28 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                 <button onClick={() => setViewMode('month')} className={`p-2 text-xs font-bold rounded-lg text-left pl-4 transition-all ${viewMode === 'month' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-400 hover:bg-slate-900'}`}>Monthly Grid</button>
             </div>
 
+            {/* Filter Toggle */}
+            <div className="mt-2 border-t border-slate-800 pt-4">
+                <h4 className="text-xs font-bold text-slate-400 uppercase mb-2 flex items-center gap-2">
+                    <Filter size={12} /> Filter Channels
+                </h4>
+                <div className="flex bg-slate-900 p-1 rounded-lg border border-slate-800">
+                    <button 
+                        onClick={() => setFilterScope('all')} 
+                        className={`flex-1 py-1.5 text-xs font-bold rounded-md transition-colors ${filterScope === 'all' ? 'bg-slate-700 text-white' : 'text-slate-500 hover:text-slate-300'}`}
+                    >
+                        All
+                    </button>
+                    <button 
+                        onClick={() => setFilterScope('mine')} 
+                        disabled={!currentUser}
+                        className={`flex-1 py-1.5 text-xs font-bold rounded-md transition-colors ${filterScope === 'mine' ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:text-slate-300 disabled:opacity-30'}`}
+                    >
+                        My Podcast
+                    </button>
+                </div>
+            </div>
+
             {/* TODO LIST */}
             <div className="flex-1 overflow-y-auto mt-4 border-t border-slate-800 pt-4">
                 <div className="flex items-center justify-between mb-2">
@@ -987,7 +1025,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                                       <label className="text-xs font-bold text-slate-500 uppercase">Invite Friend (Optional)</label>
                                       <div className="flex items-center gap-2 bg-slate-800 border border-slate-700 rounded-lg p-2 mt-1">
                                           <Mail size={16} className="text-slate-400"/>
-                                          <input type="email" value={inviteEmail} onChange={e => setInviteEmail(e.target.value)} className="bg-transparent w-full text-sm text-white focus:outline-none" placeholder="colleague@email.com"/>
+                                          <input type="email" value={inviteEmail} onChange={e => setInviteEmail(e.target.value)} className="bg-transparent w-full text-sm text-white focus:outline-none" placeholder="friend@email.com"/>
                                       </div>
                                   </div>
                               </div>
