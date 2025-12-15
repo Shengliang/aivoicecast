@@ -57,7 +57,7 @@ import { HANDCRAFTED_CHANNELS, CATEGORY_STYLES, TOPIC_CATEGORIES } from './utils
 import { OFFLINE_CHANNEL_ID } from './utils/offlineContent';
 import { GEMINI_API_KEY } from './services/private_keys';
 
-const APP_VERSION = "v3.68.8"; // Bump version
+const APP_VERSION = "v3.68.9"; // Bump version
 
 const UI_TEXT = {
   en: {
@@ -467,6 +467,29 @@ const App: React.FC = () => {
       setViewState('live_session');
   };
 
+  const handleMobileQuickStart = () => {
+      const quickChannel: Channel = {
+          id: 'quick-session',
+          title: 'Quick Session',
+          description: 'Ad-hoc voice session',
+          author: 'You',
+          ownerId: currentUser?.uid,
+          visibility: 'private',
+          voiceName: globalVoice === 'Auto' ? 'Puck' : globalVoice,
+          systemInstruction: 'You are a helpful AI assistant. Answer questions and help with tasks.',
+          likes: 0,
+          dislikes: 0,
+          comments: [],
+          tags: [],
+          imageUrl: 'https://images.unsplash.com/photo-1624969862644-791f3dc98927?w=600&q=80',
+          createdAt: Date.now()
+      };
+      setTempChannel(quickChannel);
+      setActiveChannelId(quickChannel.id);
+      setLiveConfig({ recording: false }); // Default config
+      setViewState('live_session');
+  };
+
   const handleSessionStart = (id: string) => {
       setSharedSessionId(id);
       setAccessKey(undefined);
@@ -662,7 +685,7 @@ const App: React.FC = () => {
       if (viewState !== 'directory' || activeTab !== 'categories') return null;
       return (
           <div className="md:hidden fixed top-0 left-0 w-full z-40 bg-gradient-to-b from-black/80 to-transparent p-4 flex items-center justify-between pointer-events-none">
-              <button onClick={() => setViewState('live_session')} className="pointer-events-auto text-white/80 hover:text-white">
+              <button onClick={handleMobileQuickStart} className="pointer-events-auto text-white/80 hover:text-white">
                   <VideoIcon size={24} />
               </button>
               

@@ -4,7 +4,7 @@ import { Channel, Group } from '../types';
 import { generateChannelFromPrompt } from '../services/channelGenerator';
 import { auth } from '../services/firebaseConfig';
 import { getUserGroups } from '../services/firestoreService';
-import { Mic, MicOff, Sparkles, X, Loader2, Check, Lock, Globe, Users } from 'lucide-react';
+import { Mic, MicOff, Sparkles, X, Loader2, Check, Lock, Globe, Users, AlertCircle } from 'lucide-react';
 
 interface VoiceCreateModalProps {
   isOpen: boolean;
@@ -18,6 +18,7 @@ export const VoiceCreateModal: React.FC<VoiceCreateModalProps> = ({ isOpen, onCl
   const [isProcessing, setIsProcessing] = useState(false);
   const [generatedChannel, setGeneratedChannel] = useState<Channel | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [isSupported, setIsSupported] = useState(true);
   
   // Sharing Options during Preview
   const [visibility, setVisibility] = useState<'private' | 'public' | 'group'>('private');
@@ -27,29 +28,55 @@ export const VoiceCreateModal: React.FC<VoiceCreateModalProps> = ({ isOpen, onCl
   const recognitionRef = useRef<any>(null);
 
   useEffect(() => {
-    if (isOpen && 'webkitSpeechRecognition' in window) {
-      const SpeechRecognition = (window as any).webkitSpeechRecognition;
-      recognitionRef.current = new SpeechRecognition();
-      recognitionRef.current.continuous = true;
-      recognitionRef.current.interimResults = true;
-      recognitionRef.current.lang = 'en-US'; 
-
-      recognitionRef.current.onresult = (event: any) => {
-        let finalTranscript = '';
-        for (let i = event.resultIndex; i < event.results.length; ++i) {
-          if (event.results[i].isFinal) {
-            finalTranscript += event.results[i][0].transcript;
-          }
+    // Check for browser support
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    
+    if (isOpen) {
+        if (!SpeechRecognition) {
+            setIsSupported(false);
+            setError("Voice input is not supported in this browser. Please use Chrome, Edge, or Safari.");
+            return;
         }
-        if (finalTranscript) {
-           setTranscript(prev => prev + ' ' + finalTranscript);
-        }
-      };
 
-      recognitionRef.current.onerror = (event: any) => {
-        console.error("Speech recognition error", event.error);
-        setIsListening(false);
-      };
+        try {
+            recognitionRef.current = new SpeechRecognition();
+            recognitionRef.current.continuous = true;
+            recognitionRef.current.interimResults = true;
+            recognitionRef.current.lang = 'en-US'; 
+
+            recognitionRef.current.onresult = (event: any) => {
+                let finalTranscript = '';
+                for (let i = event.resultIndex; i < event.results.length; ++i) {
+                    if (event.results[i].isFinal) {
+                        finalTranscript += event.results[i][0].transcript;
+                    }
+                }
+                if (finalTranscript) {
+                   setTranscript(prev => prev + ' ' + finalTranscript);
+                }
+            };
+
+            recognitionRef.current.onerror = (event: any) => {
+                console.error("Speech recognition error", event.error);
+                if (event.error === 'not-allowed') {
+                    setError("Microphone access denied. Please enable permissions.");
+                } else if (event.error === 'no-speech') {
+                    // Ignore no-speech errors, just stop listening visually
+                } else {
+                    setError("Voice recognition error: " + event.error);
+                }
+                setIsListening(false);
+            };
+            
+            recognitionRef.current.onend = () => {
+                if (isListening) setIsListening(false);
+            };
+            
+        } catch (e) {
+            console.error("Speech Init Failed", e);
+            setIsSupported(false);
+            setError("Failed to initialize voice engine.");
+        }
     }
     
     // Reset state on open
@@ -58,8 +85,14 @@ export const VoiceCreateModal: React.FC<VoiceCreateModalProps> = ({ isOpen, onCl
         setGeneratedChannel(null);
         setVisibility('private');
         setSelectedGroupId('');
-        setError(null);
+        if (isSupported) setError(null); // Clear error if supported
     }
+    
+    return () => {
+        if (recognitionRef.current) {
+            try { recognitionRef.current.stop(); } catch(e) {}
+        }
+    };
   }, [isOpen]);
 
   // Load groups if needed
@@ -73,15 +106,22 @@ export const VoiceCreateModal: React.FC<VoiceCreateModalProps> = ({ isOpen, onCl
   }, [visibility, generatedChannel]);
 
   const toggleListening = () => {
+    if (!isSupported) return;
+    
     if (isListening) {
-      recognitionRef.current?.stop();
+      try { recognitionRef.current?.stop(); } catch(e) {}
       setIsListening(false);
     } else {
       setTranscript('');
       setGeneratedChannel(null);
       setError(null);
-      recognitionRef.current?.start();
-      setIsListening(true);
+      try {
+          recognitionRef.current?.start();
+          setIsListening(true);
+      } catch(e) {
+          console.error("Start failed", e);
+          setError("Could not start microphone.");
+      }
     }
   };
 
@@ -89,7 +129,7 @@ export const VoiceCreateModal: React.FC<VoiceCreateModalProps> = ({ isOpen, onCl
     if (!transcript.trim()) return;
     
     setIsListening(false);
-    recognitionRef.current?.stop();
+    try { recognitionRef.current?.stop(); } catch(e) {}
     setIsProcessing(true);
     setError(null);
 
@@ -161,22 +201,28 @@ export const VoiceCreateModal: React.FC<VoiceCreateModalProps> = ({ isOpen, onCl
               </div>
 
               {/* Mic Button */}
-              <button
-                onClick={toggleListening}
-                className={`w-24 h-24 rounded-full flex items-center justify-center transition-all duration-300 shadow-2xl ${
-                  isListening 
-                    ? 'bg-red-500 hover:bg-red-600 shadow-red-500/40 animate-pulse' 
-                    : 'bg-indigo-600 hover:bg-indigo-500 shadow-indigo-500/40 hover:scale-105'
-                }`}
-              >
-                {isListening ? <MicOff size={40} className="text-white" /> : <Mic size={40} className="text-white" />}
-              </button>
+              {isSupported ? (
+                  <button
+                    onClick={toggleListening}
+                    className={`w-24 h-24 rounded-full flex items-center justify-center transition-all duration-300 shadow-2xl ${
+                      isListening 
+                        ? 'bg-red-500 hover:bg-red-600 shadow-red-500/40 animate-pulse' 
+                        : 'bg-indigo-600 hover:bg-indigo-500 shadow-indigo-500/40 hover:scale-105'
+                    }`}
+                  >
+                    {isListening ? <MicOff size={40} className="text-white" /> : <Mic size={40} className="text-white" />}
+                  </button>
+              ) : (
+                  <div className="w-24 h-24 rounded-full bg-slate-800 flex items-center justify-center text-slate-500 border border-slate-700">
+                      <MicOff size={40} />
+                  </div>
+              )}
 
               <div className="w-full">
                 <textarea
                   value={transcript}
                   onChange={(e) => setTranscript(e.target.value)}
-                  placeholder="Or type your idea here..."
+                  placeholder={isSupported ? "Listening..." : "Type your idea manually here..."}
                   className="w-full bg-slate-800/50 border border-slate-700 rounded-xl p-4 text-white placeholder-slate-500 focus:ring-2 focus:ring-indigo-500 outline-none resize-none text-center"
                   rows={3}
                 />
@@ -254,8 +300,9 @@ export const VoiceCreateModal: React.FC<VoiceCreateModalProps> = ({ isOpen, onCl
           )}
 
           {error && (
-            <div className="bg-red-900/20 text-red-300 p-4 rounded-xl text-center w-full">
-              {error}
+            <div className="bg-red-900/20 text-red-300 p-4 rounded-xl text-center w-full flex items-center justify-center gap-2">
+              <AlertCircle size={16} />
+              <span className="text-xs">{error}</span>
             </div>
           )}
 
