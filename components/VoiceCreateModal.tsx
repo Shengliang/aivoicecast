@@ -4,7 +4,7 @@ import { Channel, Group } from '../types';
 import { generateChannelFromPrompt } from '../services/channelGenerator';
 import { auth } from '../services/firebaseConfig';
 import { getUserGroups } from '../services/firestoreService';
-import { Mic, MicOff, Sparkles, X, Loader2, Check, Lock, Globe, Users, AlertCircle } from 'lucide-react';
+import { Mic, MicOff, Sparkles, X, Loader2, Check, Lock, Globe, Users, AlertCircle, Keyboard } from 'lucide-react';
 
 interface VoiceCreateModalProps {
   isOpen: boolean;
@@ -62,6 +62,12 @@ export const VoiceCreateModal: React.FC<VoiceCreateModalProps> = ({ isOpen, onCl
                     setError("Microphone access denied. Please enable permissions.");
                 } else if (event.error === 'no-speech') {
                     // Ignore no-speech errors, just stop listening visually
+                    return; 
+                } else if (event.error === 'service-not-allowed') {
+                    setError("Voice service unavailable on this device. Please type your idea.");
+                    setIsSupported(false); // Disable mic button to prevent frustration
+                } else if (event.error === 'network') {
+                    setError("Network error. Voice recognition requires internet connection.");
                 } else {
                     setError("Voice recognition error: " + event.error);
                 }
@@ -112,15 +118,21 @@ export const VoiceCreateModal: React.FC<VoiceCreateModalProps> = ({ isOpen, onCl
       try { recognitionRef.current?.stop(); } catch(e) {}
       setIsListening(false);
     } else {
-      setTranscript('');
-      setGeneratedChannel(null);
+      // Clear previous transcripts only if empty to allow appending? 
+      // Actually the previous logic cleared it. Let's keep it to allow new thought.
+      // But if user typed something, maybe we append? The previous logic cleared it.
+      // Let's stick to clearing for a "fresh start" feeling unless we want append mode.
+      // Given the UI is "Magic Voice Creator", usually you speak one big prompt.
+      // But clearing might be annoying if they pause. 
+      // I will remove setTranscript('') to allow appending/pausing.
+      
       setError(null);
       try {
           recognitionRef.current?.start();
           setIsListening(true);
       } catch(e) {
           console.error("Start failed", e);
-          setError("Could not start microphone.");
+          setError("Could not start microphone. Try refreshing.");
       }
     }
   };
@@ -214,7 +226,7 @@ export const VoiceCreateModal: React.FC<VoiceCreateModalProps> = ({ isOpen, onCl
                   </button>
               ) : (
                   <div className="w-24 h-24 rounded-full bg-slate-800 flex items-center justify-center text-slate-500 border border-slate-700">
-                      <MicOff size={40} />
+                      <Keyboard size={40} />
                   </div>
               )}
 
@@ -222,7 +234,7 @@ export const VoiceCreateModal: React.FC<VoiceCreateModalProps> = ({ isOpen, onCl
                 <textarea
                   value={transcript}
                   onChange={(e) => setTranscript(e.target.value)}
-                  placeholder={isSupported ? "Listening..." : "Type your idea manually here..."}
+                  placeholder={isSupported ? (isListening ? "Listening..." : "Tap mic or type here...") : "Type your idea here..."}
                   className="w-full bg-slate-800/50 border border-slate-700 rounded-xl p-4 text-white placeholder-slate-500 focus:ring-2 focus:ring-indigo-500 outline-none resize-none text-center"
                   rows={3}
                 />
