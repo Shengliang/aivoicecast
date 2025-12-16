@@ -53,19 +53,25 @@ export async function generateCardMessage(memory: AgentMemory, tone: string = 'w
     }
 }
 
-export async function generateCardImage(memory: AgentMemory, stylePrompt: string): Promise<string> {
+export async function generateCardImage(
+    memory: AgentMemory, 
+    stylePrompt: string, 
+    referenceImageBase64?: string, 
+    refinementText?: string
+): Promise<string> {
     try {
         const ai = getClient();
         
         // Include custom visual theme if provided
         const customContext = memory.customThemePrompt ? `Main Subject/Theme: ${memory.customThemePrompt}.` : '';
+        const userRefinement = refinementText ? `IMPORTANT SPECIFIC DETAILS: ${refinementText}.` : '';
 
         let basePrompt = '';
         if (memory.theme === 'chinese-poem') {
              basePrompt = `
                 Traditional Chinese Ink Wash Painting (Shui-mo hua).
                 Minimalist, Zen, monochromatic with subtle red accents (plum blossoms or seal).
-                Subject: ${memory.occasion}. ${customContext}.
+                Subject: ${memory.occasion}. ${customContext}. ${userRefinement}
                 Use negative space effectively. Rice paper texture background.
                 Art Direction: Masterpiece, brush strokes visible, poetic atmosphere.
              `;
@@ -75,15 +81,34 @@ export async function generateCardImage(memory: AgentMemory, stylePrompt: string
                 Occasion: ${memory.occasion}.
                 General Style: ${memory.theme}.
                 ${customContext}
+                ${userRefinement}
                 Specific Art Direction: ${stylePrompt}.
                 Requirements: No text, 8k resolution, cinematic lighting, magical atmosphere.
+                ${referenceImageBase64 ? 'Use the attached image as a visual reference for the character or composition.' : ''}
             `;
+        }
+
+        const parts: any[] = [{ text: basePrompt }];
+        
+        // Append image if provided
+        if (referenceImageBase64) {
+            // Remove header data:image/png;base64,
+            const base64Data = referenceImageBase64.split(',')[1];
+            // Determine mime type roughly or default to jpeg/png
+            const mimeType = referenceImageBase64.substring(referenceImageBase64.indexOf(':') + 1, referenceImageBase64.indexOf(';'));
+            
+            parts.push({
+                inlineData: {
+                    mimeType: mimeType,
+                    data: base64Data
+                }
+            });
         }
 
         // Using 'gemini-2.5-flash-image' as per instructions for standard image gen
         const response = await ai.models.generateContent({
             model: 'gemini-2.5-flash-image',
-            contents: { parts: [{ text: basePrompt }] }
+            contents: { parts }
         });
         
         // Find image part

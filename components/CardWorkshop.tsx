@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { AgentMemory, TranscriptItem } from '../types';
-import { ArrowLeft, Sparkles, Wand2, Image as ImageIcon, Type, Download, Share2, Printer, RefreshCw, Send, Mic, MicOff, Gift, Heart, Loader2, ChevronRight, ChevronLeft, Upload, QrCode } from 'lucide-react';
+import { ArrowLeft, Sparkles, Wand2, Image as ImageIcon, Type, Download, Share2, Printer, RefreshCw, Send, Mic, MicOff, Gift, Heart, Loader2, ChevronRight, ChevronLeft, Upload, QrCode, X } from 'lucide-react';
 import { generateCardMessage, generateCardImage } from '../services/cardGen';
 import { GeminiLiveService } from '../services/geminiLive';
 import html2canvas from 'html2canvas';
@@ -34,6 +34,10 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack }) => {
   const [isGeneratingBackImage, setIsGeneratingBackImage] = useState(false);
   const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
   
+  // Image Generation Refinements
+  const [frontRefImage, setFrontRefImage] = useState<string | null>(null);
+  const [frontRefinement, setFrontRefinement] = useState('');
+  
   // Live Chat State
   const [isLiveActive, setIsLiveActive] = useState(false);
   const [transcript, setTranscript] = useState<TranscriptItem[]>([]);
@@ -42,6 +46,7 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack }) => {
   // Ref for card preview to capture
   const cardRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const refImageInputRef = useRef<HTMLInputElement>(null);
 
   // Initialize Live Service
   useEffect(() => {
@@ -114,12 +119,27 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack }) => {
               ? style + ", background pattern or texture, minimalist, suitable for back cover" 
               : style + ", highly detailed cover art, main subject centered, cinematic";
           
-          const imgUrl = await generateCardImage(memory, prompt);
+          // Use reference inputs ONLY for front image (activePage === 0)
+          const refImg = (!isBack && activePage === 0) ? (frontRefImage || undefined) : undefined;
+          const refinement = (!isBack && activePage === 0) ? frontRefinement : undefined;
+          
+          const imgUrl = await generateCardImage(memory, prompt, refImg, refinement);
           setMemory(prev => isBack ? ({ ...prev, backImageUrl: imgUrl }) : ({ ...prev, coverImageUrl: imgUrl }));
       } catch(e) {
           alert("Failed to generate image. Ensure you have a valid API Key.");
       } finally {
           setter(false);
+      }
+  };
+  
+  const handleRefImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+      if (e.target.files && e.target.files.length > 0) {
+          const file = e.target.files[0];
+          const reader = new FileReader();
+          reader.onloadend = () => {
+              setFrontRefImage(reader.result as string);
+          };
+          reader.readAsDataURL(file);
       }
   };
 
@@ -295,7 +315,53 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack }) => {
                               </h3>
 
                               {activePage === 0 && (
-                                  <div className="space-y-3">
+                                  <div className="space-y-4">
+                                      {/* Specific Controls for Front Image Adjustment */}
+                                      <div className="space-y-2 bg-slate-900/50 p-3 rounded-lg border border-slate-800">
+                                          <label className="text-xs font-bold text-indigo-400 uppercase">Adjust Generation</label>
+                                          
+                                          {/* Text Refinement */}
+                                          <input 
+                                              type="text" 
+                                              placeholder="Specifics: e.g. 'A little girl', 'Golden Retriever'" 
+                                              value={frontRefinement}
+                                              onChange={(e) => setFrontRefinement(e.target.value)}
+                                              className="w-full bg-slate-800 border border-slate-700 rounded-lg p-2 text-xs text-white focus:border-indigo-500 outline-none"
+                                          />
+
+                                          {/* Reference Image Upload */}
+                                          <div className="flex items-center gap-2">
+                                              {frontRefImage ? (
+                                                  <div className="relative w-12 h-12 bg-slate-800 rounded border border-slate-700 overflow-hidden shrink-0">
+                                                      <img src={frontRefImage} className="w-full h-full object-cover" />
+                                                      <button 
+                                                          onClick={() => setFrontRefImage(null)}
+                                                          className="absolute top-0 right-0 bg-red-500 text-white rounded-bl p-0.5"
+                                                      >
+                                                          <X size={8} />
+                                                      </button>
+                                                  </div>
+                                              ) : (
+                                                  <button 
+                                                      onClick={() => refImageInputRef.current?.click()}
+                                                      className="w-12 h-12 flex flex-col items-center justify-center bg-slate-800 hover:bg-slate-700 border border-slate-700 border-dashed rounded text-[9px] text-slate-400 gap-1 transition-colors shrink-0"
+                                                  >
+                                                      <Upload size={12}/> Ref Photo
+                                                  </button>
+                                              )}
+                                              <div className="text-[10px] text-slate-500 leading-tight">
+                                                  Upload a photo to guide the AI style or subject (e.g. your daughter).
+                                              </div>
+                                              <input 
+                                                  type="file" 
+                                                  ref={refImageInputRef} 
+                                                  className="hidden" 
+                                                  accept="image/*" 
+                                                  onChange={handleRefImageUpload}
+                                              />
+                                          </div>
+                                      </div>
+
                                       <div className="flex justify-between items-center">
                                           <label className="text-xs font-bold text-slate-500 uppercase">Front Image</label>
                                           <button onClick={() => handleGenImage(false)} disabled={isGeneratingImage} className="text-pink-400 hover:text-white text-xs flex items-center gap-1">
