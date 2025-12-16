@@ -36,6 +36,9 @@ export const StudioMenu: React.FC<StudioMenuProps> = ({
   const [isPricingOpen, setIsPricingOpen] = useState(false);
   const [globalStats, setGlobalStats] = useState<GlobalStats>({ totalLogins: 0, uniqueUsers: 0 });
   
+  // Super Admin Check
+  const isSuperAdmin = currentUser?.email === 'shengliang.song@gmail.com';
+  
   useEffect(() => {
       if (isUserMenuOpen) {
           getGlobalStats().then(setGlobalStats).catch(console.error);
@@ -226,29 +229,33 @@ export const StudioMenu: React.FC<StudioMenuProps> = ({
                <span>Account Settings</span>
             </button>
 
-            <div className="h-px bg-slate-800 my-2 mx-2" />
-            
-            {/* Developer Tools Footer */}
-            <div className="px-2 pb-2">
-                <p className="px-2 text-[10px] font-bold text-slate-500 uppercase mb-1">Developer Tools</p>
-                <div className="grid grid-cols-2 gap-1">
-                    <button onClick={() => { onNavigate('debug'); setIsUserMenuOpen(false); }} className="p-2 bg-slate-800 hover:bg-slate-700 rounded text-xs text-slate-400 hover:text-white flex flex-col items-center justify-center gap-1">
-                        <Database size={12}/> <span>Local DB</span>
-                    </button>
-                    <button onClick={() => { onNavigate('firestore_debug'); setIsUserMenuOpen(false); }} className="p-2 bg-slate-800 hover:bg-slate-700 rounded text-xs text-slate-400 hover:text-white flex flex-col items-center justify-center gap-1">
-                        <Terminal size={12}/> <span>Firestore</span>
-                    </button>
-                    <button onClick={() => { onNavigate('cloud_debug'); setIsUserMenuOpen(false); }} className="p-2 bg-slate-800 hover:bg-slate-700 rounded text-xs text-slate-400 hover:text-white flex flex-col items-center justify-center gap-1">
-                        <Cloud size={12}/> <span>Storage</span>
-                    </button>
-                    <button onClick={() => { onNavigate('public_debug'); setIsUserMenuOpen(false); }} className="p-2 bg-slate-800 hover:bg-slate-700 rounded text-xs text-slate-400 hover:text-white flex flex-col items-center justify-center gap-1">
-                        <Globe size={12}/> <span>Registry</span>
-                    </button>
-                    <button onClick={() => { onNavigate('my_channel_debug'); setIsUserMenuOpen(false); }} className="p-2 bg-slate-800 hover:bg-slate-700 rounded text-xs text-slate-400 hover:text-white flex flex-col items-center justify-center gap-1 col-span-2">
-                        <HardDrive size={12}/> <span>My Channel Inspector</span>
-                    </button>
-                </div>
-            </div>
+            {/* Developer Tools Footer - RESTRICTED TO ADMIN */}
+            {isSuperAdmin && (
+                <>
+                    <div className="h-px bg-slate-800 my-2 mx-2" />
+                    
+                    <div className="px-2 pb-2">
+                        <p className="px-2 text-[10px] font-bold text-slate-500 uppercase mb-1">Developer Tools</p>
+                        <div className="grid grid-cols-2 gap-1">
+                            <button onClick={() => { onNavigate('debug'); setIsUserMenuOpen(false); }} className="p-2 bg-slate-800 hover:bg-slate-700 rounded text-xs text-slate-400 hover:text-white flex flex-col items-center justify-center gap-1">
+                                <Database size={12}/> <span>Local DB</span>
+                            </button>
+                            <button onClick={() => { onNavigate('firestore_debug'); setIsUserMenuOpen(false); }} className="p-2 bg-slate-800 hover:bg-slate-700 rounded text-xs text-slate-400 hover:text-white flex flex-col items-center justify-center gap-1">
+                                <Terminal size={12}/> <span>Firestore</span>
+                            </button>
+                            <button onClick={() => { onNavigate('cloud_debug'); setIsUserMenuOpen(false); }} className="p-2 bg-slate-800 hover:bg-slate-700 rounded text-xs text-slate-400 hover:text-white flex flex-col items-center justify-center gap-1">
+                                <Cloud size={12}/> <span>Storage</span>
+                            </button>
+                            <button onClick={() => { onNavigate('public_debug'); setIsUserMenuOpen(false); }} className="p-2 bg-slate-800 hover:bg-slate-700 rounded text-xs text-slate-400 hover:text-white flex flex-col items-center justify-center gap-1">
+                                <Globe size={12}/> <span>Registry</span>
+                            </button>
+                            <button onClick={() => { onNavigate('my_channel_debug'); setIsUserMenuOpen(false); }} className="p-2 bg-slate-800 hover:bg-slate-700 rounded text-xs text-slate-400 hover:text-white flex flex-col items-center justify-center gap-1 col-span-2">
+                                <HardDrive size={12}/> <span>My Channel Inspector</span>
+                            </button>
+                        </div>
+                    </div>
+                </>
+            )}
          </div>
       </div>
 

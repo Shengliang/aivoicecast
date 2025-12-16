@@ -630,6 +630,9 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
         const playSystem = () => {
            const idx = schedulingCursorRef.current;
            if (!activeLecture || idx >= activeLecture.sections.length) { stopAudio(); setCurrentSectionIndex(0); return; }
+           
+           if (playSessionIdRef.current !== sessionId) return;
+
            setCurrentSectionIndex(idx);
            sectionRefs.current[idx]?.scrollIntoView({ behavior: 'smooth', block: 'center' });
            const section = activeLecture.sections[idx];
@@ -638,7 +641,7 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
            const v = systemVoices.find(v => v.voiceURI === targetURI);
            if (v) utter.voice = v;
            utter.rate = 1.1;
-           utter.onend = () => { if (isPlayingRef.current) { schedulingCursorRef.current++; playSystem(); } };
+           utter.onend = () => { if (isPlayingRef.current && playSessionIdRef.current === sessionId) { schedulingCursorRef.current++; playSystem(); } };
            activeUtteranceRef.current = utter;
            window.speechSynthesis.speak(utter);
         };
