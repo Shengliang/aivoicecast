@@ -16,8 +16,9 @@ export async function generateCardMessage(memory: AgentMemory, tone: string = 'w
         let prompt = '';
         if (memory.theme === 'chinese-poem') {
             // Check if there is existing content to translate/adapt
+            // We ignore the default placeholder text to avoid translating generic placeholders
             const contextContent = memory.cardMessage && memory.cardMessage.length > 5 && !memory.cardMessage.includes('Wishing you') 
-                ? `The user has provided this context/message: "${memory.cardMessage}". Translate or adapt the sentiment of this message into the poem.` 
+                ? `The user has provided this specific message/context: "${memory.cardMessage}". Your goal is to TRANSLATE or ADAPT this sentiment into the poem.` 
                 : '';
 
             prompt = `

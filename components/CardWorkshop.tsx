@@ -244,7 +244,7 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack }) => {
       return name ? name.trim().charAt(0).toUpperCase() : 'AI';
   };
   
-  // Determine text direction style
+  // Determine text direction style - Only vertical if actually Chinese characters
   const isVertical = memory.theme === 'chinese-poem' && isChinese(memory.cardMessage);
 
   return (
@@ -534,7 +534,7 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack }) => {
                   {activePage === 0 && (
                       <div className="w-full h-full flex flex-col relative">
                           {memory.coverImageUrl ? (
-                              <img src={memory.coverImageUrl} className={`w-full h-full object-cover absolute inset-0 z-0 ${memory.theme === 'chinese-poem' ? 'opacity-90 mix-blend-multiply' : ''}`} />
+                              <img src={memory.coverImageUrl} className={`w-full h-full object-cover absolute inset-0 z-0 ${memory.theme === 'chinese-poem' ? 'opacity-90 mix-blend-multiply' : ''}`} style={{ objectFit: 'cover' }} />
                           ) : (
                               <div className={`w-full h-full flex items-center justify-center ${memory.theme === 'festive' ? 'bg-red-800' : 'bg-slate-300'} z-0`}>
                                   <Sparkles className="text-white/20 w-32 h-32" />
@@ -593,7 +593,8 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack }) => {
                               <div className={`grid gap-4 w-full h-full ${memory.userImages.length === 1 ? 'grid-cols-1' : memory.userImages.length === 2 ? 'grid-rows-2' : 'grid-cols-2 grid-rows-2'}`}>
                                   {memory.userImages.slice(0, 4).map((img, i) => (
                                       <div key={i} className={`rounded-xl overflow-hidden shadow-sm border ${memory.theme === 'chinese-poem' ? 'border-red-900/20 bg-[#fdfbf7]' : 'border-white bg-white'} p-1 relative`}>
-                                          <img src={img} className="w-full h-full object-cover rounded-lg absolute inset-0 m-1" style={{width: 'calc(100% - 8px)', height: 'calc(100% - 8px)'}} />
+                                          {/* Use absolute positioning to enforce crop within grid cell */}
+                                          <img src={img} className="w-full h-full object-cover rounded-lg absolute inset-0 m-1" style={{width: 'calc(100% - 8px)', height: 'calc(100% - 8px)', objectFit: 'cover'}} />
                                       </div>
                                   ))}
                               </div>
@@ -615,7 +616,7 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack }) => {
                       <div className={`w-full h-full flex flex-col items-center justify-between p-12 relative ${memory.theme === 'chinese-poem' ? 'bg-[#f5f0e1]' : 'bg-white'}`}>
                           {memory.backImageUrl ? (
                               <div className="w-full h-48 overflow-hidden rounded-xl opacity-80">
-                                  <img src={memory.backImageUrl} className={`w-full h-full object-cover ${memory.theme === 'chinese-poem' ? 'mix-blend-multiply grayscale sepia-[.3]' : ''}`} />
+                                  <img src={memory.backImageUrl} className={`w-full h-full object-cover ${memory.theme === 'chinese-poem' ? 'mix-blend-multiply grayscale sepia-[.3]' : ''}`} style={{ objectFit: 'cover' }} />
                               </div>
                           ) : (
                               <div className="w-full h-48 bg-slate-100 rounded-xl flex items-center justify-center">
@@ -630,6 +631,7 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack }) => {
                                           <img 
                                               src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(memory.googlePhotosUrl)}`} 
                                               alt="Album QR"
+                                              crossOrigin="anonymous"
                                               className="w-32 h-32 mix-blend-multiply"
                                           />
                                       </div>
