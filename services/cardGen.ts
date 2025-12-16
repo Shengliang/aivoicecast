@@ -15,12 +15,18 @@ export async function generateCardMessage(memory: AgentMemory, tone: string = 'w
         
         let prompt = '';
         if (memory.theme === 'chinese-poem') {
+            // Check if there is existing content to translate/adapt
+            const contextContent = memory.cardMessage && memory.cardMessage.length > 5 && !memory.cardMessage.includes('Wishing you') 
+                ? `The user has provided this context/message: "${memory.cardMessage}". Translate or adapt the sentiment of this message into the poem.` 
+                : '';
+
             prompt = `
                 Write a traditional Chinese Poem (classical style, like Tang Dynasty Jueju).
                 Topic/Occasion: ${memory.occasion}.
                 Recipient: ${memory.recipientName || 'Friend'}.
                 Sender: ${memory.senderName || 'Me'}.
                 Theme details: ${memory.customThemePrompt || 'Nature, peace, friendship'}.
+                ${contextContent}
                 
                 Requirements:
                 1. Use Simplified Chinese characters.

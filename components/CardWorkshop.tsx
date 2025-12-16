@@ -24,6 +24,11 @@ const DEFAULT_MEMORY: AgentMemory = {
   generatedAt: new Date().toISOString()
 };
 
+// Helper to detect if text contains Chinese characters
+const isChinese = (text: string) => {
+    return /[\u4e00-\u9fa5]/.test(text);
+};
+
 export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack }) => {
   const [memory, setMemory] = useState<AgentMemory>(DEFAULT_MEMORY);
   const [activeTab, setActiveTab] = useState<'settings' | 'chat'>('settings');
@@ -238,6 +243,9 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack }) => {
   const getSealChar = (name: string) => {
       return name ? name.trim().charAt(0).toUpperCase() : 'AI';
   };
+  
+  // Determine text direction style
+  const isVertical = memory.theme === 'chinese-poem' && isChinese(memory.cardMessage);
 
   return (
     <div className="flex flex-col h-screen bg-slate-950 text-slate-100 overflow-hidden">
@@ -533,7 +541,7 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack }) => {
                               </div>
                           )}
                           <div className={`z-10 mt-auto p-8 ${memory.theme === 'chinese-poem' ? '' : 'bg-gradient-to-t from-black/80 to-transparent'}`}>
-                              <h2 className={`text-5xl text-center drop-shadow-lg ${memory.theme === 'chinese-poem' ? 'font-chinese-brush text-black vertical-rl ml-auto h-64' : 'font-holiday text-white'}`}>
+                              <h2 className={`text-5xl text-center drop-shadow-lg ${isVertical ? 'font-chinese-brush text-black vertical-rl ml-auto h-64' : 'font-holiday text-white'}`}>
                                   {memory.occasion}
                               </h2>
                           </div>
@@ -551,14 +559,14 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack }) => {
 
                   {/* --- PAGE 1: MESSAGE (INNER LEFT) --- */}
                   {activePage === 1 && (
-                      <div className={`w-full h-full flex flex-col p-10 justify-center text-center relative ${memory.theme === 'chinese-poem' ? 'items-end' : 'items-center'}`}>
+                      <div className={`w-full h-full flex flex-col p-10 justify-center text-center relative ${isVertical ? 'items-end' : 'items-center'}`}>
                           {memory.theme !== 'chinese-poem' && (
                              <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-red-500 via-green-500 to-red-500"></div>
                           )}
                           
                           {/* Heading */}
                           {memory.theme === 'chinese-poem' ? (
-                              <h3 className="font-chinese-brush text-3xl text-red-900 mb-0 opacity-80 vertical-rl absolute top-10 right-10">
+                              <h3 className={`font-chinese-brush text-3xl text-red-900 mb-0 opacity-80 ${isVertical ? 'vertical-rl absolute top-10 right-10' : 'mb-8'}`}>
                                   {memory.occasion}
                               </h3>
                           ) : (
@@ -566,7 +574,7 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack }) => {
                           )}
 
                           {/* Body Text */}
-                          <div className={`${memory.theme === 'chinese-poem' ? 'vertical-rl h-full max-h-[400px] flex flex-wrap-reverse gap-4 items-start text-right pr-16' : ''}`}>
+                          <div className={`${isVertical ? 'vertical-rl h-full max-h-[400px] flex flex-wrap-reverse gap-4 items-start text-right pr-16' : ''}`}>
                              <p className={`${memory.theme === 'chinese-poem' ? 'font-chinese-brush text-2xl text-slate-800 leading-loose' : 'font-script text-3xl text-slate-800 leading-loose'}`}>
                                  {memory.cardMessage || "Your message will appear here..."}
                              </p>
@@ -584,8 +592,8 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack }) => {
                           {memory.userImages.length > 0 ? (
                               <div className={`grid gap-4 w-full h-full ${memory.userImages.length === 1 ? 'grid-cols-1' : memory.userImages.length === 2 ? 'grid-rows-2' : 'grid-cols-2 grid-rows-2'}`}>
                                   {memory.userImages.slice(0, 4).map((img, i) => (
-                                      <div key={i} className={`rounded-xl overflow-hidden shadow-sm border ${memory.theme === 'chinese-poem' ? 'border-red-900/20 bg-[#fdfbf7]' : 'border-white bg-white'} p-1`}>
-                                          <img src={img} className="w-full h-full object-cover rounded-lg" />
+                                      <div key={i} className={`rounded-xl overflow-hidden shadow-sm border ${memory.theme === 'chinese-poem' ? 'border-red-900/20 bg-[#fdfbf7]' : 'border-white bg-white'} p-1 relative`}>
+                                          <img src={img} className="w-full h-full object-cover rounded-lg absolute inset-0 m-1" style={{width: 'calc(100% - 8px)', height: 'calc(100% - 8px)'}} />
                                       </div>
                                   ))}
                               </div>
