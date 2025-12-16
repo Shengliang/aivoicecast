@@ -395,8 +395,9 @@ export interface AgentMemory {
   occasion: string;
   cardMessage: string;
   theme: 'festive' | 'cozy' | 'minimal' | 'thanks';
-  giftUrl?: string;
   userImages: string[];
   coverImageUrl?: string;
+  backImageUrl?: string;
+  googlePhotosUrl?: string;
   generatedAt: string;
 }

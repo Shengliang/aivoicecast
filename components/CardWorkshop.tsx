@@ -1,7 +1,6 @@
-
 import React, { useState, useRef, useEffect } from 'react';
 import { AgentMemory, TranscriptItem } from '../types';
-import { ArrowLeft, Sparkles, Wand2, Image as ImageIcon, Type, Download, Share2, Printer, RefreshCw, Send, Mic, MicOff, Gift, Heart, Loader2 } from 'lucide-react';
+import { ArrowLeft, Sparkles, Wand2, Image as ImageIcon, Type, Download, Share2, Printer, RefreshCw, Send, Mic, MicOff, Gift, Heart, Loader2, ChevronRight, ChevronLeft, Upload, QrCode } from 'lucide-react';
 import { generateCardMessage, generateCardImage } from '../services/cardGen';
 import { GeminiLiveService } from '../services/geminiLive';
 import html2canvas from 'html2canvas';
@@ -20,14 +19,19 @@ const DEFAULT_MEMORY: AgentMemory = {
   cardMessage: 'Wishing you a season filled with warmth, comfort, and good cheer.',
   theme: 'festive',
   userImages: [],
+  googlePhotosUrl: '',
   generatedAt: new Date().toISOString()
 };
 
 export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack }) => {
   const [memory, setMemory] = useState<AgentMemory>(DEFAULT_MEMORY);
   const [activeTab, setActiveTab] = useState<'settings' | 'chat'>('settings');
+  const [activePage, setActivePage] = useState<number>(0); // 0: Front, 1: Letter, 2: Photos, 3: Back
+  
   const [isGeneratingText, setIsGeneratingText] = useState(false);
   const [isGeneratingImage, setIsGeneratingImage] = useState(false);
+  const [isGeneratingBackImage, setIsGeneratingBackImage] = useState(false);
+  const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
   
   // Live Chat State
   const [isLiveActive, setIsLiveActive] = useState(false);
@@ -36,6 +40,7 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack }) => {
   
   // Ref for card preview to capture
   const cardRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Initialize Live Service
   useEffect(() => {
@@ -84,26 +89,70 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack }) => {
       }
   };
 
-  const handleGenImage = async () => {
-      setIsGeneratingImage(true);
+  const handleGenImage = async (isBack = false) => {
+      const setter = isBack ? setIsGeneratingBackImage : setIsGeneratingImage;
+      setter(true);
       try {
           const style = memory.theme === 'festive' ? 'Classic Christmas, red and gold, cozy fireplace' :
                         memory.theme === 'minimal' ? 'Modern abstract, winter palette, clean lines' :
                         memory.theme === 'cozy' ? 'Warm watercolor, hot cocoa, knitted textures' :
                         'Elegant typography, gratitude, floral border';
           
-          const imgUrl = await generateCardImage(memory, style);
-          setMemory(prev => ({ ...prev, coverImageUrl: imgUrl }));
+          // Modify prompt slightly for back
+          const prompt = isBack ? style + ", subtle background pattern, minimalist" : style;
+          
+          const imgUrl = await generateCardImage(memory, prompt);
+          setMemory(prev => isBack ? ({ ...prev, backImageUrl: imgUrl }) : ({ ...prev, coverImageUrl: imgUrl }));
       } catch(e) {
           alert("Failed to generate image. Ensure you have a valid API Key.");
       } finally {
-          setIsGeneratingImage(false);
+          setter(false);
       }
+  };
+
+  const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+      if (!auth.currentUser) {
+          alert("Please sign in to upload photos.");
+          return;
+      }
+      if (e.target.files && e.target.files.length > 0) {
+          setIsUploadingPhoto(true);
+          const newPhotos: string[] = [];
+          
+          try {
+              for (const file of Array.from(e.target.files) as File[]) {
+                  const path = `cards/${auth.currentUser.uid}/photos/${Date.now()}_${file.name}`;
+                  const url = await uploadFileToStorage(path, file);
+                  newPhotos.push(url);
+              }
+              setMemory(prev => ({
+                  ...prev,
+                  userImages: [...prev.userImages, ...newPhotos]
+              }));
+          } catch(err) {
+              console.error(err);
+              alert("Upload failed.");
+          } finally {
+              setIsUploadingPhoto(false);
+          }
+      }
+  };
+
+  const handleDeletePhoto = (index: number) => {
+      setMemory(prev => ({
+          ...prev,
+          userImages: prev.userImages.filter((_, i) => i !== index)
+      }));
   };
 
   const handleExportPDF = async () => {
       if (!cardRef.current) return;
       try {
+          // Temporarily ensure card is visible fully if needed, or rely on active view
+          // For multi-page, we might want to render all pages or just the active one?
+          // Let's stick to current page for simplicity or prompt user.
+          // BETTER: Export current view.
+          
           const canvas = await html2canvas(cardRef.current, { scale: 2, useCORS: true });
           const imgData = canvas.toDataURL('image/png');
           
@@ -114,7 +163,7 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack }) => {
           });
           
           pdf.addImage(imgData, 'PNG', 0, 0, canvas.width, canvas.height);
-          pdf.save(`HolidayCard_${memory.recipientName || 'Friend'}.pdf`);
+          pdf.save(`Card_Page${activePage + 1}.pdf`);
       } catch(e) {
           console.error(e);
           alert("Export failed");
@@ -122,28 +171,38 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack }) => {
   };
 
   const handleShareLink = async () => {
-      if (!cardRef.current || !auth.currentUser) {
-          if (!auth.currentUser) alert("Please sign in to save and share cards.");
+      if (!auth.currentUser) {
+          alert("Please sign in to share.");
           return;
       }
-      
-      const confirmShare = confirm("This will upload the card image to the cloud to create a link. Continue?");
+      const confirmShare = confirm("This creates a public link to the current card page image. Continue?");
       if(!confirmShare) return;
+
+      if (!cardRef.current) return;
 
       try {
           const canvas = await html2canvas(cardRef.current, { scale: 1 });
-          // Convert canvas to blob
           const blob = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.9));
           if (!blob) throw new Error("Canvas blob failed");
           
-          const path = `cards/${auth.currentUser.uid}/${Date.now()}.jpg`;
+          const path = `cards/${auth.currentUser.uid}/shared/${Date.now()}.jpg`;
           const url = await uploadFileToStorage(path, blob);
           
           await navigator.clipboard.writeText(url);
-          alert("Link copied to clipboard! You can send this URL to anyone.");
+          alert("Link copied to clipboard!");
       } catch(e) {
           console.error(e);
           alert("Share failed");
+      }
+  };
+
+  const getPageLabel = (page: number) => {
+      switch(page) {
+          case 0: return 'Front Cover';
+          case 1: return 'Message (Inner Left)';
+          case 2: return 'Photos (Inner Right)';
+          case 3: return 'Back Cover';
+          default: return `Page ${page + 1}`;
       }
   };
 
@@ -161,7 +220,7 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack }) => {
           </div>
           <div className="flex gap-2">
               <button onClick={handleExportPDF} className="flex items-center gap-2 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 rounded-lg text-xs font-bold transition-colors">
-                  <Download size={14} /> PDF
+                  <Download size={14} /> PDF Page
               </button>
               <button onClick={handleShareLink} className="flex items-center gap-2 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 rounded-lg text-xs font-bold transition-colors shadow-lg">
                   <Share2 size={14} /> Share
@@ -174,14 +233,15 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack }) => {
           {/* LEFT PANEL: CONTROLS */}
           <div className="w-full md:w-96 bg-slate-900 border-r border-slate-800 flex flex-col shrink-0">
               <div className="flex border-b border-slate-800">
-                  <button onClick={() => setActiveTab('settings')} className={`flex-1 py-3 text-sm font-bold transition-colors ${activeTab==='settings' ? 'bg-slate-800 text-white border-b-2 border-indigo-500' : 'text-slate-500 hover:text-slate-300'}`}>Settings</button>
+                  <button onClick={() => setActiveTab('settings')} className={`flex-1 py-3 text-sm font-bold transition-colors ${activeTab==='settings' ? 'bg-slate-800 text-white border-b-2 border-indigo-500' : 'text-slate-500 hover:text-slate-300'}`}>Edit</button>
                   <button onClick={() => setActiveTab('chat')} className={`flex-1 py-3 text-sm font-bold transition-colors ${activeTab==='chat' ? 'bg-slate-800 text-white border-b-2 border-indigo-500' : 'text-slate-500 hover:text-slate-300'}`}>Elf Assistant</button>
               </div>
 
               <div className="flex-1 overflow-y-auto p-6 space-y-6">
                   {activeTab === 'settings' ? (
                       <>
-                          <div className="space-y-3">
+                          {/* Common Settings */}
+                          <div className="space-y-3 pb-4 border-b border-slate-800">
                               <label className="text-xs font-bold text-slate-500 uppercase">Basics</label>
                               <input type="text" placeholder="To: Recipient Name" value={memory.recipientName} onChange={e => setMemory({...memory, recipientName: e.target.value})} className="w-full bg-slate-800 border border-slate-700 rounded-lg p-3 text-sm text-white focus:border-indigo-500 outline-none"/>
                               <input type="text" placeholder="From: Sender Name" value={memory.senderName} onChange={e => setMemory({...memory, senderName: e.target.value})} className="w-full bg-slate-800 border border-slate-700 rounded-lg p-3 text-sm text-white focus:border-indigo-500 outline-none"/>
@@ -192,11 +252,7 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack }) => {
                                   <option value="Thanks">Thank You</option>
                                   <option value="Birthday">Happy Birthday</option>
                               </select>
-                          </div>
-
-                          <div className="space-y-3">
-                              <label className="text-xs font-bold text-slate-500 uppercase">Theme</label>
-                              <div className="grid grid-cols-2 gap-2">
+                              <div className="grid grid-cols-2 gap-2 mt-2">
                                   {['festive', 'cozy', 'minimal', 'thanks'].map(t => (
                                       <button 
                                           key={t}
@@ -209,39 +265,107 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack }) => {
                               </div>
                           </div>
 
-                          <div className="space-y-3">
-                              <div className="flex justify-between items-center">
-                                  <label className="text-xs font-bold text-slate-500 uppercase">Message</label>
-                                  <button onClick={handleGenText} disabled={isGeneratingText} className="text-indigo-400 hover:text-white text-xs flex items-center gap-1">
-                                      {isGeneratingText ? <Loader2 size={12} className="animate-spin"/> : <Wand2 size={12}/>} AI Write
-                                  </button>
-                              </div>
-                              <textarea 
-                                  rows={4} 
-                                  value={memory.cardMessage} 
-                                  onChange={e => setMemory({...memory, cardMessage: e.target.value})}
-                                  className="w-full bg-slate-800 border border-slate-700 rounded-lg p-3 text-sm text-white focus:border-indigo-500 outline-none resize-none font-script text-lg leading-relaxed"
-                              />
-                          </div>
+                          {/* Contextual Settings based on Page */}
+                          <div className="space-y-4">
+                              <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                                  <Edit3Icon /> 
+                                  <span>Editing: {getPageLabel(activePage)}</span>
+                              </h3>
 
-                          <div className="space-y-3">
-                              <div className="flex justify-between items-center">
-                                  <label className="text-xs font-bold text-slate-500 uppercase">Cover Image</label>
-                                  <button onClick={handleGenImage} disabled={isGeneratingImage} className="text-pink-400 hover:text-white text-xs flex items-center gap-1">
-                                      {isGeneratingImage ? <Loader2 size={12} className="animate-spin"/> : <Sparkles size={12}/>} Generate
-                                  </button>
-                              </div>
-                              {memory.coverImageUrl ? (
-                                  <div className="relative group rounded-lg overflow-hidden border border-slate-700">
-                                      <img src={memory.coverImageUrl} className="w-full h-32 object-cover" />
-                                      <button onClick={() => setMemory({...memory, coverImageUrl: undefined})} className="absolute top-1 right-1 bg-red-500/80 p-1 rounded-full text-white opacity-0 group-hover:opacity-100 transition-opacity">
-                                          <RefreshCw size={12} />
-                                      </button>
+                              {activePage === 0 && (
+                                  <div className="space-y-3">
+                                      <div className="flex justify-between items-center">
+                                          <label className="text-xs font-bold text-slate-500 uppercase">Front Image</label>
+                                          <button onClick={() => handleGenImage(false)} disabled={isGeneratingImage} className="text-pink-400 hover:text-white text-xs flex items-center gap-1">
+                                              {isGeneratingImage ? <Loader2 size={12} className="animate-spin"/> : <Sparkles size={12}/>} Generate
+                                          </button>
+                                      </div>
+                                      {memory.coverImageUrl ? (
+                                          <div className="relative group rounded-lg overflow-hidden border border-slate-700">
+                                              <img src={memory.coverImageUrl} className="w-full h-32 object-cover" />
+                                              <button onClick={() => setMemory({...memory, coverImageUrl: undefined})} className="absolute top-1 right-1 bg-red-500/80 p-1 rounded-full text-white opacity-0 group-hover:opacity-100 transition-opacity">
+                                                  <RefreshCw size={12} />
+                                              </button>
+                                          </div>
+                                      ) : (
+                                          <div className="h-32 bg-slate-800/50 border border-slate-700 border-dashed rounded-lg flex flex-col items-center justify-center text-slate-500 text-xs">
+                                              <ImageIcon size={24} className="mb-2 opacity-50"/>
+                                              Click Generate for Front Art
+                                          </div>
+                                      )}
                                   </div>
-                              ) : (
-                                  <div className="h-32 bg-slate-800/50 border border-slate-700 border-dashed rounded-lg flex flex-col items-center justify-center text-slate-500 text-xs">
-                                      <ImageIcon size={24} className="mb-2 opacity-50"/>
-                                      Click Generate to create AI Art
+                              )}
+
+                              {activePage === 1 && (
+                                  <div className="space-y-3">
+                                      <div className="flex justify-between items-center">
+                                          <label className="text-xs font-bold text-slate-500 uppercase">Message Body</label>
+                                          <button onClick={handleGenText} disabled={isGeneratingText} className="text-indigo-400 hover:text-white text-xs flex items-center gap-1">
+                                              {isGeneratingText ? <Loader2 size={12} className="animate-spin"/> : <Wand2 size={12}/>} AI Write
+                                          </button>
+                                      </div>
+                                      <textarea 
+                                          rows={6} 
+                                          value={memory.cardMessage} 
+                                          onChange={e => setMemory({...memory, cardMessage: e.target.value})}
+                                          className="w-full bg-slate-800 border border-slate-700 rounded-lg p-3 text-sm text-white focus:border-indigo-500 outline-none resize-none font-script text-lg leading-relaxed"
+                                          placeholder="Type your message here..."
+                                      />
+                                  </div>
+                              )}
+
+                              {activePage === 2 && (
+                                  <div className="space-y-3">
+                                      <label className="text-xs font-bold text-slate-500 uppercase">Photo Collage</label>
+                                      <div onClick={() => fileInputRef.current?.click()} className="p-4 border-2 border-dashed border-slate-700 rounded-xl hover:border-indigo-500 hover:bg-slate-800/50 cursor-pointer text-center transition-all">
+                                          {isUploadingPhoto ? <Loader2 className="animate-spin mx-auto text-indigo-400"/> : <Upload className="mx-auto text-slate-500 mb-2"/>}
+                                          <p className="text-xs text-slate-400">Click to upload photos</p>
+                                          <input type="file" ref={fileInputRef} className="hidden" multiple accept="image/*" onChange={handlePhotoUpload}/>
+                                      </div>
+                                      
+                                      <div className="grid grid-cols-2 gap-2">
+                                          {memory.userImages.map((img, i) => (
+                                              <div key={i} className="relative group aspect-square bg-slate-800 rounded-lg overflow-hidden border border-slate-700">
+                                                  <img src={img} className="w-full h-full object-cover" />
+                                                  <button onClick={() => handleDeletePhoto(i)} className="absolute top-1 right-1 bg-red-500/80 p-1 rounded-full text-white opacity-0 group-hover:opacity-100 transition-opacity">
+                                                      <RefreshCw size={10} />
+                                                  </button>
+                                              </div>
+                                          ))}
+                                      </div>
+                                  </div>
+                              )}
+
+                              {activePage === 3 && (
+                                  <div className="space-y-4">
+                                      <div className="space-y-2">
+                                          <div className="flex justify-between items-center">
+                                              <label className="text-xs font-bold text-slate-500 uppercase">Back Art</label>
+                                              <button onClick={() => handleGenImage(true)} disabled={isGeneratingBackImage} className="text-pink-400 hover:text-white text-xs flex items-center gap-1">
+                                                  {isGeneratingBackImage ? <Loader2 size={12} className="animate-spin"/> : <Sparkles size={12}/>} Generate
+                                              </button>
+                                          </div>
+                                          {memory.backImageUrl && (
+                                              <img src={memory.backImageUrl} className="w-full h-24 object-cover rounded-lg border border-slate-700" />
+                                          )}
+                                      </div>
+                                      
+                                      <div className="space-y-2">
+                                          <label className="text-xs font-bold text-slate-500 uppercase">Google Photos Link</label>
+                                          <input 
+                                              type="text" 
+                                              value={memory.googlePhotosUrl || ''} 
+                                              onChange={e => setMemory({...memory, googlePhotosUrl: e.target.value})}
+                                              className="w-full bg-slate-800 border border-slate-700 rounded-lg p-2 text-xs text-white"
+                                              placeholder="https://photos.app.goo.gl/..."
+                                          />
+                                          {memory.googlePhotosUrl && (
+                                              <div className="flex items-center gap-2 p-2 bg-emerald-900/20 border border-emerald-900/50 rounded-lg">
+                                                  <QrCode size={14} className="text-emerald-400"/>
+                                                  <span className="text-[10px] text-emerald-200">QR Code will appear on card.</span>
+                                              </div>
+                                          )}
+                                      </div>
                                   </div>
                               )}
                           </div>
@@ -276,52 +400,132 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack }) => {
           </div>
 
           {/* RIGHT PANEL: PREVIEW */}
-          <div className="flex-1 bg-slate-950 p-8 flex items-center justify-center overflow-auto relative">
+          <div className="flex-1 bg-slate-950 p-4 md:p-8 flex flex-col items-center overflow-auto relative">
               
+              {/* Pagination Controls */}
+              <div className="flex items-center gap-4 mb-6 bg-slate-900 p-2 rounded-full border border-slate-800 shadow-xl z-10">
+                  <button 
+                      onClick={() => setActivePage(p => Math.max(0, p - 1))} 
+                      disabled={activePage === 0}
+                      className="p-2 bg-slate-800 hover:bg-slate-700 text-white rounded-full disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                  >
+                      <ChevronLeft size={20} />
+                  </button>
+                  <span className="text-sm font-bold text-slate-300 min-w-[140px] text-center select-none">
+                      {getPageLabel(activePage)} ({activePage + 1}/4)
+                  </span>
+                  <button 
+                      onClick={() => setActivePage(p => Math.min(3, p + 1))} 
+                      disabled={activePage === 3}
+                      className="p-2 bg-slate-800 hover:bg-slate-700 text-white rounded-full disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                  >
+                      <ChevronRight size={20} />
+                  </button>
+              </div>
+
               {/* Card Canvas */}
               <div 
                   ref={cardRef}
-                  className="w-[400px] min-h-[600px] bg-white text-slate-900 shadow-2xl relative overflow-hidden flex flex-col"
+                  className="w-[400px] h-[600px] bg-white text-slate-900 shadow-2xl relative overflow-hidden flex flex-col transition-all duration-300"
                   style={{ 
-                      backgroundImage: memory.theme === 'festive' ? 'url("https://www.transparenttextures.com/patterns/snow.png")' : 'none',
+                      backgroundImage: (memory.theme === 'festive' && activePage !== 2) ? 'url("https://www.transparenttextures.com/patterns/snow.png")' : 'none',
                       backgroundColor: memory.theme === 'minimal' ? '#f8fafc' : memory.theme === 'cozy' ? '#fff7ed' : '#ffffff' 
                   }}
               >
-                  {/* Decorative Header Image */}
-                  <div className="h-48 w-full bg-slate-200 relative overflow-hidden shrink-0">
-                      {memory.coverImageUrl ? (
-                          <img src={memory.coverImageUrl} className="w-full h-full object-cover" />
-                      ) : (
-                          <div className={`w-full h-full flex items-center justify-center ${memory.theme === 'festive' ? 'bg-red-700' : 'bg-slate-300'}`}>
-                              <Sparkles className="text-white/20 w-16 h-16" />
+                  {/* --- PAGE 0: FRONT COVER --- */}
+                  {activePage === 0 && (
+                      <div className="w-full h-full flex flex-col relative">
+                          {memory.coverImageUrl ? (
+                              <img src={memory.coverImageUrl} className="w-full h-full object-cover absolute inset-0 z-0" />
+                          ) : (
+                              <div className={`w-full h-full flex items-center justify-center ${memory.theme === 'festive' ? 'bg-red-800' : 'bg-slate-300'} z-0`}>
+                                  <Sparkles className="text-white/20 w-32 h-32" />
+                              </div>
+                          )}
+                          <div className="z-10 mt-auto p-8 bg-gradient-to-t from-black/80 to-transparent">
+                              <h2 className="font-holiday text-5xl text-white text-center drop-shadow-lg">
+                                  {memory.occasion}
+                              </h2>
                           </div>
-                      )}
-                      <div className="absolute bottom-0 left-0 w-full h-12 bg-gradient-to-t from-white to-transparent"></div>
-                  </div>
+                      </div>
+                  )}
 
-                  {/* Body */}
-                  <div className="p-8 flex-1 flex flex-col text-center">
-                      <h2 className="font-holiday text-4xl text-red-600 mb-6 drop-shadow-sm">
-                          {memory.occasion}
-                      </h2>
-                      
-                      <div className="flex-1 flex flex-col justify-center">
-                          <p className="font-script text-2xl text-slate-700 leading-relaxed mb-6 px-4">
-                              {memory.cardMessage}
+                  {/* --- PAGE 1: MESSAGE (INNER LEFT) --- */}
+                  {activePage === 1 && (
+                      <div className="w-full h-full flex flex-col p-10 justify-center items-center text-center relative">
+                          <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-red-500 via-green-500 to-red-500"></div>
+                          <h3 className="font-holiday text-3xl text-red-600 mb-8 opacity-80">Season's Greetings</h3>
+                          <p className="font-script text-3xl text-slate-800 leading-loose">
+                              {memory.cardMessage || "Your message will appear here..."}
                           </p>
+                          <div className="mt-12 w-16 h-1 bg-slate-200"></div>
                       </div>
+                  )}
 
-                      <div className="mt-8 space-y-1">
-                          <p className="text-sm font-bold uppercase tracking-widest text-slate-400">To: {memory.recipientName || '_______'}</p>
-                          <p className="text-sm font-bold uppercase tracking-widest text-slate-400">From: {memory.senderName || '_______'}</p>
+                  {/* --- PAGE 2: PHOTOS (INNER RIGHT) --- */}
+                  {activePage === 2 && (
+                      <div className="w-full h-full flex flex-col p-6 bg-slate-100">
+                          <h3 className="font-bold text-center text-slate-400 text-xs uppercase tracking-widest mb-4">Memories</h3>
+                          {memory.userImages.length > 0 ? (
+                              <div className={`grid gap-4 w-full h-full ${memory.userImages.length === 1 ? 'grid-cols-1' : memory.userImages.length === 2 ? 'grid-rows-2' : 'grid-cols-2 grid-rows-2'}`}>
+                                  {memory.userImages.slice(0, 4).map((img, i) => (
+                                      <div key={i} className="rounded-xl overflow-hidden shadow-sm border border-white bg-white p-1">
+                                          <img src={img} className="w-full h-full object-cover rounded-lg" />
+                                      </div>
+                                  ))}
+                              </div>
+                          ) : (
+                              <div className="flex-1 border-2 border-dashed border-slate-300 rounded-xl flex items-center justify-center text-slate-400">
+                                  <p className="text-sm">No photos uploaded yet</p>
+                              </div>
+                          )}
+                          <div className="mt-4 text-center">
+                              <p className="font-script text-xl text-slate-600">With love, {memory.senderName}</p>
+                          </div>
                       </div>
-                  </div>
+                  )}
 
-                  {/* Footer Decoration */}
-                  <div className="h-2 bg-gradient-to-r from-red-500 via-green-500 to-red-500"></div>
-                  <div className="p-2 text-[8px] text-center text-slate-300 bg-white">
-                      Created with AIVoiceCast
-                  </div>
+                  {/* --- PAGE 3: BACK COVER --- */}
+                  {activePage === 3 && (
+                      <div className="w-full h-full flex flex-col items-center justify-between p-12 bg-white relative">
+                          {memory.backImageUrl ? (
+                              <div className="w-full h-48 overflow-hidden rounded-xl opacity-80">
+                                  <img src={memory.backImageUrl} className="w-full h-full object-cover" />
+                              </div>
+                          ) : (
+                              <div className="w-full h-48 bg-slate-100 rounded-xl flex items-center justify-center">
+                                  <ImageIcon className="text-slate-300" />
+                              </div>
+                          )}
+
+                          <div className="text-center space-y-4">
+                              {memory.googlePhotosUrl ? (
+                                  <>
+                                      <div className="bg-white p-2 rounded-lg shadow-lg inline-block border border-slate-200">
+                                          <img 
+                                              src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(memory.googlePhotosUrl)}`} 
+                                              alt="Album QR"
+                                              className="w-32 h-32"
+                                          />
+                                      </div>
+                                      <p className="text-xs font-bold text-slate-500 uppercase tracking-wide">Scan for Photo Album</p>
+                                  </>
+                              ) : (
+                                  <div className="w-32 h-32 bg-slate-100 rounded-lg flex items-center justify-center text-slate-400 text-xs text-center p-2">
+                                      Add Album Link to see QR Code
+                                  </div>
+                              )}
+                          </div>
+
+                          <div className="text-center">
+                              <div className="flex items-center justify-center gap-2 text-slate-400 mb-1">
+                                  <Gift size={16} />
+                                  <span className="font-holiday font-bold text-lg">AIVoiceCast</span>
+                              </div>
+                              <p className="text-[10px] text-slate-400 uppercase tracking-widest">Designed with AI</p>
+                          </div>
+                      </div>
+                  )}
               </div>
 
           </div>
@@ -329,3 +533,7 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack }) => {
     </div>
   );
 };
+
+const Edit3Icon = () => (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+);
