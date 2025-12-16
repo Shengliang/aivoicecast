@@ -53,6 +53,30 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const refImageInputRef = useRef<HTMLInputElement>(null);
 
+  // PDF Export State
+  const [isExporting, setIsExporting] = useState(false);
+  const [qrCodeBase64, setQrCodeBase64] = useState<string | null>(null);
+
+  // Fetch QR Code as Base64 to ensure it renders in PDF (CORS fix)
+  useEffect(() => {
+    if (memory.googlePhotosUrl) {
+        const url = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(memory.googlePhotosUrl)}`;
+        fetch(url, { mode: 'cors' })
+            .then(res => res.blob())
+            .then(blob => {
+                const reader = new FileReader();
+                reader.onloadend = () => setQrCodeBase64(reader.result as string);
+                reader.readAsDataURL(blob);
+            })
+            .catch((e) => {
+                console.warn("QR Fetch failed, falling back to URL", e);
+                setQrCodeBase64(url);
+            });
+    } else {
+        setQrCodeBase64(null);
+    }
+  }, [memory.googlePhotosUrl]);
+
   // Initialize Live Service
   useEffect(() => {
       liveServiceRef.current = new GeminiLiveService();
@@ -184,23 +208,40 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack }) => {
   };
 
   const handleExportPDF = async () => {
-      if (!cardRef.current) return;
-      try {
-          const canvas = await html2canvas(cardRef.current, { scale: 2, useCORS: true });
-          const imgData = canvas.toDataURL('image/png');
-          
-          const pdf = new jsPDF({
-              orientation: 'portrait',
-              unit: 'px',
-              format: [canvas.width, canvas.height]
-          });
-          
-          pdf.addImage(imgData, 'PNG', 0, 0, canvas.width, canvas.height);
-          pdf.save(`Card_Page${activePage + 1}.pdf`);
-      } catch(e) {
-          console.error(e);
-          alert("Export failed");
-      }
+      setIsExporting(true);
+      // Give React time to render the hidden view
+      setTimeout(async () => {
+          try {
+              const pdf = new jsPDF({
+                  orientation: 'portrait',
+                  unit: 'px',
+                  format: [400, 600] // Match card dimensions
+              });
+
+              for (let i = 0; i < 4; i++) {
+                  const el = document.getElementById(`export-card-page-${i}`);
+                  if (el) {
+                      const canvas = await html2canvas(el, { 
+                          scale: 2, 
+                          useCORS: true,
+                          allowTaint: true,
+                          logging: false,
+                          backgroundColor: memory.theme === 'chinese-poem' ? '#f5f0e1' : '#ffffff'
+                      });
+                      const imgData = canvas.toDataURL('image/jpeg', 0.95);
+                      
+                      if (i > 0) pdf.addPage();
+                      pdf.addImage(imgData, 'JPEG', 0, 0, 400, 600);
+                  }
+              }
+              pdf.save(`${memory.recipientName || 'Card'}_HolidayCard.pdf`);
+          } catch(e) {
+              console.error(e);
+              alert("Export failed");
+          } finally {
+              setIsExporting(false);
+          }
+      }, 800); // Wait for images to render in hidden div
   };
 
   const handleShareLink = async () => {
@@ -247,6 +288,139 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack }) => {
   // Determine text direction style - Only vertical if actually Chinese characters
   const isVertical = memory.theme === 'chinese-poem' && isChinese(memory.cardMessage);
 
+  // Render logic for a single page (reused for Display and Export)
+  const renderCardContent = (page: number) => {
+      return (
+          <>
+             {/* --- PAGE 0: FRONT COVER --- */}
+             {page === 0 && (
+                <div className="w-full h-full flex flex-col relative">
+                    {memory.coverImageUrl ? (
+                        <img src={memory.coverImageUrl} className={`w-full h-full object-cover absolute inset-0 z-0 ${memory.theme === 'chinese-poem' ? 'opacity-90 mix-blend-multiply' : ''}`} style={{ objectFit: 'cover' }} crossOrigin="anonymous" />
+                    ) : (
+                        <div className={`w-full h-full flex items-center justify-center ${memory.theme === 'festive' ? 'bg-red-800' : 'bg-slate-300'} z-0`}>
+                            <Sparkles className="text-white/20 w-32 h-32" />
+                        </div>
+                    )}
+                    <div className={`z-10 mt-auto p-8 ${memory.theme === 'chinese-poem' ? '' : 'bg-gradient-to-t from-black/80 to-transparent'}`}>
+                        <h2 className={`text-5xl text-center drop-shadow-lg ${isVertical ? 'font-chinese-brush text-black vertical-rl ml-auto h-64' : 'font-holiday text-white'}`}>
+                            {memory.occasion}
+                        </h2>
+                    </div>
+                    
+                    {/* Chinese Seal Effect */}
+                    {memory.theme === 'chinese-poem' && (
+                        <div className="absolute bottom-8 left-8 w-12 h-12 border-2 border-red-800 rounded-sm flex items-center justify-center p-1 bg-red-100/50 backdrop-blur-sm">
+                            <div className="w-full h-full bg-red-800 flex items-center justify-center text-white font-chinese-brush text-2xl">
+                                {getSealChar(memory.senderName)}
+                            </div>
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {/* --- PAGE 1: MESSAGE (INNER LEFT) --- */}
+            {page === 1 && (
+                <div className={`w-full h-full flex flex-col p-10 justify-center text-center relative ${isVertical ? 'items-end' : 'items-center'}`}>
+                    {memory.theme !== 'chinese-poem' && (
+                       <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-red-500 via-green-500 to-red-500"></div>
+                    )}
+                    
+                    {/* Heading */}
+                    {memory.theme === 'chinese-poem' ? (
+                        <h3 className={`font-chinese-brush text-3xl text-red-900 mb-0 opacity-80 ${isVertical ? 'vertical-rl absolute top-10 right-10' : 'mb-8'}`}>
+                            {memory.occasion}
+                        </h3>
+                    ) : (
+                        <h3 className="font-holiday text-3xl text-red-600 mb-8 opacity-80">Season's Greetings</h3>
+                    )}
+
+                    {/* Body Text */}
+                    <div className={`${isVertical ? 'vertical-rl h-full max-h-[400px] flex flex-wrap-reverse gap-4 items-start text-right pr-16' : ''}`}>
+                       <p className={`${memory.theme === 'chinese-poem' ? 'font-chinese-brush text-2xl text-slate-800 leading-loose' : 'font-script text-3xl text-slate-800 leading-loose'}`}>
+                           {memory.cardMessage || "Your message will appear here..."}
+                       </p>
+                    </div>
+
+                    {/* Decorative Separator */}
+                    {memory.theme !== 'chinese-poem' && <div className="mt-12 w-16 h-1 bg-slate-200"></div>}
+                </div>
+            )}
+
+            {/* --- PAGE 2: PHOTOS (INNER RIGHT) --- */}
+            {page === 2 && (
+                <div className={`w-full h-full flex flex-col p-6 ${memory.theme === 'chinese-poem' ? 'bg-[#f5f0e1]' : 'bg-slate-100'}`}>
+                    <h3 className="font-bold text-center text-slate-400 text-xs uppercase tracking-widest mb-4">Memories</h3>
+                    {memory.userImages.length > 0 ? (
+                        <div className={`grid gap-4 w-full h-full ${memory.userImages.length === 1 ? 'grid-cols-1' : memory.userImages.length === 2 ? 'grid-rows-2' : 'grid-cols-2 grid-rows-2'}`}>
+                            {memory.userImages.slice(0, 4).map((img, i) => (
+                                <div key={i} className={`rounded-xl overflow-hidden shadow-sm border ${memory.theme === 'chinese-poem' ? 'border-red-900/20 bg-[#fdfbf7]' : 'border-white bg-white'} p-1 relative`}>
+                                    {/* Use absolute positioning to enforce crop within grid cell */}
+                                    <img src={img} className="w-full h-full object-cover rounded-lg absolute inset-0 m-1" style={{width: 'calc(100% - 8px)', height: 'calc(100% - 8px)', objectFit: 'cover'}} crossOrigin="anonymous" />
+                                </div>
+                            ))}
+                        </div>
+                    ) : (
+                        <div className="flex-1 border-2 border-dashed border-slate-300 rounded-xl flex items-center justify-center text-slate-400">
+                            <p className="text-sm">No photos uploaded yet</p>
+                        </div>
+                    )}
+                    <div className="mt-4 text-center">
+                        <p className={`${memory.theme === 'chinese-poem' ? 'font-chinese-brush text-2xl text-slate-800' : 'font-script text-xl text-slate-600'}`}>
+                            {memory.theme === 'chinese-poem' ? memory.senderName : `With love, ${memory.senderName}`}
+                        </p>
+                    </div>
+                </div>
+            )}
+
+            {/* --- PAGE 3: BACK COVER --- */}
+            {page === 3 && (
+                <div className={`w-full h-full flex flex-col items-center justify-between p-12 relative ${memory.theme === 'chinese-poem' ? 'bg-[#f5f0e1]' : 'bg-white'}`}>
+                    {memory.backImageUrl ? (
+                        <div className="w-full h-48 overflow-hidden rounded-xl opacity-80">
+                            <img src={memory.backImageUrl} className={`w-full h-full object-cover ${memory.theme === 'chinese-poem' ? 'mix-blend-multiply grayscale sepia-[.3]' : ''}`} style={{ objectFit: 'cover' }} crossOrigin="anonymous" />
+                        </div>
+                    ) : (
+                        <div className="w-full h-48 bg-slate-100 rounded-xl flex items-center justify-center">
+                            <ImageIcon className="text-slate-300" />
+                        </div>
+                    )}
+
+                    <div className="text-center space-y-4">
+                        {memory.googlePhotosUrl ? (
+                            <>
+                                <div className={`p-2 rounded-lg shadow-lg inline-block border ${memory.theme === 'chinese-poem' ? 'bg-[#fdfbf7] border-red-900/10' : 'bg-white border-slate-200'}`}>
+                                    {qrCodeBase64 && (
+                                        <img 
+                                            src={qrCodeBase64}
+                                            alt="Album QR"
+                                            className="w-32 h-32 mix-blend-multiply"
+                                            crossOrigin="anonymous"
+                                        />
+                                    )}
+                                </div>
+                                <p className="text-xs font-bold text-slate-500 uppercase tracking-wide">Scan for Photo Album</p>
+                            </>
+                        ) : (
+                            <div className="w-32 h-32 bg-slate-100 rounded-lg flex items-center justify-center text-slate-400 text-xs text-center p-2">
+                                Add Album Link to see QR Code
+                            </div>
+                        )}
+                    </div>
+
+                    <div className="text-center">
+                        <div className="flex items-center justify-center gap-2 text-slate-400 mb-1">
+                            <Gift size={16} />
+                            <span className="font-holiday font-bold text-lg">AIVoiceCast</span>
+                        </div>
+                        <p className="text-[10px] text-slate-400 uppercase tracking-widest">Designed with AI</p>
+                    </div>
+                </div>
+            )}
+          </>
+      );
+  };
+
   return (
     <div className="flex flex-col h-screen bg-slate-950 text-slate-100 overflow-hidden">
       {/* Header */}
@@ -260,11 +434,12 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack }) => {
               </h1>
           </div>
           <div className="flex gap-2">
-              <button onClick={handleExportPDF} className="flex items-center gap-2 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 rounded-lg text-xs font-bold transition-colors">
-                  <Download size={14} /> PDF Page
+              <button onClick={handleExportPDF} disabled={isExporting} className="flex items-center gap-2 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 rounded-lg text-xs font-bold transition-colors">
+                  {isExporting ? <Loader2 size={14} className="animate-spin"/> : <Download size={14} />} 
+                  {isExporting ? 'Generating PDF...' : 'Download PDF (4 Pages)'}
               </button>
               <button onClick={handleShareLink} className="flex items-center gap-2 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 rounded-lg text-xs font-bold transition-colors shadow-lg">
-                  <Share2 size={14} /> Share
+                  <Share2 size={14} /> Share Page
               </button>
           </div>
       </div>
@@ -530,130 +705,27 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack }) => {
                       boxShadow: memory.theme === 'chinese-poem' ? 'inset 0 0 40px rgba(0,0,0,0.1)' : ''
                   }}
               >
-                  {/* --- PAGE 0: FRONT COVER --- */}
-                  {activePage === 0 && (
-                      <div className="w-full h-full flex flex-col relative">
-                          {memory.coverImageUrl ? (
-                              <img src={memory.coverImageUrl} className={`w-full h-full object-cover absolute inset-0 z-0 ${memory.theme === 'chinese-poem' ? 'opacity-90 mix-blend-multiply' : ''}`} style={{ objectFit: 'cover' }} />
-                          ) : (
-                              <div className={`w-full h-full flex items-center justify-center ${memory.theme === 'festive' ? 'bg-red-800' : 'bg-slate-300'} z-0`}>
-                                  <Sparkles className="text-white/20 w-32 h-32" />
-                              </div>
-                          )}
-                          <div className={`z-10 mt-auto p-8 ${memory.theme === 'chinese-poem' ? '' : 'bg-gradient-to-t from-black/80 to-transparent'}`}>
-                              <h2 className={`text-5xl text-center drop-shadow-lg ${isVertical ? 'font-chinese-brush text-black vertical-rl ml-auto h-64' : 'font-holiday text-white'}`}>
-                                  {memory.occasion}
-                              </h2>
-                          </div>
-                          
-                          {/* Chinese Seal Effect */}
-                          {memory.theme === 'chinese-poem' && (
-                              <div className="absolute bottom-8 left-8 w-12 h-12 border-2 border-red-800 rounded-sm flex items-center justify-center p-1 bg-red-100/50 backdrop-blur-sm">
-                                  <div className="w-full h-full bg-red-800 flex items-center justify-center text-white font-chinese-brush text-2xl">
-                                      {getSealChar(memory.senderName)}
-                                  </div>
-                              </div>
-                          )}
-                      </div>
-                  )}
-
-                  {/* --- PAGE 1: MESSAGE (INNER LEFT) --- */}
-                  {activePage === 1 && (
-                      <div className={`w-full h-full flex flex-col p-10 justify-center text-center relative ${isVertical ? 'items-end' : 'items-center'}`}>
-                          {memory.theme !== 'chinese-poem' && (
-                             <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-red-500 via-green-500 to-red-500"></div>
-                          )}
-                          
-                          {/* Heading */}
-                          {memory.theme === 'chinese-poem' ? (
-                              <h3 className={`font-chinese-brush text-3xl text-red-900 mb-0 opacity-80 ${isVertical ? 'vertical-rl absolute top-10 right-10' : 'mb-8'}`}>
-                                  {memory.occasion}
-                              </h3>
-                          ) : (
-                              <h3 className="font-holiday text-3xl text-red-600 mb-8 opacity-80">Season's Greetings</h3>
-                          )}
-
-                          {/* Body Text */}
-                          <div className={`${isVertical ? 'vertical-rl h-full max-h-[400px] flex flex-wrap-reverse gap-4 items-start text-right pr-16' : ''}`}>
-                             <p className={`${memory.theme === 'chinese-poem' ? 'font-chinese-brush text-2xl text-slate-800 leading-loose' : 'font-script text-3xl text-slate-800 leading-loose'}`}>
-                                 {memory.cardMessage || "Your message will appear here..."}
-                             </p>
-                          </div>
-
-                          {/* Decorative Separator */}
-                          {memory.theme !== 'chinese-poem' && <div className="mt-12 w-16 h-1 bg-slate-200"></div>}
-                      </div>
-                  )}
-
-                  {/* --- PAGE 2: PHOTOS (INNER RIGHT) --- */}
-                  {activePage === 2 && (
-                      <div className={`w-full h-full flex flex-col p-6 ${memory.theme === 'chinese-poem' ? 'bg-[#f5f0e1]' : 'bg-slate-100'}`}>
-                          <h3 className="font-bold text-center text-slate-400 text-xs uppercase tracking-widest mb-4">Memories</h3>
-                          {memory.userImages.length > 0 ? (
-                              <div className={`grid gap-4 w-full h-full ${memory.userImages.length === 1 ? 'grid-cols-1' : memory.userImages.length === 2 ? 'grid-rows-2' : 'grid-cols-2 grid-rows-2'}`}>
-                                  {memory.userImages.slice(0, 4).map((img, i) => (
-                                      <div key={i} className={`rounded-xl overflow-hidden shadow-sm border ${memory.theme === 'chinese-poem' ? 'border-red-900/20 bg-[#fdfbf7]' : 'border-white bg-white'} p-1 relative`}>
-                                          {/* Use absolute positioning to enforce crop within grid cell */}
-                                          <img src={img} className="w-full h-full object-cover rounded-lg absolute inset-0 m-1" style={{width: 'calc(100% - 8px)', height: 'calc(100% - 8px)', objectFit: 'cover'}} />
-                                      </div>
-                                  ))}
-                              </div>
-                          ) : (
-                              <div className="flex-1 border-2 border-dashed border-slate-300 rounded-xl flex items-center justify-center text-slate-400">
-                                  <p className="text-sm">No photos uploaded yet</p>
-                              </div>
-                          )}
-                          <div className="mt-4 text-center">
-                              <p className={`${memory.theme === 'chinese-poem' ? 'font-chinese-brush text-2xl text-slate-800' : 'font-script text-xl text-slate-600'}`}>
-                                  {memory.theme === 'chinese-poem' ? memory.senderName : `With love, ${memory.senderName}`}
-                              </p>
-                          </div>
-                      </div>
-                  )}
-
-                  {/* --- PAGE 3: BACK COVER --- */}
-                  {activePage === 3 && (
-                      <div className={`w-full h-full flex flex-col items-center justify-between p-12 relative ${memory.theme === 'chinese-poem' ? 'bg-[#f5f0e1]' : 'bg-white'}`}>
-                          {memory.backImageUrl ? (
-                              <div className="w-full h-48 overflow-hidden rounded-xl opacity-80">
-                                  <img src={memory.backImageUrl} className={`w-full h-full object-cover ${memory.theme === 'chinese-poem' ? 'mix-blend-multiply grayscale sepia-[.3]' : ''}`} style={{ objectFit: 'cover' }} />
-                              </div>
-                          ) : (
-                              <div className="w-full h-48 bg-slate-100 rounded-xl flex items-center justify-center">
-                                  <ImageIcon className="text-slate-300" />
-                              </div>
-                          )}
-
-                          <div className="text-center space-y-4">
-                              {memory.googlePhotosUrl ? (
-                                  <>
-                                      <div className={`p-2 rounded-lg shadow-lg inline-block border ${memory.theme === 'chinese-poem' ? 'bg-[#fdfbf7] border-red-900/10' : 'bg-white border-slate-200'}`}>
-                                          <img 
-                                              src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(memory.googlePhotosUrl)}`} 
-                                              alt="Album QR"
-                                              crossOrigin="anonymous"
-                                              className="w-32 h-32 mix-blend-multiply"
-                                          />
-                                      </div>
-                                      <p className="text-xs font-bold text-slate-500 uppercase tracking-wide">Scan for Photo Album</p>
-                                  </>
-                              ) : (
-                                  <div className="w-32 h-32 bg-slate-100 rounded-lg flex items-center justify-center text-slate-400 text-xs text-center p-2">
-                                      Add Album Link to see QR Code
-                                  </div>
-                              )}
-                          </div>
-
-                          <div className="text-center">
-                              <div className="flex items-center justify-center gap-2 text-slate-400 mb-1">
-                                  <Gift size={16} />
-                                  <span className="font-holiday font-bold text-lg">AIVoiceCast</span>
-                              </div>
-                              <p className="text-[10px] text-slate-400 uppercase tracking-widest">Designed with AI</p>
-                          </div>
-                      </div>
-                  )}
+                  {renderCardContent(activePage)}
               </div>
+
+              {/* HIDDEN EXPORT AREA */}
+              {isExporting && (
+                  <div style={{ position: 'absolute', left: '-9999px', top: '-9999px', opacity: 0 }}>
+                      {[0, 1, 2, 3].map(pageNum => (
+                          <div 
+                              key={pageNum} 
+                              id={`export-card-page-${pageNum}`}
+                              className="w-[400px] h-[600px] overflow-hidden flex flex-col relative"
+                              style={{ 
+                                  backgroundImage: (memory.theme === 'festive' && pageNum !== 2) ? 'url("https://www.transparenttextures.com/patterns/snow.png")' : 'none',
+                                  backgroundColor: memory.theme === 'chinese-poem' ? '#f5f0e1' : memory.theme === 'minimal' ? '#f8fafc' : memory.theme === 'cozy' ? '#fff7ed' : '#ffffff',
+                              }}
+                          >
+                              {renderCardContent(pageNum)}
+                          </div>
+                      ))}
+                  </div>
+              )}
 
           </div>
       </div>
