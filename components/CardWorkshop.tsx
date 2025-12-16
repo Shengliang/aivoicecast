@@ -18,6 +18,7 @@ const DEFAULT_MEMORY: AgentMemory = {
   occasion: 'Holiday',
   cardMessage: 'Wishing you a season filled with warmth, comfort, and good cheer.',
   theme: 'festive',
+  customThemePrompt: '',
   userImages: [],
   googlePhotosUrl: '',
   generatedAt: new Date().toISOString()
@@ -57,11 +58,16 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack }) => {
           setIsLiveActive(false);
       } else {
           try {
-              const sysPrompt = `You are "Elf", a cheerful and helpful holiday card assistant. 
-              Help the user write a card for ${memory.recipientName || 'a friend'}.
-              Current Context: Occasion=${memory.occasion}, Theme=${memory.theme}.
-              Be brief, festive, and creative. Ask clarifying questions to make the message personal.`;
+              let sysPrompt = `You are "Elf", a cheerful holiday card assistant. Help the user write a card for ${memory.recipientName || 'a friend'}.`;
               
+              if (memory.theme === 'chinese-poem') {
+                  sysPrompt = `You are a Chinese Poetry Master (Shifu). 
+                  Help the user compose a classical Chinese poem (Jueju or Lushi) for a greeting card.
+                  Current Occasion: ${memory.occasion}. Recipient: ${memory.recipientName}.
+                  When the user gives a topic, generate a 4-line poem in Chinese.
+                  Explain the meaning briefly in English afterwards.`;
+              }
+
               await liveServiceRef.current?.connect('Puck', sysPrompt, {
                   onOpen: () => setIsLiveActive(true),
                   onClose: () => setIsLiveActive(false),
@@ -93,13 +99,20 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack }) => {
       const setter = isBack ? setIsGeneratingBackImage : setIsGeneratingImage;
       setter(true);
       try {
-          const style = memory.theme === 'festive' ? 'Classic Christmas, red and gold, cozy fireplace' :
+          let style = '';
+          if (memory.theme === 'chinese-poem') {
+               style = 'Ink wash painting (Shui-mo), minimalistic, Zen, traditional Chinese art style';
+          } else {
+               style = memory.theme === 'festive' ? 'Classic Christmas, red and gold, cozy fireplace' :
                         memory.theme === 'minimal' ? 'Modern abstract, winter palette, clean lines' :
                         memory.theme === 'cozy' ? 'Warm watercolor, hot cocoa, knitted textures' :
                         'Elegant typography, gratitude, floral border';
+          }
           
-          // Modify prompt slightly for back
-          const prompt = isBack ? style + ", subtle background pattern, minimalist" : style;
+          // Modify prompt for page context
+          const prompt = isBack 
+              ? style + ", background pattern or texture, minimalist, suitable for back cover" 
+              : style + ", highly detailed cover art, main subject centered, cinematic";
           
           const imgUrl = await generateCardImage(memory, prompt);
           setMemory(prev => isBack ? ({ ...prev, backImageUrl: imgUrl }) : ({ ...prev, coverImageUrl: imgUrl }));
@@ -148,11 +161,6 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack }) => {
   const handleExportPDF = async () => {
       if (!cardRef.current) return;
       try {
-          // Temporarily ensure card is visible fully if needed, or rely on active view
-          // For multi-page, we might want to render all pages or just the active one?
-          // Let's stick to current page for simplicity or prompt user.
-          // BETTER: Export current view.
-          
           const canvas = await html2canvas(cardRef.current, { scale: 2, useCORS: true });
           const imgData = canvas.toDataURL('image/png');
           
@@ -206,6 +214,11 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack }) => {
       }
   };
 
+  // Helper to extract first char for the seal
+  const getSealChar = (name: string) => {
+      return name ? name.trim().charAt(0).toUpperCase() : 'AI';
+  };
+
   return (
     <div className="flex flex-col h-screen bg-slate-950 text-slate-100 overflow-hidden">
       {/* Header */}
@@ -252,17 +265,26 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack }) => {
                                   <option value="Thanks">Thank You</option>
                                   <option value="Birthday">Happy Birthday</option>
                               </select>
-                              <div className="grid grid-cols-2 gap-2 mt-2">
-                                  {['festive', 'cozy', 'minimal', 'thanks'].map(t => (
+                              
+                              <label className="text-xs font-bold text-slate-500 uppercase mt-4 block">Visual Theme & Style</label>
+                              <div className="grid grid-cols-2 gap-2 mb-2">
+                                  {['festive', 'cozy', 'minimal', 'chinese-poem'].map(t => (
                                       <button 
                                           key={t}
                                           onClick={() => setMemory({...memory, theme: t as any})}
                                           className={`py-2 text-xs font-bold rounded-lg border capitalize ${memory.theme === t ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-slate-800 border-slate-700 text-slate-400'}`}
                                       >
-                                          {t}
+                                          {t.replace('-', ' ')}
                                       </button>
                                   ))}
                               </div>
+                              <textarea
+                                  rows={2}
+                                  placeholder={memory.theme === 'chinese-poem' ? "E.g. Plum blossoms in winter, solitude, tea" : "Describe the main visual theme..."}
+                                  value={memory.customThemePrompt || ''}
+                                  onChange={e => setMemory({...memory, customThemePrompt: e.target.value})}
+                                  className="w-full bg-slate-800 border border-slate-700 rounded-lg p-3 text-sm text-white focus:border-indigo-500 outline-none resize-none"
+                              />
                           </div>
 
                           {/* Contextual Settings based on Page */}
@@ -429,47 +451,74 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack }) => {
                   className="w-[400px] h-[600px] bg-white text-slate-900 shadow-2xl relative overflow-hidden flex flex-col transition-all duration-300"
                   style={{ 
                       backgroundImage: (memory.theme === 'festive' && activePage !== 2) ? 'url("https://www.transparenttextures.com/patterns/snow.png")' : 'none',
-                      backgroundColor: memory.theme === 'minimal' ? '#f8fafc' : memory.theme === 'cozy' ? '#fff7ed' : '#ffffff' 
+                      backgroundColor: memory.theme === 'chinese-poem' ? '#f5f0e1' : memory.theme === 'minimal' ? '#f8fafc' : memory.theme === 'cozy' ? '#fff7ed' : '#ffffff',
+                      // Chinese Rice Paper Texture effect
+                      boxShadow: memory.theme === 'chinese-poem' ? 'inset 0 0 40px rgba(0,0,0,0.1)' : ''
                   }}
               >
                   {/* --- PAGE 0: FRONT COVER --- */}
                   {activePage === 0 && (
                       <div className="w-full h-full flex flex-col relative">
                           {memory.coverImageUrl ? (
-                              <img src={memory.coverImageUrl} className="w-full h-full object-cover absolute inset-0 z-0" />
+                              <img src={memory.coverImageUrl} className={`w-full h-full object-cover absolute inset-0 z-0 ${memory.theme === 'chinese-poem' ? 'opacity-90 mix-blend-multiply' : ''}`} />
                           ) : (
                               <div className={`w-full h-full flex items-center justify-center ${memory.theme === 'festive' ? 'bg-red-800' : 'bg-slate-300'} z-0`}>
                                   <Sparkles className="text-white/20 w-32 h-32" />
                               </div>
                           )}
-                          <div className="z-10 mt-auto p-8 bg-gradient-to-t from-black/80 to-transparent">
-                              <h2 className="font-holiday text-5xl text-white text-center drop-shadow-lg">
+                          <div className={`z-10 mt-auto p-8 ${memory.theme === 'chinese-poem' ? '' : 'bg-gradient-to-t from-black/80 to-transparent'}`}>
+                              <h2 className={`text-5xl text-center drop-shadow-lg ${memory.theme === 'chinese-poem' ? 'font-chinese-brush text-black vertical-rl ml-auto h-64' : 'font-holiday text-white'}`}>
                                   {memory.occasion}
                               </h2>
                           </div>
+                          
+                          {/* Chinese Seal Effect */}
+                          {memory.theme === 'chinese-poem' && (
+                              <div className="absolute bottom-8 left-8 w-12 h-12 border-2 border-red-800 rounded-sm flex items-center justify-center p-1 bg-red-100/50 backdrop-blur-sm">
+                                  <div className="w-full h-full bg-red-800 flex items-center justify-center text-white font-chinese-brush text-2xl">
+                                      {getSealChar(memory.senderName)}
+                                  </div>
+                              </div>
+                          )}
                       </div>
                   )}
 
                   {/* --- PAGE 1: MESSAGE (INNER LEFT) --- */}
                   {activePage === 1 && (
-                      <div className="w-full h-full flex flex-col p-10 justify-center items-center text-center relative">
-                          <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-red-500 via-green-500 to-red-500"></div>
-                          <h3 className="font-holiday text-3xl text-red-600 mb-8 opacity-80">Season's Greetings</h3>
-                          <p className="font-script text-3xl text-slate-800 leading-loose">
-                              {memory.cardMessage || "Your message will appear here..."}
-                          </p>
-                          <div className="mt-12 w-16 h-1 bg-slate-200"></div>
+                      <div className={`w-full h-full flex flex-col p-10 justify-center text-center relative ${memory.theme === 'chinese-poem' ? 'items-end' : 'items-center'}`}>
+                          {memory.theme !== 'chinese-poem' && (
+                             <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-red-500 via-green-500 to-red-500"></div>
+                          )}
+                          
+                          {/* Heading */}
+                          {memory.theme === 'chinese-poem' ? (
+                              <h3 className="font-chinese-brush text-3xl text-red-900 mb-0 opacity-80 vertical-rl absolute top-10 right-10">
+                                  {memory.occasion}
+                              </h3>
+                          ) : (
+                              <h3 className="font-holiday text-3xl text-red-600 mb-8 opacity-80">Season's Greetings</h3>
+                          )}
+
+                          {/* Body Text */}
+                          <div className={`${memory.theme === 'chinese-poem' ? 'vertical-rl h-full max-h-[400px] flex flex-wrap-reverse gap-4 items-start text-right pr-16' : ''}`}>
+                             <p className={`${memory.theme === 'chinese-poem' ? 'font-chinese-brush text-2xl text-slate-800 leading-loose' : 'font-script text-3xl text-slate-800 leading-loose'}`}>
+                                 {memory.cardMessage || "Your message will appear here..."}
+                             </p>
+                          </div>
+
+                          {/* Decorative Separator */}
+                          {memory.theme !== 'chinese-poem' && <div className="mt-12 w-16 h-1 bg-slate-200"></div>}
                       </div>
                   )}
 
                   {/* --- PAGE 2: PHOTOS (INNER RIGHT) --- */}
                   {activePage === 2 && (
-                      <div className="w-full h-full flex flex-col p-6 bg-slate-100">
+                      <div className={`w-full h-full flex flex-col p-6 ${memory.theme === 'chinese-poem' ? 'bg-[#f5f0e1]' : 'bg-slate-100'}`}>
                           <h3 className="font-bold text-center text-slate-400 text-xs uppercase tracking-widest mb-4">Memories</h3>
                           {memory.userImages.length > 0 ? (
                               <div className={`grid gap-4 w-full h-full ${memory.userImages.length === 1 ? 'grid-cols-1' : memory.userImages.length === 2 ? 'grid-rows-2' : 'grid-cols-2 grid-rows-2'}`}>
                                   {memory.userImages.slice(0, 4).map((img, i) => (
-                                      <div key={i} className="rounded-xl overflow-hidden shadow-sm border border-white bg-white p-1">
+                                      <div key={i} className={`rounded-xl overflow-hidden shadow-sm border ${memory.theme === 'chinese-poem' ? 'border-red-900/20 bg-[#fdfbf7]' : 'border-white bg-white'} p-1`}>
                                           <img src={img} className="w-full h-full object-cover rounded-lg" />
                                       </div>
                                   ))}
@@ -480,17 +529,19 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack }) => {
                               </div>
                           )}
                           <div className="mt-4 text-center">
-                              <p className="font-script text-xl text-slate-600">With love, {memory.senderName}</p>
+                              <p className={`${memory.theme === 'chinese-poem' ? 'font-chinese-brush text-2xl text-slate-800' : 'font-script text-xl text-slate-600'}`}>
+                                  {memory.theme === 'chinese-poem' ? memory.senderName : `With love, ${memory.senderName}`}
+                              </p>
                           </div>
                       </div>
                   )}
 
                   {/* --- PAGE 3: BACK COVER --- */}
                   {activePage === 3 && (
-                      <div className="w-full h-full flex flex-col items-center justify-between p-12 bg-white relative">
+                      <div className={`w-full h-full flex flex-col items-center justify-between p-12 relative ${memory.theme === 'chinese-poem' ? 'bg-[#f5f0e1]' : 'bg-white'}`}>
                           {memory.backImageUrl ? (
                               <div className="w-full h-48 overflow-hidden rounded-xl opacity-80">
-                                  <img src={memory.backImageUrl} className="w-full h-full object-cover" />
+                                  <img src={memory.backImageUrl} className={`w-full h-full object-cover ${memory.theme === 'chinese-poem' ? 'mix-blend-multiply grayscale sepia-[.3]' : ''}`} />
                               </div>
                           ) : (
                               <div className="w-full h-48 bg-slate-100 rounded-xl flex items-center justify-center">
@@ -501,11 +552,11 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack }) => {
                           <div className="text-center space-y-4">
                               {memory.googlePhotosUrl ? (
                                   <>
-                                      <div className="bg-white p-2 rounded-lg shadow-lg inline-block border border-slate-200">
+                                      <div className={`p-2 rounded-lg shadow-lg inline-block border ${memory.theme === 'chinese-poem' ? 'bg-[#fdfbf7] border-red-900/10' : 'bg-white border-slate-200'}`}>
                                           <img 
                                               src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(memory.googlePhotosUrl)}`} 
                                               alt="Album QR"
-                                              className="w-32 h-32"
+                                              className="w-32 h-32 mix-blend-multiply"
                                           />
                                       </div>
                                       <p className="text-xs font-bold text-slate-500 uppercase tracking-wide">Scan for Photo Album</p>

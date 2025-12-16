@@ -250,6 +250,7 @@ export interface Blog {
   title: string;
   description: string;
   createdAt: number;
+  likes?: number;
 }
 
 export interface BlogPost {
@@ -394,7 +395,8 @@ export interface AgentMemory {
   senderName: string;
   occasion: string;
   cardMessage: string;
-  theme: 'festive' | 'cozy' | 'minimal' | 'thanks';
+  theme: 'festive' | 'cozy' | 'minimal' | 'thanks' | 'chinese-poem';
+  customThemePrompt?: string;
   userImages: string[];
   coverImageUrl?: string;
   backImageUrl?: string;

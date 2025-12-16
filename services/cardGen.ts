@@ -12,15 +12,34 @@ const getClient = () => {
 export async function generateCardMessage(memory: AgentMemory, tone: string = 'warm'): Promise<string> {
     try {
         const ai = getClient();
-        const prompt = `
-            Write a short, heartwarming ${memory.occasion} card message.
-            Recipient: ${memory.recipientName}
-            Sender: ${memory.senderName}
-            Tone: ${tone}
-            Theme: ${memory.theme}
-            
-            Return ONLY the message body text. Keep it under 50 words.
-        `;
+        
+        let prompt = '';
+        if (memory.theme === 'chinese-poem') {
+            prompt = `
+                Write a traditional Chinese Poem (classical style, like Tang Dynasty Jueju).
+                Topic/Occasion: ${memory.occasion}.
+                Recipient: ${memory.recipientName || 'Friend'}.
+                Sender: ${memory.senderName || 'Me'}.
+                Theme details: ${memory.customThemePrompt || 'Nature, peace, friendship'}.
+                
+                Requirements:
+                1. Use Simplified Chinese characters.
+                2. Strict 4 lines.
+                3. Either 5 or 7 characters per line.
+                4. Return ONLY the poem text, formatted with line breaks. No English translation.
+            `;
+        } else {
+            prompt = `
+                Write a short, heartwarming ${memory.occasion} card message.
+                Recipient: ${memory.recipientName}
+                Sender: ${memory.senderName}
+                Tone: ${tone}
+                Theme: ${memory.theme}
+                ${memory.customThemePrompt ? `Custom Detail: ${memory.customThemePrompt}` : ''}
+                
+                Return ONLY the message body text. Keep it under 50 words.
+            `;
+        }
         
         const response = await ai.models.generateContent({
             model: 'gemini-2.5-flash',
@@ -37,27 +56,37 @@ export async function generateCardMessage(memory: AgentMemory, tone: string = 'w
 export async function generateCardImage(memory: AgentMemory, stylePrompt: string): Promise<string> {
     try {
         const ai = getClient();
-        const prompt = `
-            A high quality, festive holiday card cover art.
-            Theme: ${memory.theme} (${memory.occasion}).
-            Style: ${stylePrompt}.
-            No text.
-            Cinematic lighting, 8k resolution, magical atmosphere.
-        `;
         
+        // Include custom visual theme if provided
+        const customContext = memory.customThemePrompt ? `Main Subject/Theme: ${memory.customThemePrompt}.` : '';
+
+        let basePrompt = '';
+        if (memory.theme === 'chinese-poem') {
+             basePrompt = `
+                Traditional Chinese Ink Wash Painting (Shui-mo hua).
+                Minimalist, Zen, monochromatic with subtle red accents (plum blossoms or seal).
+                Subject: ${memory.occasion}. ${customContext}.
+                Use negative space effectively. Rice paper texture background.
+                Art Direction: Masterpiece, brush strokes visible, poetic atmosphere.
+             `;
+        } else {
+             basePrompt = `
+                Generate a high quality, creative holiday card image.
+                Occasion: ${memory.occasion}.
+                General Style: ${memory.theme}.
+                ${customContext}
+                Specific Art Direction: ${stylePrompt}.
+                Requirements: No text, 8k resolution, cinematic lighting, magical atmosphere.
+            `;
+        }
+
         // Using 'gemini-2.5-flash-image' as per instructions for standard image gen
-        // Note: SDK usually returns base64. 
         const response = await ai.models.generateContent({
             model: 'gemini-2.5-flash-image',
-            contents: { parts: [{ text: prompt }] }
+            contents: { parts: [{ text: basePrompt }] }
         });
         
         // Find image part
-        // The SDK response structure for images usually contains inlineData in parts
-        // or we might need to use a specific helper if the SDK provides one. 
-        // Based on "Generate Images" section in guidelines:
-        // iterate parts.
-        
         if (response.candidates?.[0]?.content?.parts) {
             for (const part of response.candidates[0].content.parts) {
                 if (part.inlineData) {
