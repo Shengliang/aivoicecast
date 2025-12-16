@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { UserProfile, SubscriptionTier, GlobalStats, Channel } from '../types';
 import { getUserProfile, getGlobalStats } from '../services/firestoreService';
-import { Sparkles, BarChart2, Plus, Wand2, Key, Database, Crown, Settings, Book, Users, LogIn, Terminal, Cloud, Globe, Mic, LayoutGrid, HardDrive, AlertCircle, Loader2 } from 'lucide-react';
+import { Sparkles, BarChart2, Plus, Wand2, Key, Database, Crown, Settings, Book, Users, LogIn, Terminal, Cloud, Globe, Mic, LayoutGrid, HardDrive, AlertCircle, Loader2, Gift } from 'lucide-react';
 import { VOICES } from '../utils/initialData';
 import { PricingModal } from './PricingModal';
 
@@ -172,6 +172,13 @@ export const StudioMenu: React.FC<StudioMenuProps> = ({
             >
                <div className="p-1.5 bg-pink-900/50 text-pink-400 rounded-md"><Wand2 size={16}/></div>
                <span className="font-medium">Magic Voice Create</span>
+            </button>
+            <button 
+               onClick={() => { onNavigate('card_workshop'); setIsUserMenuOpen(false); }}
+               className="w-full flex items-center space-x-3 px-3 py-2 text-sm text-white hover:bg-slate-800 rounded-lg transition-colors"
+            >
+               <div className="p-1.5 bg-red-900/50 text-red-400 rounded-md"><Gift size={16}/></div>
+               <span className="font-medium">Holiday Card Maker</span>
             </button>
             
             <div className="h-px bg-slate-800 my-2 mx-2" />

@@ -5,7 +5,7 @@ import {
   Podcast, Mic, Layout, Search, Sparkles, LogOut, 
   Settings, Menu, X, Plus, Github, Database, Cloud, Globe, 
   Calendar, Briefcase, Users, Disc, FileText, AlertTriangle, List, BookOpen, ChevronDown, Table as TableIcon, LayoutGrid, Rocket, Code, Wand2, PenTool, Rss, Loader2, MessageSquare,
-  Home, Video as VideoIcon, Inbox, User, PlusSquare, ArrowLeft, Play, Book
+  Home, Video as VideoIcon, Inbox, User, PlusSquare, ArrowLeft, Play, Book, Gift
 } from 'lucide-react';
 import { LiveSession } from './components/LiveSession';
 import { PodcastDetail } from './components/PodcastDetail';
@@ -44,6 +44,7 @@ import { CareerCenter } from './components/CareerCenter';
 import { UserManual } from './components/UserManual'; 
 import { PrivacyPolicy } from './components/PrivacyPolicy';
 import { NotebookViewer } from './components/NotebookViewer'; 
+import { CardWorkshop } from './components/CardWorkshop';
 
 import { auth, isFirebaseConfigured } from './services/firebaseConfig';
 import { 
@@ -85,7 +86,8 @@ const UI_TEXT = {
     blog: "Community Blog",
     chat: "Team Chat",
     careers: "Careers",
-    notebooks: "LLM Notebooks"
+    notebooks: "LLM Notebooks",
+    cards: "Card Workshop"
   },
   zh: {
     appTitle: "AI 播客",
@@ -112,7 +114,8 @@ const UI_TEXT = {
     blog: "社区博客",
     chat: "团队聊天",
     careers: "职业发展",
-    notebooks: "LLM 笔记本"
+    notebooks: "LLM 笔记本",
+    cards: "贺卡工坊"
   }
 };
 
@@ -203,6 +206,7 @@ const App: React.FC = () => {
     { label: t.calendar, icon: Calendar, action: () => { setViewState('directory'); setActiveTab('calendar'); }, color: 'text-emerald-400' },
     { label: t.careers, icon: Briefcase, action: () => setViewState('careers'), color: 'text-yellow-400' },
     { label: t.blog, icon: Rss, action: () => setViewState('blog'), color: 'text-orange-400' },
+    { label: t.cards, icon: Gift, action: () => setViewState('card_workshop'), color: 'text-red-400' },
     { label: t.mentorship, icon: Users, action: () => { setViewState('directory'); setActiveTab('mentorship'); }, color: 'text-purple-400' },
     { label: t.groups, icon: Users, action: () => { setViewState('directory'); setActiveTab('groups'); }, color: 'text-cyan-400' },
     { label: t.recordings, icon: Disc, action: () => { setViewState('directory'); setActiveTab('recordings'); }, color: 'text-red-400' },
@@ -916,6 +920,7 @@ const App: React.FC = () => {
         {viewState === 'mission' && <MissionManifesto onBack={() => setViewState('directory')} />}
         {viewState === 'user_guide' && <UserManual onBack={() => setViewState('directory')} />}
         {viewState === 'notebook_viewer' && <NotebookViewer onBack={() => setViewState('directory')} currentUser={currentUser} />}
+        {viewState === 'card_workshop' && <CardWorkshop onBack={() => setViewState('directory')} />}
         
         {viewState === 'code_studio' && (
             <CodeStudio 

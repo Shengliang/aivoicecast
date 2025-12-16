@@ -127,7 +127,7 @@ export interface CommunityDiscussion {
   isManual?: boolean;
 }
 
-export type ViewState = 'directory' | 'podcast_detail' | 'live_session' | 'create_channel' | 'debug' | 'cloud_debug' | 'public_debug' | 'mission' | 'code_studio' | 'whiteboard' | 'blog' | 'chat' | 'careers' | 'user_guide' | 'notebook_viewer';
+export type ViewState = 'directory' | 'podcast_detail' | 'live_session' | 'create_channel' | 'debug' | 'cloud_debug' | 'public_debug' | 'mission' | 'code_studio' | 'whiteboard' | 'blog' | 'chat' | 'careers' | 'user_guide' | 'notebook_viewer' | 'card_workshop';
 
 export interface AudioState {
   isConnected: boolean;
@@ -387,4 +387,16 @@ export interface Notebook {
   createdAt: number;
   updatedAt: number;
   tags: string[];
+}
+
+export interface AgentMemory {
+  recipientName: string;
+  senderName: string;
+  occasion: string;
+  cardMessage: string;
+  theme: 'festive' | 'cozy' | 'minimal' | 'thanks';
+  giftUrl?: string;
+  userImages: string[];
+  coverImageUrl?: string;
+  generatedAt: string;
 }
