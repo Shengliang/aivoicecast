@@ -1,3 +1,4 @@
+
 import firebase from 'firebase/compat/app';
 import { auth, db, storage } from './firebaseConfig';
 import { 
@@ -378,32 +379,42 @@ export async function sendMessage(channelId: string, text: string, collectionPat
     if (!auth.currentUser) return;
     const path = collectionPath || `chat_channels/${channelId}/messages`;
     
-    const message: RealTimeMessage = {
-        id: '', // set by add
+    // Use 'any' type construction to avoid TypeScript issues with conditional keys
+    const messagePayload: any = {
         text,
         senderId: auth.currentUser.uid,
         senderName: auth.currentUser.displayName || 'Anonymous',
         senderImage: auth.currentUser.photoURL || '',
         timestamp: firebase.firestore.FieldValue.serverTimestamp(),
-        replyTo,
-        // @ts-ignore
-        attachments
     };
+
+    // Only add optional fields if they exist (Firestore hates undefined)
+    if (replyTo) {
+        messagePayload.replyTo = replyTo;
+    }
     
-    const ref = await db.collection(path).add(message);
+    if (attachments && attachments.length > 0) {
+        messagePayload.attachments = attachments;
+    }
+    
+    const ref = await db.collection(path).add(messagePayload);
+    
     // Update channel last message
-    // If it's a group or dm
+    // Use set with merge to handle cases where the channel doc might not exist (e.g. 'general' created ad-hoc)
     if (!collectionPath || collectionPath.includes('chat_channels')) {
-        db.collection('chat_channels').doc(channelId).update({
+        db.collection('chat_channels').doc(channelId).set({
             lastMessage: {
                 text,
                 senderName: auth.currentUser.displayName,
                 timestamp: Date.now()
-            }
-        }).catch(() => {});
+            },
+            // Ensure basic fields for hardcoded channels if they are created here
+            ...(channelId === 'general' ? { name: 'General', type: 'public' } : {}),
+            ...(channelId === 'announcements' ? { name: 'Announcements', type: 'public' } : {})
+        }, { merge: true }).catch((err) => console.warn("Failed to update lastMessage", err));
     }
     
-    // Add ID
+    // Add ID to the message document itself
     await ref.update({ id: ref.id });
 }
 
