@@ -849,15 +849,16 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack, cardId, isVi
           
           {/* LEFT PANEL: CONTROLS (Hidden in Viewer Mode) */}
           {!isViewer && (
-          <div className="w-full md:w-96 bg-slate-900 border-r border-slate-800 flex flex-col shrink-0 h-full z-30">
-              <div className="flex border-b border-slate-800">
+          <div className="w-full md:w-96 bg-slate-900 border-r border-slate-800 flex flex-col shrink-0 h-full max-h-full overflow-hidden z-30">
+              <div className="flex-shrink-0 flex border-b border-slate-800 bg-slate-900">
                   <button onClick={() => setActiveTab('settings')} className={`flex-1 py-3 text-sm font-bold transition-colors ${activeTab==='settings' ? 'bg-slate-800 text-white border-b-2 border-indigo-500' : 'text-slate-500 hover:text-slate-300'}`}>Edit</button>
                   <button onClick={() => setActiveTab('chat')} className={`flex-1 py-3 text-sm font-bold transition-colors ${activeTab==='chat' ? 'bg-slate-800 text-white border-b-2 border-indigo-500' : 'text-slate-500 hover:text-slate-300'}`}>Elf Assistant</button>
               </div>
 
-              <div className={`flex-1 ${activeTab === 'settings' ? 'overflow-y-auto p-6 space-y-6' : 'flex flex-col overflow-hidden relative'}`}>
+              <div className="flex-1 relative overflow-hidden flex flex-col">
                   {activeTab === 'settings' ? (
                       <>
+                        <div className="flex-1 overflow-y-auto p-6 space-y-6 scrollbar-thin scrollbar-thumb-slate-800 pb-32">
                           {/* Common Settings */}
                           <div className="space-y-3 pb-4 border-b border-slate-800">
                               <label className="text-xs font-bold text-slate-500 uppercase">Card Context</label>
@@ -1139,16 +1140,17 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack, cardId, isVi
                                   </div>
                               )}
                           </div>
-                          
-                          {/* "Ask Elf" Floating Shortcut */}
-                          <div className="sticky bottom-0 w-full flex justify-center pointer-events-none z-10 pt-4 pb-2 bg-gradient-to-t from-slate-900 via-slate-900 to-transparent">
-                              <button 
-                                  onClick={() => setActiveTab('chat')}
-                                  className="pointer-events-auto bg-emerald-600 hover:bg-emerald-500 text-white px-6 py-3 rounded-full font-bold shadow-2xl flex items-center gap-2 transition-transform hover:scale-105 border border-emerald-400/50"
-                              >
-                                  <Sparkles size={18} /> Talk to Elf
-                              </button>
-                          </div>
+                        </div>
+
+                        {/* Floating Shortcut - Absolute anchored to bottom of LEFT PANEL */}
+                        <div className="absolute bottom-0 left-0 w-full flex justify-center pointer-events-none z-10 pt-10 pb-6 bg-gradient-to-t from-slate-900 via-slate-900/90 to-transparent">
+                            <button 
+                                onClick={() => setActiveTab('chat')}
+                                className="pointer-events-auto bg-emerald-600 hover:bg-emerald-500 text-white px-8 py-3.5 rounded-full font-bold shadow-[0_10px_40px_rgba(0,0,0,0.5)] flex items-center gap-2 transition-all hover:scale-105 border border-emerald-400/50 active:scale-95"
+                            >
+                                <Sparkles size={18} /> Talk to Elf
+                            </button>
+                        </div>
                       </>
                   ) : (
                       <div className="relative h-full flex flex-col bg-slate-900 z-30">
@@ -1219,7 +1221,7 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack, cardId, isVi
           <div className="flex-1 bg-slate-950 p-0 md:p-4 lg:p-8 flex flex-col items-center overflow-hidden relative min-h-0">
               
               {/* Toolbar bar integrated with pagination - ALWAYS VISIBLE */}
-              <div className="flex items-center gap-4 mb-6 bg-slate-900 p-2 rounded-full border border-slate-800 shadow-xl z-20 mt-4 md:mt-0 shrink-0">
+              <div className="flex-shrink-0 flex items-center gap-4 mb-6 bg-slate-900 p-2 rounded-full border border-slate-800 shadow-xl z-20 mt-4 md:mt-0">
                   {/* Global Back / Close Button */}
                   <button 
                       onClick={onBack} 
