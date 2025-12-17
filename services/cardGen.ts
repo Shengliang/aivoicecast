@@ -27,7 +27,7 @@ export async function generateCardMessage(memory: AgentMemory, tone: string = 'w
                 Topic/Occasion: ${memory.occasion}.
                 Recipient: ${memory.recipientName || 'Friend'}.
                 Sender: ${memory.senderName || 'Me'}.
-                Theme details: ${memory.customThemePrompt || 'Nature, peace, friendship'}.
+                Theme/Context: ${memory.customThemePrompt || 'Nature, peace, friendship'}.
                 ${contextContent}
                 
                 Requirements:
@@ -43,7 +43,7 @@ export async function generateCardMessage(memory: AgentMemory, tone: string = 'w
                 Sender: ${memory.senderName}
                 Tone: ${tone}
                 Theme: ${memory.theme}
-                ${memory.customThemePrompt ? `Custom Detail: ${memory.customThemePrompt}` : ''}
+                ${memory.customThemePrompt ? `IMPORTANT - Include this specific detail/context: "${memory.customThemePrompt}"` : ''}
                 
                 Return ONLY the message body text. Keep it under 50 words.
             `;
@@ -64,9 +64,15 @@ export async function generateCardMessage(memory: AgentMemory, tone: string = 'w
 export async function generateSongLyrics(memory: AgentMemory): Promise<string> {
     try {
         const ai = getClient();
+        
         // Incorporate specific user message context if available
         const messageContext = memory.cardMessage && memory.cardMessage.length > 5 
-            ? `Important context/sentiment to include: "${memory.cardMessage}"` 
+            ? `Context from card message: "${memory.cardMessage}"` 
+            : '';
+            
+        // Explicitly include custom theme details for the song
+        const themeDetails = memory.customThemePrompt 
+            ? `Specific details/topics to include in lyrics: "${memory.customThemePrompt}"` 
             : '';
 
         const prompt = `
@@ -75,10 +81,13 @@ export async function generateSongLyrics(memory: AgentMemory): Promise<string> {
             To: ${memory.recipientName}
             From: ${memory.senderName}
             Theme: ${memory.theme}
+            ${themeDetails}
             ${messageContext}
-            Style: Musical, rhythmic, catchy.
             
-            Return ONLY the lyrics.
+            Requirements:
+            1. Style: Musical, rhythmic, catchy.
+            2. MUST mention the specific details provided above (e.g. names, pets, hobbies) if any.
+            3. Return ONLY the lyrics.
         `;
         const response = await ai.models.generateContent({
             model: 'gemini-2.5-flash',
