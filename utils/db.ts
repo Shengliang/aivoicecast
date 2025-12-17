@@ -5,7 +5,7 @@ const DB_NAME = 'AIVoiceCast_AudioCache';
 const STORE_NAME = 'audio_segments';
 const TEXT_STORE_NAME = 'lecture_scripts';
 const CHANNELS_STORE_NAME = 'user_channels'; // New store for custom podcasts
-const VERSION = 3; // Bump version to 3
+const VERSION = 4; // Bump version to 4
 
 let dbPromise: Promise<IDBDatabase> | null = null;
 
