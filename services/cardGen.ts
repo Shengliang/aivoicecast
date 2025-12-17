@@ -2,6 +2,7 @@
 import { GoogleGenAI } from '@google/genai';
 import { AgentMemory } from '../types';
 import { GEMINI_API_KEY } from './private_keys';
+import { base64ToBytes, pcmToWavBlobUrl } from '../utils/audioUtils';
 
 const getClient = () => {
     const apiKey = localStorage.getItem('gemini_api_key') || GEMINI_API_KEY || process.env.API_KEY || '';
@@ -104,7 +105,11 @@ export async function generateCardAudio(text: string, voiceName: string = 'Kore'
         const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
         if (!base64Audio) throw new Error("No audio generated");
         
-        return `data:audio/mp3;base64,${base64Audio}`;
+        // Convert Base64 PCM to a WAV Blob URL so it plays in standard Audio elements
+        const pcmBytes = base64ToBytes(base64Audio);
+        const wavUrl = pcmToWavBlobUrl(pcmBytes, 24000); // 24kHz is standard for this model
+        
+        return wavUrl;
     } catch (e: any) {
         console.error("Audio gen failed", e);
         throw e;
