@@ -1,7 +1,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { AgentMemory, TranscriptItem } from '../types';
-import { ArrowLeft, Sparkles, Wand2, Image as ImageIcon, Download, Share2, RefreshCw, Mic, MicOff, Gift, Loader2, ChevronRight, ChevronLeft, Upload, QrCode, X, Music, Play, Pause, Volume2, Camera, CloudUpload, Lock, Globe, Check, Edit, Package, ArrowDown, Type as TypeIcon, Minus, Plus, Edit3 } from 'lucide-react';
+import { ArrowLeft, Sparkles, Wand2, Image as ImageIcon, Download, Share2, RefreshCw, Mic, MicOff, Gift, Loader2, ChevronRight, ChevronLeft, Upload, QrCode, X, Music, Play, Pause, Volume2, Camera, CloudUpload, Lock, Globe, Check, Edit, Package, ArrowDown, Type as TypeIcon, Minus, Plus, Edit3, Link } from 'lucide-react';
 import { generateCardMessage, generateCardImage, generateCardAudio, generateSongLyrics } from '../services/cardGen';
 import { GeminiLiveService } from '../services/geminiLive';
 import html2canvas from 'html2canvas';
@@ -104,7 +104,6 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack, cardId, isVi
   useEffect(() => {
       liveServiceRef.current = new GeminiLiveService();
       liveServiceRef.current.initializeAudio();
-      // Fix: Wrapping the cleanup call in a block ensures it returns void, avoiding the TypeScript error: Argument of type '() => () => Promise<void>' is not assignable to parameter of type 'EffectCallback'.
       return () => { liveServiceRef.current?.disconnect(); };
   }, []);
 
@@ -189,24 +188,24 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack, cardId, isVi
 
   const generatePDFBlob = async (): Promise<Blob | null> => {
       try {
-          // Give the DOM a moment to ensure images are rendered in the hidden export area
-          await new Promise(resolve => setTimeout(resolve, 500));
+          // Give the DOM a moment to ensure images and layout are fully rendered in the hidden export area
+          await new Promise(resolve => setTimeout(resolve, 600));
           
           const pdf = new jsPDF({ orientation: 'portrait', unit: 'px', format: [360, 540] });
-          for (let i = 0; i <= 3; i++) { // Exporting 4 main pages
+          for (let i = 0; i <= 3; i++) { 
               const el = document.getElementById(`export-card-page-${i}`);
               if (el) {
-                  // html2canvas needs useCORS: true and standard img tags for reliable cross-origin capture
                   const canvas = await html2canvas(el, { 
-                      scale: 2, 
+                      scale: 3, // Higher scale for print quality
                       useCORS: true, 
-                      width: 360, 
-                      height: 540,
                       logging: false,
-                      backgroundColor: null
+                      backgroundColor: null,
+                      scrollX: 0,
+                      scrollY: 0
                   });
                   if (i > 0) pdf.addPage();
-                  pdf.addImage(canvas.toDataURL('image/jpeg', 0.95), 'JPEG', 0, 0, 360, 540);
+                  // Force exact dimensions to prevent any slivers of background
+                  pdf.addImage(canvas.toDataURL('image/jpeg', 0.98), 'JPEG', 0, 0, 360, 540, undefined, 'FAST');
               }
           }
           return pdf.output('blob');
@@ -329,7 +328,7 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack, cardId, isVi
             <div className="p-8 flex flex-col h-full overflow-hidden">
                 <div 
                     className={`flex-1 overflow-y-auto scrollbar-hide text-center text-slate-800 ${memory.fontFamily || 'font-script'} leading-relaxed flex flex-col justify-center`}
-                    style={{ fontSize: `${20 * (memory.fontSizeScale || 1.0)}px` }}
+                    style={{ fontSize: `${22 * (memory.fontSizeScale || 1.0)}px` }}
                 >
                     <p className="whitespace-pre-wrap">{memory.cardMessage}</p>
                 </div>
@@ -487,6 +486,36 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack, cardId, isVi
                                         <input type="text" placeholder="Refine style (e.g. 'Watercolor style')" value={frontRefinement} onChange={e => setFrontRefinement(e.target.value)} className="w-full bg-slate-800 border border-slate-700 rounded-lg p-2 text-xs text-white"/>
                                     </div>
                                 )}
+
+                                {activePage === 3 && (
+                                    <div className="space-y-4 animate-fade-in">
+                                        <button onClick={() => handleGenImage(true)} disabled={isGeneratingBackImage} className="w-full py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-bold flex items-center justify-center gap-2 shadow-lg">
+                                            {isGeneratingBackImage ? <Loader2 size={12} className="animate-spin"/> : <Sparkles size={12}/>} Generate Back Art
+                                        </button>
+                                        
+                                        <div className="h-px bg-slate-800 my-4" />
+                                        
+                                        <div className="space-y-2">
+                                            <label className="text-[10px] font-bold text-slate-500 uppercase flex items-center gap-1"><Link size={10}/> Photo Album Link (QR)</label>
+                                            <div className="flex gap-2">
+                                                <input 
+                                                    type="text" 
+                                                    placeholder="Paste URL for QR Code..." 
+                                                    value={memory.googlePhotosUrl || ''} 
+                                                    onChange={e => setMemory({...memory, googlePhotosUrl: e.target.value})}
+                                                    className="flex-1 bg-slate-800 border border-slate-700 rounded-lg p-3 text-xs text-white outline-none focus:border-indigo-500"
+                                                />
+                                            </div>
+                                            <button 
+                                                onClick={() => setMemory({...memory, googlePhotosUrl: 'https://photos.google.com/album/AF1QipMMMkVYTurznefCJ9jEQHN_o3xoPRQE-JLy8-CD'})}
+                                                className="w-full py-2 bg-slate-800 hover:bg-slate-700 text-indigo-400 border border-slate-700 rounded-lg text-[10px] font-bold flex items-center justify-center gap-2 transition-colors"
+                                            >
+                                                <QrCode size={12}/> Use Family Album Preset
+                                            </button>
+                                        </div>
+                                    </div>
+                                )}
+
                                 {activePage === 1 && (
                                     <div className="space-y-4">
                                         <button onClick={handleGenText} disabled={isGeneratingText} className="w-full py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-bold flex items-center justify-center gap-2">
@@ -552,7 +581,7 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack, cardId, isVi
                       <button onClick={handleExportPDF} disabled={isExporting} className="p-2 bg-slate-800 hover:bg-slate-700 text-white rounded-full transition-colors" title="Download PDF">{isExporting ? <Loader2 size={16} className="animate-spin"/> : <Download size={16} />}</button>
                       <button onClick={handleDownloadPackage} disabled={isExportingPackage} className="p-2 bg-slate-800 hover:bg-slate-700 text-white rounded-full transition-colors" title="Download Zip Package">{isExportingPackage ? <Loader2 size={16} className="animate-spin"/> : <Package size={16} />}</button>
                       {!isViewer && (
-                        <button onClick={handlePublishAndShare} disabled={isPublishing} className="p-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-full transition-colors shadow-lg" title="Publish Card Online">
+                        <button onClick={handlePublishAndShare} disabled={isPublishing} className="p-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg transition-colors shadow-lg" title="Publish Card Online">
                             {isPublishing ? <Loader2 size={16} className="animate-spin"/> : <Share2 size={16} />}
                         </button>
                       )}
@@ -582,7 +611,7 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack, cardId, isVi
               {/* HIDDEN EXPORT AREA */}
               {(isExporting || isExportingPackage) && (
                   <div style={{ position: 'absolute', left: '-9999px', top: '-9999px', opacity: 0 }}>
-                      {[0, 1, 2, 3].map(pageNum => <div key={pageNum} id={`export-card-page-${pageNum}`} className="w-[330px] h-[495px] overflow-hidden flex flex-col relative">{renderCardContent(pageNum)}</div>)}
+                      {[0, 1, 2, 3].map(pageNum => <div key={pageNum} id={`export-card-page-${pageNum}`} className="w-[360px] h-[540px] overflow-hidden flex flex-col relative">{renderCardContent(pageNum)}</div>)}
                   </div>
               )}
           </div>
