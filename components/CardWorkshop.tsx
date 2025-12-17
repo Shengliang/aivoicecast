@@ -1,7 +1,6 @@
-
 import React, { useState, useRef, useEffect } from 'react';
 import { AgentMemory, TranscriptItem, Group, ChatChannel } from '../types';
-import { ArrowLeft, Sparkles, Wand2, Image as ImageIcon, Type, Download, Share2, Printer, RefreshCw, Send, Mic, MicOff, Gift, Heart, Loader2, ChevronRight, ChevronLeft, Upload, QrCode, X, Music, Play, Pause, Volume2, Camera, CloudUpload, Lock, Globe, Check, Edit, Package, ArrowDown, Type as TypeIcon, Minus, Plus } from 'lucide-react';
+import { ArrowLeft, Sparkles, Wand2, Image as ImageIcon, Type, Download, Share2, Printer, RefreshCw, Send, Mic, MicOff, Gift, Heart, Loader2, ChevronRight, ChevronLeft, Upload, QrCode, X, Music, Play, Pause, Volume2, Camera, CloudUpload, Lock, Globe, Check, Edit, Package, ArrowDown, Type as TypeIcon, Minus, Plus, Menu } from 'lucide-react';
 import { generateCardMessage, generateCardImage, generateCardAudio, generateSongLyrics } from '../services/cardGen';
 import { GeminiLiveService } from '../services/geminiLive';
 import html2canvas from 'html2canvas';
@@ -87,6 +86,7 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack, cardId, isVi
   // Live Chat State
   const [isLiveActive, setIsLiveActive] = useState(false);
   const [transcript, setTranscript] = useState<TranscriptItem[]>([]);
+  const [currentLine, setCurrentLine] = useState<TranscriptItem | null>(null); // For accumulating stream
   const liveServiceRef = useRef<GeminiLiveService | null>(null);
   
   // Ref for card preview to capture
@@ -108,6 +108,9 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack, cardId, isVi
   const [isSendingToChat, setIsSendingToChat] = useState(false);
   const [chatTargets, setChatTargets] = useState<{id: string, name: string, type: 'dm'|'group'}[]>([]);
   const [selectedChatTarget, setSelectedChatTarget] = useState('');
+
+  // Mobile Menu State
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   // Check ownership
   const isOwner = auth.currentUser && memory.ownerId === auth.currentUser.uid;
@@ -165,7 +168,7 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack, cardId, isVi
       if (transcriptEndRef.current) {
           transcriptEndRef.current.scrollIntoView({ behavior: 'smooth' });
       }
-  }, [transcript, activeTab]);
+  }, [transcript, currentLine, activeTab]);
 
   // Load chat targets for sharing
   useEffect(() => {
@@ -209,17 +212,15 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack, cardId, isVi
                   onVolumeUpdate: () => {},
                   onTranscript: (text, isUser) => {
                       const role = isUser ? 'user' : 'ai';
+                      setCurrentLine({ role, text, timestamp: Date.now() });
+                      
                       setTranscript(prev => {
-                          const last = prev[prev.length - 1];
-                          // intelligently merge chunks if role is same
+                          const last = prev[prev.length-1];
+                          // Simple debounce merge for same speaker to avoid newline spam
                           if (last && last.role === role) {
-                              const updatedLast = {
-                                  ...last,
-                                  text: last.text + text
-                              };
-                              return [...prev.slice(0, -1), updatedLast];
+                               return prev; 
                           }
-                          return [...prev, { role, text, timestamp: Date.now() }];
+                          return prev;
                       });
                   },
                   onToolCall: async (toolCall) => {
@@ -254,6 +255,7 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack, cardId, isVi
               
               // Force add a user message to transcript so user sees it happened
               setTranscript(prev => [...prev, { role: 'user', text: '📷 [Image Sent to Elf]', timestamp: Date.now() }]);
+              setCurrentLine(null); // Clear any pending stream line
           } catch(e) {
               console.error("Image send failed", e);
           }
@@ -401,6 +403,7 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack, cardId, isVi
 
   const handleExportPDF = async () => {
       setIsExporting(true);
+      setIsMobileMenuOpen(false);
       setTimeout(async () => {
           const blob = await generatePDFBlob();
           if (blob) {
@@ -417,6 +420,7 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack, cardId, isVi
   
   const handleDownloadPackage = async () => {
       setIsExportingPackage(true);
+      setIsMobileMenuOpen(false);
       // Wait for hidden render to be ready
       setTimeout(async () => {
         try {
@@ -478,6 +482,7 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack, cardId, isVi
   const handlePublishAndShare = async () => {
       if (!auth.currentUser) { alert("Please sign in to share."); return; }
       setIsPublishing(true);
+      setIsMobileMenuOpen(false);
       if (audioRef.current) { audioRef.current.pause(); audioRef.current = null; }
       setPlayingUrl(null);
       
@@ -740,7 +745,7 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack, cardId, isVi
                                         {!isViewer && !isBlobUrl(memory.voiceMessageUrl) && <span className="text-[10px] text-emerald-400 font-bold">Saved</span>}
                                         {!isViewer && isBlobUrl(memory.voiceMessageUrl) && (
                                             <button onClick={() => handleSaveAudio('message')} disabled={isUploadingAudio} className="text-slate-400 hover:text-indigo-600 transition-colors" title="Save to Cloud">
-                                                {isUploadingAudio ? <Loader2 size={14} className="animate-spin"/> : <CloudUpload size={14}/>}
+                                                {isUploadingAudio ? <Loader2 size={12} className="animate-spin"/> : <CloudUpload size={14}/>}
                                             </button>
                                         )}
                                         <button onClick={() => handleDownloadLocal(memory.voiceMessageUrl!, `voice_${memory.recipientName || 'message'}.wav`)} className="text-slate-400 hover:text-indigo-600 transition-colors" title="Download">
@@ -791,7 +796,7 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack, cardId, isVi
                                         {!isViewer && !isBlobUrl(memory.songUrl) && <span className="text-[10px] text-emerald-400 font-bold">Saved</span>}
                                         {!isViewer && isBlobUrl(memory.songUrl) && (
                                             <button onClick={() => handleSaveAudio('song')} disabled={isUploadingAudio} className="text-slate-400 hover:text-pink-600 transition-colors" title="Save to Cloud">
-                                                {isUploadingAudio ? <Loader2 size={14} className="animate-spin"/> : <CloudUpload size={14}/>}
+                                                {isUploadingAudio ? <Loader2 size={12} className="animate-spin"/> : <CloudUpload size={14}/>}
                                             </button>
                                         )}
                                         <button onClick={() => handleDownloadLocal(memory.songUrl!, `song_${memory.recipientName || 'holiday'}.wav`)} className="text-slate-400 hover:text-pink-600 transition-colors" title="Download">
@@ -829,44 +834,58 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack, cardId, isVi
 
   return (
     <div className="flex flex-col h-screen bg-slate-950 text-slate-100 overflow-hidden">
-      {/* Header */}
-      <div className="p-4 border-b border-slate-800 bg-slate-900 flex items-center justify-between shrink-0 z-20">
-          <div className="flex items-center gap-4">
+      {/* Header - Improved Responsiveness */}
+      <div className="p-4 border-b border-slate-800 bg-slate-900 flex items-center justify-between shrink-0 z-20 gap-4">
+          <div className="flex items-center gap-2 min-w-0">
               <button onClick={onBack} className="p-2 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white transition-colors">
                   <ArrowLeft size={20} />
               </button>
-              <h1 className="text-xl font-holiday font-bold text-white flex items-center gap-2">
-                  <Gift className="text-red-500" /> Holiday Card Workshop
-                  {isViewer && <span className="text-xs bg-slate-800 px-2 py-1 rounded text-slate-400 font-sans border border-slate-700">Viewer Mode</span>}
+              <h1 className="text-xl font-holiday font-bold text-white flex items-center gap-2 truncate">
+                  <Gift className="text-red-500 shrink-0" /> 
+                  <span className="hidden sm:inline">Holiday Card Workshop</span>
+                  <span className="sm:hidden">Card</span>
+                  {isViewer && <span className="text-xs bg-slate-800 px-2 py-1 rounded text-slate-400 font-sans border border-slate-700 shrink-0">Viewer</span>}
               </h1>
           </div>
-          <div className="flex gap-2">
-              {/* EDIT BUTTON: Only show if in Viewer Mode AND current user is Owner */}
-              {isViewer && isOwner && (
-                  <button 
-                      onClick={() => setIsViewer(false)}
-                      className="flex items-center gap-2 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 rounded-lg text-xs font-bold transition-colors"
-                  >
-                      <Edit size={14} /> <span>Edit Card</span>
+          
+          <div className="flex gap-2 shrink-0">
+              {/* Desktop Buttons */}
+              <div className="hidden md:flex gap-2">
+                  {isViewer && isOwner && (
+                      <button onClick={() => setIsViewer(false)} className="flex items-center gap-2 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 rounded-lg text-xs font-bold transition-colors">
+                          <Edit size={14} /> <span>Edit</span>
+                      </button>
+                  )}
+                  <button onClick={handleExportPDF} disabled={isExporting} className="flex items-center gap-2 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 rounded-lg text-xs font-bold transition-colors">
+                      {isExporting ? <Loader2 size={14} className="animate-spin"/> : <Download size={14} />} <span>PDF</span>
                   </button>
-              )}
+                  <button onClick={handleDownloadPackage} disabled={isExportingPackage} className="flex items-center gap-2 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 rounded-lg text-xs font-bold transition-colors border border-slate-600">
+                      {isExportingPackage ? <Loader2 size={14} className="animate-spin"/> : <Package size={14} />} <span>Zip</span>
+                  </button>
+                  {!isViewer && (
+                    <button onClick={handlePublishAndShare} disabled={isPublishing} className="flex items-center gap-2 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 rounded-lg text-xs font-bold transition-colors shadow-lg">
+                        {isPublishing ? <Loader2 size={14} className="animate-spin"/> : <Share2 size={14} />} <span>Share</span>
+                    </button>
+                  )}
+              </div>
 
-              <button onClick={handleExportPDF} disabled={isExporting} className="flex items-center gap-2 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 rounded-lg text-xs font-bold transition-colors">
-                  {isExporting ? <Loader2 size={14} className="animate-spin"/> : <Download size={14} />} 
-                  <span className="hidden sm:inline">{isExporting ? 'Creating PDF...' : 'Download PDF'}</span>
-              </button>
-              
-              <button onClick={handleDownloadPackage} disabled={isExportingPackage} className="flex items-center gap-2 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 rounded-lg text-xs font-bold transition-colors border border-slate-600">
-                  {isExportingPackage ? <Loader2 size={14} className="animate-spin"/> : <Package size={14} />} 
-                  <span className="hidden sm:inline">{isExportingPackage ? 'Zipping...' : 'Download Package'}</span>
-              </button>
-
-              {!isViewer && (
-                <button onClick={handlePublishAndShare} disabled={isPublishing} className="flex items-center gap-2 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 rounded-lg text-xs font-bold transition-colors shadow-lg">
-                    {isPublishing ? <Loader2 size={14} className="animate-spin"/> : <Share2 size={14} />} 
-                    <span className="hidden sm:inline">Publish & Share</span>
-                </button>
-              )}
+              {/* Mobile Menu Toggle */}
+              <div className="md:hidden relative">
+                  <button onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)} className="p-2 bg-slate-800 rounded-lg text-white">
+                      <Menu size={20} />
+                  </button>
+                  {isMobileMenuOpen && (
+                      <>
+                      <div className="fixed inset-0 z-30" onClick={() => setIsMobileMenuOpen(false)}></div>
+                      <div className="absolute top-full right-0 mt-2 w-48 bg-slate-900 border border-slate-700 rounded-xl shadow-xl z-40 p-2 flex flex-col gap-2">
+                          {isViewer && isOwner && <button onClick={() => setIsViewer(false)} className="flex items-center gap-2 px-4 py-2 bg-slate-800 hover:bg-slate-700 rounded-lg text-sm text-left"><Edit size={14}/> Edit Card</button>}
+                          <button onClick={handleExportPDF} className="flex items-center gap-2 px-4 py-2 bg-slate-800 hover:bg-slate-700 rounded-lg text-sm text-left"><Download size={14}/> Save PDF</button>
+                          <button onClick={handleDownloadPackage} className="flex items-center gap-2 px-4 py-2 bg-slate-800 hover:bg-slate-700 rounded-lg text-sm text-left"><Package size={14}/> Download Zip</button>
+                          {!isViewer && <button onClick={handlePublishAndShare} className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-sm text-left font-bold"><Share2 size={14}/> Publish & Share</button>}
+                      </div>
+                      </>
+                  )}
+              </div>
           </div>
       </div>
 
@@ -918,7 +937,7 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack, cardId, isVi
                           {/* Contextual Settings based on Page */}
                           <div className="space-y-4">
                               <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                                  <Edit3Icon /> 
+                                  <Edit size={16} /> 
                                   <span>Editing: {getPageLabel(activePage)}</span>
                               </h3>
 
@@ -1200,6 +1219,13 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack, cardId, isVi
                                       </div>
                                   </div>
                               ))}
+                              {currentLine && (
+                                  <div className={`flex ${currentLine.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                                      <div className={`max-w-[85%] p-3 rounded-xl text-xs whitespace-pre-wrap shadow-sm ${currentLine.role === 'user' ? 'bg-indigo-600/80 text-white rounded-tr-sm' : 'bg-slate-800/80 text-slate-300 rounded-tl-sm border border-slate-700'}`}>
+                                          {currentLine.text}<span className="animate-blink">|</span>
+                                      </div>
+                                  </div>
+                              )}
                               {/* Invisible spacer to ensure last message isn't hidden by absolute footer if scrolling */}
                               <div ref={transcriptEndRef} className="h-4"></div>
                           </div>
@@ -1362,7 +1388,3 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack, cardId, isVi
     </div>
   );
 };
-
-const Edit3Icon = () => (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
-);
