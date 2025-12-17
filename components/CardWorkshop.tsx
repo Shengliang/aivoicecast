@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { AgentMemory, TranscriptItem, Group, ChatChannel } from '../types';
-import { ArrowLeft, Sparkles, Wand2, Image as ImageIcon, Type, Download, Share2, Printer, RefreshCw, Send, Mic, MicOff, Gift, Heart, Loader2, ChevronRight, ChevronLeft, Upload, QrCode, X, Music, Play, Pause, Volume2, Camera, CloudUpload, Lock, Globe } from 'lucide-react';
+import { ArrowLeft, Sparkles, Wand2, Image as ImageIcon, Type, Download, Share2, Printer, RefreshCw, Send, Mic, MicOff, Gift, Heart, Loader2, ChevronRight, ChevronLeft, Upload, QrCode, X, Music, Play, Pause, Volume2, Camera, CloudUpload, Lock, Globe, Check } from 'lucide-react';
 import { generateCardMessage, generateCardImage, generateCardAudio, generateSongLyrics } from '../services/cardGen';
 import { GeminiLiveService } from '../services/geminiLive';
 import html2canvas from 'html2canvas';
@@ -324,24 +324,43 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack, cardId, isVi
   };
 
   const playAudio = (url: string) => {
+      // 1. If we are already playing THIS url, pause it.
       if (playingUrl === url) {
-          // Pause if same
-          audioRef.current?.pause();
-          setPlayingUrl(null);
-      } else {
-          // Stop prev
           if (audioRef.current) {
-              audioRef.current.pause();
+             audioRef.current.pause();
           }
-          // Play new
-          audioRef.current = new Audio(url);
-          audioRef.current.onended = () => setPlayingUrl(null);
-          audioRef.current.play().catch(e => {
-              console.error("Play failed", e);
-              setPlayingUrl(null);
-          });
-          setPlayingUrl(url);
+          setPlayingUrl(null);
+          return;
       }
+      
+      // 2. Stop any existing audio
+      if (audioRef.current) {
+          audioRef.current.pause();
+          audioRef.current = null;
+      }
+
+      // 3. Play new audio
+      const audio = new Audio(url);
+      audio.crossOrigin = "anonymous"; // Important for Firebase Storage URLs
+      audioRef.current = audio;
+      
+      audio.onended = () => {
+          setPlayingUrl(null);
+      };
+      
+      audio.onerror = (e) => {
+          console.error("Audio playback error", e);
+          alert("Failed to play audio. The link might be expired or inaccessible.");
+          setPlayingUrl(null);
+      };
+
+      audio.play().then(() => {
+          setPlayingUrl(url);
+      }).catch(e => {
+          console.error("Play failed", e);
+          alert("Playback failed. Please check your connection.");
+          setPlayingUrl(null);
+      });
   };
 
   // Convert Base64/Blob URL to File for Upload
@@ -500,6 +519,13 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack, cardId, isVi
       }
       setIsPublishing(true);
 
+      // Stop any current audio before uploading to prevent lock/confusion
+      if (audioRef.current) {
+          audioRef.current.pause();
+          audioRef.current = null;
+      }
+      setPlayingUrl(null);
+
       try {
           const finalMemory = { ...memory };
           const uid = auth.currentUser.uid;
@@ -538,7 +564,7 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack, cardId, isVi
           }
 
           // 5. Save Card Metadata
-          const newCardId = await saveCard(finalMemory, cardId); // Reuse ID if editing
+          const newCardId = await saveCard(finalMemory, cardId); 
           setMemory(finalMemory); // Update local state with remote URLs
 
           // 6. Generate Link
@@ -765,7 +791,10 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack, cardId, isVi
                                 <span className="text-xs font-bold text-indigo-400 uppercase tracking-wider">Voice Message</span>
                                 {memory.voiceMessageUrl && (
                                     <div className="flex gap-2">
-                                        <button onClick={() => handleSaveAudio('message')} className="text-emerald-500 hover:text-emerald-700" title="Save to Cloud"><CloudUpload size={14}/></button>
+                                        {!isViewer && !isBlobUrl(memory.voiceMessageUrl) && <span className="text-[10px] text-emerald-400 font-bold self-center">Saved</span>}
+                                        {!isViewer && isBlobUrl(memory.voiceMessageUrl) && (
+                                            <button onClick={() => handleSaveAudio('message')} className="text-indigo-500 hover:text-indigo-700" title="Save to Cloud"><CloudUpload size={14}/></button>
+                                        )}
                                         <Volume2 size={14} className="text-indigo-400" />
                                     </div>
                                 )}
@@ -792,7 +821,10 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack, cardId, isVi
                                 <span className="text-xs font-bold text-pink-400 uppercase tracking-wider">Holiday Song</span>
                                 {memory.songUrl && (
                                     <div className="flex gap-2">
-                                        <button onClick={() => handleSaveAudio('song')} className="text-emerald-500 hover:text-emerald-700" title="Save to Cloud"><CloudUpload size={14}/></button>
+                                        {!isViewer && !isBlobUrl(memory.songUrl) && <span className="text-[10px] text-emerald-400 font-bold self-center">Saved</span>}
+                                        {!isViewer && isBlobUrl(memory.songUrl) && (
+                                            <button onClick={() => handleSaveAudio('song')} className="text-pink-500 hover:text-pink-700" title="Save to Cloud"><CloudUpload size={14}/></button>
+                                        )}
                                         <Music size={14} className="text-pink-400" />
                                     </div>
                                 )}
