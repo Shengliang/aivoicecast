@@ -1158,6 +1158,16 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack, cardId, isVi
                                   </div>
                               )}
                           </div>
+                          
+                          {/* "Ask Elf" Floating Shortcut */}
+                          <div className="sticky bottom-0 w-full flex justify-center pointer-events-none z-10 pt-4 pb-2 bg-gradient-to-t from-slate-900 via-slate-900 to-transparent">
+                              <button 
+                                  onClick={() => setActiveTab('chat')}
+                                  className="pointer-events-auto bg-emerald-600 hover:bg-emerald-500 text-white px-6 py-3 rounded-full font-bold shadow-2xl flex items-center gap-2 transition-transform hover:scale-105 border border-emerald-400/50"
+                              >
+                                  <Sparkles size={18} /> Talk to Elf
+                              </button>
+                          </div>
                       </>
                   ) : (
                       <div className="flex flex-col h-full relative">
@@ -1186,15 +1196,20 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack, cardId, isVi
                                     {isLiveActive ? <MicOff size={18}/> : <Mic size={18}/>}
                                     {isLiveActive ? 'Stop' : 'Talk'}
                                 </button>
-                                {isLiveActive && (
-                                    <button 
-                                        onClick={() => chatImageInputRef.current?.click()}
-                                        className="p-3 bg-slate-800 hover:bg-slate-700 text-white rounded-xl border border-slate-700 transition-colors"
-                                        title="Show photo to Elf"
-                                    >
-                                        <Camera size={18}/>
-                                    </button>
-                                )}
+                                
+                                <button 
+                                    onClick={() => {
+                                        if (!isLiveActive) {
+                                            alert("Please tap 'Talk' to start a session with Elf first! Then you can show him a photo.");
+                                            return;
+                                        }
+                                        chatImageInputRef.current?.click();
+                                    }}
+                                    className={`p-3 rounded-xl border transition-colors ${isLiveActive ? 'bg-slate-800 hover:bg-slate-700 text-white border-slate-700' : 'bg-slate-900 text-slate-500 border-slate-800'}`}
+                                    title={isLiveActive ? "Show photo to Elf" : "Start talking to enable camera"}
+                                >
+                                    <Camera size={18}/>
+                                </button>
                               </div>
                               
                               <input 
