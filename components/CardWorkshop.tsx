@@ -182,9 +182,76 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack, cardId, isVi
       }
   }, [showShareModal]);
 
-  // Handlers (Same as before, consolidated for brevity)
-  const handleLiveToggle = async () => { /* ... existing logic ... */ };
-  const handleChatImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => { /* ... existing logic ... */ };
+  const handleLiveToggle = async () => {
+      if (isLiveActive) {
+          liveServiceRef.current?.disconnect();
+          setIsLiveActive(false);
+          // Save session snippet?
+      } else {
+          try {
+              // Construct instructions based on memory
+              const sysPrompt = `
+                You are Elf, a helpful holiday card assistant.
+                Current Card Context:
+                Recipient: ${memory.recipientName || "Unknown"}
+                Occasion: ${memory.occasion}
+                Theme: ${memory.theme}
+                
+                Your goal is to help the user design the perfect card. You can update the card details using tools.
+                Be cheerful, festive, and creative. Ask about their recipient to tailor the message.
+              `;
+              
+              await liveServiceRef.current?.connect("Puck", sysPrompt, {
+                  onOpen: () => setIsLiveActive(true),
+                  onClose: () => setIsLiveActive(false),
+                  onError: (e) => { alert("Connection Error"); setIsLiveActive(false); },
+                  onVolumeUpdate: () => {},
+                  onTranscript: (text, isUser) => {
+                      const role = isUser ? 'user' : 'ai';
+                      setCurrentLine({ role, text, timestamp: Date.now() });
+                      if (isUser && transcript.length > 0 && transcript[transcript.length-1].role === 'user') {
+                          // merge? logic usually handled in parent or here
+                      } else {
+                          setTranscript(prev => [...prev, { role, text, timestamp: Date.now() }]);
+                          setCurrentLine(null);
+                      }
+                  },
+                  onToolCall: async (toolCall) => {
+                      for (const fc of toolCall.functionCalls) {
+                          if (fc.name === 'update_card') {
+                              const args = fc.args;
+                              setMemory(prev => ({ ...prev, ...args }));
+                              liveServiceRef.current?.sendToolResponse({
+                                  functionResponses: [{
+                                      id: fc.id,
+                                      name: fc.name,
+                                      response: { result: "Card updated successfully!" }
+                                  }]
+                              });
+                          }
+                      }
+                  }
+              }, [{ functionDeclarations: [updateCardTool] }]);
+          } catch(e) {
+              alert("Failed to connect live service.");
+          }
+      }
+  };
+
+  const handleChatImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+      if (e.target.files && e.target.files.length > 0) {
+          const file = e.target.files[0];
+          try {
+              const base64 = await resizeImage(file, 512, 0.7);
+              // Send to live service
+              liveServiceRef.current?.sendVideo(base64.split(',')[1], file.type);
+              setTranscript(prev => [...prev, { role: 'user', text: '[Sent Image]', timestamp: Date.now() }]);
+          } catch(e) {
+              console.error("Image send failed", e);
+          }
+      }
+  };
+
   const handleGenText = async () => {
       setIsGeneratingText(true);
       try {
@@ -196,6 +263,7 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack, cardId, isVi
           setIsGeneratingText(false);
       }
   };
+
   const handleGenAudio = async (type: 'message' | 'song') => {
       const isSong = type === 'song';
       const setter = isSong ? setIsGeneratingSong : setIsGeneratingVoice;
@@ -445,7 +513,43 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack, cardId, isVi
       }
   };
   
-  const handleSendToChat = async () => { /* ... */ };
+  const handleSendToChat = async () => {
+      if (!selectedChatTarget || !shareLink) return;
+      
+      const target = chatTargets.find(t => t.id === selectedChatTarget);
+      if (!target) return;
+
+      setIsSendingToChat(true);
+      try {
+          const text = `Check out this ${memory.occasion} card I made for ${memory.recipientName || 'someone'}!\n\n${shareLink}`;
+          
+          let collectionPath;
+          if (target.type === 'group') {
+              collectionPath = `groups/${target.id}/messages`;
+          } else {
+              collectionPath = `chat_channels/${target.id}/messages`;
+          }
+
+          const attachments = [];
+          // Only attach cover if it is a remote URL (not blob) to ensure visibility
+          if (memory.coverImageUrl && !memory.coverImageUrl.startsWith('blob:')) {
+               attachments.push({
+                   type: 'image',
+                   url: memory.coverImageUrl,
+                   name: 'Card Cover'
+               });
+          }
+
+          await sendMessage(target.id, text, collectionPath, undefined, attachments);
+          alert(`Sent to ${target.name}!`);
+          setShowShareModal(false);
+      } catch (e: any) {
+          console.error("Send to chat failed", e);
+          alert("Failed to send message: " + e.message);
+      } finally {
+          setIsSendingToChat(false);
+      }
+  };
 
   const getPageLabel = (page: number) => {
       switch(page) {
