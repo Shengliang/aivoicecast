@@ -21,9 +21,16 @@ export async function generateCardMessage(memory: AgentMemory, tone: string = 'w
         const defaultMsg = 'Wishing you a season filled with warmth, comfort, and good cheer.';
         const hasCustomDraft = memory.cardMessage && memory.cardMessage.trim() !== defaultMsg && memory.cardMessage.length > 5;
         
+        // STRENGTHENED CONTEXT INSTRUCTION
         const contextDraft = hasCustomDraft 
-            ? `The user has provided this specific draft/context: "${memory.cardMessage}". Your goal is to ENHANCE this specific message. Do NOT replace it with generic holiday greetings. Keep all specific names, dates, and achievements mentioned.` 
-            : '';
+            ? `
+            CRITICAL INSTRUCTION: The user has provided a specific draft: "${memory.cardMessage}".
+            You MUST use this draft as the core content. 
+            Do NOT replace it with a generic message. 
+            Your task is to EXPAND this draft into a longer, more eloquent message (approx 100-150 words).
+            Keep ALL specific details (names, dates, companies, achievements) mentioned in the draft.
+            ` 
+            : `Generate a creative ${memory.occasion} message based on the theme: ${memory.theme}.`;
 
         if (memory.theme === 'chinese-poem') {
             prompt = `
@@ -42,18 +49,21 @@ export async function generateCardMessage(memory: AgentMemory, tone: string = 'w
             `;
         } else {
             prompt = `
-                Write a heartwarming ${memory.occasion} card message.
+                Write a heartwarming and substantial ${memory.occasion} card message.
+                
                 Recipient: ${memory.recipientName}
                 Sender: ${memory.senderName}
                 Tone: ${tone}
                 Theme: ${memory.theme}
-                ${memory.customThemePrompt ? `IMPORTANT - Include this specific detail/context: "${memory.customThemePrompt}"` : ''}
+                ${memory.customThemePrompt ? `Additional Context: "${memory.customThemePrompt}"` : ''}
+                
                 ${contextDraft}
                 
                 Requirements:
-                1. If specific details are provided (jobs, names, specific news), you MUST mention them explicitly.
-                2. Length: Approximately 80-120 words. (The user wants a substantial message, not a one-liner).
-                3. Return ONLY the message body text.
+                1. LENGTH: The message must be approximately 100-150 words. It should feel like a thoughtful letter, not just a greeting.
+                2. SPECIFICITY: If the user provided a draft with specific news (e.g. jobs, babies, moves), you MUST elaborate on those details.
+                3. STYLE: Warm, personal, and engaging.
+                4. Return ONLY the message body text.
             `;
         }
         
@@ -76,7 +86,7 @@ export async function generateSongLyrics(memory: AgentMemory): Promise<string> {
         // Incorporate specific user message context if available
         const defaultMsg = 'Wishing you a season filled with warmth, comfort, and good cheer.';
         const messageContext = memory.cardMessage && memory.cardMessage.trim() !== defaultMsg
-            ? `Context from card message: "${memory.cardMessage}"` 
+            ? `Base the song lyrics on this specific message: "${memory.cardMessage}"` 
             : '';
             
         // Explicitly include custom theme details for the song
@@ -85,7 +95,7 @@ export async function generateSongLyrics(memory: AgentMemory): Promise<string> {
             : '';
 
         const prompt = `
-            Write a rhyming song or poem for a greeting card.
+            Write a custom song (lyrics) for a greeting card.
             Occasion: ${memory.occasion}
             To: ${memory.recipientName}
             From: ${memory.senderName}
@@ -94,10 +104,11 @@ export async function generateSongLyrics(memory: AgentMemory): Promise<string> {
             ${messageContext}
             
             Requirements:
-            1. Style: Musical, rhythmic, catchy.
-            2. MUST mention the specific details provided above (e.g. names, pets, hobbies, specific news like job offers) if any.
-            3. Length: 2 Verses and a Chorus (approx 8-12 lines). The user wants a substantial song.
-            4. Return ONLY the lyrics.
+            1. Style: Musical, rhythmic, catchy. Rhyming is essential.
+            2. CONTENT: You MUST incorporate the specific details provided in the message (e.g. specific job offers, names, achievements). Do not write a generic holiday song if specific info is present.
+            3. Structure: 2 Verses, 1 Chorus, 1 Bridge, 1 Outro.
+            4. Length: Substantial (approx 150 words).
+            5. Return ONLY the lyrics.
         `;
         const response = await ai.models.generateContent({
             model: 'gemini-2.5-flash',
