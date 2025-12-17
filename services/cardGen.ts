@@ -15,20 +15,24 @@ export async function generateCardMessage(memory: AgentMemory, tone: string = 'w
         const ai = getClient();
         
         let prompt = '';
-        if (memory.theme === 'chinese-poem') {
-            // Check if there is existing content to translate/adapt
-            // We ignore the default placeholder text to avoid translating generic placeholders
-            const contextContent = memory.cardMessage && memory.cardMessage.length > 5 && !memory.cardMessage.includes('Wishing you') 
-                ? `The user has provided this specific message/context: "${memory.cardMessage}". Your goal is to TRANSLATE or ADAPT this sentiment into the poem.` 
-                : '';
+        
+        // Detect if the user has entered specific text they want to refine/use
+        // We exclude the default placeholder to avoid confusing the model
+        const defaultMsg = 'Wishing you a season filled with warmth, comfort, and good cheer.';
+        const hasCustomDraft = memory.cardMessage && memory.cardMessage.trim() !== defaultMsg && memory.cardMessage.length > 5;
+        
+        const contextDraft = hasCustomDraft 
+            ? `The user has provided this specific draft/context: "${memory.cardMessage}". Your goal is to POLISH and ENHANCE this message while keeping its core meaning.` 
+            : '';
 
+        if (memory.theme === 'chinese-poem') {
             prompt = `
                 Write a traditional Chinese Poem (classical style, like Tang Dynasty Jueju).
                 Topic/Occasion: ${memory.occasion}.
                 Recipient: ${memory.recipientName || 'Friend'}.
                 Sender: ${memory.senderName || 'Me'}.
                 Theme/Context: ${memory.customThemePrompt || 'Nature, peace, friendship'}.
-                ${contextContent}
+                ${contextDraft}
                 
                 Requirements:
                 1. Use Simplified Chinese characters.
@@ -44,6 +48,7 @@ export async function generateCardMessage(memory: AgentMemory, tone: string = 'w
                 Tone: ${tone}
                 Theme: ${memory.theme}
                 ${memory.customThemePrompt ? `IMPORTANT - Include this specific detail/context: "${memory.customThemePrompt}"` : ''}
+                ${contextDraft}
                 
                 Return ONLY the message body text. Keep it under 50 words.
             `;
@@ -66,7 +71,8 @@ export async function generateSongLyrics(memory: AgentMemory): Promise<string> {
         const ai = getClient();
         
         // Incorporate specific user message context if available
-        const messageContext = memory.cardMessage && memory.cardMessage.length > 5 
+        const defaultMsg = 'Wishing you a season filled with warmth, comfort, and good cheer.';
+        const messageContext = memory.cardMessage && memory.cardMessage.trim() !== defaultMsg
             ? `Context from card message: "${memory.cardMessage}"` 
             : '';
             
@@ -86,7 +92,7 @@ export async function generateSongLyrics(memory: AgentMemory): Promise<string> {
             
             Requirements:
             1. Style: Musical, rhythmic, catchy.
-            2. MUST mention the specific details provided above (e.g. names, pets, hobbies) if any.
+            2. MUST mention the specific details provided above (e.g. names, pets, hobbies, specific news) if any.
             3. Return ONLY the lyrics.
         `;
         const response = await ai.models.generateContent({
