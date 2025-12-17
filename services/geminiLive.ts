@@ -1,3 +1,4 @@
+
 import { GoogleGenAI, LiveServerMessage } from '@google/genai';
 import { base64ToBytes, decodeAudioData, createPcmBlob } from '../utils/audioUtils';
 import { GEMINI_API_KEY } from './private_keys';
@@ -52,6 +53,21 @@ export class GeminiLiveService {
   // New method to get the AI output stream for recording
   public getOutputMediaStream(): MediaStream | null {
       return this.outputDestination ? this.outputDestination.stream : null;
+  }
+
+  public sendVideo(base64Data: string, mimeType: string = 'image/jpeg') {
+      if (this.session) {
+          try {
+              this.session.sendRealtimeInput({
+                  media: {
+                      mimeType,
+                      data: base64Data
+                  }
+              });
+          } catch(e) {
+              console.error("Failed to send video/image data", e);
+          }
+      }
   }
 
   async connect(

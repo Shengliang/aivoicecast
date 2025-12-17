@@ -1,12 +1,13 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { AgentMemory, TranscriptItem } from '../types';
-import { ArrowLeft, Sparkles, Wand2, Image as ImageIcon, Type, Download, Share2, Printer, RefreshCw, Send, Mic, MicOff, Gift, Heart, Loader2, ChevronRight, ChevronLeft, Upload, QrCode, X, Music, Play, Pause, Volume2 } from 'lucide-react';
+import { ArrowLeft, Sparkles, Wand2, Image as ImageIcon, Type, Download, Share2, Printer, RefreshCw, Send, Mic, MicOff, Gift, Heart, Loader2, ChevronRight, ChevronLeft, Upload, QrCode, X, Music, Play, Pause, Volume2, Camera } from 'lucide-react';
 import { generateCardMessage, generateCardImage, generateCardAudio, generateSongLyrics } from '../services/cardGen';
 import { GeminiLiveService } from '../services/geminiLive';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
 import { uploadFileToStorage } from '../services/firestoreService';
 import { auth } from '../services/firebaseConfig';
+import { FunctionDeclaration, Type as GenType } from '@google/genai';
 
 interface CardWorkshopProps {
   onBack: () => void;
@@ -27,6 +28,23 @@ const DEFAULT_MEMORY: AgentMemory = {
 // Helper to detect if text contains Chinese characters
 const isChinese = (text: string) => {
     return /[\u4e00-\u9fa5]/.test(text);
+};
+
+// Tool Definition for Elf
+const updateCardTool: FunctionDeclaration = {
+    name: 'update_card',
+    description: 'Update the holiday card details. Use this when the user asks to change the message, theme, recipient, or occasion.',
+    parameters: {
+        type: GenType.OBJECT,
+        properties: {
+            recipientName: { type: GenType.STRING, description: "Name of person receiving the card" },
+            senderName: { type: GenType.STRING, description: "Name of person sending the card" },
+            occasion: { type: GenType.STRING, description: "The event (Christmas, Birthday, etc)" },
+            cardMessage: { type: GenType.STRING, description: "The final message text to be written on the card." },
+            theme: { type: GenType.STRING, enum: ['festive', 'cozy', 'minimal', 'chinese-poem'], description: "Visual theme style" },
+            customThemePrompt: { type: GenType.STRING, description: "Specific visual details for image generation (e.g. 'a dog in snow')" }
+        }
+    }
 };
 
 export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack }) => {
@@ -51,12 +69,14 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack }) => {
   // Live Chat State
   const [isLiveActive, setIsLiveActive] = useState(false);
   const [transcript, setTranscript] = useState<TranscriptItem[]>([]);
+  const [currentLine, setCurrentLine] = useState<TranscriptItem | null>(null); // For accumulating stream
   const liveServiceRef = useRef<GeminiLiveService | null>(null);
   
   // Ref for card preview to capture
   const cardRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const refImageInputRef = useRef<HTMLInputElement>(null);
+  const chatImageInputRef = useRef<HTMLInputElement>(null);
 
   // PDF Export State
   const [isExporting, setIsExporting] = useState(false);
@@ -91,35 +111,111 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack }) => {
       };
   }, []);
 
+  // Update transcript ref when current line changes to handle stream merging
+  useEffect(() => {
+      if (currentLine) {
+         // Auto-scroll chat?
+      }
+  }, [currentLine]);
+
   const handleLiveToggle = async () => {
       if (isLiveActive) {
           liveServiceRef.current?.disconnect();
           setIsLiveActive(false);
+          setCurrentLine(null);
       } else {
           try {
-              let sysPrompt = `You are "Elf", a cheerful holiday card assistant. Help the user write a card for ${memory.recipientName || 'a friend'}.`;
+              let sysPrompt = `You are "Elf", a cheerful holiday card assistant. 
+              Your goal is to help the user design a card. Ask them who it is for, the occasion, and what style they like.
+              When you have enough info, use the 'update_card' tool to generate the card details.
+              Encourage them to upload a photo if they want to include it or use it as inspiration.
+              Current Memory:
+              Recipient: ${memory.recipientName || 'Unknown'}
+              Sender: ${memory.senderName || 'Unknown'}
+              Occasion: ${memory.occasion}
+              Theme: ${memory.theme}
+              `;
               
               if (memory.theme === 'chinese-poem') {
                   sysPrompt = `You are a Chinese Poetry Master (Shifu). 
                   Help the user compose a classical Chinese poem (Jueju or Lushi) for a greeting card.
                   Current Occasion: ${memory.occasion}. Recipient: ${memory.recipientName}.
                   When the user gives a topic, generate a 4-line poem in Chinese.
-                  Explain the meaning briefly in English afterwards.`;
+                  Use 'update_card' tool to save the poem to the card.`;
               }
+
+              const tools = [{ functionDeclarations: [updateCardTool] }];
 
               await liveServiceRef.current?.connect('Puck', sysPrompt, {
                   onOpen: () => setIsLiveActive(true),
-                  onClose: () => setIsLiveActive(false),
+                  onClose: () => { setIsLiveActive(false); setCurrentLine(null); },
                   onError: (e) => { console.error(e); alert("Connection error"); setIsLiveActive(false); },
                   onVolumeUpdate: () => {},
                   onTranscript: (text, isUser) => {
-                      setTranscript(prev => [...prev, { role: isUser ? 'user' : 'ai', text, timestamp: Date.now() }]);
+                      const role = isUser ? 'user' : 'ai';
+                      const timestamp = Date.now();
+                      
+                      setCurrentLine(prev => {
+                          if (prev && prev.role === role) {
+                              return { ...prev, text: prev.text + text };
+                          }
+                          // If switching turns, push prev to main transcript
+                          if (prev) {
+                              setTranscript(t => [...t, prev]);
+                          }
+                          return { role, text, timestamp };
+                      });
+                  },
+                  onToolCall: async (toolCall: any) => {
+                      console.log("Elf Tool Call:", toolCall);
+                      for (const fc of toolCall.functionCalls) {
+                          if (fc.name === 'update_card') {
+                              const args = fc.args;
+                              setMemory(prev => ({
+                                  ...prev,
+                                  ...args
+                              }));
+                              
+                              // Send success response
+                              liveServiceRef.current?.sendToolResponse({
+                                  functionResponses: [{
+                                      id: fc.id,
+                                      name: fc.name,
+                                      response: { result: "Card updated successfully. The preview has been refreshed." }
+                                  }]
+                              });
+                              
+                              // Add system note to transcript
+                              setTranscript(prev => [...prev, { role: 'ai', text: `*[Updated Card: ${args.occasion || 'Details'} for ${args.recipientName || 'Recipient'}]*`, timestamp: Date.now() }]);
+                          }
+                      }
                   }
-              });
+              }, tools);
           } catch(e) {
               console.error(e);
           }
       }
+  };
+
+  const handleChatImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+      if (e.target.files && e.target.files.length > 0) {
+          const file = e.target.files[0];
+          const reader = new FileReader();
+          reader.onloadend = () => {
+              const base64 = (reader.result as string).split(',')[1];
+              const mimeType = file.type;
+              
+              if (liveServiceRef.current) {
+                  liveServiceRef.current.sendVideo(base64, mimeType);
+                  // Add visual indicator to chat
+                  setTranscript(prev => [...prev, { role: 'user', text: `[Sent Image: ${file.name}]`, timestamp: Date.now() }]);
+              } else {
+                  alert("Start the chat first to send images to Elf!");
+              }
+          };
+          reader.readAsDataURL(file);
+      }
+      e.target.value = ''; // Reset
   };
 
   const handleGenText = async () => {
@@ -498,6 +594,9 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack }) => {
           </>
       );
   };
+  
+  // Combine transcript + currentLine for display
+  const displayTranscript = currentLine ? [...transcript, currentLine] : transcript;
 
   return (
     <div className="flex flex-col h-screen bg-slate-950 text-slate-100 overflow-hidden">
@@ -768,29 +867,51 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack }) => {
                           </div>
                       </>
                   ) : (
-                      <div className="flex flex-col h-full">
-                          <div className="flex-1 overflow-y-auto space-y-4 pb-4">
-                              {transcript.length === 0 && (
-                                  <div className="text-center text-slate-500 text-sm py-8">
-                                      Tap the mic to talk to Elf, your holiday assistant.
+                      <div className="flex flex-col h-full relative">
+                          <div className="flex-1 overflow-y-auto space-y-4 pb-4 px-2">
+                              {displayTranscript.length === 0 && (
+                                  <div className="text-center text-slate-500 text-sm py-8 px-4">
+                                      <p>Tap the mic to talk to Elf, your holiday assistant.</p>
+                                      <p className="text-xs mt-2 text-indigo-400">Pro tip: Upload a photo to let Elf see your inspiration!</p>
                                   </div>
                               )}
-                              {transcript.map((t, i) => (
+                              {displayTranscript.map((t, i) => (
                                   <div key={i} className={`flex ${t.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                                      <div className={`max-w-[85%] p-3 rounded-xl text-xs ${t.role === 'user' ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-300'}`}>
+                                      <div className={`max-w-[85%] p-3 rounded-xl text-xs whitespace-pre-wrap ${t.role === 'user' ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-300'}`}>
                                           {t.text}
                                       </div>
                                   </div>
                               ))}
                           </div>
                           
-                          <button 
-                              onClick={handleLiveToggle}
-                              className={`w-full py-4 rounded-xl font-bold flex items-center justify-center gap-2 transition-all ${isLiveActive ? 'bg-red-500 text-white animate-pulse' : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg'}`}
-                          >
-                              {isLiveActive ? <MicOff size={20}/> : <Mic size={20}/>}
-                              {isLiveActive ? 'Stop Talking' : 'Talk to Elf'}
-                          </button>
+                          <div className="mt-auto space-y-2">
+                              <div className="flex gap-2">
+                                <button 
+                                    onClick={handleLiveToggle}
+                                    className={`flex-1 py-3 rounded-xl font-bold flex items-center justify-center gap-2 transition-all ${isLiveActive ? 'bg-red-500 text-white animate-pulse' : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg'}`}
+                                >
+                                    {isLiveActive ? <MicOff size={18}/> : <Mic size={18}/>}
+                                    {isLiveActive ? 'Stop' : 'Talk'}
+                                </button>
+                                {isLiveActive && (
+                                    <button 
+                                        onClick={() => chatImageInputRef.current?.click()}
+                                        className="p-3 bg-slate-800 hover:bg-slate-700 text-white rounded-xl border border-slate-700 transition-colors"
+                                        title="Show photo to Elf"
+                                    >
+                                        <Camera size={18}/>
+                                    </button>
+                                )}
+                              </div>
+                              
+                              <input 
+                                  type="file" 
+                                  ref={chatImageInputRef} 
+                                  className="hidden" 
+                                  accept="image/*" 
+                                  onChange={handleChatImageUpload}
+                              />
+                          </div>
                       </div>
                   )}
               </div>
