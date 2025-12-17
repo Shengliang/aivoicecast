@@ -1,7 +1,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { AgentMemory, TranscriptItem, Group, ChatChannel } from '../types';
-import { ArrowLeft, Sparkles, Wand2, Image as ImageIcon, Type, Download, Share2, Printer, RefreshCw, Send, Mic, MicOff, Gift, Heart, Loader2, ChevronRight, ChevronLeft, Upload, QrCode, X, Music, Play, Pause, Volume2, Camera, CloudUpload, Lock, Globe, Check, Edit, Package } from 'lucide-react';
+import { ArrowLeft, Sparkles, Wand2, Image as ImageIcon, Type, Download, Share2, Printer, RefreshCw, Send, Mic, MicOff, Gift, Heart, Loader2, ChevronRight, ChevronLeft, Upload, QrCode, X, Music, Play, Pause, Volume2, Camera, CloudUpload, Lock, Globe, Check, Edit, Package, ArrowDown } from 'lucide-react';
 import { generateCardMessage, generateCardImage, generateCardAudio, generateSongLyrics } from '../services/cardGen';
 import { GeminiLiveService } from '../services/geminiLive';
 import html2canvas from 'html2canvas';
@@ -565,6 +565,12 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack, cardId, isVi
 
   const getSealChar = (name: string) => { return name ? name.trim().charAt(0).toUpperCase() : 'AI'; };
   const isVertical = memory.theme === 'chinese-poem' && isChinese(memory.cardMessage);
+
+  const getCardPageStyle = (pageNum: number) => ({
+      backgroundImage: (memory.theme === 'festive' && pageNum !== 2 && pageNum !== 4 && pageNum !== 5) ? 'url("https://www.transparenttextures.com/patterns/snow.png")' : 'none',
+      backgroundColor: memory.theme === 'chinese-poem' ? '#f5f0e1' : memory.theme === 'minimal' ? '#f8fafc' : memory.theme === 'cozy' ? '#fff7ed' : '#ffffff',
+      boxShadow: memory.theme === 'chinese-poem' ? 'inset 0 0 40px rgba(0,0,0,0.1)' : ''
+  });
 
   const getDynamicFontSize = (text: string) => {
       const len = text ? text.length : 0;
@@ -1134,42 +1140,62 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack, cardId, isVi
           )}
 
           {/* RIGHT PANEL: PREVIEW */}
-          <div className="flex-1 bg-slate-950 p-4 md:p-8 flex flex-col items-center overflow-auto relative">
+          <div className="flex-1 bg-slate-950 p-0 md:p-4 lg:p-8 flex flex-col items-center overflow-hidden relative">
               
-              {/* Pagination Controls */}
-              <div className="flex items-center gap-4 mb-6 bg-slate-900 p-2 rounded-full border border-slate-800 shadow-xl z-10">
-                  <button 
-                      onClick={() => setActivePage(p => Math.max(0, p - 1))} 
-                      disabled={activePage === 0}
-                      className="p-2 bg-slate-800 hover:bg-slate-700 text-white rounded-full disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-                  >
-                      <ChevronLeft size={20} />
-                  </button>
-                  <span className="text-sm font-bold text-slate-300 min-w-[140px] text-center select-none">
-                      {getPageLabel(activePage)} ({activePage + 1}/6)
-                  </span>
-                  <button 
-                      onClick={() => setActivePage(p => Math.min(5, p + 1))} 
-                      disabled={activePage === 5}
-                      className="p-2 bg-slate-800 hover:bg-slate-700 text-white rounded-full disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-                  >
-                      <ChevronRight size={20} />
-                  </button>
-              </div>
+              {/* Pagination Controls - ONLY FOR EDITOR */}
+              {!isViewer && (
+                  <div className="flex items-center gap-4 mb-6 bg-slate-900 p-2 rounded-full border border-slate-800 shadow-xl z-10 mt-4 md:mt-0">
+                      <button 
+                          onClick={() => setActivePage(p => Math.max(0, p - 1))} 
+                          disabled={activePage === 0}
+                          className="p-2 bg-slate-800 hover:bg-slate-700 text-white rounded-full disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                      >
+                          <ChevronLeft size={20} />
+                      </button>
+                      <span className="text-sm font-bold text-slate-300 min-w-[140px] text-center select-none">
+                          {getPageLabel(activePage)} ({activePage + 1}/6)
+                      </span>
+                      <button 
+                          onClick={() => setActivePage(p => Math.min(5, p + 1))} 
+                          disabled={activePage === 5}
+                          className="p-2 bg-slate-800 hover:bg-slate-700 text-white rounded-full disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                      >
+                          <ChevronRight size={20} />
+                      </button>
+                  </div>
+              )}
 
-              {/* Card Canvas */}
-              <div 
-                  ref={cardRef}
-                  className="w-[400px] h-[600px] bg-white text-slate-900 shadow-2xl relative overflow-hidden flex flex-col transition-all duration-300"
-                  style={{ 
-                      backgroundImage: (memory.theme === 'festive' && activePage !== 2 && activePage !== 4 && activePage !== 5) ? 'url("https://www.transparenttextures.com/patterns/snow.png")' : 'none',
-                      backgroundColor: memory.theme === 'chinese-poem' ? '#f5f0e1' : memory.theme === 'minimal' ? '#f8fafc' : memory.theme === 'cozy' ? '#fff7ed' : '#ffffff',
-                      // Chinese Rice Paper Texture effect
-                      boxShadow: memory.theme === 'chinese-poem' ? 'inset 0 0 40px rgba(0,0,0,0.1)' : ''
-                  }}
-              >
-                  {renderCardContent(activePage)}
-              </div>
+              {/* VIEWER MODE: Vertical Scroll Feed */}
+              {isViewer ? (
+                  <div className="w-full h-full overflow-y-scroll snap-y snap-mandatory scroll-smooth no-scrollbar">
+                      {[0, 1, 2, 3, 4, 5].map((pageNum) => (
+                          <div key={pageNum} className="w-full h-full snap-start flex items-center justify-center p-6 md:p-8">
+                              <div 
+                                  className="w-full max-w-[400px] aspect-[2/3] shadow-2xl relative overflow-hidden flex flex-col rounded-xl transition-transform"
+                                  style={getCardPageStyle(pageNum)}
+                              >
+                                  {renderCardContent(pageNum)}
+                                  
+                                  {/* Scroll Hint on first page */}
+                                  {pageNum === 0 && (
+                                      <div className="absolute bottom-6 left-1/2 -translate-x-1/2 animate-bounce text-slate-400 bg-white/90 p-2 rounded-full shadow-lg z-20">
+                                          <ArrowDown size={20} />
+                                      </div>
+                                  )}
+                              </div>
+                          </div>
+                      ))}
+                  </div>
+              ) : (
+                  /* EDITOR MODE: Single Card */
+                  <div 
+                      ref={cardRef}
+                      className="w-[400px] h-[600px] shadow-2xl relative overflow-hidden flex flex-col transition-all duration-300 scale-90 md:scale-100 origin-top md:origin-center rounded-xl"
+                      style={getCardPageStyle(activePage)}
+                  >
+                      {renderCardContent(activePage)}
+                  </div>
+              )}
 
               {/* HIDDEN EXPORT AREA */}
               {isExporting || isExportingPackage ? (
@@ -1179,10 +1205,7 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack, cardId, isVi
                               key={pageNum} 
                               id={`export-card-page-${pageNum}`}
                               className="w-[400px] h-[600px] overflow-hidden flex flex-col relative"
-                              style={{ 
-                                  backgroundImage: (memory.theme === 'festive' && pageNum !== 2 && pageNum !== 4 && pageNum !== 5) ? 'url("https://www.transparenttextures.com/patterns/snow.png")' : 'none',
-                                  backgroundColor: memory.theme === 'chinese-poem' ? '#f5f0e1' : memory.theme === 'minimal' ? '#f8fafc' : memory.theme === 'cozy' ? '#fff7ed' : '#ffffff',
-                              }}
+                              style={getCardPageStyle(pageNum)}
                           >
                               {renderCardContent(pageNum)}
                           </div>

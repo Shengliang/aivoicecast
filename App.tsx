@@ -120,7 +120,7 @@ const UI_TEXT = {
   }
 };
 
-type ExtendedViewState = ViewState | 'firestore_debug' | 'my_channel_debug';
+type ExtendedViewState = ViewState | 'firestore_debug' | 'my_channel_debug' | 'card_viewer';
 
 const App: React.FC = () => {
   const [language, setLanguage] = useState<'en' | 'zh'>('en');

@@ -127,7 +127,25 @@ export interface CommunityDiscussion {
   isManual?: boolean;
 }
 
-export type ViewState = 'directory' | 'podcast_detail' | 'live_session' | 'create_channel' | 'debug' | 'cloud_debug' | 'public_debug' | 'mission' | 'code_studio' | 'whiteboard' | 'blog' | 'chat' | 'careers' | 'user_guide' | 'notebook_viewer' | 'card_workshop' | 'card_explorer' | 'card_viewer';
+export type ViewState = 
+  | 'directory' 
+  | 'podcast_detail' 
+  | 'live_session' 
+  | 'create_channel' 
+  | 'debug' 
+  | 'cloud_debug' 
+  | 'public_debug' 
+  | 'mission' 
+  | 'code_studio' 
+  | 'whiteboard' 
+  | 'blog' 
+  | 'chat' 
+  | 'careers' 
+  | 'user_guide' 
+  | 'notebook_viewer' 
+  | 'card_workshop' 
+  | 'card_explorer' 
+  | 'card_viewer';
 
 export interface AudioState {
   isConnected: boolean;
