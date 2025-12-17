@@ -127,7 +127,7 @@ export interface CommunityDiscussion {
   isManual?: boolean;
 }
 
-export type ViewState = 'directory' | 'podcast_detail' | 'live_session' | 'create_channel' | 'debug' | 'cloud_debug' | 'public_debug' | 'mission' | 'code_studio' | 'whiteboard' | 'blog' | 'chat' | 'careers' | 'user_guide' | 'notebook_viewer' | 'card_workshop';
+export type ViewState = 'directory' | 'podcast_detail' | 'live_session' | 'create_channel' | 'debug' | 'cloud_debug' | 'public_debug' | 'mission' | 'code_studio' | 'whiteboard' | 'blog' | 'chat' | 'careers' | 'user_guide' | 'notebook_viewer' | 'card_workshop' | 'card_explorer';
 
 export interface AudioState {
   isConnected: boolean;
@@ -391,6 +391,8 @@ export interface Notebook {
 }
 
 export interface AgentMemory {
+  id?: string;        // Added for explorer
+  ownerId?: string;   // Added for explorer
   recipientName: string;
   senderName: string;
   occasion: string;
@@ -402,8 +404,7 @@ export interface AgentMemory {
   backImageUrl?: string;
   googlePhotosUrl?: string;
   generatedAt: string;
-  // Enhanced Audio Fields
-  voiceMessageUrl?: string; // Spoken version of cardMessage
-  songUrl?: string;         // Generated musical version
-  songLyrics?: string;      // Lyrics for the song
+  voiceMessageUrl?: string; 
+  songUrl?: string;         
+  songLyrics?: string;      
 }

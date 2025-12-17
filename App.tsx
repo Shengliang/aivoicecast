@@ -45,6 +45,7 @@ import { UserManual } from './components/UserManual';
 import { PrivacyPolicy } from './components/PrivacyPolicy';
 import { NotebookViewer } from './components/NotebookViewer'; 
 import { CardWorkshop } from './components/CardWorkshop';
+import { CardExplorer } from './components/CardExplorer';
 
 import { auth, isFirebaseConfigured } from './services/firebaseConfig';
 import { 
@@ -58,7 +59,7 @@ import { HANDCRAFTED_CHANNELS, CATEGORY_STYLES, TOPIC_CATEGORIES } from './utils
 import { OFFLINE_CHANNEL_ID } from './utils/offlineContent';
 import { GEMINI_API_KEY } from './services/private_keys';
 
-const APP_VERSION = "v3.75.0"; // Bump version
+const APP_VERSION = "v3.75.1"; 
 
 const UI_TEXT = {
   en: {
@@ -119,7 +120,7 @@ const UI_TEXT = {
   }
 };
 
-type ExtendedViewState = ViewState | 'firestore_debug' | 'my_channel_debug' | 'card_viewer';
+type ExtendedViewState = ViewState | 'firestore_debug' | 'my_channel_debug' | 'card_viewer' | 'card_explorer';
 
 const App: React.FC = () => {
   const [language, setLanguage] = useState<'en' | 'zh'>('en');
@@ -231,12 +232,17 @@ const App: React.FC = () => {
         setViewCardId(id);
         setViewState('card_viewer');
     }
+    
+    if (view === 'card_workshop' && id) {
+        setViewCardId(id);
+        setViewState('card_workshop');
+    }
 
     if (session) {
         setSharedSessionId(session);
         if (keyParam) setAccessKey(keyParam);
         
-        if (viewState !== 'code_studio' && viewState !== 'whiteboard' && viewState !== 'card_viewer') {
+        if (viewState !== 'code_studio' && viewState !== 'whiteboard' && viewState !== 'card_viewer' && viewState !== 'card_workshop') {
             if (mode === 'whiteboard') {
                  setViewState('whiteboard');
             } else {
@@ -935,8 +941,15 @@ const App: React.FC = () => {
         {viewState === 'mission' && <MissionManifesto onBack={() => setViewState('directory')} />}
         {viewState === 'user_guide' && <UserManual onBack={() => setViewState('directory')} />}
         {viewState === 'notebook_viewer' && <NotebookViewer onBack={() => setViewState('directory')} currentUser={currentUser} />}
-        {viewState === 'card_workshop' && <CardWorkshop onBack={() => setViewState('directory')} />}
+        {viewState === 'card_workshop' && <CardWorkshop onBack={() => setViewState('directory')} cardId={viewCardId} />}
         {viewState === 'card_viewer' && <CardWorkshop onBack={() => { setViewState('directory'); setViewCardId(undefined); }} cardId={viewCardId} isViewer={true} />}
+        {viewState === 'card_explorer' && (
+            <CardExplorer 
+                onBack={() => setViewState('directory')}
+                onOpenCard={(id) => { setViewCardId(id); setViewState('card_workshop'); }}
+                onCreateNew={() => { setViewCardId(undefined); setViewState('card_workshop'); }}
+            />
+        )}
         
         {viewState === 'code_studio' && (
             <CodeStudio 

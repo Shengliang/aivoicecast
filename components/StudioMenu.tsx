@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { UserProfile, SubscriptionTier, GlobalStats, Channel } from '../types';
 import { getUserProfile, getGlobalStats } from '../services/firestoreService';
-import { Sparkles, BarChart2, Plus, Wand2, Key, Database, Crown, Settings, Book, Users, LogIn, Terminal, Cloud, Globe, Mic, LayoutGrid, HardDrive, AlertCircle, Loader2, Gift } from 'lucide-react';
+import { Sparkles, BarChart2, Plus, Wand2, Key, Database, Crown, Settings, Book, Users, LogIn, Terminal, Cloud, Globe, Mic, LayoutGrid, HardDrive, AlertCircle, Loader2, Gift, CreditCard, ExternalLink } from 'lucide-react';
 import { VOICES } from '../utils/initialData';
 import { PricingModal } from './PricingModal';
 
@@ -117,12 +117,6 @@ export const StudioMenu: React.FC<StudioMenuProps> = ({
   return (
     <>
       <div className="fixed inset-0 z-[90]" onClick={() => setIsUserMenuOpen(false)}></div>
-      {/* 
-          Container class logic:
-          - If 'className' prop provided (Desktop fixed), use it directly.
-          - Else (Mobile), use absolute positioning relative to parent.
-          - We enforce high z-index and scrolling behaviors here.
-      */}
       <div 
           className={`${className ? className : 'absolute right-0 top-full mt-2 w-72'} bg-slate-900 border border-slate-700 rounded-xl shadow-2xl animate-fade-in-up max-h-[calc(100vh-6rem)] overflow-y-auto overflow-x-hidden scrollbar-thin scrollbar-thumb-slate-800 z-[100]`}
           onClick={(e) => e.stopPropagation()} // Stop propagation here
@@ -173,12 +167,22 @@ export const StudioMenu: React.FC<StudioMenuProps> = ({
                <div className="p-1.5 bg-pink-900/50 text-pink-400 rounded-md"><Wand2 size={16}/></div>
                <span className="font-medium">Magic Voice Create</span>
             </button>
+            
+            <div className="h-px bg-slate-800 my-2 mx-2" />
+            
             <button 
                onClick={() => { onNavigate('card_workshop'); setIsUserMenuOpen(false); }}
                className="w-full flex items-center space-x-3 px-3 py-2 text-sm text-white hover:bg-slate-800 rounded-lg transition-colors"
             >
                <div className="p-1.5 bg-red-900/50 text-red-400 rounded-md"><Gift size={16}/></div>
-               <span className="font-medium">Holiday Card Maker</span>
+               <span className="font-medium">Create Holiday Card</span>
+            </button>
+            <button 
+               onClick={() => { onNavigate('card_explorer'); setIsUserMenuOpen(false); }}
+               className="w-full flex items-center space-x-3 px-3 py-2 text-sm text-white hover:bg-slate-800 rounded-lg transition-colors"
+            >
+               <div className="p-1.5 bg-slate-800 text-slate-400 rounded-md"><LayoutGrid size={16}/></div>
+               <span className="font-medium">My Cards</span>
             </button>
             
             <div className="h-px bg-slate-800 my-2 mx-2" />
