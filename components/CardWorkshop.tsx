@@ -60,7 +60,7 @@ const updateCardTool: FunctionDeclaration = {
 
 export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack, cardId, isViewer: initialIsViewer = false }) => {
   const [memory, setMemory] = useState<AgentMemory>(DEFAULT_MEMORY);
-  const [activeTab, setActiveTab] = useState<'settings' | 'chat'>('settings');
+  const [activeTab, setActiveTab] = useState<'settings' | 'chat'>('chat');
   const [activePage, setActivePage] = useState<number>(0); // 0: Front, 1: Letter, 2: Photos, 3: Back, 4: Voice, 5: Song
   
   // State to track if we are in viewer mode (can be toggled if owner)
@@ -851,8 +851,8 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack, cardId, isVi
           {!isViewer && (
           <div className="w-full md:w-96 bg-slate-900 border-r border-slate-800 flex flex-col shrink-0 h-full max-h-full overflow-hidden z-30">
               <div className="flex-shrink-0 flex border-b border-slate-800 bg-slate-900">
-                  <button onClick={() => setActiveTab('settings')} className={`flex-1 py-3 text-sm font-bold transition-colors ${activeTab==='settings' ? 'bg-slate-800 text-white border-b-2 border-indigo-500' : 'text-slate-500 hover:text-slate-300'}`}>Edit</button>
                   <button onClick={() => setActiveTab('chat')} className={`flex-1 py-3 text-sm font-bold transition-colors ${activeTab==='chat' ? 'bg-slate-800 text-white border-b-2 border-indigo-500' : 'text-slate-500 hover:text-slate-300'}`}>Elf Assistant</button>
+                  <button onClick={() => setActiveTab('settings')} className={`flex-1 py-3 text-sm font-bold transition-colors ${activeTab==='settings' ? 'bg-slate-800 text-white border-b-2 border-indigo-500' : 'text-slate-500 hover:text-slate-300'}`}>Edit context</button>
               </div>
 
               <div className="flex-1 relative overflow-hidden flex flex-col">
