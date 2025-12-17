@@ -78,22 +78,22 @@ export const TOPIC_CATEGORIES: Record<string, string[]> = {
 export const HANDCRAFTED_CHANNELS: Channel[] = [
   {
     id: OFFLINE_CHANNEL_ID,
-    title: 'AIVoiceCast Architecture',
-    description: 'Learn how this app was built. A 100% Offline podcast explaining React 19, IndexedDB, Web Audio API, and Gemini integration.',
+    title: 'AIVoiceCast',
+    description: 'The self-documenting guide to the AIVoiceCast platform. Learn how we built the new Application Suite: Code Studio, Card Workshop, Career Center, and the underlying AI architecture.',
     author: 'Self-Documenting',
     voiceName: 'Puck',
-    systemInstruction: 'You are the architect of the AIVoiceCast platform. You explain technical details about the app\'s source code, offline capabilities, and design patterns.',
+    systemInstruction: 'You are the lead architect of AIVoiceCast. You explain the technical implementation of the platform, focusing on the new "Application Suite" architecture, the Card Workshop (HTML5 Canvas/PDF), and the Code Studio (Virtual File Systems).',
     likes: 9999,
     dislikes: 0,
     comments: [],
-    tags: ['Architecture', 'Offline', 'React', 'Coding'],
+    tags: ['Architecture', 'React', 'Canvas', 'GenAI'],
     imageUrl: 'https://image.pollinations.ai/prompt/isometric%203d%20software%20architecture%20blueprint%20glowing%20holographic%20data%20streams%20serverless%20cloud%20infrastructure%20react%20code%20nodes%20dark%20cyberpunk%20background%20cinematic%20lighting%208k?width=600&height=400&nologo=true',
-    welcomeMessage: "Welcome to the backend of the frontend. Let's explore the code.",
+    welcomeMessage: "Welcome. This platform is a testament to the power of Google AI Studio, Gemini 3, and OpenAI APIs. We have evolved beyond a simple player into a comprehensive Knowledge OS—ready to generate, teach, and build alongside you.",
     starterPrompts: [
-      "Why use IndexedDB?",
-      "How does the visualizer work?",
-      "Explain the offline mode",
-      "Architecture overview"
+      "How does the Card Workshop generate PDFs?",
+      "Explain the Virtual File System in Code Studio",
+      "Architecture of the new Application Suite",
+      "How do AI Agents interact with the Canvas?"
     ],
     createdAt: INITIAL_DATE
   },

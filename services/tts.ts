@@ -1,5 +1,5 @@
 
-// [FORCE-SYNC-v3.63.0] Timestamp: 2025-05-18T13:00:00.000Z
+// [FORCE-SYNC-v3.78.0] Timestamp: 2025-12-16T10:00:00.000Z
 import { GoogleGenAI } from '@google/genai';
 import { base64ToBytes, decodeAudioData } from '../utils/audioUtils';
 import { getCachedAudioBuffer, cacheAudioBuffer } from '../utils/db';
