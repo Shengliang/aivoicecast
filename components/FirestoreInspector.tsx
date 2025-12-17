@@ -113,7 +113,7 @@ export const FirestoreInspector: React.FC<FirestoreInspectorProps> = ({ onBack }
   const allKeys = Array.from(new Set(docs.flatMap(d => Object.keys(d)))) as string[];
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col h-screen overflow-hidden">
+    <div className="h-full flex flex-col bg-slate-950 text-slate-100 overflow-hidden">
       
       {/* Header */}
       <div className="p-4 border-b border-slate-800 bg-slate-900 flex items-center justify-between shrink-0">

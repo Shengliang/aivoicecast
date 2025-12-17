@@ -43,8 +43,8 @@ export const PublicChannelInspector: React.FC<PublicChannelInspectorProps> = ({ 
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 p-8">
-      <div className="max-w-6xl mx-auto space-y-8">
+    <div className="h-full overflow-y-auto bg-slate-950 text-slate-100 p-8 scrollbar-thin scrollbar-thumb-slate-800">
+      <div className="max-w-6xl mx-auto space-y-8 pb-24">
         
         {/* Header */}
         <div className="flex items-center justify-between">

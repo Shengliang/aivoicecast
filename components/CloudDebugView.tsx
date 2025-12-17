@@ -57,8 +57,8 @@ export const CloudDebugView: React.FC<CloudDebugViewProps> = ({ onBack }) => {
   const currentUid = auth.currentUser?.uid || localStorage.getItem('aivoicecast_uid') || 'Unknown';
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 p-8">
-      <div className="max-w-5xl mx-auto space-y-6">
+    <div className="h-full overflow-y-auto bg-slate-950 text-slate-100 p-8 scrollbar-thin scrollbar-thumb-slate-800">
+      <div className="max-w-5xl mx-auto space-y-6 pb-24">
         
         {/* Header */}
         <div className="flex items-center justify-between">
