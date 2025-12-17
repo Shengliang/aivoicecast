@@ -87,7 +87,6 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack, cardId, isVi
   // Live Chat State
   const [isLiveActive, setIsLiveActive] = useState(false);
   const [transcript, setTranscript] = useState<TranscriptItem[]>([]);
-  const [currentLine, setCurrentLine] = useState<TranscriptItem | null>(null); // For accumulating stream
   const liveServiceRef = useRef<GeminiLiveService | null>(null);
   
   // Ref for card preview to capture
@@ -166,7 +165,7 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack, cardId, isVi
       if (transcriptEndRef.current) {
           transcriptEndRef.current.scrollIntoView({ behavior: 'smooth' });
       }
-  }, [transcript, currentLine, activeTab]);
+  }, [transcript, activeTab]);
 
   // Load chat targets for sharing
   useEffect(() => {
@@ -210,13 +209,18 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack, cardId, isVi
                   onVolumeUpdate: () => {},
                   onTranscript: (text, isUser) => {
                       const role = isUser ? 'user' : 'ai';
-                      setCurrentLine({ role, text, timestamp: Date.now() });
-                      if (isUser && transcript.length > 0 && transcript[transcript.length-1].role === 'user') {
-                          // merge logic usually handled in parent or here
-                      } else {
-                          setTranscript(prev => [...prev, { role, text, timestamp: Date.now() }]);
-                          setCurrentLine(null);
-                      }
+                      setTranscript(prev => {
+                          const last = prev[prev.length - 1];
+                          // intelligently merge chunks if role is same
+                          if (last && last.role === role) {
+                              const updatedLast = {
+                                  ...last,
+                                  text: last.text + text
+                              };
+                              return [...prev.slice(0, -1), updatedLast];
+                          }
+                          return [...prev, { role, text, timestamp: Date.now() }];
+                      });
                   },
                   onToolCall: async (toolCall) => {
                       for (const fc of toolCall.functionCalls) {
@@ -247,7 +251,9 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack, cardId, isVi
               const base64 = await resizeImage(file, 512, 0.7);
               // Send to live service
               liveServiceRef.current?.sendVideo(base64.split(',')[1], file.type);
-              setTranscript(prev => [...prev, { role: 'user', text: '[Sent Image]', timestamp: Date.now() }]);
+              
+              // Force add a user message to transcript so user sees it happened
+              setTranscript(prev => [...prev, { role: 'user', text: '📷 [Image Sent to Elf]', timestamp: Date.now() }]);
           } catch(e) {
               console.error("Image send failed", e);
           }
@@ -819,7 +825,7 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack, cardId, isVi
       );
   };
   
-  const displayTranscript = currentLine ? [...transcript, currentLine] : transcript;
+  const displayTranscript = transcript; // Corrected: Using transcript directly since it's fully managed
 
   return (
     <div className="flex flex-col h-screen bg-slate-950 text-slate-100 overflow-hidden">
