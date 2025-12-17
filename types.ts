@@ -409,8 +409,8 @@ export interface Notebook {
 }
 
 export interface AgentMemory {
-  id?: string;        // Added for explorer
-  ownerId?: string;   // Added for explorer
+  id?: string;        
+  ownerId?: string;   
   recipientName: string;
   senderName: string;
   occasion: string;
@@ -424,5 +424,7 @@ export interface AgentMemory {
   generatedAt: string;
   voiceMessageUrl?: string; 
   songUrl?: string;         
-  songLyrics?: string;      
+  songLyrics?: string;
+  fontFamily?: string;
+  fontSizeScale?: number;
 }

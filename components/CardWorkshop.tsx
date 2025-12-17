@@ -1,7 +1,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { AgentMemory, TranscriptItem, Group, ChatChannel } from '../types';
-import { ArrowLeft, Sparkles, Wand2, Image as ImageIcon, Type, Download, Share2, Printer, RefreshCw, Send, Mic, MicOff, Gift, Heart, Loader2, ChevronRight, ChevronLeft, Upload, QrCode, X, Music, Play, Pause, Volume2, Camera, CloudUpload, Lock, Globe, Check, Edit, Package, ArrowDown } from 'lucide-react';
+import { ArrowLeft, Sparkles, Wand2, Image as ImageIcon, Type, Download, Share2, Printer, RefreshCw, Send, Mic, MicOff, Gift, Heart, Loader2, ChevronRight, ChevronLeft, Upload, QrCode, X, Music, Play, Pause, Volume2, Camera, CloudUpload, Lock, Globe, Check, Edit, Package, ArrowDown, Type as TypeIcon, Minus, Plus } from 'lucide-react';
 import { generateCardMessage, generateCardImage, generateCardAudio, generateSongLyrics } from '../services/cardGen';
 import { GeminiLiveService } from '../services/geminiLive';
 import html2canvas from 'html2canvas';
@@ -22,12 +22,14 @@ const DEFAULT_MEMORY: AgentMemory = {
   recipientName: '',
   senderName: '',
   occasion: 'Holiday',
-  cardMessage: 'Wishing you a season filled with warmth, comfort, and good cheer.',
+  cardMessage: 'Dear Friend,\n\nWishing you a season filled with warmth, comfort, and good cheer.\n\nWarmly,\nMe',
   theme: 'festive',
   customThemePrompt: '',
   userImages: [],
   googlePhotosUrl: '',
-  generatedAt: new Date().toISOString()
+  generatedAt: new Date().toISOString(),
+  fontFamily: 'font-script',
+  fontSizeScale: 1.0
 };
 
 // Helper to detect if text contains Chinese characters
@@ -583,17 +585,34 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack, cardId, isVi
 
   const getDynamicFontSize = (text: string) => {
       const len = text ? text.length : 0;
+      const scale = memory.fontSizeScale || 1.0;
+      
+      let baseSize = 'text-lg';
       if (memory.theme === 'chinese-poem') {
-          if (len > 300) return 'text-xs leading-relaxed';
-          if (len > 150) return 'text-sm leading-relaxed';
-          if (len > 80) return 'text-base leading-loose';
-          return 'text-2xl leading-loose';
+          if (len > 300) baseSize = 'text-xs leading-relaxed';
+          else if (len > 150) baseSize = 'text-sm leading-relaxed';
+          else if (len > 80) baseSize = 'text-base leading-loose';
+          else baseSize = 'text-2xl leading-loose';
       } else {
-          if (len > 800) return 'text-[10px] leading-tight';
-          if (len > 500) return 'text-xs leading-normal';
-          if (len > 300) return 'text-sm leading-relaxed';
-          if (len > 150) return 'text-lg leading-relaxed';
-          return 'text-3xl leading-loose';
+          if (len > 800) baseSize = 'text-[10px] leading-tight';
+          else if (len > 500) baseSize = 'text-xs leading-normal';
+          else if (len > 300) baseSize = 'text-sm leading-relaxed';
+          else if (len > 150) baseSize = 'text-lg leading-relaxed';
+          else baseSize = 'text-3xl leading-loose';
+      }
+      
+      // We apply the scale via inline style for precise control on top of tailwind classes
+      return baseSize;
+  };
+
+  const getFontFamilyClass = () => {
+      switch(memory.fontFamily) {
+          case 'font-holiday': return 'font-holiday';
+          case 'font-script': return 'font-script';
+          case 'font-serif': return 'font-serif';
+          case 'font-sans': return 'font-sans';
+          case 'font-mono': return 'font-mono';
+          default: return memory.theme === 'chinese-poem' ? 'font-chinese-brush' : 'font-script';
       }
   };
 
@@ -633,7 +652,10 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack, cardId, isVi
                     )}
                     {/* SCROLLABLE MESSAGE CONTAINER TO FIX OVERFLOW */}
                     <div className={`${isVertical ? 'vertical-rl h-full max-h-[400px] flex flex-wrap-reverse gap-4 items-start text-right pr-16 overflow-x-auto' : 'w-full max-h-[440px] overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-slate-300'}`}>
-                       <p className={`${memory.theme === 'chinese-poem' ? 'font-chinese-brush text-slate-800' : 'font-script text-slate-800'} ${getDynamicFontSize(memory.cardMessage)}`}>
+                       <p 
+                           className={`whitespace-pre-wrap ${getFontFamilyClass()} text-slate-800 ${getDynamicFontSize(memory.cardMessage)}`}
+                           style={{ fontSize: memory.fontSizeScale ? `${memory.fontSizeScale}em` : undefined }}
+                       >
                            {memory.cardMessage || "Your message will appear here..."}
                        </p>
                     </div>
@@ -658,7 +680,7 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack, cardId, isVi
                     )}
                     <div className="mt-4 text-center">
                         <p className={`${memory.theme === 'chinese-poem' ? 'font-chinese-brush text-2xl text-slate-800' : 'font-script text-xl text-slate-600'}`}>
-                            {memory.theme === 'chinese-poem' ? memory.senderName : `With love, ${memory.senderName}`}
+                            {memory.theme === 'chinese-poem' ? memory.senderName : (memory.senderName ? `With love, ${memory.senderName}` : '')}
                         </p>
                     </div>
                 </div>
@@ -857,9 +879,7 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack, cardId, isVi
                       <>
                           {/* Common Settings */}
                           <div className="space-y-3 pb-4 border-b border-slate-800">
-                              <label className="text-xs font-bold text-slate-500 uppercase">Basics</label>
-                              <input type="text" placeholder="To: Recipient Name" value={memory.recipientName} onChange={e => setMemory({...memory, recipientName: e.target.value})} className="w-full bg-slate-800 border border-slate-700 rounded-lg p-3 text-sm text-white focus:border-indigo-500 outline-none"/>
-                              <input type="text" placeholder="From: Sender Name" value={memory.senderName} onChange={e => setMemory({...memory, senderName: e.target.value})} className="w-full bg-slate-800 border border-slate-700 rounded-lg p-3 text-sm text-white focus:border-indigo-500 outline-none"/>
+                              <label className="text-xs font-bold text-slate-500 uppercase">Card Context</label>
                               <select value={memory.occasion} onChange={e => setMemory({...memory, occasion: e.target.value})} className="w-full bg-slate-800 border border-slate-700 rounded-lg p-3 text-sm text-white outline-none">
                                   <option value="Holiday">Happy Holidays</option>
                                   <option value="Christmas">Merry Christmas</option>
@@ -868,7 +888,7 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack, cardId, isVi
                                   <option value="Birthday">Happy Birthday</option>
                               </select>
                               
-                              <label className="text-xs font-bold text-slate-500 uppercase mt-4 block">Visual Theme & Style</label>
+                              <label className="text-xs font-bold text-slate-500 uppercase mt-4 block">Visual Theme</label>
                               <div className="grid grid-cols-2 gap-2 mb-2">
                                   {['festive', 'cozy', 'minimal', 'chinese-poem'].map(t => (
                                       <button 
@@ -956,20 +976,52 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack, cardId, isVi
                               )}
 
                               {activePage === 1 && (
-                                  <div className="space-y-3">
-                                      <div className="flex justify-between items-center">
-                                          <label className="text-xs font-bold text-slate-500 uppercase">Message Body</label>
-                                          <button onClick={handleGenText} disabled={isGeneratingText} className="text-indigo-400 hover:text-white text-xs flex items-center gap-1">
-                                              {isGeneratingText ? <Loader2 size={12} className="animate-spin"/> : <Wand2 size={12}/>} AI Write
-                                          </button>
+                                  <div className="space-y-4">
+                                      <div className="bg-slate-800/30 p-3 rounded-xl border border-slate-700 space-y-3">
+                                          <label className="text-xs font-bold text-indigo-400 uppercase flex items-center gap-2">
+                                              <TypeIcon size={14}/> Text Styling
+                                          </label>
+                                          
+                                          {/* Font Family Selection */}
+                                          <div className="grid grid-cols-3 gap-2">
+                                              {['font-script', 'font-holiday', 'font-serif', 'font-sans', 'font-mono', 'font-chinese-brush'].map(font => (
+                                                  <button
+                                                      key={font}
+                                                      onClick={() => setMemory({...memory, fontFamily: font})}
+                                                      className={`px-1 py-1.5 text-[10px] border rounded transition-colors truncate ${memory.fontFamily === font ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-slate-900 border-slate-700 text-slate-400'}`}
+                                                      title={font.replace('font-', '')}
+                                                  >
+                                                      {font.replace('font-', '')}
+                                                  </button>
+                                              ))}
+                                          </div>
+
+                                          {/* Font Size Scaling */}
+                                          <div className="flex items-center justify-between">
+                                              <span className="text-xs text-slate-400">Size Scale</span>
+                                              <div className="flex items-center gap-2 bg-slate-900 rounded-lg p-1 border border-slate-700">
+                                                  <button onClick={() => setMemory(prev => ({...prev, fontSizeScale: Math.max(0.5, (prev.fontSizeScale || 1.0) - 0.1)}))} className="p-1 hover:bg-slate-700 rounded text-slate-400"><Minus size={12}/></button>
+                                                  <span className="text-xs w-8 text-center font-mono">{(memory.fontSizeScale || 1.0).toFixed(1)}x</span>
+                                                  <button onClick={() => setMemory(prev => ({...prev, fontSizeScale: Math.min(3.0, (prev.fontSizeScale || 1.0) + 0.1)}))} className="p-1 hover:bg-slate-700 rounded text-slate-400"><Plus size={12}/></button>
+                                              </div>
+                                          </div>
                                       </div>
-                                      <textarea 
-                                          rows={6} 
-                                          value={memory.cardMessage} 
-                                          onChange={e => setMemory({...memory, cardMessage: e.target.value})}
-                                          className="w-full bg-slate-800 border border-slate-700 rounded-lg p-3 text-sm text-white focus:border-indigo-500 outline-none resize-none font-script text-lg leading-relaxed"
-                                          placeholder="Type your message here..."
-                                      />
+
+                                      <div className="space-y-3">
+                                          <div className="flex justify-between items-center">
+                                              <label className="text-xs font-bold text-slate-500 uppercase">Message Body</label>
+                                              <button onClick={handleGenText} disabled={isGeneratingText} className="text-indigo-400 hover:text-white text-xs flex items-center gap-1">
+                                                  {isGeneratingText ? <Loader2 size={12} className="animate-spin"/> : <Wand2 size={12}/>} AI Write
+                                              </button>
+                                          </div>
+                                          <textarea 
+                                              rows={10} 
+                                              value={memory.cardMessage} 
+                                              onChange={e => setMemory({...memory, cardMessage: e.target.value})}
+                                              className="w-full bg-slate-800 border border-slate-700 rounded-lg p-3 text-sm text-white focus:border-indigo-500 outline-none resize-none font-script text-lg leading-relaxed whitespace-pre-wrap"
+                                              placeholder="Dear Name,\n\nType your message here..."
+                                          />
+                                      </div>
                                   </div>
                               )}
 
@@ -991,6 +1043,17 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack, cardId, isVi
                                                   </button>
                                               </div>
                                           ))}
+                                      </div>
+                                      
+                                      <div className="pt-4 border-t border-slate-800 mt-2">
+                                          <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Custom Signature</label>
+                                          <input 
+                                              type="text" 
+                                              value={memory.senderName} 
+                                              onChange={e => setMemory({...memory, senderName: e.target.value})}
+                                              className="w-full bg-slate-800 border border-slate-700 rounded-lg p-2 text-sm text-white focus:border-indigo-500 outline-none"
+                                              placeholder="With love, Me"
+                                          />
                                       </div>
                                   </div>
                               )}
