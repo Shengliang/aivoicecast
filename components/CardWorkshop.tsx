@@ -33,7 +33,7 @@ const DEFAULT_MEMORY: AgentMemory = {
 };
 
 const isChinese = (text: string) => /[\u4e00-\u9fa5]/.test(text);
-const isBlobUrl = (url?: string) => url?.startsWith('blob:');
+const isLocalUrl = (url?: string) => url?.startsWith('blob:') || url?.startsWith('data:');
 
 const updateCardTool: FunctionDeclaration = {
     name: 'update_card',
@@ -60,13 +60,12 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack, cardId, isVi
   const [isGeneratingText, setIsGeneratingText] = useState(false);
   const [isGeneratingImage, setIsGeneratingImage] = useState(false);
   const [isGeneratingBackImage, setIsGeneratingBackImage] = useState(false);
-  const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
   const [isGeneratingVoice, setIsGeneratingVoice] = useState(false);
   const [isGeneratingSong, setIsGeneratingSong] = useState(false);
-  const [isUploadingAudio, setIsUploadingAudio] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [isExportingPackage, setIsExportingPackage] = useState(false);
   const [isPublishing, setIsPublishing] = useState(false);
+  const [publishProgress, setPublishProgress] = useState('');
 
   const [playingUrl, setPlayingUrl] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -83,7 +82,7 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack, cardId, isVi
   const [shareLink, setShareLink] = useState<string | null>(null);
   const [showShareModal, setShowShareModal] = useState(false);
 
-  const isOwner = auth.currentUser && memory.ownerId === auth.currentUser.uid;
+  const isOwner = auth.currentUser && (!memory.ownerId || memory.ownerId === auth.currentUser.uid);
 
   useEffect(() => {
       if (cardId) {
@@ -190,7 +189,7 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack, cardId, isVi
   const generatePDFBlob = async (): Promise<Blob | null> => {
       try {
           const pdf = new jsPDF({ orientation: 'portrait', unit: 'px', format: [360, 540] });
-          for (let i = 0; i <= 5; i++) {
+          for (let i = 0; i <= 3; i++) { // Exporting 4 main pages
               const el = document.getElementById(`export-card-page-${i}`);
               if (el) {
                   const canvas = await html2canvas(el, { scale: 2, useCORS: true, width: 360, height: 540 });
@@ -239,13 +238,51 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack, cardId, isVi
   };
 
   const handlePublishAndShare = async () => {
-      if (!auth.currentUser) return alert("Sign in to share.");
+      if (!auth.currentUser) return alert("Please sign in to share your card.");
       setIsPublishing(true);
+      setPublishProgress('Uploading assets...');
+      
       try {
-          const newCardId = await saveCard(memory, cardId); 
-          setShareLink(`${window.location.origin}?view=card&id=${newCardId}`);
+          const cid = cardId || crypto.randomUUID();
+          const updatedMemory = { ...memory };
+
+          // 1. Helper to upload local blobs to Storage
+          const syncMedia = async (url: string | undefined, path: string) => {
+              if (!url || !isLocalUrl(url)) return url;
+              const res = await fetch(url);
+              const blob = await res.blob();
+              return await uploadFileToStorage(path, blob);
+          };
+
+          // 2. Sync all media parts
+          updatedMemory.coverImageUrl = await syncMedia(updatedMemory.coverImageUrl, `cards/${cid}/cover.jpg`);
+          updatedMemory.backImageUrl = await syncMedia(updatedMemory.backImageUrl, `cards/${cid}/back.jpg`);
+          updatedMemory.voiceMessageUrl = await syncMedia(updatedMemory.voiceMessageUrl, `cards/${cid}/voice.wav`);
+          updatedMemory.songUrl = await syncMedia(updatedMemory.songUrl, `cards/${cid}/song.wav`);
+
+          // 3. Sync User Photos
+          if (updatedMemory.userImages.length > 0) {
+              const newPhotos = [];
+              for (let i = 0; i < updatedMemory.userImages.length; i++) {
+                  const url = updatedMemory.userImages[i];
+                  const newUrl = await syncMedia(url, `cards/${cid}/photo_${i}.jpg`);
+                  if (newUrl) newPhotos.push(newUrl);
+              }
+              updatedMemory.userImages = newPhotos;
+          }
+
+          setPublishProgress('Saving to database...');
+          const finalCardId = await saveCard(updatedMemory, cid); 
+          setMemory(updatedMemory); // Update local state with permanent URLs
+          setShareLink(`${window.location.origin}?view=card&id=${finalCardId}`);
           setShowShareModal(true);
-      } catch(e) { alert("Failed to publish."); } finally { setIsPublishing(false); }
+      } catch(e: any) { 
+          console.error("Publish failed", e);
+          alert("Failed to publish: " + (e.message || "Unknown error")); 
+      } finally { 
+          setIsPublishing(false); 
+          setPublishProgress('');
+      }
   };
 
   const getPageLabel = (page: number) => {
@@ -256,12 +293,112 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack, cardId, isVi
 
   const renderCardContent = (page: number) => (
       <div className={`w-full h-full flex flex-col relative overflow-hidden ${memory.theme === 'chinese-poem' ? 'bg-[#f5f0e1]' : 'bg-white'}`}>
-          {page === 0 && (memory.coverImageUrl ? <div className="absolute inset-0" style={{ backgroundImage: `url(${memory.coverImageUrl})`, backgroundSize: 'cover', backgroundPosition: 'center' }} /> : <div className="w-full h-full bg-slate-200 flex items-center justify-center"><Sparkles size={64} className="text-white/40"/></div>)}
-          {page === 1 && <div className="p-10 flex flex-col items-center justify-center h-full text-center text-slate-800 font-script text-xl">{memory.cardMessage}</div>}
-          {page === 2 && <div className="p-6 h-full flex flex-col"><div className="grid grid-cols-2 gap-4 flex-1">{memory.userImages.slice(0,4).map((img, i) => <div key={i} className="bg-slate-100 rounded-lg overflow-hidden border border-slate-200"><img src={img} className="w-full h-full object-cover" alt=""/></div>)}</div></div>}
-          {page === 3 && <div className="p-10 h-full flex flex-col items-center justify-between text-center">{memory.backImageUrl && <img src={memory.backImageUrl} className="w-full h-32 object-cover rounded-xl" alt=""/>}{qrCodeBase64 && <img src={qrCodeBase64} className="w-24 h-24" alt=""/><p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">AIVoiceCast Studios</p>}</div>}
-          {page === 4 && <div className="p-10 h-full flex flex-col items-center justify-center gap-6"><button onClick={() => memory.voiceMessageUrl && playAudio(memory.voiceMessageUrl)} className={`w-20 h-20 bg-indigo-600 text-white rounded-full flex items-center justify-center shadow-xl transition-all ${playingUrl === memory.voiceMessageUrl ? 'animate-pulse bg-red-500' : ''}`}>{playingUrl === memory.voiceMessageUrl ? <Pause size={32}/> : <Volume2 size={32}/></button><p className="font-bold text-slate-800">Voice Greeting</p></div>}
-          {page === 5 && <div className="p-10 h-full flex flex-col items-center justify-center gap-6"><button onClick={() => memory.songUrl && playAudio(memory.songUrl)} className={`w-20 h-20 bg-pink-600 text-white rounded-full flex items-center justify-center shadow-xl transition-all ${playingUrl === memory.songUrl ? 'animate-pulse bg-red-500' : ''}`}>{playingUrl === memory.songUrl ? <Pause size={32}/> : <Music size={32}/></button><p className="font-bold text-slate-800">Holiday Song</p></div>}
+          {page === 0 && (
+              memory.coverImageUrl ? (
+                <div className="absolute inset-0" style={{ backgroundImage: `url(${memory.coverImageUrl})`, backgroundSize: 'cover', backgroundPosition: 'center' }} />
+              ) : (
+                <div className="w-full h-full bg-slate-200 flex flex-col items-center justify-center text-slate-400 gap-2">
+                    <ImageIcon size={48} className="opacity-20"/>
+                    <span className="text-xs font-bold uppercase tracking-widest">No Cover Art</span>
+                </div>
+              )
+          )}
+          
+          {page === 1 && (
+            <div className="p-8 flex flex-col h-full overflow-hidden">
+                <div 
+                    className={`flex-1 overflow-y-auto scrollbar-hide text-center text-slate-800 ${memory.fontFamily || 'font-script'} leading-relaxed flex flex-col justify-center`}
+                    style={{ fontSize: `${20 * (memory.fontSizeScale || 1.0)}px` }}
+                >
+                    <p className="whitespace-pre-wrap">{memory.cardMessage}</p>
+                </div>
+            </div>
+          )}
+
+          {page === 2 && (
+            <div className="p-6 h-full flex flex-col">
+                <div className="grid grid-cols-2 gap-3 flex-1">
+                    {memory.userImages.length > 0 ? (
+                        memory.userImages.slice(0,4).map((img, i) => (
+                            <div key={i} className="bg-slate-100 rounded-lg overflow-hidden border border-slate-200 shadow-sm">
+                                <img src={img} className="w-full h-full object-cover" alt=""/>
+                            </div>
+                        ))
+                    ) : (
+                        <div className="col-span-2 flex flex-col items-center justify-center text-slate-300 gap-2 border-2 border-dashed border-slate-200 rounded-xl h-full">
+                            <ImageIcon size={32} className="opacity-30"/>
+                            <span className="text-[10px] uppercase font-bold tracking-widest">No Photos Uploaded</span>
+                        </div>
+                    )}
+                </div>
+            </div>
+          )}
+
+          {page === 3 && (
+            <div className="p-8 h-full flex flex-col items-center justify-between text-center">
+                {memory.backImageUrl ? (
+                    <img src={memory.backImageUrl} className="w-full h-32 object-cover rounded-xl shadow-md" alt=""/>
+                ) : (
+                    <div className="w-full h-32 bg-slate-100 rounded-xl flex items-center justify-center text-slate-300">
+                        <ImageIcon size={24}/>
+                    </div>
+                )}
+                <div className="flex flex-col items-center gap-2">
+                    {qrCodeBase64 ? (
+                        <img src={qrCodeBase64} className="w-20 h-20 opacity-80" alt="QR Code"/>
+                    ) : (
+                        <QrCode size={40} className="text-slate-200"/>
+                    )}
+                    <p className="text-[9px] font-bold text-slate-400 uppercase tracking-[0.2em] mt-2">AIVoiceCast Digital Card</p>
+                </div>
+            </div>
+          )}
+
+          {page === 4 && (
+            <div className="p-8 h-full flex flex-col items-center">
+                <div className="text-center mb-6">
+                    <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">Voice Greeting</h3>
+                    <div className="w-8 h-1 bg-indigo-500 mx-auto rounded-full"></div>
+                </div>
+                
+                <div className="flex-1 w-full overflow-y-auto scrollbar-hide text-center text-slate-600 italic text-sm px-4 mb-6 leading-relaxed flex flex-col justify-center">
+                    "{memory.cardMessage}"
+                </div>
+
+                <div className="flex flex-col items-center gap-3">
+                    <button 
+                        onClick={() => memory.voiceMessageUrl && playAudio(memory.voiceMessageUrl)} 
+                        className={`w-14 h-14 bg-indigo-600 text-white rounded-full flex items-center justify-center shadow-lg transition-all active:scale-95 ${playingUrl === memory.voiceMessageUrl ? 'ring-4 ring-indigo-500/30 bg-red-500' : 'hover:bg-indigo-500'}`}
+                    >
+                        {playingUrl === memory.voiceMessageUrl ? <Pause size={24}/> : <Volume2 size={24}/>}
+                    </button>
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Listen to Message</span>
+                </div>
+            </div>
+          )}
+
+          {page === 5 && (
+            <div className="p-8 h-full flex flex-col items-center">
+                <div className="text-center mb-6">
+                    <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">Holiday Song</h3>
+                    <div className="w-8 h-1 bg-pink-500 mx-auto rounded-full"></div>
+                </div>
+                
+                <div className="flex-1 w-full overflow-y-auto scrollbar-hide text-center text-slate-600 text-[10px] px-2 mb-6 leading-tight flex flex-col justify-start">
+                    <p className="whitespace-pre-wrap font-medium">{memory.songLyrics || "Generating song lyrics..."}</p>
+                </div>
+
+                <div className="flex flex-col items-center gap-3">
+                    <button 
+                        onClick={() => memory.songUrl && playAudio(memory.songUrl)} 
+                        className={`w-14 h-14 bg-pink-600 text-white rounded-full flex items-center justify-center shadow-lg transition-all active:scale-95 ${playingUrl === memory.songUrl ? 'ring-4 ring-pink-500/30 bg-red-500' : 'hover:bg-pink-500'}`}
+                    >
+                        {playingUrl === memory.songUrl ? <Pause size={24}/> : <Music size={24}/>}
+                    </button>
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Play Custom Song</span>
+                </div>
+            </div>
+          )}
       </div>
   );
 
@@ -275,7 +412,7 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack, cardId, isVi
               {/* FIXED HEADER: TABS */}
               <div className="flex-shrink-0 flex border-b border-slate-800 bg-slate-900">
                   <button onClick={() => setActiveTab('chat')} className={`flex-1 py-3 text-sm font-bold transition-colors ${activeTab==='chat' ? 'bg-slate-800 text-white border-b-2 border-indigo-500' : 'text-slate-500'}`}>Elf Assistant</button>
-                  <button onClick={() => setActiveTab('settings')} className={`flex-1 py-3 text-sm font-bold transition-colors ${activeTab==='settings' ? 'bg-slate-800 text-white border-b-2 border-indigo-500' : 'text-slate-500'}`}>Edit context</button>
+                  <button onClick={() => setActiveTab('settings')} className={`flex-1 py-3 text-sm font-bold transition-colors ${activeTab==='settings' ? 'bg-slate-800 text-white border-b-2 border-indigo-500' : 'text-slate-500'}`}>Edit Context</button>
               </div>
 
               {/* SCROLLABLE BODY: FORMS */}
@@ -285,7 +422,7 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack, cardId, isVi
                             <div className="space-y-4">
                                 <label className="text-xs font-bold text-slate-500 uppercase">Card Settings</label>
                                 <select value={memory.occasion} onChange={e => setMemory({...memory, occasion: e.target.value})} className="w-full bg-slate-800 border border-slate-700 rounded-lg p-3 text-sm text-white outline-none">
-                                    <option value="Holiday">Happy Holidays</option><option value="Christmas">Merry Christmas</option><option value="Birthday">Happy Birthday</option>
+                                    <option value="Holiday">Happy Holidays</option><option value="Christmas">Merry Christmas</option><option value="Birthday">Happy Birthday</option><option value="New Year">New Year 2026</option>
                                 </select>
                                 <div className="grid grid-cols-2 gap-2">
                                     {['festive', 'cozy', 'minimal', 'chinese-poem'].map(t => <button key={t} onClick={() => setMemory({...memory, theme: t as any})} className={`py-2 text-xs font-bold rounded-lg border capitalize ${memory.theme === t ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-slate-800 border-slate-700 text-slate-400'}`}>{t.replace('-', ' ')}</button>)}
@@ -293,14 +430,40 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack, cardId, isVi
                                 <textarea rows={2} placeholder="Visual theme details..." value={memory.customThemePrompt || ''} onChange={e => setMemory({...memory, customThemePrompt: e.target.value})} className="w-full bg-slate-800 border border-slate-700 rounded-lg p-3 text-sm text-white outline-none resize-none"/>
                             </div>
 
-                            <div className="space-y-4">
-                                <h3 className="text-sm font-bold text-white flex items-center gap-2"><Edit3 size={16} /> Editing: {getPageLabel(activePage)}</h3>
+                            <div className="space-y-6">
+                                <h3 className="text-sm font-bold text-white flex items-center gap-2 border-b border-slate-800 pb-2"><Edit3 size={16} /> Editing: {getPageLabel(activePage)}</h3>
+                                
+                                {activePage === 1 && (
+                                    <div className="space-y-4 animate-fade-in">
+                                        <div>
+                                            <div className="flex justify-between items-center mb-2">
+                                                <label className="text-[10px] font-bold text-slate-500 uppercase">Font Size Scale</label>
+                                                <span className="text-[10px] text-indigo-400 font-mono">x{memory.fontSizeScale || 1.0}</span>
+                                            </div>
+                                            <input 
+                                                type="range" min="0.5" max="2.0" step="0.1" 
+                                                value={memory.fontSizeScale || 1.0}
+                                                onChange={(e) => setMemory({...memory, fontSizeScale: parseFloat(e.target.value)})}
+                                                className="w-full accent-indigo-500 h-1 bg-slate-800 rounded-full appearance-none"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="text-[10px] font-bold text-slate-500 uppercase mb-2 block">Font Style</label>
+                                            <div className="flex gap-2">
+                                                <button onClick={() => setMemory({...memory, fontFamily: 'font-script'})} className={`flex-1 py-1.5 rounded-lg text-xs border ${memory.fontFamily === 'font-script' ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-slate-800 border-slate-700 text-slate-400'}`}>Script</button>
+                                                <button onClick={() => setMemory({...memory, fontFamily: 'font-serif'})} className={`flex-1 py-1.5 rounded-lg text-xs border ${memory.fontFamily === 'font-serif' ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-slate-800 border-slate-700 text-slate-400'}`}>Serif</button>
+                                                <button onClick={() => setMemory({...memory, fontFamily: 'font-sans'})} className={`flex-1 py-1.5 rounded-lg text-xs border ${memory.fontFamily === 'font-sans' ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-slate-800 border-slate-700 text-slate-400'}`}>Sans</button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+
                                 {activePage === 0 && (
                                     <div className="space-y-4">
-                                        <button onClick={() => handleGenImage(false)} disabled={isGeneratingImage} className="w-full py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-bold flex items-center justify-center gap-2">
+                                        <button onClick={() => handleGenImage(false)} disabled={isGeneratingImage} className="w-full py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-bold flex items-center justify-center gap-2 shadow-lg">
                                             {isGeneratingImage ? <Loader2 size={12} className="animate-spin"/> : <Sparkles size={12}/>} Generate Front Art
                                         </button>
-                                        <input type="text" placeholder="Refine: e.g. 'A blue dog in snow'" value={frontRefinement} onChange={e => setFrontRefinement(e.target.value)} className="w-full bg-slate-800 border border-slate-700 rounded-lg p-2 text-xs text-white"/>
+                                        <input type="text" placeholder="Refine style (e.g. 'Watercolor style')" value={frontRefinement} onChange={e => setFrontRefinement(e.target.value)} className="w-full bg-slate-800 border border-slate-700 rounded-lg p-2 text-xs text-white"/>
                                     </div>
                                 )}
                                 {activePage === 1 && (
@@ -308,16 +471,17 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack, cardId, isVi
                                         <button onClick={handleGenText} disabled={isGeneratingText} className="w-full py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-bold flex items-center justify-center gap-2">
                                             {isGeneratingText ? <Loader2 size={12} className="animate-spin"/> : <Wand2 size={12}/>} AI Write Message
                                         </button>
-                                        <textarea rows={10} value={memory.cardMessage} onChange={e => setMemory({...memory, cardMessage: e.target.value})} className="w-full bg-slate-800 border border-slate-700 rounded-lg p-3 text-sm text-white outline-none resize-none font-script text-xl"/>
+                                        <textarea rows={10} value={memory.cardMessage} onChange={e => setMemory({...memory, cardMessage: e.target.value})} className={`w-full bg-slate-800 border border-slate-700 rounded-lg p-3 text-white outline-none resize-none ${memory.fontFamily || 'font-script'} text-xl`}/>
                                     </div>
                                 )}
                                 {activePage === 2 && (
                                     <div onClick={() => fileInputRef.current?.click()} className="p-8 border-2 border-dashed border-slate-700 rounded-xl hover:border-indigo-500 cursor-pointer text-center text-xs text-slate-500 group">
                                         <Upload className="mx-auto mb-2 opacity-50 group-hover:opacity-100 transition-opacity"/><input type="file" ref={fileInputRef} className="hidden" multiple accept="image/*" onChange={async (e) => { if (e.target.files) { const photos = await Promise.all(Array.from(e.target.files).map(f => resizeImage(f as File, 1024))); setMemory(prev => ({...prev, userImages: [...prev.userImages, ...photos]})); } }}/> Upload Memories
+                                        <p className="mt-2">Drag and drop family photos here</p>
                                     </div>
                                 )}
-                                {activePage === 4 && <button onClick={() => handleGenAudio('message')} disabled={isGeneratingVoice} className="w-full py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-bold flex items-center justify-center gap-2">{isGeneratingVoice ? <Loader2 size={12} className="animate-spin"/> : <Mic size={12}/>} Generate Voice</button>}
-                                {activePage === 5 && <button onClick={() => handleGenAudio('song')} disabled={isGeneratingSong} className="w-full py-2 bg-pink-600 hover:bg-pink-500 text-white rounded-lg text-xs font-bold flex items-center justify-center gap-2">{isGeneratingSong ? <Loader2 size={12} className="animate-spin"/> : <Music size={12}/>} Generate Song</button>}
+                                {activePage === 4 && <button onClick={() => handleGenAudio('message')} disabled={isGeneratingVoice} className="w-full py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-bold flex items-center justify-center gap-2">{isGeneratingVoice ? <Loader2 size={12} className="animate-spin"/> : <Mic size={12}/>} Generate Voice Greeting</button>}
+                                {activePage === 5 && <button onClick={() => handleGenAudio('song')} disabled={isGeneratingSong} className="w-full py-2 bg-pink-600 hover:bg-pink-500 text-white rounded-lg text-xs font-bold flex items-center justify-center gap-2">{isGeneratingSong ? <Loader2 size={12} className="animate-spin"/> : <Music size={12}/>} Generate Custom Song</button>}
                             </div>
                         </div>
                   ) : (
@@ -343,9 +507,6 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack, cardId, isVi
                         </button>
                         <input type="file" ref={chatImageInputRef} className="hidden" accept="image/*" onChange={async (e) => { if (e.target.files?.[0]) { const base64 = await resizeImage(e.target.files[0], 512, 0.7); liveServiceRef.current?.sendVideo(base64.split(',')[1], e.target.files[0].type); setTranscript(prev => [...prev, { role: 'user', text: '📷 [Sent Photo Inspiration]', timestamp: Date.now() }]); } }}/>
                   </div>
-                  {activeTab === 'settings' && (
-                       <p className="text-[10px] text-slate-500 text-center">Changes saved locally in real-time.</p>
-                  )}
               </div>
           </div>
           )}
@@ -366,10 +527,14 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack, cardId, isVi
                   )}
                   <div className="w-px h-6 bg-slate-800"></div>
                   <div className="flex gap-1 pr-1">
-                      {isViewer && isOwner && <button onClick={() => setIsViewer(false)} className="p-2 bg-indigo-600 hover:bg-indigo-500 rounded-full text-white"><Edit size={16} /></button>}
+                      {isViewer && isOwner && <button onClick={() => setIsViewer(false)} className="p-2 bg-indigo-600 hover:bg-indigo-500 rounded-full text-white" title="Edit Card"><Edit size={16} /></button>}
                       <button onClick={handleExportPDF} disabled={isExporting} className="p-2 bg-slate-800 hover:bg-slate-700 text-white rounded-full transition-colors" title="Download PDF">{isExporting ? <Loader2 size={16} className="animate-spin"/> : <Download size={16} />}</button>
-                      <button onClick={handleDownloadPackage} disabled={isExportingPackage} className="p-2 bg-slate-800 hover:bg-slate-700 text-white rounded-full transition-colors" title="Download Zip Package (PDF + Audio)">{isExportingPackage ? <Loader2 size={16} className="animate-spin"/> : <Package size={16} />}</button>
-                      {!isViewer && <button onClick={handlePublishAndShare} disabled={isPublishing} className="p-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-full transition-colors shadow-lg" title="Publish Card Online">{isPublishing ? <Loader2 size={16} className="animate-spin"/> : <Share2 size={16} />}</button>}
+                      <button onClick={handleDownloadPackage} disabled={isExportingPackage} className="p-2 bg-slate-800 hover:bg-slate-700 text-white rounded-full transition-colors" title="Download Zip Package">{isExportingPackage ? <Loader2 size={16} className="animate-spin"/> : <Package size={16} />}</button>
+                      {!isViewer && (
+                        <button onClick={handlePublishAndShare} disabled={isPublishing} className="p-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-full transition-colors shadow-lg" title="Publish Card Online">
+                            {isPublishing ? <Loader2 size={16} className="animate-spin"/> : <Share2 size={16} />}
+                        </button>
+                      )}
                   </div>
               </div>
 
@@ -394,12 +559,11 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack, cardId, isVi
               </div>
 
               {/* HIDDEN EXPORT AREA */}
-              {isExporting || isExportingPackage ? (
+              {(isExporting || isExportingPackage) && (
                   <div style={{ position: 'absolute', left: '-9999px', top: '-9999px', opacity: 0 }}>
-                      {[0, 1, 2, 3, 4, 5].map(pageNum => <div key={pageNum} id={`export-card-page-${pageNum}`} className="w-[330px] h-[495px] overflow-hidden flex flex-col relative">{renderCardContent(pageNum)}</div>)}
+                      {[0, 1, 2, 3].map(pageNum => <div key={pageNum} id={`export-card-page-${pageNum}`} className="w-[330px] h-[495px] overflow-hidden flex flex-col relative">{renderCardContent(pageNum)}</div>)}
                   </div>
-              ) : null}
-
+              )}
           </div>
       </div>
       
@@ -410,11 +574,18 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack, cardId, isVi
                <p className="text-sm text-slate-300 mb-4">Your interactive holiday card is live. Share this link for friends to view and listen.</p>
                <div className="bg-slate-950 border border-slate-800 rounded-lg p-3 flex items-center gap-2 mb-4">
                   <span className="flex-1 text-xs text-slate-300 truncate font-mono">{shareLink}</span>
-                  <button onClick={() => navigator.clipboard.writeText(shareLink)} className="p-1.5 hover:bg-slate-800 rounded text-slate-400 hover:text-white transition-colors"><Share2 size={14}/></button>
+                  <button onClick={() => { navigator.clipboard.writeText(shareLink); alert("Link copied!"); }} className="p-1.5 hover:bg-slate-800 rounded text-slate-400 hover:text-white transition-colors"><Share2 size={14}/></button>
                </div>
                <button onClick={() => setShowShareModal(false)} className="w-full py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-lg transition-colors">Done</button>
            </div>
         </div>
+      )}
+
+      {isPublishing && publishProgress && (
+          <div className="fixed bottom-8 right-8 bg-slate-900 border border-indigo-500/50 p-4 rounded-xl shadow-2xl flex items-center gap-3 z-50 animate-fade-in">
+              <Loader2 className="text-indigo-400 animate-spin" size={20}/>
+              <span className="text-sm font-bold text-indigo-100">{publishProgress}</span>
+          </div>
       )}
 
     </div>
