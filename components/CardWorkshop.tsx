@@ -756,7 +756,7 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack, cardId, isVi
                                         {!isViewer && !isBlobUrl(memory.voiceMessageUrl) && <span className="text-[9px] text-emerald-400 font-bold">Saved</span>}
                                         {!isViewer && isBlobUrl(memory.voiceMessageUrl) && (
                                             <button onClick={() => handleSaveAudio('message')} disabled={isUploadingAudio} className="text-slate-400 hover:text-indigo-600 transition-colors" title="Save to Cloud">
-                                                {isUploadingAudio ? <Loader2 size={12} className="animate-spin"/> : <CloudUpload size={12}/>}
+                                                {isUploadingAudio ? <Loader2 size={14} className="animate-spin"/> : <CloudUpload size={14}/>}
                                             </button>
                                         )}
                                         <button onClick={() => handleDownloadLocal(memory.voiceMessageUrl!, `voice_${memory.recipientName || 'message'}.wav`)} className="text-slate-400 hover:text-indigo-600 transition-colors" title="Download">
