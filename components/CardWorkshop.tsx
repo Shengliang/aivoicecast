@@ -332,9 +332,18 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack, cardId, isVi
           const prompt = isBack ? style + ", background pattern or texture, minimalist" : style + ", highly detailed cover art, cinematic";
           const refImg = (!isBack && activePage === 0) ? (frontRefImage || undefined) : undefined;
           const refinement = (!isBack && activePage === 0) ? frontRefinement : undefined;
-          const imgUrl = await generateCardImage(memory, prompt, refImg, refinement);
+          
+          // Request '3:4' for front (Portrait) and '16:9' for back (Landscape)
+          const aspectRatio = isBack ? '16:9' : '3:4';
+          
+          const imgUrl = await generateCardImage(memory, prompt, refImg, refinement, aspectRatio);
           setMemory(prev => isBack ? ({ ...prev, backImageUrl: imgUrl }) : ({ ...prev, coverImageUrl: imgUrl }));
-      } catch(e) { alert("Failed to generate image."); } finally { setter(false); }
+      } catch(e) { 
+          alert("Failed to generate image."); 
+          console.error(e);
+      } finally { 
+          setter(false); 
+      }
   };
   
   const handleRefImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {

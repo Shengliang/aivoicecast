@@ -156,7 +156,8 @@ export async function generateCardImage(
     memory: AgentMemory, 
     stylePrompt: string, 
     referenceImageBase64?: string, 
-    refinementText?: string
+    refinementText?: string,
+    aspectRatio: '1:1' | '3:4' | '4:3' | '9:16' | '16:9' = '1:1'
 ): Promise<string> {
     try {
         const ai = getClient();
@@ -207,7 +208,12 @@ export async function generateCardImage(
         // Using 'gemini-2.5-flash-image' as per instructions for standard image gen
         const response = await ai.models.generateContent({
             model: 'gemini-2.5-flash-image',
-            contents: { parts }
+            contents: { parts },
+            config: {
+                imageConfig: {
+                    aspectRatio: aspectRatio
+                }
+            }
         });
         
         // Find image part

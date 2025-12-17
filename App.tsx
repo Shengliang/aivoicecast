@@ -942,7 +942,6 @@ const App: React.FC = () => {
         {viewState === 'user_guide' && <UserManual onBack={() => setViewState('directory')} />}
         {viewState === 'notebook_viewer' && <NotebookViewer onBack={() => setViewState('directory')} currentUser={currentUser} />}
         {viewState === 'card_workshop' && <CardWorkshop onBack={() => setViewState('directory')} cardId={viewCardId} />}
-        {viewState === 'card_viewer' && <CardWorkshop onBack={() => { setViewState('directory'); setViewCardId(undefined); }} cardId={viewCardId} isViewer={true} />}
         {viewState === 'card_explorer' && (
             <CardExplorer 
                 onBack={() => setViewState('directory')}
