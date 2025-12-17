@@ -868,13 +868,13 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack, cardId, isVi
           
           {/* LEFT PANEL: CONTROLS (Hidden in Viewer Mode) */}
           {!isViewer && (
-          <div className="w-full md:w-96 bg-slate-900 border-r border-slate-800 flex flex-col shrink-0">
+          <div className="w-full md:w-96 bg-slate-900 border-r border-slate-800 flex flex-col shrink-0 h-full">
               <div className="flex border-b border-slate-800">
                   <button onClick={() => setActiveTab('settings')} className={`flex-1 py-3 text-sm font-bold transition-colors ${activeTab==='settings' ? 'bg-slate-800 text-white border-b-2 border-indigo-500' : 'text-slate-500 hover:text-slate-300'}`}>Edit</button>
                   <button onClick={() => setActiveTab('chat')} className={`flex-1 py-3 text-sm font-bold transition-colors ${activeTab==='chat' ? 'bg-slate-800 text-white border-b-2 border-indigo-500' : 'text-slate-500 hover:text-slate-300'}`}>Elf Assistant</button>
               </div>
 
-              <div className="flex-1 overflow-y-auto p-6 space-y-6">
+              <div className={`flex-1 ${activeTab === 'settings' ? 'overflow-y-auto p-6 space-y-6' : 'flex flex-col overflow-hidden relative'}`}>
                   {activeTab === 'settings' ? (
                       <>
                           {/* Common Settings */}
@@ -1161,7 +1161,7 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack, cardId, isVi
                       </>
                   ) : (
                       <div className="flex flex-col h-full relative">
-                          <div className="flex-1 overflow-y-auto space-y-4 pb-4 px-2">
+                          <div className="flex-1 overflow-y-auto space-y-4 pb-4 px-4 pt-4">
                               {displayTranscript.length === 0 && (
                                   <div className="text-center text-slate-500 text-sm py-8 px-4">
                                       <p>Tap the mic to talk to Elf, your holiday assistant.</p>
@@ -1177,7 +1177,7 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack, cardId, isVi
                               ))}
                           </div>
                           
-                          <div className="mt-auto space-y-2">
+                          <div className="mt-auto space-y-2 p-4 border-t border-slate-800 bg-slate-900">
                               <div className="flex gap-2">
                                 <button 
                                     onClick={handleLiveToggle}
