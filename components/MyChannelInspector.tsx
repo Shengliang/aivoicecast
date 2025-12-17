@@ -1,8 +1,11 @@
 
 import React, { useState, useEffect } from 'react';
 import { getUserChannels, deleteUserChannel, saveUserChannel } from '../utils/db';
+import { getCreatorChannels } from '../services/firestoreService';
+import { auth } from '../services/firebaseConfig';
 import { Channel } from '../types';
-import { ArrowLeft, RefreshCw, Trash2, HardDrive, Edit, Calendar } from 'lucide-react';
+import { ArrowLeft, RefreshCw, Trash2, HardDrive, Edit, Calendar, DownloadCloud, CloudDownload } from 'lucide-react';
+import { HANDCRAFTED_CHANNELS } from '../utils/initialData';
 
 interface MyChannelInspectorProps {
   onBack: () => void;
@@ -11,6 +14,7 @@ interface MyChannelInspectorProps {
 export const MyChannelInspector: React.FC<MyChannelInspectorProps> = ({ onBack }) => {
   const [channels, setChannels] = useState<Channel[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const currentUser = auth.currentUser;
 
   const loadData = async () => {
     setIsLoading(true);
@@ -42,9 +46,7 @@ export const MyChannelInspector: React.FC<MyChannelInspectorProps> = ({ onBack }
   };
 
   const handleEditDate = async (channel: Channel) => {
-      // Create a default string in local time for the input
       const current = channel.createdAt ? new Date(channel.createdAt) : new Date();
-      // Format YYYY-MM-DDTHH:mm for datetime-local input, roughly
       const pad = (n: number) => n < 10 ? '0' + n : n;
       const defaultVal = `${current.getFullYear()}-${pad(current.getMonth() + 1)}-${pad(current.getDate())}T${pad(current.getHours())}:${pad(current.getMinutes())}`;
       
@@ -59,10 +61,56 @@ export const MyChannelInspector: React.FC<MyChannelInspectorProps> = ({ onBack }
           const updatedChannel = { ...channel, createdAt: timestamp };
           try {
               await saveUserChannel(updatedChannel);
-              setChannels(prev => prev.map(c => c.id === channel.id ? updatedChannel : c).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)));
+              await loadData();
           } catch(e) {
               alert("Failed to update date.");
           }
+      }
+  };
+
+  const handleSeedLocal = async () => {
+      if (!confirm("Import built-in channels to your Local Storage? This is useful for testing offline availability.")) return;
+      setIsLoading(true);
+      try {
+          for (const ch of HANDCRAFTED_CHANNELS) {
+              await saveUserChannel(ch);
+          }
+          await loadData();
+          alert(`Imported ${HANDCRAFTED_CHANNELS.length} channels to local storage.`);
+      } catch(e) {
+          alert("Import failed.");
+      } finally {
+          setIsLoading(false);
+      }
+  };
+
+  const handleSyncFromCloud = async () => {
+      if (!currentUser) {
+          alert("Please sign in to sync from cloud.");
+          return;
+      }
+      setIsLoading(true);
+      try {
+          // Fetch from Firestore
+          const cloudChannels = await getCreatorChannels(currentUser.uid);
+          
+          if (cloudChannels.length === 0) {
+              alert("No channels found in your Cloud account.");
+          } else {
+              // Save each to local IndexedDB
+              let count = 0;
+              for (const ch of cloudChannels) {
+                  await saveUserChannel(ch);
+                  count++;
+              }
+              await loadData();
+              alert(`Successfully synced ${count} channels from Cloud to Local Storage.`);
+          }
+      } catch(e: any) {
+          console.error(e);
+          alert("Sync failed: " + e.message);
+      } finally {
+          setIsLoading(false);
       }
   };
 
@@ -84,10 +132,25 @@ export const MyChannelInspector: React.FC<MyChannelInspectorProps> = ({ onBack }
                 <p className="text-xs text-slate-500 mt-1">Live View of IndexedDB 'user_channels' (Local Storage)</p>
              </div>
            </div>
-           <button onClick={loadData} className="flex items-center space-x-2 px-4 py-2 bg-indigo-600 rounded-lg hover:bg-indigo-500">
-             <RefreshCw size={16} className={isLoading ? 'animate-spin' : ''} />
-             <span>Refresh</span>
-           </button>
+           
+           <div className="flex gap-2">
+               {currentUser && (
+                   <button onClick={handleSyncFromCloud} disabled={isLoading} className="flex items-center space-x-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg transition-colors font-bold text-xs shadow-lg">
+                       <CloudDownload size={16} />
+                       <span>Sync from Cloud</span>
+                   </button>
+               )}
+               
+               <button onClick={handleSeedLocal} disabled={isLoading} className="flex items-center space-x-2 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white rounded-lg transition-colors font-bold text-xs border border-slate-700">
+                   <DownloadCloud size={16} />
+                   <span>Import Defaults</span>
+               </button>
+               
+               <button onClick={loadData} className="flex items-center space-x-2 px-4 py-2 bg-slate-800 rounded-lg hover:bg-slate-700 transition-colors font-bold text-xs border border-slate-700">
+                 <RefreshCw size={16} className={isLoading ? 'animate-spin' : ''} />
+                 <span>Refresh</span>
+               </button>
+           </div>
         </div>
 
         {/* Table */}
@@ -155,7 +218,11 @@ export const MyChannelInspector: React.FC<MyChannelInspectorProps> = ({ onBack }
                  {channels.length === 0 && (
                    <tr>
                       <td colSpan={5} className="px-6 py-12 text-center text-slate-600 italic">
-                         No local user channels found.
+                         No local user channels found in 'user_channels' store.<br/>
+                         {currentUser ? 
+                           <span className="text-indigo-400 cursor-pointer hover:underline" onClick={handleSyncFromCloud}>Click "Sync from Cloud" to retrieve your online channels.</span> 
+                           : "Sign in to sync your cloud channels."
+                         }
                       </td>
                    </tr>
                  )}
