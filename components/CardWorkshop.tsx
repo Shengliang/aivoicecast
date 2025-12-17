@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { AgentMemory, TranscriptItem } from '../types';
-import { ArrowLeft, Sparkles, Wand2, Image as ImageIcon, Type, Download, Share2, Printer, RefreshCw, Send, Mic, MicOff, Gift, Heart, Loader2, ChevronRight, ChevronLeft, Upload, QrCode, X } from 'lucide-react';
-import { generateCardMessage, generateCardImage } from '../services/cardGen';
+import { ArrowLeft, Sparkles, Wand2, Image as ImageIcon, Type, Download, Share2, Printer, RefreshCw, Send, Mic, MicOff, Gift, Heart, Loader2, ChevronRight, ChevronLeft, Upload, QrCode, X, Music, Play, Pause, Volume2 } from 'lucide-react';
+import { generateCardMessage, generateCardImage, generateCardAudio, generateSongLyrics } from '../services/cardGen';
 import { GeminiLiveService } from '../services/geminiLive';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
@@ -32,13 +32,18 @@ const isChinese = (text: string) => {
 export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack }) => {
   const [memory, setMemory] = useState<AgentMemory>(DEFAULT_MEMORY);
   const [activeTab, setActiveTab] = useState<'settings' | 'chat'>('settings');
-  const [activePage, setActivePage] = useState<number>(0); // 0: Front, 1: Letter, 2: Photos, 3: Back
+  const [activePage, setActivePage] = useState<number>(0); // 0: Front, 1: Letter, 2: Photos, 3: Back, 4: Audio
   
   const [isGeneratingText, setIsGeneratingText] = useState(false);
   const [isGeneratingImage, setIsGeneratingImage] = useState(false);
   const [isGeneratingBackImage, setIsGeneratingBackImage] = useState(false);
   const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
   
+  // Audio Gen State
+  const [isGeneratingAudio, setIsGeneratingAudio] = useState(false);
+  const [isPlayingAudio, setIsPlayingAudio] = useState(false);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+
   // Image Generation Refinements
   const [frontRefImage, setFrontRefImage] = useState<string | null>(null);
   const [frontRefinement, setFrontRefinement] = useState('');
@@ -126,6 +131,44 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack }) => {
           alert("Failed to generate text");
       } finally {
           setIsGeneratingText(false);
+      }
+  };
+
+  const handleGenAudio = async (type: 'message' | 'song') => {
+      setIsGeneratingAudio(true);
+      try {
+          let text = memory.cardMessage;
+          if (type === 'song') {
+              text = await generateSongLyrics(memory);
+              setMemory(prev => ({ ...prev, audioScript: text })); // Save lyrics
+          } else {
+              setMemory(prev => ({ ...prev, audioScript: memory.cardMessage }));
+          }
+
+          // Generate Audio using TTS
+          const audioUrl = await generateCardAudio(text, 'Kore');
+          setMemory(prev => ({ ...prev, audioUrl }));
+      } catch(e) {
+          console.error(e);
+          alert("Audio generation failed. Ensure API Key is set.");
+      } finally {
+          setIsGeneratingAudio(false);
+      }
+  };
+
+  const toggleAudio = () => {
+      if (!audioRef.current) {
+          if (!memory.audioUrl) return;
+          audioRef.current = new Audio(memory.audioUrl);
+          audioRef.current.onended = () => setIsPlayingAudio(false);
+      }
+      
+      if (isPlayingAudio) {
+          audioRef.current.pause();
+          setIsPlayingAudio(false);
+      } else {
+          audioRef.current.play();
+          setIsPlayingAudio(true);
       }
   };
 
@@ -276,6 +319,7 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack }) => {
           case 1: return 'Message (Inner Left)';
           case 2: return 'Photos (Inner Right)';
           case 3: return 'Back Cover';
+          case 4: return 'Audio Gift';
           default: return `Page ${page + 1}`;
       }
   };
@@ -414,6 +458,40 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack }) => {
                             <span className="font-holiday font-bold text-lg">AIVoiceCast</span>
                         </div>
                         <p className="text-[10px] text-slate-400 uppercase tracking-widest">Designed with AI</p>
+                    </div>
+                </div>
+            )}
+            
+            {/* --- PAGE 4: AUDIO GIFT --- */}
+            {page === 4 && (
+                <div className={`w-full h-full flex flex-col items-center justify-center p-8 relative ${memory.theme === 'chinese-poem' ? 'bg-[#f5f0e1]' : 'bg-slate-50'}`}>
+                    <div className="bg-white/80 backdrop-blur-sm p-8 rounded-full shadow-2xl border-4 border-indigo-100 animate-pulse-slow">
+                        <Music size={64} className="text-indigo-400" />
+                    </div>
+                    
+                    <div className="text-center mt-8 space-y-2">
+                        <h3 className="text-2xl font-holiday font-bold text-slate-700">Audio Greeting</h3>
+                        <p className="text-sm text-slate-500 max-w-xs">
+                            {memory.audioScript || "No audio message generated yet."}
+                        </p>
+                    </div>
+                    
+                    <div className="mt-8 flex gap-4">
+                        <div className="flex flex-col items-center gap-1">
+                             <div className="w-1 h-8 bg-indigo-300 rounded-full animate-bounce" style={{animationDelay: '0s'}}></div>
+                        </div>
+                        <div className="flex flex-col items-center gap-1">
+                             <div className="w-1 h-12 bg-indigo-400 rounded-full animate-bounce" style={{animationDelay: '0.1s'}}></div>
+                        </div>
+                        <div className="flex flex-col items-center gap-1">
+                             <div className="w-1 h-6 bg-indigo-300 rounded-full animate-bounce" style={{animationDelay: '0.2s'}}></div>
+                        </div>
+                        <div className="flex flex-col items-center gap-1">
+                             <div className="w-1 h-10 bg-indigo-500 rounded-full animate-bounce" style={{animationDelay: '0.3s'}}></div>
+                        </div>
+                         <div className="flex flex-col items-center gap-1">
+                             <div className="w-1 h-6 bg-indigo-300 rounded-full animate-bounce" style={{animationDelay: '0.4s'}}></div>
+                        </div>
                     </div>
                 </div>
             )}
@@ -639,6 +717,54 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack }) => {
                                       </div>
                                   </div>
                               )}
+                              
+                              {/* AUDIO SETTINGS (PAGE 4) */}
+                              {activePage === 4 && (
+                                  <div className="space-y-4">
+                                      <div className="bg-slate-900/50 p-4 rounded-xl border border-slate-800">
+                                          <h3 className="text-sm font-bold text-white mb-2 flex items-center gap-2"><Music className="text-indigo-400" size={16}/> Music AI Sandbox</h3>
+                                          <p className="text-xs text-slate-400 mb-4">Generate custom audio for your card using AI.</p>
+                                          
+                                          <div className="flex gap-2 mb-4">
+                                              <button 
+                                                  onClick={() => handleGenAudio('message')}
+                                                  disabled={isGeneratingAudio}
+                                                  className="flex-1 py-2 bg-slate-800 hover:bg-slate-700 rounded-lg text-xs font-bold text-slate-300 border border-slate-600 transition-colors"
+                                              >
+                                                  Voice Message
+                                              </button>
+                                              <button 
+                                                  onClick={() => handleGenAudio('song')}
+                                                  disabled={isGeneratingAudio}
+                                                  className="flex-1 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-bold transition-colors shadow-lg"
+                                              >
+                                                  Generate Song
+                                              </button>
+                                          </div>
+                                          
+                                          {isGeneratingAudio && (
+                                              <div className="text-center py-4">
+                                                  <Loader2 size={24} className="animate-spin text-indigo-400 mx-auto mb-2"/>
+                                                  <p className="text-xs text-slate-500">Creating magic...</p>
+                                              </div>
+                                          )}
+                                          
+                                          {memory.audioUrl && (
+                                              <div className="bg-slate-800 p-3 rounded-lg border border-slate-700 flex items-center gap-3">
+                                                  <button onClick={toggleAudio} className="w-10 h-10 rounded-full bg-indigo-600 flex items-center justify-center text-white shadow-lg">
+                                                      {isPlayingAudio ? <Pause size={16}/> : <Play size={16} className="ml-1"/>}
+                                                  </button>
+                                                  <div className="flex-1 overflow-hidden">
+                                                      <p className="text-xs font-bold text-white truncate">{memory.audioScript || "Audio Message"}</p>
+                                                      <div className="flex items-center gap-1 text-[10px] text-slate-400">
+                                                          <Volume2 size={10}/> <span>AI Generated</span>
+                                                      </div>
+                                                  </div>
+                                              </div>
+                                          )}
+                                      </div>
+                                  </div>
+                              )}
                           </div>
                       </>
                   ) : (
@@ -683,11 +809,11 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack }) => {
                       <ChevronLeft size={20} />
                   </button>
                   <span className="text-sm font-bold text-slate-300 min-w-[140px] text-center select-none">
-                      {getPageLabel(activePage)} ({activePage + 1}/4)
+                      {getPageLabel(activePage)} ({activePage + 1}/5)
                   </span>
                   <button 
-                      onClick={() => setActivePage(p => Math.min(3, p + 1))} 
-                      disabled={activePage === 3}
+                      onClick={() => setActivePage(p => Math.min(4, p + 1))} 
+                      disabled={activePage === 4}
                       className="p-2 bg-slate-800 hover:bg-slate-700 text-white rounded-full disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
                   >
                       <ChevronRight size={20} />
@@ -699,7 +825,7 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack }) => {
                   ref={cardRef}
                   className="w-[400px] h-[600px] bg-white text-slate-900 shadow-2xl relative overflow-hidden flex flex-col transition-all duration-300"
                   style={{ 
-                      backgroundImage: (memory.theme === 'festive' && activePage !== 2) ? 'url("https://www.transparenttextures.com/patterns/snow.png")' : 'none',
+                      backgroundImage: (memory.theme === 'festive' && activePage !== 2 && activePage !== 4) ? 'url("https://www.transparenttextures.com/patterns/snow.png")' : 'none',
                       backgroundColor: memory.theme === 'chinese-poem' ? '#f5f0e1' : memory.theme === 'minimal' ? '#f8fafc' : memory.theme === 'cozy' ? '#fff7ed' : '#ffffff',
                       // Chinese Rice Paper Texture effect
                       boxShadow: memory.theme === 'chinese-poem' ? 'inset 0 0 40px rgba(0,0,0,0.1)' : ''

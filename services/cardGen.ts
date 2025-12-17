@@ -60,6 +60,57 @@ export async function generateCardMessage(memory: AgentMemory, tone: string = 'w
     }
 }
 
+export async function generateSongLyrics(memory: AgentMemory): Promise<string> {
+    try {
+        const ai = getClient();
+        const prompt = `
+            Write a very short, rhyming song or poem (4-6 lines) for a greeting card.
+            Occasion: ${memory.occasion}
+            To: ${memory.recipientName}
+            From: ${memory.senderName}
+            Theme: ${memory.theme}
+            Style: Musical, rhythmic, catchy.
+            
+            Return ONLY the lyrics.
+        `;
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: prompt
+        });
+        return response.text?.trim() || "Happy holidays to you, may your dreams come true.";
+    } catch (e: any) {
+        console.error("Lyrics gen failed", e);
+        throw e;
+    }
+}
+
+export async function generateCardAudio(text: string, voiceName: string = 'Kore'): Promise<string> {
+    try {
+        const ai = getClient();
+        // Using TTS model for audio generation
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash-preview-tts',
+            contents: [{ parts: [{ text }] }],
+            config: {
+                responseModalities: ['AUDIO'] as any,
+                speechConfig: {
+                    voiceConfig: {
+                        prebuiltVoiceConfig: { voiceName }
+                    }
+                }
+            }
+        });
+        
+        const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+        if (!base64Audio) throw new Error("No audio generated");
+        
+        return `data:audio/mp3;base64,${base64Audio}`;
+    } catch (e: any) {
+        console.error("Audio gen failed", e);
+        throw e;
+    }
+}
+
 export async function generateCardImage(
     memory: AgentMemory, 
     stylePrompt: string, 

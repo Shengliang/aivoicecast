@@ -402,4 +402,6 @@ export interface AgentMemory {
   backImageUrl?: string;
   googlePhotosUrl?: string;
   generatedAt: string;
+  audioUrl?: string;
+  audioScript?: string;
 }
