@@ -1,4 +1,3 @@
-
 import React, { useState, useRef, useEffect } from 'react';
 import { AgentMemory, TranscriptItem, Group, ChatChannel } from '../types';
 import { ArrowLeft, Sparkles, Wand2, Image as ImageIcon, Type, Download, Share2, Printer, RefreshCw, Send, Mic, MicOff, Gift, Heart, Loader2, ChevronRight, ChevronLeft, Upload, QrCode, X, Music, Play, Pause, Volume2, Camera, CloudUpload, Lock, Globe, Check, Edit, Package, ArrowDown, Type as TypeIcon, Minus, Plus, Menu } from 'lucide-react';
@@ -359,7 +358,7 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack, cardId, isVi
           // Request '3:4' for front (Portrait) and '16:9' for back (Landscape)
           const aspectRatio = isBack ? '16:9' : '3:4';
           
-          const imgUrl = await generateCardImage(memory, prompt, refImg, refinement, aspectRatio);
+          const imgUrl = await generateCardImage(memory, style + ", " + prompt, refImg, refinement, aspectRatio);
           setMemory(prev => isBack ? ({ ...prev, backImageUrl: imgUrl }) : ({ ...prev, coverImageUrl: imgUrl }));
       } catch(e) { 
           alert("Failed to generate image."); 
@@ -625,7 +624,6 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack, cardId, isVi
           else baseSize = 'text-3xl leading-loose';
       }
       
-      // We apply the scale via inline style for precise control on top of tailwind classes
       return baseSize;
   };
 
@@ -674,7 +672,6 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack, cardId, isVi
                     ) : (
                         <h3 className="font-holiday text-3xl text-red-600 mb-8 opacity-80">Season's Greetings</h3>
                     )}
-                    {/* SCROLLABLE MESSAGE CONTAINER TO FIX OVERFLOW */}
                     <div className={`${isVertical ? 'vertical-rl h-full max-h-[400px] flex flex-wrap-reverse gap-4 items-start text-right pr-16 overflow-x-auto' : 'w-full max-h-[440px] overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-slate-300'}`}>
                        <p 
                            className={`whitespace-pre-wrap ${getFontFamilyClass()} text-slate-800 ${getDynamicFontSize(memory.cardMessage)}`}
@@ -847,61 +844,6 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack, cardId, isVi
 
   return (
     <div className="flex flex-col h-screen bg-slate-950 text-slate-100 overflow-hidden">
-      {/* Header - Improved Responsiveness */}
-      <div className="p-4 border-b border-slate-800 bg-slate-900 flex items-center justify-between shrink-0 z-20 gap-4">
-          <div className="flex items-center gap-2 min-w-0">
-              <button onClick={onBack} className="p-2 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white transition-colors">
-                  <ArrowLeft size={20} />
-              </button>
-              <h1 className="text-xl font-holiday font-bold text-white flex items-center gap-2 truncate">
-                  <Gift className="text-red-500 shrink-0" /> 
-                  <span className="hidden sm:inline">Holiday Card Workshop</span>
-                  <span className="sm:hidden">Card</span>
-                  {isViewer && <span className="text-xs bg-slate-800 px-2 py-1 rounded text-slate-400 font-sans border border-slate-700 shrink-0">Viewer</span>}
-              </h1>
-          </div>
-          
-          <div className="flex gap-2 shrink-0">
-              {/* Desktop Buttons */}
-              <div className="hidden md:flex gap-2">
-                  {isViewer && isOwner && (
-                      <button onClick={() => setIsViewer(false)} className="flex items-center gap-2 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 rounded-lg text-xs font-bold transition-colors">
-                          <Edit size={14} /> <span>Edit</span>
-                      </button>
-                  )}
-                  <button onClick={handleExportPDF} disabled={isExporting} className="flex items-center gap-2 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 rounded-lg text-xs font-bold transition-colors">
-                      {isExporting ? <Loader2 size={14} className="animate-spin"/> : <Download size={14} />} <span>PDF</span>
-                  </button>
-                  <button onClick={handleDownloadPackage} disabled={isExportingPackage} className="flex items-center gap-2 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 rounded-lg text-xs font-bold transition-colors border border-slate-600">
-                      {isExportingPackage ? <Loader2 size={14} className="animate-spin"/> : <Package size={14} />} <span>Zip</span>
-                  </button>
-                  {!isViewer && (
-                    <button onClick={handlePublishAndShare} disabled={isPublishing} className="flex items-center gap-2 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 rounded-lg text-xs font-bold transition-colors shadow-lg">
-                        {isPublishing ? <Loader2 size={14} className="animate-spin"/> : <Share2 size={14} />} <span>Share</span>
-                    </button>
-                  )}
-              </div>
-
-              {/* Mobile Menu Toggle */}
-              <div className="md:hidden relative">
-                  <button onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)} className="p-2 bg-slate-800 rounded-lg text-white">
-                      <Menu size={20} />
-                  </button>
-                  {isMobileMenuOpen && (
-                      <>
-                      <div className="fixed inset-0 z-30" onClick={() => setIsMobileMenuOpen(false)}></div>
-                      <div className="absolute top-full right-0 mt-2 w-48 bg-slate-900 border border-slate-700 rounded-xl shadow-xl z-40 p-2 flex flex-col gap-2">
-                          {isViewer && isOwner && <button onClick={() => setIsViewer(false)} className="flex items-center gap-2 px-4 py-2 bg-slate-800 hover:bg-slate-700 rounded-lg text-sm text-left"><Edit size={14}/> Edit Card</button>}
-                          <button onClick={handleExportPDF} className="flex items-center gap-2 px-4 py-2 bg-slate-800 hover:bg-slate-700 rounded-lg text-sm text-left"><Download size={14}/> Save PDF</button>
-                          <button onClick={handleDownloadPackage} className="flex items-center gap-2 px-4 py-2 bg-slate-800 hover:bg-slate-700 rounded-lg text-sm text-left"><Package size={14}/> Download Zip</button>
-                          {!isViewer && <button onClick={handlePublishAndShare} className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-sm text-left font-bold"><Share2 size={14}/> Publish & Share</button>}
-                      </div>
-                      </>
-                  )}
-              </div>
-          </div>
-      </div>
-
       <div className="flex flex-1 overflow-hidden flex-col md:flex-row">
           
           {/* LEFT PANEL: CONTROLS (Hidden in Viewer Mode) */}
@@ -1208,9 +1150,7 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack, cardId, isVi
                           </div>
                       </>
                   ) : (
-                      // ELF ASSISTANT TAB LAYOUT FIX - Use relative and absolute positioning
                       <div className="relative h-full flex flex-col bg-slate-900">
-                          {/* Chat Transcript Area - Scrollable with padding at bottom */}
                           <div className="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-thin scrollbar-thumb-slate-800 pb-24">
                               {displayTranscript.length === 0 && (
                                   <div className="text-center text-slate-500 text-sm py-8 px-4 mt-10">
@@ -1234,11 +1174,9 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack, cardId, isVi
                                       </div>
                                   </div>
                               ))}
-                              {/* Invisible spacer to ensure last message isn't hidden by absolute footer */}
                               <div ref={transcriptEndRef} className="h-4"></div>
                           </div>
                           
-                          {/* Controls Footer - Absolute Bottom */}
                           <div className="absolute bottom-0 left-0 w-full h-20 p-4 border-t border-slate-800 bg-slate-900 z-10 flex items-center gap-3 shadow-2xl">
                                 <button 
                                     onClick={handleLiveToggle}
@@ -1279,32 +1217,71 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack, cardId, isVi
           {/* RIGHT PANEL: PREVIEW */}
           <div className="flex-1 bg-slate-950 p-0 md:p-4 lg:p-8 flex flex-col items-center overflow-hidden relative">
               
-              {/* Pagination Controls - ONLY FOR EDITOR */}
-              {!isViewer && (
-                  <div className="flex items-center gap-4 mb-6 bg-slate-900 p-2 rounded-full border border-slate-800 shadow-xl z-10 mt-4 md:mt-0">
-                      <button 
-                          onClick={() => setActivePage(p => Math.max(0, p - 1))} 
-                          disabled={activePage === 0}
-                          className="p-2 bg-slate-800 hover:bg-slate-700 text-white rounded-full disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-                      >
-                          <ChevronLeft size={20} />
+              {/* Toolbar bar integrated with pagination */}
+              <div className="flex items-center gap-4 mb-6 bg-slate-900 p-2 rounded-full border border-slate-800 shadow-xl z-20 mt-4 md:mt-0">
+                  {/* Global Back / Close Button */}
+                  <button 
+                      onClick={onBack} 
+                      className="p-2 bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white rounded-full transition-colors ml-1"
+                      title="Exit Workshop"
+                  >
+                      <ArrowLeft size={18} />
+                  </button>
+
+                  <div className="w-px h-6 bg-slate-800"></div>
+
+                  {/* Pagination Controls */}
+                  {!isViewer && (
+                      <div className="flex items-center gap-2">
+                        <button 
+                            onClick={() => setActivePage(p => Math.max(0, p - 1))} 
+                            disabled={activePage === 0}
+                            className="p-2 bg-slate-800 hover:bg-slate-700 text-white rounded-full disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                        >
+                            <ChevronLeft size={18} />
+                        </button>
+                        <span className="text-xs font-bold text-slate-300 min-w-[100px] text-center select-none uppercase tracking-wider">
+                            {getPageLabel(activePage)}
+                        </span>
+                        <button 
+                            onClick={() => setActivePage(p => Math.min(5, p + 1))} 
+                            disabled={activePage === 5}
+                            className="p-2 bg-slate-800 hover:bg-slate-700 text-white rounded-full disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                        >
+                            <ChevronRight size={18} />
+                        </button>
+                      </div>
+                  )}
+
+                  <div className="w-px h-6 bg-slate-800"></div>
+
+                  {/* Integrated Action Buttons */}
+                  <div className="flex gap-1 pr-1">
+                      {isViewer && isOwner && (
+                          <button onClick={() => setIsViewer(false)} className="p-2 bg-indigo-600 hover:bg-indigo-500 rounded-full text-white transition-colors" title="Edit Card">
+                              <Edit size={16} />
+                          </button>
+                      )}
+                      
+                      <button onClick={handleExportPDF} disabled={isExporting} className="p-2 bg-slate-800 hover:bg-slate-700 text-white rounded-full transition-colors" title="Download PDF">
+                          {isExporting ? <Loader2 size={16} className="animate-spin"/> : <Download size={16} />}
                       </button>
-                      <span className="text-sm font-bold text-slate-300 min-w-[140px] text-center select-none">
-                          {getPageLabel(activePage)} ({activePage + 1}/6)
-                      </span>
-                      <button 
-                          onClick={() => setActivePage(p => Math.min(5, p + 1))} 
-                          disabled={activePage === 5}
-                          className="p-2 bg-slate-800 hover:bg-slate-700 text-white rounded-full disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-                      >
-                          <ChevronRight size={20} />
+                      
+                      <button onClick={handleDownloadPackage} disabled={isExportingPackage} className="p-2 bg-slate-800 hover:bg-slate-700 text-white rounded-full transition-colors" title="Download Zip Package">
+                          {isExportingPackage ? <Loader2 size={16} className="animate-spin"/> : <Package size={16} />}
                       </button>
+                      
+                      {!isViewer && (
+                        <button onClick={handlePublishAndShare} disabled={isPublishing} className="p-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-full transition-colors shadow-lg" title="Publish & Share">
+                            {isPublishing ? <Loader2 size={16} className="animate-spin"/> : <Share2 size={16} />}
+                        </button>
+                      )}
                   </div>
-              )}
+              </div>
 
               {/* VIEWER MODE: Vertical Scroll Feed */}
               {isViewer ? (
-                  <div className="w-full h-full overflow-y-scroll snap-y snap-mandatory scroll-smooth no-scrollbar">
+                  <div className="w-full h-full overflow-y-scroll snap-y snap-mandatory scroll-smooth no-scrollbar pb-24">
                       {[0, 1, 2, 3, 4, 5].map((pageNum) => (
                           <div key={pageNum} className="w-full h-full snap-start flex items-center justify-center p-6 md:p-8">
                               <div 
