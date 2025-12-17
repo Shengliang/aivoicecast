@@ -1,5 +1,5 @@
 
-import { GoogleGenAI, LiveServerMessage } from '@google/genai';
+import { GoogleGenAI, LiveServerMessage, Modality } from '@google/genai';
 import { base64ToBytes, decodeAudioData, createPcmBlob } from '../utils/audioUtils';
 import { GEMINI_API_KEY } from './private_keys';
 
@@ -56,18 +56,21 @@ export class GeminiLiveService {
   }
 
   public sendVideo(base64Data: string, mimeType: string = 'image/jpeg') {
-      if (this.session) {
-          try {
-              this.session.sendRealtimeInput({
-                  media: {
-                      mimeType,
-                      data: base64Data
-                  }
-              });
-          } catch(e) {
-              console.error("Failed to send video/image data", e);
+      // CRITICAL: Solely rely on sessionPromise resolves and then call session.sendRealtimeInput
+      this.sessionPromise?.then((session) => {
+          if (session) {
+              try {
+                  session.sendRealtimeInput({
+                      media: {
+                          mimeType,
+                          data: base64Data
+                      }
+                  });
+              } catch(e) {
+                  console.error("Failed to send video/image data", e);
+              }
           }
-      }
+      });
   }
 
   async connect(
@@ -77,12 +80,8 @@ export class GeminiLiveService {
     tools?: any[]
   ) {
     try {
-      // Initialize AI Client here to ensure we pick up the latest API Key
-      const apiKey = localStorage.getItem('gemini_api_key') || GEMINI_API_KEY || process.env.API_KEY;
-      if (!apiKey) {
-        throw new Error("API Key is missing. Please set it via the Key button in the navbar.");
-      }
-      const ai = new GoogleGenAI({ apiKey });
+      /* Initialization: Always use const ai = new GoogleGenAI({apiKey: process.env.API_KEY}); */
+      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
       // Fallback: Ensure audio contexts exist if not initialized via sync method
       if (!this.inputAudioContext) this.initializeAudio();
@@ -97,13 +96,13 @@ export class GeminiLiveService {
       const connectionPromise = ai.live.connect({
         model: 'gemini-2.5-flash-native-audio-preview-09-2025',
         config: {
-          // Use explicit string 'AUDIO' to avoid any Enum resolution issues
-          responseModalities: ['AUDIO'] as any, 
+          /* responseModalities: Must be an array with a single Modality.AUDIO element. */
+          responseModalities: [Modality.AUDIO], 
           speechConfig: {
             voiceConfig: { prebuiltVoiceConfig: { voiceName: validVoice } },
           },
-          // Format system instruction as a Content part for maximum compatibility
-          systemInstruction: { parts: [{ text: systemInstruction }] },
+          /* systemInstruction should be a string in config */
+          systemInstruction: systemInstruction,
           // Explicitly enable transcription with empty objects
           inputAudioTranscription: {}, 
           outputAudioTranscription: {},
@@ -233,30 +232,36 @@ export class GeminiLiveService {
 
   // Send text as a user turn (context update) without speaking
   public sendText(text: string) {
-    if (this.session) {
-      try {
-        this.session.send({
-          clientContent: {
-            turns: [{ role: 'user', parts: [{ text }] }],
-            turnComplete: true
-          }
-        });
-      } catch (e) {
-        console.error("Failed to send text context:", e);
-      }
-    }
+    // CRITICAL: Use sessionPromise to ensure valid session
+    this.sessionPromise?.then((session) => {
+        if (session) {
+            try {
+                session.send({
+                  clientContent: {
+                    turns: [{ role: 'user', parts: [{ text }] }],
+                    turnComplete: true
+                  }
+                });
+            } catch (e) {
+                console.error("Failed to send text context:", e);
+            }
+        }
+    });
   }
 
   public sendToolResponse(functionResponses: any) {
-      if (this.session) {
-          try {
-              this.session.sendToolResponse({
-                  functionResponses
-              });
-          } catch(e) {
-              console.error("Failed to send tool response", e);
+      // CRITICAL: Use sessionPromise to ensure valid session
+      this.sessionPromise?.then((session) => {
+          if (session) {
+              try {
+                  session.sendToolResponse({
+                      functionResponses
+                  });
+              } catch(e) {
+                  console.error("Failed to send tool response", e);
+              }
           }
-      }
+      });
   }
 
   private startAudioInput(onVolume: (v: number) => void) {

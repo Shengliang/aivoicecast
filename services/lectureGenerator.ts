@@ -85,9 +85,6 @@ export async function generateLectureScript(
 ): Promise<GeneratedLecture | null> {
   try {
     const provider = await getAIProvider();
-    
-    // Check Keys
-    const geminiKey = localStorage.getItem('gemini_api_key') || GEMINI_API_KEY || process.env.API_KEY || '';
     const openaiKey = localStorage.getItem('openai_api_key') || OPENAI_API_KEY || process.env.OPENAI_API_KEY || '';
 
     // If preferred is OpenAI but key missing, fallback to Gemini
@@ -95,10 +92,6 @@ export async function generateLectureScript(
     if (provider === 'openai' && !openaiKey) {
         console.warn("OpenAI Key missing, falling back to Gemini");
         activeProvider = 'gemini';
-    }
-    if (activeProvider === 'gemini' && !geminiKey) {
-        console.warn("Gemini API Key missing");
-        return null;
     }
 
     const langInstruction = language === 'zh' 
@@ -136,7 +129,8 @@ export async function generateLectureScript(
     if (activeProvider === 'openai') {
         text = await callOpenAI(systemPrompt, userPrompt, openaiKey);
     } else {
-        const ai = new GoogleGenAI({ apiKey: geminiKey });
+        /* Initialization: Always use const ai = new GoogleGenAI({apiKey: process.env.API_KEY}); */
+        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
         // Use Gemini 3 Pro for high-complexity channels (1: Software Interview, 2: Linux Kernel)
         const modelName = (channelId === '1' || channelId === '2') ? 'gemini-3-pro-preview' : 'gemini-3-flash-preview';
         
@@ -145,6 +139,7 @@ export async function generateLectureScript(
             contents: `${systemPrompt}\n\n${userPrompt}`,
             config: { 
                 responseMimeType: 'application/json',
+                /* Set thinkingBudget for Gemini 3 series models */
                 thinkingConfig: (modelName === 'gemini-3-pro-preview') ? { thinkingBudget: 4000 } : undefined
             }
         });
@@ -184,12 +179,10 @@ export async function generateBatchLectures(
     if (subTopics.length === 0) return {};
 
     const provider = await getAIProvider();
-    const geminiKey = localStorage.getItem('gemini_api_key') || GEMINI_API_KEY || process.env.API_KEY || '';
     const openaiKey = localStorage.getItem('openai_api_key') || OPENAI_API_KEY || process.env.OPENAI_API_KEY || '';
 
     let activeProvider = provider;
     if (provider === 'openai' && !openaiKey) activeProvider = 'gemini';
-    if (activeProvider === 'gemini' && !geminiKey) return null;
 
     const langInstruction = language === 'zh' 
       ? 'Output Language: Simplified Chinese (Mandarin).' 
@@ -233,7 +226,8 @@ export async function generateBatchLectures(
     if (activeProvider === 'openai') {
         text = await callOpenAI(systemPrompt, userPrompt, openaiKey);
     } else {
-        const ai = new GoogleGenAI({ apiKey: geminiKey });
+        /* Initialization: Always use const ai = new GoogleGenAI({apiKey: process.env.API_KEY}); */
+        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
         const response = await ai.models.generateContent({
             model: 'gemini-3-flash-preview', 
             contents: `${systemPrompt}\n\n${userPrompt}`,
@@ -283,12 +277,10 @@ export async function summarizeDiscussionAsSection(
 ): Promise<GeneratedLecture['sections'] | null> {
   try {
     const provider = await getAIProvider();
-    const geminiKey = localStorage.getItem('gemini_api_key') || GEMINI_API_KEY || process.env.API_KEY || '';
     const openaiKey = localStorage.getItem('openai_api_key') || OPENAI_API_KEY || process.env.OPENAI_API_KEY || '';
 
     let activeProvider = provider;
     if (provider === 'openai' && !openaiKey) activeProvider = 'gemini';
-    if (activeProvider === 'gemini' && !geminiKey) return null;
 
     const chatLog = transcript.map(t => `${t.role}: ${t.text}`).join('\n');
     const langInstruction = language === 'zh' ? 'Output Chinese' : 'Output English';
@@ -318,7 +310,8 @@ export async function summarizeDiscussionAsSection(
     if (activeProvider === 'openai') {
         text = await callOpenAI(systemPrompt, userPrompt, openaiKey);
     } else {
-        const ai = new GoogleGenAI({ apiKey: geminiKey });
+        /* Initialization: Always use const ai = new GoogleGenAI({apiKey: process.env.API_KEY}); */
+        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
         const response = await ai.models.generateContent({
             model: 'gemini-3-flash-preview', 
             contents: `${systemPrompt}\n\n${userPrompt}`,
@@ -349,12 +342,10 @@ export async function generateDesignDocFromTranscript(
 ): Promise<string | null> {
   try {
     const provider = await getAIProvider();
-    const geminiKey = localStorage.getItem('gemini_api_key') || GEMINI_API_KEY || process.env.API_KEY || '';
     const openaiKey = localStorage.getItem('openai_api_key') || OPENAI_API_KEY || process.env.OPENAI_API_KEY || '';
 
     let activeProvider = provider;
     if (provider === 'openai' && !openaiKey) activeProvider = 'gemini';
-    if (activeProvider === 'gemini' && !geminiKey) return null;
 
     const chatLog = transcript.map(t => `${t.role.toUpperCase()}: ${t.text}`).join('\n');
     const langInstruction = language === 'zh' ? 'Output Language: Chinese.' : 'Output Language: English.';
@@ -419,8 +410,8 @@ export async function generateDesignDocFromTranscript(
             text = data.choices[0]?.message?.content || null;
         }
     } else {
-        // Gemini
-        const ai = new GoogleGenAI({ apiKey: geminiKey });
+        /* Initialization: Always use const ai = new GoogleGenAI({apiKey: process.env.API_KEY}); */
+        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
         const response = await ai.models.generateContent({
             model: 'gemini-3-pro-preview', // Better for large context docs
             contents: `${systemPrompt}\n\n${userPrompt}`,

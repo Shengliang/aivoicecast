@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { Channel, Booking, TodoItem } from '../types';
 import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, Clock, Briefcase, Plus, Video, CheckCircle, X, Users, Loader2, Mic, Play, Mail, Sparkles, ArrowLeft, Monitor, Filter, LayoutGrid, List, Languages, CloudSun, Wind, BookOpen, CheckSquare, Square, Trash2, StopCircle, Download, FileText, Check, Podcast, RefreshCw } from 'lucide-react';
@@ -7,7 +6,6 @@ import { getUserBookings, createBooking, updateBookingInvite, saveSavedWord, get
 import { fetchLocalWeather, getWeatherDescription, WeatherData } from '../utils/weatherService';
 import { getLunarDate, getDailyWord, getSeasonContext, DailyWord } from '../utils/lunarService';
 import { GoogleGenAI } from '@google/genai';
-import { GEMINI_API_KEY } from '../services/private_keys';
 import { synthesizeSpeech } from '../services/tts';
 
 interface CalendarViewProps {
@@ -255,14 +253,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
 
           // If not, generate it
           if (!script) {
-              const apiKey = localStorage.getItem('gemini_api_key') || GEMINI_API_KEY || process.env.API_KEY || '';
-              if (!apiKey) {
-                 alert("Please set API Key in settings to use AI features.");
-                 setIsPlayingDailyWord(false);
-                 return;
-              }
-              
-              const ai = new GoogleGenAI({ apiKey });
+              const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
               
               // SHORTENED PROMPT to prevent TTS Timeouts (30s limit)
               const prompt = `
@@ -278,7 +269,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
               `;
 
               const response = await ai.models.generateContent({
-                  model: 'gemini-2.5-flash',
+                  model: 'gemini-3-flash-preview',
                   contents: prompt
               });
 
@@ -508,9 +499,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
 
       setIsPlanning(true);
       try {
-          const apiKey = localStorage.getItem('gemini_api_key') || GEMINI_API_KEY || process.env.API_KEY || '';
-          if (!apiKey) throw new Error("API Key Required");
-          const ai = new GoogleGenAI({ apiKey });
+          const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
           
           const prompt = `
             You are a productivity expert.
@@ -522,7 +511,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
           `;
           
           const response = await ai.models.generateContent({
-              model: 'gemini-2.5-flash',
+              model: 'gemini-3-flash-preview',
               contents: prompt,
               config: { responseMimeType: 'application/json' }
           });
@@ -1185,7 +1174,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                           {/* Camera Toggle */}
                           <div 
                               onClick={() => setRecordCamera(!recordCamera)}
-                              className={`p-3 rounded-xl border cursor-pointer transition-all flex items-center justify-between ${recordCamera ? 'bg-indigo-900/20 border-indigo-500/50' : 'bg-slate-800/30 border-slate-700 hover:bg-slate-800'}`}
+                              className={`p-3 rounded-xl border cursor-pointer transition-all flex items-center justify-between ml-4 ${recordCamera ? 'bg-indigo-900/20 border-indigo-500/50' : 'bg-slate-800/30 border-slate-700 hover:bg-slate-800'}`}
                           >
                               <div className="flex items-center gap-3">
                                   <div className={`p-1.5 rounded-full ${recordCamera ? 'bg-indigo-500 text-white' : 'bg-slate-700 text-slate-400'}`}>

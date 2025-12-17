@@ -2,7 +2,6 @@ import { GoogleGenAI } from '@google/genai';
 import { Chapter } from '../types';
 import { incrementApiUsage } from './firestoreService';
 import { auth } from './firebaseConfig';
-import { GEMINI_API_KEY } from './private_keys';
 
 export async function generateCurriculum(
   topic: string, 
@@ -10,83 +9,50 @@ export async function generateCurriculum(
   language: 'en' | 'zh' = 'en'
 ): Promise<Chapter[] | null> {
   try {
-    // Initialize client inside function to pick up latest API Key
-    const apiKey = localStorage.getItem('gemini_api_key') || GEMINI_API_KEY || process.env.API_KEY || '';
-    if (!apiKey) return null;
-    const ai = new GoogleGenAI({ apiKey });
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
     const langInstruction = language === 'zh' 
-      ? 'Output Language: Simplified Chinese (Mandarin). Use professional academic terminology.' 
-      : 'Output Language: English. Use specific, technical, and domain-appropriate terminology.';
+      ? 'Output Language: Simplified Chinese (Mandarin). Use professional academic terminology.'
+      : 'Output Language: English.';
 
     const prompt = `
-      You are a distinguished university professor and subject matter expert.
-      
-      Task: Design a comprehensive, deep-dive course syllabus (curriculum) for a podcast series titled: "${topic}".
-      Context/Description: "${context}"
-      
+      You are an expert curriculum designer. Design a 10-chapter learning path for a podcast about: "${topic}".
+      Context: ${context}
       ${langInstruction}
-
-      Requirements:
-      1. Create 8-12 "Chapters" (Main Modules).
-      2. For each Chapter, create 5-8 "Sub-topics" (Lectures).
-      3. The titles MUST be specific, non-repetitive, and high-quality.
-      4. AVOID generic titles like "Introduction to..." or "Conclusion" unless absolutely necessary.
-      5. Use jargon and technical terms appropriate for the field (e.g., if Linux, use "Scheduler", "Memory Paging", "VFS").
-      6. If the topic is broad (e.g., "History"), cover chronological eras or specific themes.
       
-      Example Structure (for a Linux Kernel topic):
-      - Chapter: "Process Management"
-         - Sub: "The task_struct and Process Descriptor"
-         - Sub: "CFS Scheduler Internals"
-         - Sub: "Fork, Vfork, and Clone System Calls"
-
-      Return the result ONLY as a JSON object with this structure:
-      {
-        "chapters": [
-          {
-            "title": "Chapter Title",
-            "subTopics": [
-              { "title": "Subtopic Title" },
-              { "title": "Subtopic Title" }
-            ]
-          }
-        ]
-      }
+      Requirements:
+      1. Exactly 10 chapters.
+      2. Each chapter should have 3-5 specific sub-topics (lessons).
+      3. Topics should progress from fundamentals to advanced concepts.
+      
+      Return ONLY a JSON array with this structure:
+      [
+        {
+          "title": "Chapter 1: ...",
+          "subTopics": [
+            { "title": "Lesson 1.1: ..." }
+          ]
+        }
+      ]
     `;
 
     const response = await ai.models.generateContent({
-      model: 'gemini-3-pro-preview', // Upgraded to Gemini 3.0 Pro
+      model: 'gemini-3-flash-preview',
       contents: prompt,
-      config: {
-        responseMimeType: 'application/json'
-      }
+      config: { responseMimeType: 'application/json' }
     });
 
-    const text = response.text;
-    if (!text) return null;
+    const parsed = JSON.parse(response.text || "[]");
+    if (auth.currentUser) incrementApiUsage(auth.currentUser.uid);
 
-    const parsed = JSON.parse(text);
-    
-    // Track Usage
-    if (auth.currentUser) {
-       incrementApiUsage(auth.currentUser.uid);
-    }
-    
-    // Map to application type and add IDs
-    if (parsed && parsed.chapters && Array.isArray(parsed.chapters)) {
-        return parsed.chapters.map((ch: any, cIdx: number) => ({
-            id: `ch-${cIdx}`,
-            title: ch.title,
-            subTopics: ch.subTopics.map((sub: any, sIdx: number) => ({
-                id: `ch-${cIdx}-sub-${sIdx}`,
-                title: sub.title
-            }))
-        }));
-    }
-    
-    return null;
-
+    return parsed.map((ch: any, cIdx: number) => ({
+      id: `ch-${Date.now()}-${cIdx}`,
+      title: ch.title,
+      subTopics: ch.subTopics.map((sub: any, sIdx: number) => ({
+        id: `sub-${Date.now()}-${cIdx}-${sIdx}`,
+        title: sub.title
+      }))
+    }));
   } catch (error) {
     console.error("Failed to generate curriculum:", error);
     return null;

@@ -1,11 +1,9 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { ArrowLeft, Share2, Trash2, Undo, PenTool, Eraser, Download, Square, Circle, Minus, ArrowRight, Type, ZoomIn, ZoomOut, MousePointer2, Move, MoreHorizontal, Lock, Eye, Edit3, GripHorizontal, Brush, ChevronDown, Feather, Highlighter, Wind, Droplet, Cloud, Edit2, Pen, Copy, Clipboard, BringToFront, SendToBack, Sparkles, Send, Loader2, X, RotateCw, Triangle, Star, Spline, Maximize } from 'lucide-react';
 import { auth } from '../services/firebaseConfig';
 import { saveWhiteboardSession, subscribeToWhiteboard, updateWhiteboardElement, deleteWhiteboardElements } from '../services/firestoreService';
 import { WhiteboardElement, ToolType, LineStyle, BrushType } from '../types';
 import { GoogleGenAI } from '@google/genai';
-import { GEMINI_API_KEY } from '../services/private_keys';
 
 interface WhiteboardProps {
   onBack?: () => void;
@@ -395,7 +393,7 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({
               }
           }
       }
-  }, [selectedIds]);
+  }, [selectedIds, elements]);
 
   const syncUpdate = (el: WhiteboardElement) => {
       if (isSharedSession && !isReadOnly && !onDataChange) {
@@ -431,10 +429,7 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({
       setIsAIGenerating(true);
 
       try {
-          const apiKey = localStorage.getItem('gemini_api_key') || GEMINI_API_KEY || process.env.API_KEY || '';
-          if (!apiKey) throw new Error("API Key missing. Please set it in Settings.");
-          
-          const ai = new GoogleGenAI({ apiKey });
+          const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
           
           // Contextualize with current elements (limited to last 20 to avoid token limits, prioritizing text and shapes)
           const contextElements = elements.length > 20 
@@ -464,7 +459,7 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({
           `;
 
           const response = await ai.models.generateContent({
-              model: 'gemini-2.5-flash',
+              model: 'gemini-3-flash-preview',
               contents: prompt,
               config: { responseMimeType: 'application/json' }
           });

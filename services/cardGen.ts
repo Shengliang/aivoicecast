@@ -1,13 +1,9 @@
-
 import { GoogleGenAI } from '@google/genai';
 import { AgentMemory } from '../types';
-import { GEMINI_API_KEY } from './private_keys';
 import { base64ToBytes, pcmToWavBlobUrl } from '../utils/audioUtils';
 
 const getClient = () => {
-    const apiKey = localStorage.getItem('gemini_api_key') || GEMINI_API_KEY || process.env.API_KEY || '';
-    if (!apiKey) throw new Error("API Key is missing. Please set it in the Settings menu.");
-    return new GoogleGenAI({ apiKey });
+    return new GoogleGenAI({ apiKey: process.env.API_KEY });
 };
 
 export async function generateCardMessage(memory: AgentMemory, tone: string = 'warm'): Promise<string> {
@@ -16,12 +12,9 @@ export async function generateCardMessage(memory: AgentMemory, tone: string = 'w
         
         let prompt = '';
         
-        // Detect if the user has entered specific text they want to refine/use
-        // We exclude the default placeholder to avoid confusing the model
         const defaultMsg = 'Wishing you a season filled with warmth, comfort, and good cheer.';
         const hasCustomDraft = memory.cardMessage && memory.cardMessage.trim() !== defaultMsg && memory.cardMessage.length > 5;
         
-        // STRENGTHENED CONTEXT INSTRUCTION
         const contextDraft = hasCustomDraft 
             ? `
             CRITICAL INSTRUCTION: The user has provided a specific draft: "${memory.cardMessage}".
@@ -68,7 +61,7 @@ export async function generateCardMessage(memory: AgentMemory, tone: string = 'w
         }
         
         const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash',
+            model: 'gemini-3-flash-preview',
             contents: prompt
         });
         
@@ -83,13 +76,11 @@ export async function generateSongLyrics(memory: AgentMemory): Promise<string> {
     try {
         const ai = getClient();
         
-        // Incorporate specific user message context if available
         const defaultMsg = 'Wishing you a season filled with warmth, comfort, and good cheer.';
         const messageContext = memory.cardMessage && memory.cardMessage.trim() !== defaultMsg
             ? `Base the song lyrics on this specific message: "${memory.cardMessage}"` 
             : '';
             
-        // Explicitly include custom theme details for the song
         const themeDetails = memory.customThemePrompt 
             ? `Specific details/topics to include in lyrics: "${memory.customThemePrompt}"` 
             : '';
@@ -111,7 +102,7 @@ export async function generateSongLyrics(memory: AgentMemory): Promise<string> {
             5. Return ONLY the lyrics.
         `;
         const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash',
+            model: 'gemini-3-flash-preview',
             contents: prompt
         });
         return response.text?.trim() || "Happy holidays to you, may your dreams come true.";
@@ -124,7 +115,6 @@ export async function generateSongLyrics(memory: AgentMemory): Promise<string> {
 export async function generateCardAudio(text: string, voiceName: string = 'Kore'): Promise<string> {
     try {
         const ai = getClient();
-        // Using TTS model for audio generation
         const response = await ai.models.generateContent({
             model: 'gemini-2.5-flash-preview-tts',
             contents: [{ parts: [{ text }] }],
@@ -141,9 +131,8 @@ export async function generateCardAudio(text: string, voiceName: string = 'Kore'
         const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
         if (!base64Audio) throw new Error("No audio generated");
         
-        // Convert Base64 PCM to a WAV Blob URL so it plays in standard Audio elements
         const pcmBytes = base64ToBytes(base64Audio);
-        const wavUrl = pcmToWavBlobUrl(pcmBytes, 24000); // 24kHz is standard for this model
+        const wavUrl = pcmToWavBlobUrl(pcmBytes, 24000);
         
         return wavUrl;
     } catch (e: any) {
@@ -162,7 +151,6 @@ export async function generateCardImage(
     try {
         const ai = getClient();
         
-        // Include custom visual theme if provided
         const customContext = memory.customThemePrompt ? `Main Subject/Theme: ${memory.customThemePrompt}.` : '';
         const userRefinement = refinementText ? `IMPORTANT SPECIFIC DETAILS: ${refinementText}.` : '';
 
@@ -190,11 +178,8 @@ export async function generateCardImage(
 
         const parts: any[] = [{ text: basePrompt }];
         
-        // Append image if provided
         if (referenceImageBase64) {
-            // Remove header data:image/png;base64,
             const base64Data = referenceImageBase64.split(',')[1];
-            // Determine mime type roughly or default to jpeg/png
             const mimeType = referenceImageBase64.substring(referenceImageBase64.indexOf(':') + 1, referenceImageBase64.indexOf(';'));
             
             parts.push({
@@ -205,18 +190,17 @@ export async function generateCardImage(
             });
         }
 
-        // Using 'gemini-2.5-flash-image' as per instructions for standard image gen
         const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash-image',
+            model: 'gemini-3-pro-image-preview',
             contents: { parts },
             config: {
                 imageConfig: {
-                    aspectRatio: aspectRatio
+                    aspectRatio: aspectRatio,
+                    imageSize: "1K"
                 }
             }
         });
         
-        // Find image part
         if (response.candidates?.[0]?.content?.parts) {
             for (const part of response.candidates[0].content.parts) {
                 if (part.inlineData) {
