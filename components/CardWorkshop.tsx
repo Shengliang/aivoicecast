@@ -1,11 +1,12 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { AgentMemory, TranscriptItem, Group, ChatChannel } from '../types';
-import { ArrowLeft, Sparkles, Wand2, Image as ImageIcon, Type, Download, Share2, Printer, RefreshCw, Send, Mic, MicOff, Gift, Heart, Loader2, ChevronRight, ChevronLeft, Upload, QrCode, X, Music, Play, Pause, Volume2, Camera, CloudUpload, Lock, Globe, Check, Edit } from 'lucide-react';
+import { ArrowLeft, Sparkles, Wand2, Image as ImageIcon, Type, Download, Share2, Printer, RefreshCw, Send, Mic, MicOff, Gift, Heart, Loader2, ChevronRight, ChevronLeft, Upload, QrCode, X, Music, Play, Pause, Volume2, Camera, CloudUpload, Lock, Globe, Check, Edit, Package } from 'lucide-react';
 import { generateCardMessage, generateCardImage, generateCardAudio, generateSongLyrics } from '../services/cardGen';
 import { GeminiLiveService } from '../services/geminiLive';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
+import JSZip from 'jszip';
 import { uploadFileToStorage, saveCard, getCard, sendMessage, getUserGroups, getUserDMChannels } from '../services/firestoreService';
 import { auth } from '../services/firebaseConfig';
 import { FunctionDeclaration, Type as GenType } from '@google/genai';
@@ -95,6 +96,7 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack, cardId, isVi
 
   // PDF Export State
   const [isExporting, setIsExporting] = useState(false);
+  const [isExportingPackage, setIsExportingPackage] = useState(false);
   const [qrCodeBase64, setQrCodeBase64] = useState<string | null>(null);
 
   // Sharing State
@@ -291,24 +293,101 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack, cardId, isVi
       setMemory(prev => ({ ...prev, userImages: prev.userImages.filter((_, i) => i !== index) }));
   };
 
+  // Helper function to capture the PDF (reused by both download buttons)
+  const generatePDFBlob = async (): Promise<Blob | null> => {
+      try {
+          const pdf = new jsPDF({ orientation: 'portrait', unit: 'px', format: [400, 600] });
+          // Export all pages (0-5)
+          for (let i = 0; i <= 5; i++) {
+              const el = document.getElementById(`export-card-page-${i}`);
+              if (el) {
+                  const canvas = await html2canvas(el, { scale: 2, useCORS: true, allowTaint: true, logging: false, width: 400, height: 600, windowWidth: 400, windowHeight: 600, backgroundColor: memory.theme === 'chinese-poem' ? '#f5f0e1' : '#ffffff' });
+                  const imgData = canvas.toDataURL('image/jpeg', 0.95);
+                  if (i > 0) pdf.addPage();
+                  pdf.addImage(imgData, 'JPEG', 0, 0, 400, 600);
+              }
+          }
+          return pdf.output('blob');
+      } catch(e) {
+          console.error("PDF Gen failed", e);
+          return null;
+      }
+  };
+
   const handleExportPDF = async () => {
       setIsExporting(true);
       setTimeout(async () => {
-          try {
-              const pdf = new jsPDF({ orientation: 'portrait', unit: 'px', format: [400, 600] });
-              // Export all pages (0-5)
-              for (let i = 0; i <= 5; i++) {
-                  const el = document.getElementById(`export-card-page-${i}`);
-                  if (el) {
-                      const canvas = await html2canvas(el, { scale: 2, useCORS: true, allowTaint: true, logging: false, width: 400, height: 600, windowWidth: 400, windowHeight: 600, backgroundColor: memory.theme === 'chinese-poem' ? '#f5f0e1' : '#ffffff' });
-                      const imgData = canvas.toDataURL('image/jpeg', 0.95);
-                      if (i > 0) pdf.addPage();
-                      pdf.addImage(imgData, 'JPEG', 0, 0, 400, 600);
-                  }
-              }
-              pdf.save(`${memory.recipientName || 'Card'}_HolidayCard.pdf`);
-          } catch(e) { alert("Export failed"); } finally { setIsExporting(false); }
+          const blob = await generatePDFBlob();
+          if (blob) {
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement('a'); a.href = url; a.download = `${memory.recipientName || 'Card'}_HolidayCard.pdf`; 
+              document.body.appendChild(a); a.click(); document.body.removeChild(a);
+              URL.revokeObjectURL(url);
+          } else {
+              alert("Failed to generate PDF");
+          }
+          setIsExporting(false);
       }, 800);
+  };
+  
+  const handleDownloadPackage = async () => {
+      setIsExportingPackage(true);
+      // Wait for hidden render to be ready
+      setTimeout(async () => {
+        try {
+            const zip = new JSZip();
+            const folder = zip.folder("HolidayCard");
+            
+            // 1. PDF
+            const pdfBlob = await generatePDFBlob();
+            if (pdfBlob) folder?.file(`${memory.recipientName || 'Card'}.pdf`, pdfBlob);
+            
+            // 2. Audio Files
+            if (memory.voiceMessageUrl) {
+                const blob = await (await fetch(memory.voiceMessageUrl)).blob();
+                folder?.file("voice_message.wav", blob);
+            }
+            if (memory.songUrl) {
+                const blob = await (await fetch(memory.songUrl)).blob();
+                folder?.file("holiday_song.wav", blob);
+            }
+            
+            // 3. Generate Zip
+            const content = await zip.generateAsync({ type: "blob" });
+            const url = URL.createObjectURL(content);
+            const a = document.createElement('a'); a.href = url; a.download = `${memory.recipientName || 'Holiday'}_Card_Package.zip`;
+            document.body.appendChild(a); a.click(); document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            
+        } catch (e) {
+            console.error("Package export failed", e);
+            alert("Failed to create package.");
+        } finally {
+            setIsExportingPackage(false);
+        }
+      }, 800);
+  };
+
+  // Helper to ensure an asset is uploaded and return perm URL
+  const ensurePermanentUrl = async (url: string | undefined, path: string): Promise<string | undefined> => {
+      if (!url) return undefined;
+      // If it's already a http url (not blob/data), assume it's persistent or external
+      if (!url.startsWith('blob:') && !url.startsWith('data:')) return url;
+      
+      try {
+          const response = await fetch(url);
+          const blob = await response.blob();
+          // Detect mime extension
+          let ext = 'bin';
+          if (blob.type.includes('image')) ext = 'jpg'; // Default to jpg for simplicity or detect
+          else if (blob.type.includes('audio')) ext = 'wav';
+          else if (blob.type.includes('pdf')) ext = 'pdf';
+          
+          return await uploadFileToStorage(`${path}.${ext}`, blob);
+      } catch (e) {
+          console.warn("Failed to upload asset:", path, e);
+          return undefined;
+      }
   };
 
   const handlePublishAndShare = async () => {
@@ -316,24 +395,54 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack, cardId, isVi
       setIsPublishing(true);
       if (audioRef.current) { audioRef.current.pause(); audioRef.current = null; }
       setPlayingUrl(null);
+      
       try {
-          const finalMemory = { ...memory };
           const uid = auth.currentUser.uid;
           const timestamp = Date.now();
-          // Upload blobs... (simplified for brevity, assume uploads work)
-          // 5. Save Card Metadata
+          
+          // 1. Upload Assets (Images, Audio) if they are temporary blobs
+          const coverUrl = await ensurePermanentUrl(memory.coverImageUrl, `cards/${uid}/${timestamp}_cover`);
+          const backUrl = await ensurePermanentUrl(memory.backImageUrl, `cards/${uid}/${timestamp}_back`);
+          const voiceUrl = await ensurePermanentUrl(memory.voiceMessageUrl, `cards/${uid}/${timestamp}_voice`);
+          const songUrl = await ensurePermanentUrl(memory.songUrl, `cards/${uid}/${timestamp}_song`);
+          
+          // User Photos
+          const permanentUserImages = await Promise.all(memory.userImages.map(async (img, idx) => {
+              return await ensurePermanentUrl(img, `cards/${uid}/${timestamp}_photo_${idx}`) || img;
+          }));
+
+          const finalMemory = { 
+              ...memory,
+              coverImageUrl: coverUrl,
+              backImageUrl: backUrl,
+              voiceMessageUrl: voiceUrl,
+              songUrl: songUrl,
+              userImages: permanentUserImages,
+              ownerId: uid,
+              updatedAt: new Date().toISOString()
+          };
+          
+          setMemory(finalMemory); // Update local state
+          
+          // 2. Save Card Metadata to Firestore
           const newCardId = await saveCard(finalMemory, cardId); 
-          setMemory(finalMemory);
-          // 6. UPDATE SESSION URL
+          
+          // 3. Update URL
           const newUrl = new URL(window.location.href);
           newUrl.searchParams.set('view', 'card_workshop');
           newUrl.searchParams.set('id', newCardId);
           window.history.pushState({}, '', newUrl);
-          // 7. Generate Link
+          
+          // 4. Generate Link
           const link = `${window.location.origin}?view=card&id=${newCardId}`;
           setShareLink(link);
           setShowShareModal(true);
-      } catch(e) { alert("Failed to publish card."); } finally { setIsPublishing(false); }
+      } catch(e: any) { 
+          console.error(e);
+          alert("Failed to publish card: " + e.message); 
+      } finally { 
+          setIsPublishing(false); 
+      }
   };
   
   const handleSendToChat = async () => { /* ... */ };
@@ -597,8 +706,14 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack, cardId, isVi
 
               <button onClick={handleExportPDF} disabled={isExporting} className="flex items-center gap-2 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 rounded-lg text-xs font-bold transition-colors">
                   {isExporting ? <Loader2 size={14} className="animate-spin"/> : <Download size={14} />} 
-                  <span className="hidden sm:inline">{isExporting ? 'Generating PDF...' : 'Download PDF'}</span>
+                  <span className="hidden sm:inline">{isExporting ? 'Creating PDF...' : 'Download PDF'}</span>
               </button>
+              
+              <button onClick={handleDownloadPackage} disabled={isExportingPackage} className="flex items-center gap-2 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 rounded-lg text-xs font-bold transition-colors border border-slate-600">
+                  {isExportingPackage ? <Loader2 size={14} className="animate-spin"/> : <Package size={14} />} 
+                  <span className="hidden sm:inline">{isExportingPackage ? 'Zipping...' : 'Download Package'}</span>
+              </button>
+
               {!isViewer && (
                 <button onClick={handlePublishAndShare} disabled={isPublishing} className="flex items-center gap-2 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 rounded-lg text-xs font-bold transition-colors shadow-lg">
                     {isPublishing ? <Loader2 size={14} className="animate-spin"/> : <Share2 size={14} />} 
@@ -953,7 +1068,7 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack, cardId, isVi
               </div>
 
               {/* HIDDEN EXPORT AREA */}
-              {isExporting && (
+              {isExporting || isExportingPackage ? (
                   <div style={{ position: 'absolute', left: '-9999px', top: '-9999px', opacity: 0 }}>
                       {[0, 1, 2, 3, 4, 5].map(pageNum => (
                           <div 
@@ -969,7 +1084,7 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack, cardId, isVi
                           </div>
                       ))}
                   </div>
-              )}
+              ) : null}
 
           </div>
       </div>
