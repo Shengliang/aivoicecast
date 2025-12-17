@@ -92,7 +92,7 @@ service cloud.firestore {
     }
 
     // ----------------------------------------------------------------------
-    // GLOBAL STATS (New)
+    // GLOBAL STATS
     match /stats/{statId} {
       allow read: if true; 
       allow write: if isAuthenticated();
@@ -144,12 +144,6 @@ service cloud.firestore {
     // ----------------------------------------------------------------------
     // COLLABORATION
     match /code_projects/{projectId} {
-      // Allow if:
-      // 1. Project doesn't exist yet (create)
-      // 2. Project is Public (accessLevel != 'restricted')
-      // 3. User is Owner
-      // 4. User is in allowedUserIds list
-      // 5. User is Admin
       allow read, write: if resource == null || 
                             resource.data.accessLevel != 'restricted' || 
                             isAdmin() ||

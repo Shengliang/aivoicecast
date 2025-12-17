@@ -16,7 +16,7 @@ import {
 } from '../types';
 import { HANDCRAFTED_CHANNELS } from '../utils/initialData';
 
-// Constants
+// Constants - Synced with firestore.rules
 const USERS_COLLECTION = 'users';
 const CHANNELS_COLLECTION = 'channels';
 const CHANNEL_STATS_COLLECTION = 'channel_stats';
@@ -25,12 +25,10 @@ const MESSAGES_COLLECTION = 'messages';
 const BOOKINGS_COLLECTION = 'bookings';
 const RECORDINGS_COLLECTION = 'recordings';
 const DISCUSSIONS_COLLECTION = 'discussions';
-const LECTURES_COLLECTION = 'lectures';
-const CURRICULUM_COLLECTION = 'curriculums';
 const BLOGS_COLLECTION = 'blogs';
-const POSTS_COLLECTION = 'posts';
-const JOBS_COLLECTION = 'jobs';
-const APPLICATIONS_COLLECTION = 'applications';
+const POSTS_COLLECTION = 'blog_posts';
+const JOBS_COLLECTION = 'job_postings';
+const APPLICATIONS_COLLECTION = 'career_applications';
 const CODE_PROJECTS_COLLECTION = 'code_projects';
 const WHITEBOARDS_COLLECTION = 'whiteboards';
 const SAVED_WORDS_COLLECTION = 'saved_words';
@@ -192,8 +190,6 @@ export async function addCommentToChannel(channelId: string, comment: Comment) {
 }
 
 export async function updateCommentInChannel(channelId: string, comment: Comment) {
-    // This is tricky with arrayUnion/Remove. Firestore doesn't support updating array items easily.
-    // We fetch, update, and save.
     const ref = db.collection(CHANNELS_COLLECTION).doc(channelId);
     await db.runTransaction(async (t) => {
         const doc = await t.get(ref);
@@ -224,8 +220,6 @@ export async function addChannelAttachment(channelId: string, attachment: Attach
 
 export async function getChannelsByIds(ids: string[]): Promise<Channel[]> {
     if (ids.length === 0) return [];
-    // Firestore 'in' query limit is 10. We might need to batch or loop.
-    // For simplicity, fetch up to 10 here.
     const safeIds = ids.slice(0, 10);
     const snap = await db.collection(CHANNELS_COLLECTION).where(firebase.firestore.FieldPath.documentId(), 'in', safeIds).get();
     return snap.docs.map(d => d.data() as Channel);
@@ -271,7 +265,6 @@ export async function getUserGroups(uid: string): Promise<Group[]> {
 
 export async function getGroupChannels(groupIds: string[]): Promise<Channel[]> {
   if (groupIds.length === 0) return [];
-  // Batched query
   const snap = await db.collection(CHANNELS_COLLECTION)
     .where('visibility', '==', 'group')
     .where('groupId', 'in', groupIds.slice(0, 10)) 
@@ -281,7 +274,6 @@ export async function getGroupChannels(groupIds: string[]): Promise<Channel[]> {
 
 export async function getGroupMembers(memberIds: string[]): Promise<UserProfile[]> {
     if (memberIds.length === 0) return [];
-    // Batch fetch users
     const chunks = [];
     for (let i = 0; i < memberIds.length; i += 10) {
         chunks.push(memberIds.slice(i, i + 10));
@@ -338,7 +330,6 @@ export async function respondToInvitation(invitation: Invitation, accept: boolea
     await db.collection(GROUPS_COLLECTION).doc(invitation.groupId).update({
       memberIds: firebase.firestore.FieldValue.arrayUnion(auth.currentUser?.uid)
     });
-    // Add group to user profile
     await db.collection(USERS_COLLECTION).doc(auth.currentUser?.uid).update({
         groups: firebase.firestore.FieldValue.arrayUnion(invitation.groupId)
     });
@@ -380,7 +371,6 @@ export async function sendMessage(channelId: string, text: string, collectionPat
     if (!auth.currentUser) return;
     const path = collectionPath || `chat_channels/${channelId}/messages`;
     
-    // Use 'any' type construction to avoid TypeScript issues with conditional keys
     const messagePayload: any = {
         text,
         senderId: auth.currentUser.uid,
@@ -389,7 +379,6 @@ export async function sendMessage(channelId: string, text: string, collectionPat
         timestamp: firebase.firestore.FieldValue.serverTimestamp(),
     };
 
-    // Only add optional fields if they exist (Firestore hates undefined)
     if (replyTo) {
         messagePayload.replyTo = replyTo;
     }
@@ -400,8 +389,6 @@ export async function sendMessage(channelId: string, text: string, collectionPat
     
     const ref = await db.collection(path).add(messagePayload);
     
-    // Update channel last message
-    // Use set with merge to handle cases where the channel doc might not exist (e.g. 'general' created ad-hoc)
     if (!collectionPath || collectionPath.includes('chat_channels')) {
         db.collection('chat_channels').doc(channelId).set({
             lastMessage: {
@@ -409,13 +396,11 @@ export async function sendMessage(channelId: string, text: string, collectionPat
                 senderName: auth.currentUser.displayName,
                 timestamp: Date.now()
             },
-            // Ensure basic fields for hardcoded channels if they are created here
             ...(channelId === 'general' ? { name: 'General', type: 'public' } : {}),
             ...(channelId === 'announcements' ? { name: 'Announcements', type: 'public' } : {})
         }, { merge: true }).catch((err) => console.warn("Failed to update lastMessage", err));
     }
     
-    // Add ID to the message document itself
     await ref.update({ id: ref.id });
 }
 
@@ -445,7 +430,7 @@ export async function getUniqueGroupMembers(groupId: string): Promise<UserProfil
     return getGroupMembers(memberIds);
 }
 
-// --- Lectures & Content ---
+// --- Lectures & Content (Refactored to use Sub-collections) ---
 
 export async function incrementApiUsage(uid: string) {
   const ref = db.collection(USERS_COLLECTION).doc(uid);
@@ -455,8 +440,9 @@ export async function incrementApiUsage(uid: string) {
 }
 
 export async function saveLectureToFirestore(channelId: string, lectureId: string, lecture: GeneratedLecture) {
-  await db.collection(LECTURES_COLLECTION).doc(`${channelId}_${lectureId}`).set({
-    ...lecture,
+  const lectureRef = db.collection(CHANNELS_COLLECTION).doc(channelId).collection('lectures').doc(lectureId);
+  await lectureRef.set({
+    ...sanitizeData(lecture),
     channelId,
     lectureId,
     createdAt: Date.now()
@@ -464,20 +450,21 @@ export async function saveLectureToFirestore(channelId: string, lectureId: strin
 }
 
 export async function getLectureFromFirestore(channelId: string, lectureId: string): Promise<GeneratedLecture | null> {
-  const doc = await db.collection(LECTURES_COLLECTION).doc(`${channelId}_${lectureId}`).get();
+  const doc = await db.collection(CHANNELS_COLLECTION).doc(channelId).collection('lectures').doc(lectureId).get();
   return doc.exists ? (doc.data() as GeneratedLecture) : null;
 }
 
 export async function deleteLectureFromFirestore(channelId: string, lectureId: string) {
-    await db.collection(LECTURES_COLLECTION).doc(`${channelId}_${lectureId}`).delete();
+    await db.collection(CHANNELS_COLLECTION).doc(channelId).collection('lectures').doc(lectureId).delete();
 }
 
 export async function saveCurriculumToFirestore(channelId: string, curriculum: any) {
-    await db.collection(CURRICULUM_COLLECTION).doc(channelId).set({ chapters: curriculum });
+    const metaRef = db.collection(CHANNELS_COLLECTION).doc(channelId).collection('meta').doc('curriculum');
+    await metaRef.set({ chapters: sanitizeData(curriculum) });
 }
 
 export async function getCurriculumFromFirestore(channelId: string) {
-    const doc = await db.collection(CURRICULUM_COLLECTION).doc(channelId).get();
+    const doc = await db.collection(CHANNELS_COLLECTION).doc(channelId).collection('meta').doc('curriculum').get();
     return doc.exists ? doc.data()?.chapters : null;
 }
 
@@ -509,9 +496,7 @@ export async function saveDiscussionDesignDoc(id: string, doc: string, title?: s
 }
 
 export async function linkDiscussionToLectureSegment(channelId: string, lectureId: string, segmentIndex: number, discussionId: string) {
-    // This is logical linking, usually stored in lecture or separate index.
-    // For simplicity, we might update the lecture document if it exists in Firestore
-    const lectureRef = db.collection(LECTURES_COLLECTION).doc(`${channelId}_${lectureId}`);
+    const lectureRef = db.collection(CHANNELS_COLLECTION).doc(channelId).collection('lectures').doc(lectureId);
     const doc = await lectureRef.get();
     if (doc.exists) {
         const lecture = doc.data() as GeneratedLecture;
@@ -538,19 +523,18 @@ export async function createBooking(booking: Booking) {
   await ref.set(sanitizeData(data));
   
   if (booking.invitedEmail) {
-      // Create Invitation Record
       const invRef = db.collection('invitations').doc();
       await invRef.set({
           id: invRef.id,
           fromUserId: booking.userId,
           fromName: booking.hostName || 'User',
           toEmail: booking.invitedEmail,
-          groupId: '', // N/A
+          groupId: '', 
           groupName: booking.topic,
           status: 'pending',
           createdAt: Date.now(),
           type: 'session',
-          link: window.location.origin // Deep link to app
+          link: window.location.origin 
       });
   }
   
@@ -558,7 +542,6 @@ export async function createBooking(booking: Booking) {
 }
 
 export async function getUserBookings(uid: string, email?: string): Promise<Booking[]> {
-  // Get bookings where I am host OR I am invited
   const hostSnap = await db.collection(BOOKINGS_COLLECTION).where('userId', '==', uid).get();
   let invitedSnap = { docs: [] as any[] };
   
@@ -571,7 +554,6 @@ export async function getUserBookings(uid: string, email?: string): Promise<Book
       ...invitedSnap.docs.map(d => d.data() as Booking)
   ];
   
-  // Dedup
   const unique = new Map();
   bookings.forEach(b => unique.set(b.id, b));
   return Array.from(unique.values());
@@ -597,7 +579,6 @@ export async function cancelBooking(id: string) {
 
 export async function updateBookingInvite(bookingId: string, email: string) {
     await db.collection(BOOKINGS_COLLECTION).doc(bookingId).update({ invitedEmail: email });
-    // Also trigger invitation
     const booking = (await db.collection(BOOKINGS_COLLECTION).doc(bookingId).get()).data() as Booking;
     const invRef = db.collection('invitations').doc();
     await invRef.set({
@@ -627,7 +608,6 @@ export async function deleteBookingRecording(bookingId: string, mediaUrl?: strin
         recordingUrl: firebase.firestore.FieldValue.delete(),
         transcriptUrl: firebase.firestore.FieldValue.delete()
     });
-    // Delete files from storage
     if (mediaUrl) await storage.refFromURL(mediaUrl).delete().catch(() => {});
     if (transcriptUrl) await storage.refFromURL(transcriptUrl).delete().catch(() => {});
 }
@@ -665,8 +645,6 @@ export function subscribeToCodeProject(projectId: string, callback: (project: Co
 
 export async function updateCodeFile(projectId: string, file: CodeFile) {
     const projectRef = db.collection(CODE_PROJECTS_COLLECTION).doc(projectId);
-    // We need to update a specific item in the 'files' array.
-    // This is hard in Firestore. We usually read-modify-write.
     await db.runTransaction(async (t) => {
         const doc = await t.get(projectRef);
         if (!doc.exists) return;
@@ -702,7 +680,7 @@ export async function claimCodeProjectLock(projectId: string, clientId: string, 
     await db.collection(CODE_PROJECTS_COLLECTION).doc(projectId).update({
         activeClientId: clientId,
         activeWriterName: userName,
-        lastModified: Date.now() // Refresh lock timeout
+        lastModified: Date.now() 
     });
 }
 
@@ -719,14 +697,12 @@ export async function updateProjectAccess(projectId: string, accessLevel: 'publi
 }
 
 export async function sendShareNotification(targetUserId: string, type: string, link: string, senderName: string) {
-    // Send via DM if possible, or Invitation
-    // Invitation is better for notifications
     const invRef = db.collection('invitations').doc();
     await invRef.set({
         id: invRef.id,
         fromUserId: auth.currentUser?.uid,
         fromName: senderName,
-        toEmail: '', // Not needed if we use ID logic in notification component, but good for data
+        toEmail: '', 
         groupId: '',
         groupName: `${type} Session`,
         status: 'pending',
@@ -735,31 +711,23 @@ export async function sendShareNotification(targetUserId: string, type: string, 
         link: link
     });
     
-    // Hack: Store toEmail based on userId lookup? Or rely on 'invitations' query which usually filters by email.
-    // The existing notification component filters by email.
-    // We need targetUserEmail.
     const user = await getUserProfile(targetUserId);
     if (user) {
         await invRef.update({ toEmail: user.email });
     }
 }
 
-// Cloud Files (Mock filesystem on Storage/Firestore)
+// Cloud Files
 export async function listCloudDirectory(path: string): Promise<CloudItem[]> {
-    // In a real app, this would query a 'files' collection.
-    // For now, we return empty or implement a simple file tracking collection.
-    // Assuming 'cloud_files' collection
     const snap = await db.collection('cloud_files').where('parentPath', '==', path).get();
     return snap.docs.map(d => d.data() as CloudItem);
 }
 
 export async function saveProjectToCloud(parentPath: string, name: string, content: string) {
     const fullPath = `${parentPath}/${name}`;
-    // Save content to Storage
     const fileRef = storage.ref(fullPath);
     await fileRef.putString(content);
     
-    // Save metadata
     await db.collection('cloud_files').doc(fullPath.replace(/\//g, '_')).set({
         name,
         fullPath,
@@ -789,10 +757,6 @@ export async function deleteCloudItem(item: CloudItem) {
 }
 
 export async function moveCloudFile(oldPath: string, newPath: string) {
-    // Copy and Delete
-    // Simplified: Just update metadata parentPath
-    // In reality, storage move is hard.
-    // We will just update metadata for now.
     const docId = oldPath.replace(/\//g, '_');
     const newDocId = newPath.replace(/\//g, '_');
     const doc = await db.collection('cloud_files').doc(docId).get();
@@ -825,7 +789,6 @@ export function subscribeToWhiteboard(sessionId: string, callback: (elements: Wh
 }
 
 export async function updateWhiteboardElement(sessionId: string, element: WhiteboardElement) {
-    // Array update logic
     const ref = db.collection(WHITEBOARDS_COLLECTION).doc(sessionId);
     await db.runTransaction(async t => {
         const doc = await t.get(ref);
@@ -859,7 +822,7 @@ export async function ensureUserBlog(user: any): Promise<Blog> {
     if (!snap.empty) return snap.docs[0].data() as Blog;
     
     const newBlog: Blog = {
-        id: user.uid, // One blog per user for simplicity
+        id: user.uid, 
         ownerId: user.uid,
         authorName: user.displayName || 'Author',
         title: `${user.displayName}'s Blog`,
@@ -889,11 +852,11 @@ export async function getUserPosts(blogId: string): Promise<BlogPost[]> {
 
 export async function createBlogPost(post: BlogPost) {
     const ref = db.collection(POSTS_COLLECTION).doc();
-    await ref.set({ ...post, id: ref.id });
+    await ref.set({ ...sanitizeData(post), id: ref.id });
 }
 
 export async function updateBlogPost(id: string, data: Partial<BlogPost>) {
-    await db.collection(POSTS_COLLECTION).doc(id).update(data);
+    await db.collection(POSTS_COLLECTION).doc(id).update(sanitizeData(data));
 }
 
 export async function deleteBlogPost(id: string) {
@@ -926,12 +889,12 @@ export async function getJobPostings(): Promise<JobPosting[]> {
 
 export async function createJobPosting(job: JobPosting) {
     const ref = db.collection(JOBS_COLLECTION).doc();
-    await ref.set({ ...job, id: ref.id });
+    await ref.set({ ...sanitizeData(job), id: ref.id });
 }
 
 export async function submitCareerApplication(app: CareerApplication) {
     const ref = db.collection(APPLICATIONS_COLLECTION).doc();
-    await ref.set({ ...app, id: ref.id });
+    await ref.set({ ...sanitizeData(app), id: ref.id });
 }
 
 export async function getAllCareerApplications(): Promise<CareerApplication[]> {
@@ -960,12 +923,11 @@ export async function uploadResumeToStorage(uid: string, file: File): Promise<st
 
 export async function createStripeCheckoutSession(uid: string): Promise<string> {
     const docRef = await db.collection('customers').doc(uid).collection('checkout_sessions').add({
-        price: 'price_1234', // Replace with real Price ID in Production
+        price: 'price_1234', 
         success_url: window.location.origin,
         cancel_url: window.location.origin,
     });
     
-    // Wait for Cloud Function to attach url
     return new Promise((resolve, reject) => {
         const unsubscribe = docRef.onSnapshot(snap => {
             const { url, error } = snap.data() || {};
@@ -982,12 +944,10 @@ export async function createStripeCheckoutSession(uid: string): Promise<string> 
 }
 
 export async function createStripePortalSession(uid: string): Promise<string> {
-    // Mock for now, requires Cloud Function
     throw new Error("Stripe Portal not configured in this demo.");
 }
 
 export async function getBillingHistory(uid: string): Promise<any[]> {
-    // Mock
     return [];
 }
 
@@ -1018,12 +978,10 @@ export async function getDebugCollectionDocs(collectionName: string, limit = 20)
 export async function seedDatabase() {
     const batch = db.batch();
     for (const channel of HANDCRAFTED_CHANNELS) {
-        // Use set with merge to ensure we don't wipe out dynamic fields like likes, but enforce static config
         const ref = db.collection(CHANNELS_COLLECTION).doc(channel.id);
         batch.set(ref, sanitizeData({ 
             ...channel, 
             visibility: 'public',
-            // Default system owner if none
             ownerId: channel.ownerId || null
         }), { merge: true });
     }
@@ -1041,13 +999,12 @@ export async function getSavedWordForUser(uid: string, word: string) {
     return doc.exists ? doc.data() : null;
 }
 
-// --- Notebooks (Mock for now or reuse Discussions) ---
+// --- Notebooks ---
 export async function getCreatorNotebooks(creatorId: string): Promise<Notebook[]> {
-    // For demo, return empty or static
     return [];
 }
 
-// --- Cards (Holiday Card Workshop) ---
+// --- Cards ---
 
 export async function saveCard(memory: AgentMemory, cardId?: string): Promise<string> {
     if (!auth.currentUser) throw new Error("Must be logged in to save cards.");
