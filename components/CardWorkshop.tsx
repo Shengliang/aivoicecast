@@ -1,3 +1,4 @@
+
 import React, { useState, useRef, useEffect } from 'react';
 import { AgentMemory, TranscriptItem, Group, ChatChannel } from '../types';
 import { ArrowLeft, Sparkles, Wand2, Image as ImageIcon, Type, Download, Share2, Printer, RefreshCw, Send, Mic, MicOff, Gift, Heart, Loader2, ChevronRight, ChevronLeft, Upload, QrCode, X, Music, Play, Pause, Volume2, Camera, CloudUpload, Lock, Globe, Check } from 'lucide-react';
@@ -368,6 +369,15 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack, cardId, isVi
         const res = await fetch(url);
         const blob = await res.blob();
         return new File([blob], filename, { type: blob.type });
+  };
+
+  const handleDownloadLocal = (url: string, filename: string) => {
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
   };
 
   const handleSaveAudio = async (type: 'message' | 'song') => {
@@ -787,15 +797,24 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack, cardId, isVi
                         
                         {/* Voice Message Player */}
                         <div className={`p-4 rounded-xl border ${playingUrl === memory.voiceMessageUrl ? 'border-indigo-400 bg-indigo-50 shadow-md' : 'border-slate-200 bg-white'}`}>
-                            <div className="flex justify-between items-start mb-2">
+                            <div className="flex justify-between items-center mb-2">
                                 <span className="text-xs font-bold text-indigo-400 uppercase tracking-wider">Voice Message</span>
                                 {memory.voiceMessageUrl && (
-                                    <div className="flex gap-2">
-                                        {!isViewer && !isBlobUrl(memory.voiceMessageUrl) && <span className="text-[10px] text-emerald-400 font-bold self-center">Saved</span>}
+                                    <div className="flex gap-2 items-center">
+                                        {!isViewer && !isBlobUrl(memory.voiceMessageUrl) && <span className="text-[10px] text-emerald-400 font-bold">Saved</span>}
                                         {!isViewer && isBlobUrl(memory.voiceMessageUrl) && (
-                                            <button onClick={() => handleSaveAudio('message')} className="text-indigo-500 hover:text-indigo-700" title="Save to Cloud"><CloudUpload size={14}/></button>
+                                            <button onClick={() => handleSaveAudio('message')} disabled={isUploadingAudio} className="text-slate-400 hover:text-indigo-600 transition-colors" title="Save to Cloud">
+                                                {isUploadingAudio ? <Loader2 size={14} className="animate-spin"/> : <CloudUpload size={14}/>}
+                                            </button>
                                         )}
-                                        <Volume2 size={14} className="text-indigo-400" />
+                                        <button onClick={() => handleDownloadLocal(memory.voiceMessageUrl!, `voice_${memory.recipientName || 'message'}.wav`)} className="text-slate-400 hover:text-indigo-600 transition-colors" title="Download">
+                                            <Download size={14}/>
+                                        </button>
+                                        {!isBlobUrl(memory.voiceMessageUrl) && (
+                                            <button onClick={() => { navigator.clipboard.writeText(memory.voiceMessageUrl!); alert("Link copied!"); }} className="text-slate-400 hover:text-indigo-600 transition-colors" title="Copy Link">
+                                                <Share2 size={14}/>
+                                            </button>
+                                        )}
                                     </div>
                                 )}
                             </div>
@@ -817,15 +836,24 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack, cardId, isVi
 
                         {/* Song Player */}
                         <div className={`p-4 rounded-xl border ${playingUrl === memory.songUrl ? 'border-pink-400 bg-pink-50 shadow-md' : 'border-slate-200 bg-white'}`}>
-                            <div className="flex justify-between items-start mb-2">
+                            <div className="flex justify-between items-center mb-2">
                                 <span className="text-xs font-bold text-pink-400 uppercase tracking-wider">Holiday Song</span>
                                 {memory.songUrl && (
-                                    <div className="flex gap-2">
-                                        {!isViewer && !isBlobUrl(memory.songUrl) && <span className="text-[10px] text-emerald-400 font-bold self-center">Saved</span>}
+                                    <div className="flex gap-2 items-center">
+                                        {!isViewer && !isBlobUrl(memory.songUrl) && <span className="text-[10px] text-emerald-400 font-bold">Saved</span>}
                                         {!isViewer && isBlobUrl(memory.songUrl) && (
-                                            <button onClick={() => handleSaveAudio('song')} className="text-pink-500 hover:text-pink-700" title="Save to Cloud"><CloudUpload size={14}/></button>
+                                            <button onClick={() => handleSaveAudio('song')} disabled={isUploadingAudio} className="text-slate-400 hover:text-pink-600 transition-colors" title="Save to Cloud">
+                                                {isUploadingAudio ? <Loader2 size={14} className="animate-spin"/> : <CloudUpload size={14}/>}
+                                            </button>
                                         )}
-                                        <Music size={14} className="text-pink-400" />
+                                        <button onClick={() => handleDownloadLocal(memory.songUrl!, `song_${memory.recipientName || 'holiday'}.wav`)} className="text-slate-400 hover:text-pink-600 transition-colors" title="Download">
+                                            <Download size={14}/>
+                                        </button>
+                                        {!isBlobUrl(memory.songUrl) && (
+                                            <button onClick={() => { navigator.clipboard.writeText(memory.songUrl!); alert("Link copied!"); }} className="text-slate-400 hover:text-pink-600 transition-colors" title="Copy Link">
+                                                <Share2 size={14}/>
+                                            </button>
+                                        )}
                                     </div>
                                 )}
                             </div>
