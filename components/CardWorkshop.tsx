@@ -87,7 +87,6 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack, cardId, isVi
   // Live Chat State
   const [isLiveActive, setIsLiveActive] = useState(false);
   const [transcript, setTranscript] = useState<TranscriptItem[]>([]);
-  const [currentLine, setCurrentLine] = useState<TranscriptItem | null>(null); // For accumulating stream
   const liveServiceRef = useRef<GeminiLiveService | null>(null);
   
   // Ref for card preview to capture
@@ -169,7 +168,7 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack, cardId, isVi
       if (transcriptEndRef.current) {
           transcriptEndRef.current.scrollIntoView({ behavior: 'smooth' });
       }
-  }, [transcript, currentLine, activeTab]);
+  }, [transcript, activeTab]);
 
   // Load chat targets for sharing
   useEffect(() => {
@@ -213,18 +212,22 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack, cardId, isVi
                   onVolumeUpdate: () => {},
                   onTranscript: (text, isUser) => {
                       const role = isUser ? 'user' : 'ai';
-                      setCurrentLine({ role, text, timestamp: Date.now() });
                       
                       setTranscript(prev => {
-                          const last = prev[prev.length-1];
-                          // Simple debounce merge for same speaker to avoid newline spam
-                          if (last && last.role === role) {
-                               // We rely on currentLine to show the active streaming part
-                               // When speaker changes, currentLine becomes null and we push to history
-                               return prev; 
+                          // Check if the last item has the same role. If so, append to it.
+                          // This prevents "newline spam" and keeps sentences together.
+                          if (prev.length > 0) {
+                              const lastItem = prev[prev.length - 1];
+                              if (lastItem.role === role) {
+                                  // Return a new array with the last item updated
+                                  return [
+                                      ...prev.slice(0, -1),
+                                      { ...lastItem, text: lastItem.text + text }
+                                  ];
+                              }
                           }
-                          // This case shouldn't be hit often with currentLine logic, but safe fallback
-                          return prev;
+                          // Otherwise, start a new bubble
+                          return [...prev, { role, text, timestamp: Date.now() }];
                       });
                   },
                   onToolCall: async (toolCall) => {
@@ -239,6 +242,13 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack, cardId, isVi
                                       response: { result: "Card updated successfully!" }
                                   }]
                               });
+                              
+                              // Visual feedback in chat
+                              setTranscript(prev => [...prev, { 
+                                  role: 'ai', 
+                                  text: `✨ I've updated the card details for you!`, 
+                                  timestamp: Date.now() 
+                              }]);
                           }
                       }
                   }
@@ -248,24 +258,6 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack, cardId, isVi
           }
       }
   };
-
-  // Effect to commit currentLine to transcript when it changes or becomes null (speaker change)
-  useEffect(() => {
-     if (currentLine) {
-         // It's streaming, just UI update via state
-     } else {
-         // Speaker changed or ended, ensure last message is in transcript
-         // Logic handles this via onTranscript callback typically pushing to array
-     }
-  }, [currentLine]);
-
-  // Refined transcript pusher
-  useEffect(() => {
-      // When currentLine switches role, push previous content
-      // Note: This logic is tricky in useEffect. 
-      // The GeminiLiveService callback structure is better for this.
-      // We moved the logic there: onTranscript checks last role.
-  }, []);
 
   const handleChatImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
       if (e.target.files && e.target.files.length > 0) {
@@ -277,7 +269,6 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack, cardId, isVi
               
               // Force add a user message to transcript so user sees it happened
               setTranscript(prev => [...prev, { role: 'user', text: '📷 [Image Sent to Elf]', timestamp: Date.now() }]);
-              setCurrentLine(null); 
           } catch(e) {
               console.error("Image send failed", e);
           }
@@ -852,7 +843,7 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack, cardId, isVi
       );
   };
   
-  const displayTranscript = currentLine ? [...transcript, currentLine] : transcript;
+  const displayTranscript = transcript;
 
   return (
     <div className="flex flex-col h-screen bg-slate-950 text-slate-100 overflow-hidden">
@@ -1217,24 +1208,21 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack, cardId, isVi
                           </div>
                       </>
                   ) : (
-                      // ELF ASSISTANT TAB LAYOUT FIX
+                      // ELF ASSISTANT TAB LAYOUT FIX - Use relative and absolute positioning
                       <div className="relative h-full flex flex-col bg-slate-900">
-                          {/* Chat Transcript Area */}
-                          <div className="absolute inset-0 bottom-20 overflow-y-auto p-4 pb-4 space-y-4 scrollbar-thin scrollbar-thumb-slate-800">
+                          {/* Chat Transcript Area - Scrollable with padding at bottom */}
+                          <div className="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-thin scrollbar-thumb-slate-800 pb-24">
                               {displayTranscript.length === 0 && (
-                                  <div className="h-full flex flex-col items-center justify-center text-center p-6 space-y-4">
-                                      <div className="w-20 h-20 bg-slate-800 rounded-full flex items-center justify-center border-2 border-slate-700 animate-pulse">
-                                          <Mic size={40} className="text-emerald-500" />
+                                  <div className="text-center text-slate-500 text-sm py-8 px-4 mt-10">
+                                      <div className="w-16 h-16 bg-slate-800 rounded-full flex items-center justify-center mx-auto mb-4 border border-slate-700">
+                                          <Mic size={32} className="text-emerald-500" />
                                       </div>
-                                      <div>
-                                          <h3 className="font-bold text-white text-lg">Elf is Ready to Help!</h3>
-                                          <p className="text-slate-400 text-sm mt-2 max-w-xs mx-auto">
-                                              Tap the <strong className="text-emerald-400">Talk</strong> button below to start designing your card with voice commands.
-                                          </p>
-                                          <div className="mt-4 bg-slate-800/50 p-3 rounded-xl border border-slate-700 text-left text-xs">
-                                              <p className="font-bold text-indigo-400 mb-1 flex items-center gap-1"><Sparkles size={12}/> Pro Tip:</p>
-                                              <p className="text-slate-300">You can upload a photo for Elf to see using the Camera button!</p>
-                                          </div>
+                                      <h3 className="font-bold text-white text-lg mb-2">Elf is ready to help!</h3>
+                                      <p className="text-slate-400 mb-4">Tap the <strong className="text-emerald-400">Talk</strong> button below to start designing.</p>
+                                      
+                                      <div className="text-xs text-left bg-slate-800/50 p-3 rounded-xl border border-slate-700">
+                                          <p className="font-bold text-indigo-400 mb-1 flex items-center gap-1"><Sparkles size={12}/> Pro Tip:</p>
+                                          <p>Upload a photo while talking to let Elf see your inspiration!</p>
                                       </div>
                                   </div>
                               )}
@@ -1246,11 +1234,12 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack, cardId, isVi
                                       </div>
                                   </div>
                               ))}
-                              <div ref={transcriptEndRef} />
+                              {/* Invisible spacer to ensure last message isn't hidden by absolute footer */}
+                              <div ref={transcriptEndRef} className="h-4"></div>
                           </div>
                           
-                          {/* Control Bar - Pinned to Bottom */}
-                          <div className="absolute bottom-0 left-0 w-full h-20 p-4 border-t border-slate-800 bg-slate-900 z-20 flex items-center gap-3 shadow-2xl">
+                          {/* Controls Footer - Absolute Bottom */}
+                          <div className="absolute bottom-0 left-0 w-full h-20 p-4 border-t border-slate-800 bg-slate-900 z-10 flex items-center gap-3 shadow-2xl">
                                 <button 
                                     onClick={handleLiveToggle}
                                     className={`flex-1 h-12 rounded-xl font-bold flex items-center justify-center gap-2 transition-all shadow-lg ${isLiveActive ? 'bg-red-600 text-white animate-pulse' : 'bg-emerald-600 hover:bg-emerald-500 text-white hover:scale-[1.02]'}`}
