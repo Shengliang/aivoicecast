@@ -58,7 +58,7 @@ const updateCardTool: FunctionDeclaration = {
 export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack, cardId, isViewer: initialIsViewer = false }) => {
   const [memory, setMemory] = useState<AgentMemory>(DEFAULT_MEMORY);
   const [activeTab, setActiveTab] = useState<'settings' | 'chat'>('settings');
-  const [activePage, setActivePage] = useState<number>(0); // 0: Front, 1: Letter, 2: Photos, 3: Back, 4: Audio
+  const [activePage, setActivePage] = useState<number>(0); // 0: Front, 1: Letter, 2: Photos, 3: Back, 4: Voice, 5: Song
   
   // State to track if we are in viewer mode (can be toggled if owner)
   const [isViewer, setIsViewer] = useState(initialIsViewer);
@@ -296,7 +296,8 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack, cardId, isVi
       setTimeout(async () => {
           try {
               const pdf = new jsPDF({ orientation: 'portrait', unit: 'px', format: [400, 600] });
-              for (let i = 0; i < 4; i++) {
+              // Export all pages (0-5)
+              for (let i = 0; i <= 5; i++) {
                   const el = document.getElementById(`export-card-page-${i}`);
                   if (el) {
                       const canvas = await html2canvas(el, { scale: 2, useCORS: true, allowTaint: true, logging: false, width: 400, height: 600, windowWidth: 400, windowHeight: 600, backgroundColor: memory.theme === 'chinese-poem' ? '#f5f0e1' : '#ffffff' });
@@ -338,7 +339,15 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack, cardId, isVi
   const handleSendToChat = async () => { /* ... */ };
 
   const getPageLabel = (page: number) => {
-      switch(page) { case 0: return 'Front Cover'; case 1: return 'Message'; case 2: return 'Photos'; case 3: return 'Back Cover'; case 4: return 'Audio Gift'; default: return `Page ${page + 1}`; }
+      switch(page) {
+          case 0: return 'Front Cover';
+          case 1: return 'Message';
+          case 2: return 'Photos';
+          case 3: return 'Back Cover';
+          case 4: return 'Voice Message';
+          case 5: return 'Holiday Song';
+          default: return `Page ${page + 1}`;
+      }
   };
 
   const getSealChar = (name: string) => { return name ? name.trim().charAt(0).toUpperCase() : 'AI'; };
@@ -456,17 +465,18 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack, cardId, isVi
                 </div>
             )}
             
-            {/* --- PAGE 4: AUDIO GIFT --- */}
+            {/* --- PAGE 4: VOICE MESSAGE --- */}
             {page === 4 && (
                 <div className={`w-full h-full flex flex-col p-8 relative ${memory.theme === 'chinese-poem' ? 'bg-[#f5f0e1]' : 'bg-slate-50'}`}>
-                     <div className="absolute top-0 right-0 p-8 opacity-10 pointer-events-none"><Music size={128} className="text-indigo-900" /></div>
+                     <div className="absolute top-0 right-0 p-8 opacity-10 pointer-events-none"><Mic size={128} className="text-indigo-900" /></div>
                      <div className="z-10 flex flex-col h-full gap-6">
-                        <div className="text-center">
-                           <h3 className="text-2xl font-holiday font-bold text-slate-700">Audio Greeting</h3>
-                           <p className="text-sm text-slate-500">Scan QR on card to listen</p>
+                        <div className="text-center shrink-0">
+                           <h3 className="text-2xl font-holiday font-bold text-indigo-700">Voice Greeting</h3>
+                           <p className="text-sm text-slate-500">A personal message from the heart</p>
                         </div>
+                        
                         {/* Voice Message Player */}
-                        <div className={`p-4 rounded-xl border ${playingUrl === memory.voiceMessageUrl ? 'border-indigo-400 bg-indigo-50 shadow-md' : 'border-slate-200 bg-white'}`}>
+                        <div className={`p-4 rounded-xl border shrink-0 ${playingUrl === memory.voiceMessageUrl ? 'border-indigo-400 bg-indigo-50 shadow-md' : 'border-slate-200 bg-white'}`}>
                             <div className="flex justify-between items-center mb-2">
                                 <span className="text-xs font-bold text-indigo-400 uppercase tracking-wider">Voice Message</span>
                                 {memory.voiceMessageUrl && (
@@ -488,15 +498,36 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack, cardId, isVi
                                     </div>
                                 )}
                             </div>
-                            <p className="text-sm text-slate-600 italic mb-3 line-clamp-2">"{memory.cardMessage || 'No message yet'}"</p>
+                            
                             {memory.voiceMessageUrl ? (
-                                <button onClick={() => playAudio(memory.voiceMessageUrl!)} className={`w-full py-2 rounded-lg flex items-center justify-center gap-2 font-bold text-xs transition-colors ${playingUrl === memory.voiceMessageUrl ? 'bg-red-500 text-white' : 'bg-indigo-600 text-white hover:bg-indigo-500'}`}>
-                                    {playingUrl === memory.voiceMessageUrl ? <Pause size={14}/> : <Play size={14}/>} {playingUrl === memory.voiceMessageUrl ? 'Playing...' : 'Play Message'}
+                                <button onClick={() => playAudio(memory.voiceMessageUrl!)} className={`w-full py-3 rounded-lg flex items-center justify-center gap-2 font-bold text-sm transition-colors ${playingUrl === memory.voiceMessageUrl ? 'bg-red-500 text-white' : 'bg-indigo-600 text-white hover:bg-indigo-500'}`}>
+                                    {playingUrl === memory.voiceMessageUrl ? <Pause size={16}/> : <Play size={16}/>} {playingUrl === memory.voiceMessageUrl ? 'Playing...' : 'Play Message'}
                                 </button>
-                            ) : <div className="text-center text-xs text-slate-400 py-2 border border-dashed border-slate-300 rounded">Not Generated</div>}
+                            ) : <div className="text-center text-xs text-slate-400 py-3 border border-dashed border-slate-300 rounded">Not Generated</div>}
                         </div>
+
+                        {/* Full Text Area */}
+                        <div className="flex-1 overflow-y-auto bg-white/50 rounded-xl p-4 border border-slate-200 shadow-inner scrollbar-thin scrollbar-thumb-slate-300">
+                             <p className="text-lg text-slate-700 italic leading-relaxed whitespace-pre-wrap font-script">
+                                 "{memory.cardMessage || 'Message text will appear here...'}"
+                             </p>
+                        </div>
+                     </div>
+                </div>
+            )}
+
+            {/* --- PAGE 5: HOLIDAY SONG --- */}
+            {page === 5 && (
+                <div className={`w-full h-full flex flex-col p-8 relative ${memory.theme === 'chinese-poem' ? 'bg-[#f5f0e1]' : 'bg-slate-50'}`}>
+                     <div className="absolute top-0 right-0 p-8 opacity-10 pointer-events-none"><Music size={128} className="text-pink-900" /></div>
+                     <div className="z-10 flex flex-col h-full gap-6">
+                        <div className="text-center shrink-0">
+                           <h3 className="text-2xl font-holiday font-bold text-pink-700">Festive Song</h3>
+                           <p className="text-sm text-slate-500">A custom melody just for you</p>
+                        </div>
+
                         {/* Song Player */}
-                        <div className={`p-4 rounded-xl border ${playingUrl === memory.songUrl ? 'border-pink-400 bg-pink-50 shadow-md' : 'border-slate-200 bg-white'}`}>
+                        <div className={`p-4 rounded-xl border shrink-0 ${playingUrl === memory.songUrl ? 'border-pink-400 bg-pink-50 shadow-md' : 'border-slate-200 bg-white'}`}>
                             <div className="flex justify-between items-center mb-2">
                                 <span className="text-xs font-bold text-pink-400 uppercase tracking-wider">Holiday Song</span>
                                 {memory.songUrl && (
@@ -518,14 +549,18 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack, cardId, isVi
                                     </div>
                                 )}
                             </div>
-                            <p className="text-sm text-slate-600 whitespace-pre-wrap mb-3 text-xs leading-relaxed max-h-24 overflow-y-auto border-l-2 border-pink-200 pl-2">
-                                {memory.songLyrics || "Lyrics not generated yet..."}
-                            </p>
                             {memory.songUrl ? (
-                                <button onClick={() => playAudio(memory.songUrl!)} className={`w-full py-2 rounded-lg flex items-center justify-center gap-2 font-bold text-xs transition-colors ${playingUrl === memory.songUrl ? 'bg-red-500 text-white' : 'bg-pink-600 text-white hover:bg-pink-500'}`}>
-                                    {playingUrl === memory.songUrl ? <Pause size={14}/> : <Play size={14}/>} {playingUrl === memory.songUrl ? 'Playing...' : 'Play Song'}
+                                <button onClick={() => playAudio(memory.songUrl!)} className={`w-full py-3 rounded-lg flex items-center justify-center gap-2 font-bold text-sm transition-colors ${playingUrl === memory.songUrl ? 'bg-red-500 text-white' : 'bg-pink-600 text-white hover:bg-pink-500'}`}>
+                                    {playingUrl === memory.songUrl ? <Pause size={16}/> : <Play size={16}/>} {playingUrl === memory.songUrl ? 'Playing...' : 'Play Song'}
                                 </button>
-                            ) : <div className="text-center text-xs text-slate-400 py-2 border border-dashed border-slate-300 rounded">Not Generated</div>}
+                            ) : <div className="text-center text-xs text-slate-400 py-3 border border-dashed border-slate-300 rounded">Not Generated</div>}
+                        </div>
+
+                        {/* Lyrics Area */}
+                        <div className="flex-1 overflow-y-auto bg-white/50 rounded-xl p-4 border border-slate-200 shadow-inner scrollbar-thin scrollbar-thumb-slate-300">
+                             <p className="text-sm text-slate-600 whitespace-pre-wrap leading-relaxed font-mono">
+                                 {memory.songLyrics || "Lyrics will appear here..."}
+                             </p>
                         </div>
                      </div>
                 </div>
@@ -759,18 +794,18 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack, cardId, isVi
                                   </div>
                               )}
                               
-                              {/* AUDIO SETTINGS (PAGE 4) */}
+                              {/* AUDIO SETTINGS (PAGE 4 - Voice) */}
                               {activePage === 4 && (
                                   <div className="space-y-4">
                                       <div className="bg-slate-900/50 p-4 rounded-xl border border-slate-800">
                                           <h3 className="text-sm font-bold text-white mb-3 flex items-center gap-2">
-                                              <Music className="text-indigo-400" size={16}/> Audio Generator
+                                              <Mic className="text-indigo-400" size={16}/> Voice Message
                                           </h3>
                                           
                                           {/* Voice Message Generator */}
                                           <div className="bg-slate-800/50 p-3 rounded-lg border border-slate-700 mb-3">
                                               <div className="flex justify-between items-center mb-2">
-                                                  <span className="text-xs font-bold text-indigo-300">Voice Message</span>
+                                                  <span className="text-xs font-bold text-indigo-300">Generate</span>
                                                   {memory.voiceMessageUrl && (
                                                       <div className="flex gap-2 items-center">
                                                           <span className="text-[10px] text-emerald-400">Ready</span>
@@ -789,8 +824,18 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack, cardId, isVi
                                                   {memory.voiceMessageUrl ? 'Regenerate Voice' : 'Generate Voice'}
                                               </button>
                                           </div>
-
-                                          {/* Song Generator */}
+                                      </div>
+                                  </div>
+                              )}
+                              
+                              {/* AUDIO SETTINGS (PAGE 5 - Song) */}
+                              {activePage === 5 && (
+                                  <div className="space-y-4">
+                                      <div className="bg-slate-900/50 p-4 rounded-xl border border-slate-800">
+                                          <h3 className="text-sm font-bold text-white mb-3 flex items-center gap-2">
+                                              <Music className="text-pink-400" size={16}/> Song Generator
+                                          </h3>
+                                          
                                           <div className="bg-slate-800/50 p-3 rounded-lg border border-slate-700">
                                               <div className="flex justify-between items-center mb-2">
                                                   <span className="text-xs font-bold text-pink-300">Custom Song</span>
@@ -882,11 +927,11 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack, cardId, isVi
                       <ChevronLeft size={20} />
                   </button>
                   <span className="text-sm font-bold text-slate-300 min-w-[140px] text-center select-none">
-                      {getPageLabel(activePage)} ({activePage + 1}/5)
+                      {getPageLabel(activePage)} ({activePage + 1}/6)
                   </span>
                   <button 
-                      onClick={() => setActivePage(p => Math.min(4, p + 1))} 
-                      disabled={activePage === 4}
+                      onClick={() => setActivePage(p => Math.min(5, p + 1))} 
+                      disabled={activePage === 5}
                       className="p-2 bg-slate-800 hover:bg-slate-700 text-white rounded-full disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
                   >
                       <ChevronRight size={20} />
@@ -898,7 +943,7 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack, cardId, isVi
                   ref={cardRef}
                   className="w-[400px] h-[600px] bg-white text-slate-900 shadow-2xl relative overflow-hidden flex flex-col transition-all duration-300"
                   style={{ 
-                      backgroundImage: (memory.theme === 'festive' && activePage !== 2 && activePage !== 4) ? 'url("https://www.transparenttextures.com/patterns/snow.png")' : 'none',
+                      backgroundImage: (memory.theme === 'festive' && activePage !== 2 && activePage !== 4 && activePage !== 5) ? 'url("https://www.transparenttextures.com/patterns/snow.png")' : 'none',
                       backgroundColor: memory.theme === 'chinese-poem' ? '#f5f0e1' : memory.theme === 'minimal' ? '#f8fafc' : memory.theme === 'cozy' ? '#fff7ed' : '#ffffff',
                       // Chinese Rice Paper Texture effect
                       boxShadow: memory.theme === 'chinese-poem' ? 'inset 0 0 40px rgba(0,0,0,0.1)' : ''
@@ -910,13 +955,13 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack, cardId, isVi
               {/* HIDDEN EXPORT AREA */}
               {isExporting && (
                   <div style={{ position: 'absolute', left: '-9999px', top: '-9999px', opacity: 0 }}>
-                      {[0, 1, 2, 3].map(pageNum => (
+                      {[0, 1, 2, 3, 4, 5].map(pageNum => (
                           <div 
                               key={pageNum} 
                               id={`export-card-page-${pageNum}`}
                               className="w-[400px] h-[600px] overflow-hidden flex flex-col relative"
                               style={{ 
-                                  backgroundImage: (memory.theme === 'festive' && pageNum !== 2) ? 'url("https://www.transparenttextures.com/patterns/snow.png")' : 'none',
+                                  backgroundImage: (memory.theme === 'festive' && pageNum !== 2 && pageNum !== 4 && pageNum !== 5) ? 'url("https://www.transparenttextures.com/patterns/snow.png")' : 'none',
                                   backgroundColor: memory.theme === 'chinese-poem' ? '#f5f0e1' : memory.theme === 'minimal' ? '#f8fafc' : memory.theme === 'cozy' ? '#fff7ed' : '#ffffff',
                               }}
                           >
