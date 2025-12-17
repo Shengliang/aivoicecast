@@ -64,12 +64,18 @@ export async function generateCardMessage(memory: AgentMemory, tone: string = 'w
 export async function generateSongLyrics(memory: AgentMemory): Promise<string> {
     try {
         const ai = getClient();
+        // Incorporate specific user message context if available
+        const messageContext = memory.cardMessage && memory.cardMessage.length > 5 
+            ? `Important context/sentiment to include: "${memory.cardMessage}"` 
+            : '';
+
         const prompt = `
             Write a very short, rhyming song or poem (4-6 lines) for a greeting card.
             Occasion: ${memory.occasion}
             To: ${memory.recipientName}
             From: ${memory.senderName}
             Theme: ${memory.theme}
+            ${messageContext}
             Style: Musical, rhythmic, catchy.
             
             Return ONLY the lyrics.

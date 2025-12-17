@@ -402,6 +402,8 @@ export interface AgentMemory {
   backImageUrl?: string;
   googlePhotosUrl?: string;
   generatedAt: string;
-  audioUrl?: string;
-  audioScript?: string;
+  // Enhanced Audio Fields
+  voiceMessageUrl?: string; // Spoken version of cardMessage
+  songUrl?: string;         // Generated musical version
+  songLyrics?: string;      // Lyrics for the song
 }

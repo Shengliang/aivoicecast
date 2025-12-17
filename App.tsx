@@ -58,7 +58,7 @@ import { HANDCRAFTED_CHANNELS, CATEGORY_STYLES, TOPIC_CATEGORIES } from './utils
 import { OFFLINE_CHANNEL_ID } from './utils/offlineContent';
 import { GEMINI_API_KEY } from './services/private_keys';
 
-const APP_VERSION = "v3.73.0"; // Bump version
+const APP_VERSION = "v3.74.0"; // Bump version
 
 const UI_TEXT = {
   en: {
@@ -119,7 +119,7 @@ const UI_TEXT = {
   }
 };
 
-type ExtendedViewState = ViewState | 'firestore_debug' | 'my_channel_debug';
+type ExtendedViewState = ViewState | 'firestore_debug' | 'my_channel_debug' | 'card_viewer';
 
 const App: React.FC = () => {
   const [language, setLanguage] = useState<'en' | 'zh'>('en');
@@ -177,6 +177,9 @@ const App: React.FC = () => {
   // Collaboration State
   const [sharedSessionId, setSharedSessionId] = useState<string | undefined>(undefined);
   const [accessKey, setAccessKey] = useState<string | undefined>(undefined);
+  
+  // Card Viewer State
+  const [viewCardId, setViewCardId] = useState<string | undefined>(undefined);
 
   // Live Session Config
   const [liveConfig, setLiveConfig] = useState<{
@@ -221,12 +224,19 @@ const App: React.FC = () => {
     const session = params.get('session');
     const keyParam = params.get('key'); 
     const mode = params.get('mode');
+    const view = params.get('view');
+    const id = params.get('id');
+
+    if (view === 'card' && id) {
+        setViewCardId(id);
+        setViewState('card_viewer');
+    }
 
     if (session) {
         setSharedSessionId(session);
         if (keyParam) setAccessKey(keyParam);
         
-        if (viewState !== 'code_studio' && viewState !== 'whiteboard') {
+        if (viewState !== 'code_studio' && viewState !== 'whiteboard' && viewState !== 'card_viewer') {
             if (mode === 'whiteboard') {
                  setViewState('whiteboard');
             } else {
@@ -625,6 +635,11 @@ const App: React.FC = () => {
       return <PrivacyPolicy onBack={() => setIsPrivacyOpen(false)} />;
   }
 
+  // PUBLIC CARD VIEWER
+  if (viewState === 'card_viewer') {
+      return <CardWorkshop onBack={() => { setViewState('directory'); setViewCardId(undefined); }} cardId={viewCardId} isViewer={true} />;
+  }
+
   if (!currentUser) {
       return <LoginPage onPrivacyClick={() => setIsPrivacyOpen(true)} />;
   }
@@ -921,6 +936,7 @@ const App: React.FC = () => {
         {viewState === 'user_guide' && <UserManual onBack={() => setViewState('directory')} />}
         {viewState === 'notebook_viewer' && <NotebookViewer onBack={() => setViewState('directory')} currentUser={currentUser} />}
         {viewState === 'card_workshop' && <CardWorkshop onBack={() => setViewState('directory')} />}
+        {viewState === 'card_viewer' && <CardWorkshop onBack={() => { setViewState('directory'); setViewCardId(undefined); }} cardId={viewCardId} isViewer={true} />}
         
         {viewState === 'code_studio' && (
             <CodeStudio 

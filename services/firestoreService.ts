@@ -23,7 +23,8 @@ import {
   SubscriptionTier,
   ChannelStats,
   GlobalStats,
-  Notebook
+  Notebook,
+  AgentMemory
 } from '../types';
 import { db, auth, storage } from './firebaseConfig';
 import firebase from 'firebase/compat/app';
@@ -50,6 +51,7 @@ const APPLICATIONS_COLLECTION = 'career_applications';
 const STATS_COLLECTION = 'stats';
 const DM_CHANNELS_COLLECTION = 'chat_channels';
 const ACTIVITY_LOGS_COLLECTION = 'activity_logs';
+const CARDS_COLLECTION = 'cards';
 
 // Helper to remove undefined fields which Firestore rejects
 const sanitizeData = (data: any) => JSON.parse(JSON.stringify(data));
@@ -448,6 +450,33 @@ export async function addChannelAttachment(channelId: string, attachment: any) {
     await db.collection(CHANNELS_COLLECTION).doc(channelId).update({
         appendix: firebase.firestore.FieldValue.arrayUnion(safeAttachment)
     });
+}
+
+// --- Cards (Holiday Card Workshop) ---
+
+export async function saveCard(memory: AgentMemory, cardId?: string): Promise<string> {
+    if (!auth.currentUser) throw new Error("Must be logged in to save cards.");
+    
+    const id = cardId || crypto.randomUUID();
+    const docRef = db.collection(CARDS_COLLECTION).doc(id);
+    
+    const cardData = {
+        ...sanitizeData(memory),
+        id: id,
+        ownerId: auth.currentUser.uid,
+        updatedAt: Date.now()
+    };
+    
+    await docRef.set(cardData, { merge: true });
+    return id;
+}
+
+export async function getCard(cardId: string): Promise<AgentMemory | null> {
+    const doc = await db.collection(CARDS_COLLECTION).doc(cardId).get();
+    if (doc.exists) {
+        return doc.data() as AgentMemory;
+    }
+    return null;
 }
 
 // --- Comments ---

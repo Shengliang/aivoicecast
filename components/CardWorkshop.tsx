@@ -1,17 +1,19 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { AgentMemory, TranscriptItem } from '../types';
-import { ArrowLeft, Sparkles, Wand2, Image as ImageIcon, Type, Download, Share2, Printer, RefreshCw, Send, Mic, MicOff, Gift, Heart, Loader2, ChevronRight, ChevronLeft, Upload, QrCode, X, Music, Play, Pause, Volume2, Camera } from 'lucide-react';
+import { AgentMemory, TranscriptItem, Group, ChatChannel } from '../types';
+import { ArrowLeft, Sparkles, Wand2, Image as ImageIcon, Type, Download, Share2, Printer, RefreshCw, Send, Mic, MicOff, Gift, Heart, Loader2, ChevronRight, ChevronLeft, Upload, QrCode, X, Music, Play, Pause, Volume2, Camera, CloudUpload, Lock, Globe } from 'lucide-react';
 import { generateCardMessage, generateCardImage, generateCardAudio, generateSongLyrics } from '../services/cardGen';
 import { GeminiLiveService } from '../services/geminiLive';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
-import { uploadFileToStorage } from '../services/firestoreService';
+import { uploadFileToStorage, saveCard, getCard, sendMessage, getUserGroups, getUserDMChannels } from '../services/firestoreService';
 import { auth } from '../services/firebaseConfig';
 import { FunctionDeclaration, Type as GenType } from '@google/genai';
 import { resizeImage } from '../utils/imageUtils';
 
 interface CardWorkshopProps {
   onBack: () => void;
+  cardId?: string; // Optional: Load existing card
+  isViewer?: boolean; // Read-only mode
 }
 
 const DEFAULT_MEMORY: AgentMemory = {
@@ -31,6 +33,10 @@ const isChinese = (text: string) => {
     return /[\u4e00-\u9fa5]/.test(text);
 };
 
+// Helper to check if string is a blob URL
+const isBlobUrl = (url?: string) => url?.startsWith('blob:');
+const isDataUrl = (url?: string) => url?.startsWith('data:');
+
 // Tool Definition for Elf
 const updateCardTool: FunctionDeclaration = {
     name: 'update_card',
@@ -48,7 +54,7 @@ const updateCardTool: FunctionDeclaration = {
     }
 };
 
-export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack }) => {
+export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack, cardId, isViewer = false }) => {
   const [memory, setMemory] = useState<AgentMemory>(DEFAULT_MEMORY);
   const [activeTab, setActiveTab] = useState<'settings' | 'chat'>('settings');
   const [activePage, setActivePage] = useState<number>(0); // 0: Front, 1: Letter, 2: Photos, 3: Back, 4: Audio
@@ -59,8 +65,12 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack }) => {
   const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
   
   // Audio Gen State
-  const [isGeneratingAudio, setIsGeneratingAudio] = useState(false);
-  const [isPlayingAudio, setIsPlayingAudio] = useState(false);
+  const [isGeneratingVoice, setIsGeneratingVoice] = useState(false);
+  const [isGeneratingSong, setIsGeneratingSong] = useState(false);
+  const [isUploadingAudio, setIsUploadingAudio] = useState(false);
+  
+  // Playback State
+  const [playingUrl, setPlayingUrl] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
   // Image Generation Refinements
@@ -83,6 +93,23 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack }) => {
   const [isExporting, setIsExporting] = useState(false);
   const [qrCodeBase64, setQrCodeBase64] = useState<string | null>(null);
 
+  // Sharing State
+  const [isPublishing, setIsPublishing] = useState(false);
+  const [shareLink, setShareLink] = useState<string | null>(null);
+  const [showShareModal, setShowShareModal] = useState(false);
+  const [isSendingToChat, setIsSendingToChat] = useState(false);
+  const [chatTargets, setChatTargets] = useState<{id: string, name: string, type: 'dm'|'group'}[]>([]);
+  const [selectedChatTarget, setSelectedChatTarget] = useState('');
+
+  // Load Card if ID provided
+  useEffect(() => {
+      if (cardId) {
+          getCard(cardId).then(data => {
+              if (data) setMemory(data);
+          }).catch(e => console.error("Failed to load card", e));
+      }
+  }, [cardId]);
+
   // Fetch QR Code as Base64 to ensure it renders in PDF (CORS fix)
   useEffect(() => {
     if (memory.googlePhotosUrl) {
@@ -103,14 +130,15 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack }) => {
     }
   }, [memory.googlePhotosUrl]);
 
-  // Reset audio player when source changes
+  // Reset audio player when navigating away or changing context significantly
   useEffect(() => {
-      if (audioRef.current) {
-          audioRef.current.pause();
-          audioRef.current = null;
-      }
-      setIsPlayingAudio(false);
-  }, [memory.audioUrl]);
+     return () => {
+         if (audioRef.current) {
+             audioRef.current.pause();
+             audioRef.current = null;
+         }
+     };
+  }, []);
 
   // Initialize Live Service
   useEffect(() => {
@@ -127,6 +155,23 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack }) => {
          // Auto-scroll chat?
       }
   }, [currentLine]);
+
+  // Load chat targets for sharing
+  useEffect(() => {
+      if (showShareModal && auth.currentUser) {
+          Promise.all([
+              getUserGroups(auth.currentUser.uid),
+              getUserDMChannels()
+          ]).then(([groups, dms]) => {
+              const targets = [
+                  ...groups.map(g => ({ id: g.id, name: g.name, type: 'group' as const })),
+                  ...dms.map(d => ({ id: d.id, name: d.name, type: 'dm' as const }))
+              ];
+              setChatTargets(targets);
+              if (targets.length > 0) setSelectedChatTarget(targets[0].id);
+          });
+      }
+  }, [showShareModal]);
 
   const handleLiveToggle = async () => {
       if (isLiveActive) {
@@ -244,50 +289,89 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack }) => {
   };
 
   const handleGenAudio = async (type: 'message' | 'song') => {
-      setIsGeneratingAudio(true);
+      const isSong = type === 'song';
+      const setter = isSong ? setIsGeneratingSong : setIsGeneratingVoice;
+      setter(true);
+      
       try {
-          let text = memory.cardMessage;
-          if (type === 'song') {
+          let text = '';
+          
+          if (isSong) {
+              // Generate lyrics based on the context
               text = await generateSongLyrics(memory);
-              setMemory(prev => ({ ...prev, audioScript: text })); // Save lyrics
+              setMemory(prev => ({ ...prev, songLyrics: text })); 
           } else {
-              setMemory(prev => ({ ...prev, audioScript: memory.cardMessage }));
+              // Use existing card message
+              text = memory.cardMessage;
+              // No dedicated script variable needed as it's the message itself
           }
 
           // Generate Audio using TTS
-          const audioUrl = await generateCardAudio(text, 'Kore');
-          setMemory(prev => ({ ...prev, audioUrl }));
+          const voice = isSong ? 'Fenrir' : 'Kore'; // Fenrir for songs (deeper), Kore for messages
+          const audioUrl = await generateCardAudio(text, voice);
+          
+          setMemory(prev => {
+              if (isSong) return { ...prev, songUrl: audioUrl };
+              return { ...prev, voiceMessageUrl: audioUrl };
+          });
+          
       } catch(e) {
           console.error(e);
           alert("Audio generation failed. Ensure API Key is set.");
       } finally {
-          setIsGeneratingAudio(false);
+          setter(false);
       }
   };
 
-  const toggleAudio = () => {
-      if (!audioRef.current) {
-          if (!memory.audioUrl) return;
-          audioRef.current = new Audio(memory.audioUrl);
-          audioRef.current.onended = () => setIsPlayingAudio(false);
-          audioRef.current.onerror = (e) => {
-              console.error("Audio playback error", e);
-              alert("Cannot play audio format.");
-              setIsPlayingAudio(false);
-          };
-      }
-      
-      if (isPlayingAudio) {
-          audioRef.current.pause();
-          setIsPlayingAudio(false);
+  const playAudio = (url: string) => {
+      if (playingUrl === url) {
+          // Pause if same
+          audioRef.current?.pause();
+          setPlayingUrl(null);
       } else {
-          // Promise handling for play()
-          audioRef.current.play()
-            .then(() => setIsPlayingAudio(true))
-            .catch(e => {
-                console.error("Play failed", e);
-                setIsPlayingAudio(false);
-            });
+          // Stop prev
+          if (audioRef.current) {
+              audioRef.current.pause();
+          }
+          // Play new
+          audioRef.current = new Audio(url);
+          audioRef.current.onended = () => setPlayingUrl(null);
+          audioRef.current.play().catch(e => {
+              console.error("Play failed", e);
+              setPlayingUrl(null);
+          });
+          setPlayingUrl(url);
+      }
+  };
+
+  // Convert Base64/Blob URL to File for Upload
+  const urlToFile = async (url: string, filename: string): Promise<File> => {
+        const res = await fetch(url);
+        const blob = await res.blob();
+        return new File([blob], filename, { type: blob.type });
+  };
+
+  const handleSaveAudio = async (type: 'message' | 'song') => {
+      if (!auth.currentUser) return alert("Please sign in to save audio.");
+      const url = type === 'message' ? memory.voiceMessageUrl : memory.songUrl;
+      if (!url || !isBlobUrl(url)) return; // Already saved or empty
+
+      setIsUploadingAudio(true);
+      try {
+          const file = await urlToFile(url, `${type}_${Date.now()}.wav`);
+          const path = `cards/${auth.currentUser.uid}/audio/${file.name}`;
+          const downloadUrl = await uploadFileToStorage(path, file);
+          
+          setMemory(prev => type === 'message' 
+              ? { ...prev, voiceMessageUrl: downloadUrl } 
+              : { ...prev, songUrl: downloadUrl }
+          );
+          alert("Audio saved to cloud!");
+      } catch(e) {
+          console.error(e);
+          alert("Upload failed.");
+      } finally {
+          setIsUploadingAudio(false);
       }
   };
 
@@ -409,29 +493,82 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack }) => {
       }, 800); // Wait for images to render in hidden div
   };
 
-  const handleShareLink = async () => {
+  const handlePublishAndShare = async () => {
       if (!auth.currentUser) {
           alert("Please sign in to share.");
           return;
       }
-      const confirmShare = confirm("This creates a public link to the current card page image. Continue?");
-      if(!confirmShare) return;
-
-      if (!cardRef.current) return;
+      setIsPublishing(true);
 
       try {
-          const canvas = await html2canvas(cardRef.current, { scale: 1 });
-          const blob = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.9));
-          if (!blob) throw new Error("Canvas blob failed");
+          const finalMemory = { ...memory };
+          const uid = auth.currentUser.uid;
+          const timestamp = Date.now();
+
+          // 1. Upload Local Images (User Photos)
+          const uploadedUserImages = await Promise.all(finalMemory.userImages.map(async (img, i) => {
+              if (isDataUrl(img)) {
+                  const file = await urlToFile(img, `photo_${timestamp}_${i}.jpg`);
+                  return uploadFileToStorage(`cards/${uid}/photos/${file.name}`, file);
+              }
+              return img;
+          }));
+          finalMemory.userImages = uploadedUserImages;
+
+          // 2. Upload Cover Image (if base64)
+          if (finalMemory.coverImageUrl && isDataUrl(finalMemory.coverImageUrl)) {
+              const file = await urlToFile(finalMemory.coverImageUrl, `cover_${timestamp}.jpg`);
+              finalMemory.coverImageUrl = await uploadFileToStorage(`cards/${uid}/assets/${file.name}`, file);
+          }
+
+          // 3. Upload Back Image (if base64)
+          if (finalMemory.backImageUrl && isDataUrl(finalMemory.backImageUrl)) {
+              const file = await urlToFile(finalMemory.backImageUrl, `back_${timestamp}.jpg`);
+              finalMemory.backImageUrl = await uploadFileToStorage(`cards/${uid}/assets/${file.name}`, file);
+          }
+
+          // 4. Upload Audio (if blob)
+          if (finalMemory.voiceMessageUrl && isBlobUrl(finalMemory.voiceMessageUrl)) {
+              const file = await urlToFile(finalMemory.voiceMessageUrl, `voice_${timestamp}.wav`);
+              finalMemory.voiceMessageUrl = await uploadFileToStorage(`cards/${uid}/audio/${file.name}`, file);
+          }
+          if (finalMemory.songUrl && isBlobUrl(finalMemory.songUrl)) {
+              const file = await urlToFile(finalMemory.songUrl, `song_${timestamp}.wav`);
+              finalMemory.songUrl = await uploadFileToStorage(`cards/${uid}/audio/${file.name}`, file);
+          }
+
+          // 5. Save Card Metadata
+          const newCardId = await saveCard(finalMemory, cardId); // Reuse ID if editing
+          setMemory(finalMemory); // Update local state with remote URLs
+
+          // 6. Generate Link
+          const link = `${window.location.origin}?view=card&id=${newCardId}`;
+          setShareLink(link);
+          setShowShareModal(true);
+
+      } catch(e) {
+          console.error("Publish failed", e);
+          alert("Failed to publish card.");
+      } finally {
+          setIsPublishing(false);
+      }
+  };
+  
+  const handleSendToChat = async () => {
+      if (!shareLink || !selectedChatTarget || !auth.currentUser) return;
+      setIsSendingToChat(true);
+      try {
+          const target = chatTargets.find(t => t.id === selectedChatTarget);
+          const collectionPath = target?.type === 'group' ? `groups/${target.id}/messages` : `chat_channels/${target.id}/messages`;
           
-          const path = `cards/${auth.currentUser.uid}/shared/${Date.now()}.jpg`;
-          const url = await uploadFileToStorage(path, blob);
-          
-          await navigator.clipboard.writeText(url);
-          alert("Link copied to clipboard!");
+          await sendMessage(target!.id, `Check out this holiday card I made: ${shareLink}`, collectionPath);
+          alert("Sent to chat!");
+          setShowShareModal(false);
       } catch(e) {
           console.error(e);
-          alert("Share failed");
+          alert("Failed to send message.");
+      } finally {
+          setIsSendingToChat(false);
       }
   };
 
@@ -611,35 +748,73 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack }) => {
             
             {/* --- PAGE 4: AUDIO GIFT --- */}
             {page === 4 && (
-                <div className={`w-full h-full flex flex-col items-center justify-center p-8 relative ${memory.theme === 'chinese-poem' ? 'bg-[#f5f0e1]' : 'bg-slate-50'}`}>
-                    <div className="bg-white/80 backdrop-blur-sm p-8 rounded-full shadow-2xl border-4 border-indigo-100 animate-pulse-slow">
-                        <Music size={64} className="text-indigo-400" />
-                    </div>
-                    
-                    <div className="text-center mt-8 space-y-2">
-                        <h3 className="text-2xl font-holiday font-bold text-slate-700">Audio Greeting</h3>
-                        <p className="text-sm text-slate-500 max-w-xs">
-                            {memory.audioScript || "No audio message generated yet."}
-                        </p>
-                    </div>
-                    
-                    <div className="mt-8 flex gap-4">
-                        <div className="flex flex-col items-center gap-1">
-                             <div className="w-1 h-8 bg-indigo-300 rounded-full animate-bounce" style={{animationDelay: '0s'}}></div>
+                <div className={`w-full h-full flex flex-col p-8 relative ${memory.theme === 'chinese-poem' ? 'bg-[#f5f0e1]' : 'bg-slate-50'}`}>
+                     <div className="absolute top-0 right-0 p-8 opacity-10 pointer-events-none">
+                         <Music size={128} className="text-indigo-900" />
+                     </div>
+                     
+                     <div className="z-10 flex flex-col h-full gap-6">
+                        <div className="text-center">
+                           <h3 className="text-2xl font-holiday font-bold text-slate-700">Audio Greeting</h3>
+                           <p className="text-sm text-slate-500">Scan QR on card to listen</p>
                         </div>
-                        <div className="flex flex-col items-center gap-1">
-                             <div className="w-1 h-12 bg-indigo-400 rounded-full animate-bounce" style={{animationDelay: '0.1s'}}></div>
+                        
+                        {/* Voice Message Player */}
+                        <div className={`p-4 rounded-xl border ${playingUrl === memory.voiceMessageUrl ? 'border-indigo-400 bg-indigo-50 shadow-md' : 'border-slate-200 bg-white'}`}>
+                            <div className="flex justify-between items-start mb-2">
+                                <span className="text-xs font-bold text-indigo-400 uppercase tracking-wider">Voice Message</span>
+                                {memory.voiceMessageUrl && (
+                                    <div className="flex gap-2">
+                                        <button onClick={() => handleSaveAudio('message')} className="text-emerald-500 hover:text-emerald-700" title="Save to Cloud"><CloudUpload size={14}/></button>
+                                        <Volume2 size={14} className="text-indigo-400" />
+                                    </div>
+                                )}
+                            </div>
+                            <p className="text-sm text-slate-600 italic mb-3 line-clamp-2">"{memory.cardMessage || 'No message yet'}"</p>
+                            {memory.voiceMessageUrl ? (
+                                <button 
+                                    onClick={() => playAudio(memory.voiceMessageUrl!)}
+                                    className={`w-full py-2 rounded-lg flex items-center justify-center gap-2 font-bold text-xs transition-colors ${playingUrl === memory.voiceMessageUrl ? 'bg-red-500 text-white' : 'bg-indigo-600 text-white hover:bg-indigo-500'}`}
+                                >
+                                    {playingUrl === memory.voiceMessageUrl ? <Pause size={14}/> : <Play size={14}/>}
+                                    {playingUrl === memory.voiceMessageUrl ? 'Playing...' : 'Play Message'}
+                                </button>
+                            ) : (
+                                <div className="text-center text-xs text-slate-400 py-2 border border-dashed border-slate-300 rounded">
+                                    Not Generated
+                                </div>
+                            )}
                         </div>
-                        <div className="flex flex-col items-center gap-1">
-                             <div className="w-1 h-6 bg-indigo-300 rounded-full animate-bounce" style={{animationDelay: '0.2s'}}></div>
+
+                        {/* Song Player */}
+                        <div className={`p-4 rounded-xl border ${playingUrl === memory.songUrl ? 'border-pink-400 bg-pink-50 shadow-md' : 'border-slate-200 bg-white'}`}>
+                            <div className="flex justify-between items-start mb-2">
+                                <span className="text-xs font-bold text-pink-400 uppercase tracking-wider">Holiday Song</span>
+                                {memory.songUrl && (
+                                    <div className="flex gap-2">
+                                        <button onClick={() => handleSaveAudio('song')} className="text-emerald-500 hover:text-emerald-700" title="Save to Cloud"><CloudUpload size={14}/></button>
+                                        <Music size={14} className="text-pink-400" />
+                                    </div>
+                                )}
+                            </div>
+                            <p className="text-sm text-slate-600 whitespace-pre-wrap mb-3 text-xs leading-relaxed max-h-24 overflow-y-auto border-l-2 border-pink-200 pl-2">
+                                {memory.songLyrics || "Lyrics not generated yet..."}
+                            </p>
+                            {memory.songUrl ? (
+                                <button 
+                                    onClick={() => playAudio(memory.songUrl!)}
+                                    className={`w-full py-2 rounded-lg flex items-center justify-center gap-2 font-bold text-xs transition-colors ${playingUrl === memory.songUrl ? 'bg-red-500 text-white' : 'bg-pink-600 text-white hover:bg-pink-500'}`}
+                                >
+                                    {playingUrl === memory.songUrl ? <Pause size={14}/> : <Play size={14}/>}
+                                    {playingUrl === memory.songUrl ? 'Playing...' : 'Play Song'}
+                                </button>
+                            ) : (
+                                <div className="text-center text-xs text-slate-400 py-2 border border-dashed border-slate-300 rounded">
+                                    Not Generated
+                                </div>
+                            )}
                         </div>
-                        <div className="flex flex-col items-center gap-1">
-                             <div className="w-1 h-10 bg-indigo-500 rounded-full animate-bounce" style={{animationDelay: '0.3s'}}></div>
-                        </div>
-                         <div className="flex flex-col items-center gap-1">
-                             <div className="w-1 h-6 bg-indigo-300 rounded-full animate-bounce" style={{animationDelay: '0.4s'}}></div>
-                        </div>
-                    </div>
+                     </div>
                 </div>
             )}
           </>
@@ -659,22 +834,27 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack }) => {
               </button>
               <h1 className="text-xl font-holiday font-bold text-white flex items-center gap-2">
                   <Gift className="text-red-500" /> Holiday Card Workshop
+                  {isViewer && <span className="text-xs bg-slate-800 px-2 py-1 rounded text-slate-400 font-sans border border-slate-700">Viewer Mode</span>}
               </h1>
           </div>
           <div className="flex gap-2">
               <button onClick={handleExportPDF} disabled={isExporting} className="flex items-center gap-2 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 rounded-lg text-xs font-bold transition-colors">
                   {isExporting ? <Loader2 size={14} className="animate-spin"/> : <Download size={14} />} 
-                  {isExporting ? 'Generating PDF...' : 'Download PDF (4 Pages)'}
+                  <span className="hidden sm:inline">{isExporting ? 'Generating PDF...' : 'Download PDF'}</span>
               </button>
-              <button onClick={handleShareLink} className="flex items-center gap-2 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 rounded-lg text-xs font-bold transition-colors shadow-lg">
-                  <Share2 size={14} /> Share Page
-              </button>
+              {!isViewer && (
+                <button onClick={handlePublishAndShare} disabled={isPublishing} className="flex items-center gap-2 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 rounded-lg text-xs font-bold transition-colors shadow-lg">
+                    {isPublishing ? <Loader2 size={14} className="animate-spin"/> : <Share2 size={14} />} 
+                    <span className="hidden sm:inline">Publish & Share</span>
+                </button>
+              )}
           </div>
       </div>
 
       <div className="flex flex-1 overflow-hidden flex-col md:flex-row">
           
-          {/* LEFT PANEL: CONTROLS */}
+          {/* LEFT PANEL: CONTROLS (Hidden in Viewer Mode) */}
+          {!isViewer && (
           <div className="w-full md:w-96 bg-slate-900 border-r border-slate-800 flex flex-col shrink-0">
               <div className="flex border-b border-slate-800">
                   <button onClick={() => setActiveTab('settings')} className={`flex-1 py-3 text-sm font-bold transition-colors ${activeTab==='settings' ? 'bg-slate-800 text-white border-b-2 border-indigo-500' : 'text-slate-500 hover:text-slate-300'}`}>Edit</button>
@@ -872,46 +1052,55 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack }) => {
                               {activePage === 4 && (
                                   <div className="space-y-4">
                                       <div className="bg-slate-900/50 p-4 rounded-xl border border-slate-800">
-                                          <h3 className="text-sm font-bold text-white mb-2 flex items-center gap-2"><Music className="text-indigo-400" size={16}/> Music AI Sandbox</h3>
-                                          <p className="text-xs text-slate-400 mb-4">Generate custom audio for your card using AI.</p>
+                                          <h3 className="text-sm font-bold text-white mb-3 flex items-center gap-2">
+                                              <Music className="text-indigo-400" size={16}/> Audio Generator
+                                          </h3>
                                           
-                                          <div className="flex gap-2 mb-4">
+                                          {/* Voice Message Generator */}
+                                          <div className="bg-slate-800/50 p-3 rounded-lg border border-slate-700 mb-3">
+                                              <div className="flex justify-between items-center mb-2">
+                                                  <span className="text-xs font-bold text-indigo-300">Voice Message</span>
+                                                  {memory.voiceMessageUrl && (
+                                                      <div className="flex gap-2 items-center">
+                                                          <span className="text-[10px] text-emerald-400">Ready</span>
+                                                          <button onClick={() => handleSaveAudio('message')} disabled={isUploadingAudio} className="text-xs text-indigo-400 hover:text-white" title="Save to Cloud">
+                                                              {isUploadingAudio ? <Loader2 size={12} className="animate-spin"/> : <CloudUpload size={14}/>}
+                                                          </button>
+                                                      </div>
+                                                  )}
+                                              </div>
                                               <button 
                                                   onClick={() => handleGenAudio('message')}
-                                                  disabled={isGeneratingAudio}
-                                                  className="flex-1 py-2 bg-slate-800 hover:bg-slate-700 rounded-lg text-xs font-bold text-slate-300 border border-slate-600 transition-colors"
+                                                  disabled={isGeneratingVoice}
+                                                  className="w-full py-2 bg-slate-700 hover:bg-indigo-600 text-white rounded-lg text-xs font-bold transition-colors flex items-center justify-center gap-2"
                                               >
-                                                  Voice Message
-                                              </button>
-                                              <button 
-                                                  onClick={() => handleGenAudio('song')}
-                                                  disabled={isGeneratingAudio}
-                                                  className="flex-1 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-bold transition-colors shadow-lg"
-                                              >
-                                                  Generate Song
+                                                  {isGeneratingVoice ? <Loader2 size={12} className="animate-spin"/> : <Mic size={12}/>}
+                                                  {memory.voiceMessageUrl ? 'Regenerate Voice' : 'Generate Voice'}
                                               </button>
                                           </div>
-                                          
-                                          {isGeneratingAudio && (
-                                              <div className="text-center py-4">
-                                                  <Loader2 size={24} className="animate-spin text-indigo-400 mx-auto mb-2"/>
-                                                  <p className="text-xs text-slate-500">Creating magic...</p>
-                                              </div>
-                                          )}
-                                          
-                                          {memory.audioUrl && (
-                                              <div className="bg-slate-800 p-3 rounded-lg border border-slate-700 flex items-center gap-3">
-                                                  <button onClick={toggleAudio} className="w-10 h-10 rounded-full bg-indigo-600 flex items-center justify-center text-white shadow-lg">
-                                                      {isPlayingAudio ? <Pause size={16}/> : <Play size={16} className="ml-1"/>}
-                                                  </button>
-                                                  <div className="flex-1 overflow-hidden">
-                                                      <p className="text-xs font-bold text-white truncate">{memory.audioScript || "Audio Message"}</p>
-                                                      <div className="flex items-center gap-1 text-[10px] text-slate-400">
-                                                          <Volume2 size={10}/> <span>AI Generated</span>
+
+                                          {/* Song Generator */}
+                                          <div className="bg-slate-800/50 p-3 rounded-lg border border-slate-700">
+                                              <div className="flex justify-between items-center mb-2">
+                                                  <span className="text-xs font-bold text-pink-300">Custom Song</span>
+                                                  {memory.songUrl && (
+                                                      <div className="flex gap-2 items-center">
+                                                          <span className="text-[10px] text-emerald-400">Ready</span>
+                                                          <button onClick={() => handleSaveAudio('song')} disabled={isUploadingAudio} className="text-xs text-pink-400 hover:text-white" title="Save to Cloud">
+                                                              {isUploadingAudio ? <Loader2 size={12} className="animate-spin"/> : <CloudUpload size={14}/>}
+                                                          </button>
                                                       </div>
-                                                  </div>
+                                                  )}
                                               </div>
-                                          )}
+                                              <button 
+                                                  onClick={() => handleGenAudio('song')}
+                                                  disabled={isGeneratingSong}
+                                                  className="w-full py-2 bg-slate-700 hover:bg-pink-600 text-white rounded-lg text-xs font-bold transition-colors flex items-center justify-center gap-2"
+                                              >
+                                                  {isGeneratingSong ? <Loader2 size={12} className="animate-spin"/> : <Music size={12}/>}
+                                                  {memory.songUrl ? 'Regenerate Song' : 'Generate Song'}
+                                              </button>
+                                          </div>
                                       </div>
                                   </div>
                               )}
@@ -967,6 +1156,7 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack }) => {
                   )}
               </div>
           </div>
+          )}
 
           {/* RIGHT PANEL: PREVIEW */}
           <div className="flex-1 bg-slate-950 p-4 md:p-8 flex flex-col items-center overflow-auto relative">
@@ -1027,6 +1217,47 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack }) => {
 
           </div>
       </div>
+      
+      {/* Share Modal */}
+      {showShareModal && shareLink && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in">
+           <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-md p-6 shadow-2xl">
+               <div className="flex justify-between items-center mb-4">
+                  <h3 className="text-lg font-bold text-white flex items-center gap-2"><Sparkles className="text-emerald-400"/> Card Published!</h3>
+                  <button onClick={() => setShowShareModal(false)}><X className="text-slate-400 hover:text-white"/></button>
+               </div>
+               
+               <p className="text-sm text-slate-300 mb-4">Your interactive holiday card is live. Share this link for friends to view and listen.</p>
+               
+               <div className="bg-slate-950 border border-slate-800 rounded-lg p-3 flex items-center gap-2 mb-4">
+                  <span className="flex-1 text-xs text-slate-300 truncate font-mono">{shareLink}</span>
+                  <button onClick={() => navigator.clipboard.writeText(shareLink)} className="p-1.5 hover:bg-slate-800 rounded text-slate-400 hover:text-white"><Share2 size={14}/></button>
+               </div>
+               
+               <div className="bg-indigo-900/20 p-4 rounded-xl border border-indigo-500/30">
+                  <label className="text-xs font-bold text-indigo-300 uppercase mb-2 block">Send to Chat</label>
+                  <div className="flex gap-2">
+                     <select 
+                        value={selectedChatTarget} 
+                        onChange={(e) => setSelectedChatTarget(e.target.value)}
+                        className="flex-1 bg-slate-900 border border-slate-700 rounded-lg text-xs text-white p-2 outline-none"
+                     >
+                        {chatTargets.map(t => <option key={t.id} value={t.id}>{t.type === 'dm' ? '@' : '#'}{t.name}</option>)}
+                     </select>
+                     <button 
+                        onClick={handleSendToChat}
+                        disabled={isSendingToChat || chatTargets.length === 0}
+                        className="px-3 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-lg flex items-center gap-1"
+                     >
+                        {isSendingToChat ? <Loader2 size={12} className="animate-spin"/> : <Send size={12}/>}
+                        Send
+                     </button>
+                  </div>
+               </div>
+           </div>
+        </div>
+      )}
+
     </div>
   );
 };
