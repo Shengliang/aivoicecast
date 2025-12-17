@@ -4,7 +4,7 @@ import { getUserChannels, deleteUserChannel, saveUserChannel } from '../utils/db
 import { getCreatorChannels } from '../services/firestoreService';
 import { auth } from '../services/firebaseConfig';
 import { Channel } from '../types';
-import { ArrowLeft, RefreshCw, Trash2, HardDrive, Edit, Calendar, DownloadCloud, CloudDownload } from 'lucide-react';
+import { ArrowLeft, RefreshCw, Trash2, HardDrive, Edit, Calendar, DownloadCloud, CloudDownload, AlertCircle } from 'lucide-react';
 import { HANDCRAFTED_CHANNELS } from '../utils/initialData';
 
 interface MyChannelInspectorProps {
@@ -14,17 +14,27 @@ interface MyChannelInspectorProps {
 export const MyChannelInspector: React.FC<MyChannelInspectorProps> = ({ onBack }) => {
   const [channels, setChannels] = useState<Channel[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const currentUser = auth.currentUser;
 
   const loadData = async () => {
     setIsLoading(true);
+    setErrorMsg(null);
     try {
-      const data = await getUserChannels();
+      // Race condition safety: Timeout after 5 seconds if DB is locked
+      const timeout = new Promise<Channel[]>((_, reject) => 
+          setTimeout(() => reject(new Error("Database load timed out. Please reload the page.")), 5000)
+      );
+      
+      const dbPromise = getUserChannels();
+      const data = await Promise.race([dbPromise, timeout]);
+      
       // Sort by created time descending
       data.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
       setChannels(data);
     } catch (e: any) {
       console.error(e);
+      setErrorMsg(e.message);
       alert(`Failed to load local channels: ${e.message}`);
     } finally {
       setIsLoading(false);
@@ -71,14 +81,15 @@ export const MyChannelInspector: React.FC<MyChannelInspectorProps> = ({ onBack }
   const handleSeedLocal = async () => {
       if (!confirm("Import built-in channels to your Local Storage? This is useful for testing offline availability.")) return;
       setIsLoading(true);
+      setErrorMsg(null);
       try {
           for (const ch of HANDCRAFTED_CHANNELS) {
               await saveUserChannel(ch);
           }
           await loadData();
           alert(`Imported ${HANDCRAFTED_CHANNELS.length} channels to local storage.`);
-      } catch(e) {
-          alert("Import failed.");
+      } catch(e: any) {
+          alert("Import failed: " + e.message);
       } finally {
           setIsLoading(false);
       }
@@ -90,6 +101,7 @@ export const MyChannelInspector: React.FC<MyChannelInspectorProps> = ({ onBack }
           return;
       }
       setIsLoading(true);
+      setErrorMsg(null);
       try {
           // Fetch from Firestore
           const cloudChannels = await getCreatorChannels(currentUser.uid);
@@ -108,6 +120,7 @@ export const MyChannelInspector: React.FC<MyChannelInspectorProps> = ({ onBack }
           }
       } catch(e: any) {
           console.error(e);
+          setErrorMsg(e.message);
           alert("Sync failed: " + e.message);
       } finally {
           setIsLoading(false);
@@ -152,6 +165,16 @@ export const MyChannelInspector: React.FC<MyChannelInspectorProps> = ({ onBack }
                </button>
            </div>
         </div>
+        
+        {errorMsg && (
+            <div className="bg-red-900/20 border border-red-900/50 p-4 rounded-xl flex items-center gap-3 text-red-200">
+                <AlertCircle size={24} />
+                <div>
+                    <p className="font-bold text-sm">Error Loading Database</p>
+                    <p className="text-xs">{errorMsg}</p>
+                </div>
+            </div>
+        )}
 
         {/* Table */}
         <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow-xl">
@@ -215,7 +238,7 @@ export const MyChannelInspector: React.FC<MyChannelInspectorProps> = ({ onBack }
                       </td>
                    </tr>
                  ))}
-                 {channels.length === 0 && (
+                 {!isLoading && channels.length === 0 && (
                    <tr>
                       <td colSpan={5} className="px-6 py-12 text-center text-slate-600 italic">
                          No local user channels found in 'user_channels' store.<br/>

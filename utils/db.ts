@@ -35,9 +35,18 @@ function openDB(): Promise<IDBDatabase> {
     };
 
     request.onsuccess = () => resolve(request.result);
+    
     request.onerror = () => {
       dbPromise = null;
+      console.error("IndexedDB Error:", request.error);
       reject(request.error);
+    };
+
+    request.onblocked = () => {
+        dbPromise = null;
+        const msg = "Database upgrade blocked. Please close other tabs/windows of this app and reload.";
+        console.warn(msg);
+        reject(new Error(msg));
     };
   });
 
@@ -200,7 +209,6 @@ export async function deleteUserChannel(id: string): Promise<void> {
 
 // --- Backup & Restore Functions ---
 
-// Helper: Convert ArrayBuffer to Base64 string
 function arrayBufferToBase64(buffer: ArrayBuffer): string {
   let binary = '';
   const bytes = new Uint8Array(buffer);
@@ -211,7 +219,6 @@ function arrayBufferToBase64(buffer: ArrayBuffer): string {
   return btoa(binary);
 }
 
-// Helper: Convert Base64 string to ArrayBuffer
 function base64ToArrayBuffer(base64: string): ArrayBuffer {
   const binary_string = atob(base64);
   const len = binary_string.length;
@@ -230,12 +237,10 @@ export async function exportFullDatabase(): Promise<string> {
     customChannels: []
   };
 
-  // 1. Export Text Content
   await new Promise<void>((resolve, reject) => {
     const transaction = db.transaction(TEXT_STORE_NAME, 'readonly');
     const store = transaction.objectStore(TEXT_STORE_NAME);
     const request = store.openCursor();
-    
     request.onsuccess = (event) => {
       const cursor = (event.target as IDBRequest).result;
       if (cursor) {
@@ -248,16 +253,13 @@ export async function exportFullDatabase(): Promise<string> {
     request.onerror = () => reject(request.error);
   });
 
-  // 2. Export Audio Content (Convert to Base64)
   await new Promise<void>((resolve, reject) => {
     const transaction = db.transaction(STORE_NAME, 'readonly');
     const store = transaction.objectStore(STORE_NAME);
     const request = store.openCursor();
-
     request.onsuccess = (event) => {
       const cursor = (event.target as IDBRequest).result;
       if (cursor) {
-        // Convert Blob/ArrayBuffer to Base64 for JSON storage
         const base64 = arrayBufferToBase64(cursor.value);
         exportData.audio.push({ key: cursor.key, value: base64 });
         cursor.continue();
@@ -268,12 +270,10 @@ export async function exportFullDatabase(): Promise<string> {
     request.onerror = () => reject(request.error);
   });
 
-  // 3. Export Custom Channels (New)
   await new Promise<void>((resolve, reject) => {
     const transaction = db.transaction(CHANNELS_STORE_NAME, 'readonly');
     const store = transaction.objectStore(CHANNELS_STORE_NAME);
     const request = store.openCursor();
-    
     request.onsuccess = (event) => {
       const cursor = (event.target as IDBRequest).result;
       if (cursor) {
@@ -294,15 +294,13 @@ export async function exportMetadataOnly(): Promise<string> {
   const exportData: any = {
     lectures: [],
     customChannels: [],
-    audio: [] // Empty audio array to maintain compatibility if imported by full importer
+    audio: []
   };
 
-  // 1. Export Text Content
   await new Promise<void>((resolve, reject) => {
     const transaction = db.transaction(TEXT_STORE_NAME, 'readonly');
     const store = transaction.objectStore(TEXT_STORE_NAME);
     const request = store.openCursor();
-    
     request.onsuccess = (event) => {
       const cursor = (event.target as IDBRequest).result;
       if (cursor) {
@@ -315,12 +313,10 @@ export async function exportMetadataOnly(): Promise<string> {
     request.onerror = () => reject(request.error);
   });
 
-  // 2. Export Custom Channels
   await new Promise<void>((resolve, reject) => {
     const transaction = db.transaction(CHANNELS_STORE_NAME, 'readonly');
     const store = transaction.objectStore(CHANNELS_STORE_NAME);
     const request = store.openCursor();
-    
     request.onsuccess = (event) => {
       const cursor = (event.target as IDBRequest).result;
       if (cursor) {
@@ -340,7 +336,6 @@ export async function importFullDatabase(jsonData: string): Promise<void> {
   const data = JSON.parse(jsonData);
   const db = await openDB();
 
-  // 1. Import Lectures
   if (data.lectures && Array.isArray(data.lectures)) {
     const transaction = db.transaction(TEXT_STORE_NAME, 'readwrite');
     const store = transaction.objectStore(TEXT_STORE_NAME);
@@ -350,7 +345,6 @@ export async function importFullDatabase(jsonData: string): Promise<void> {
     await new Promise((resolve) => { transaction.oncomplete = resolve; });
   }
 
-  // 2. Import Audio
   if (data.audio && Array.isArray(data.audio)) {
     const transaction = db.transaction(STORE_NAME, 'readwrite');
     const store = transaction.objectStore(STORE_NAME);
@@ -361,7 +355,6 @@ export async function importFullDatabase(jsonData: string): Promise<void> {
     await new Promise((resolve) => { transaction.oncomplete = resolve; });
   }
   
-  // 3. Import Custom Channels
   if (data.customChannels && Array.isArray(data.customChannels)) {
       const transaction = db.transaction(CHANNELS_STORE_NAME, 'readwrite');
       const store = transaction.objectStore(CHANNELS_STORE_NAME);
@@ -371,8 +364,6 @@ export async function importFullDatabase(jsonData: string): Promise<void> {
       await new Promise((resolve) => { transaction.oncomplete = resolve; });
   }
 }
-
-// --- DEBUG FUNCTIONS ---
 
 export interface DebugEntry {
   store: string;
@@ -396,7 +387,7 @@ export async function getAllDebugEntries(): Promise<DebugEntry[]> {
           const cursor = (e.target as IDBRequest).result;
           if (cursor) {
             let size = 0;
-            if (storeName === STORE_NAME) { // Audio
+            if (storeName === STORE_NAME) { 
                size = (cursor.value as ArrayBuffer).byteLength;
             } else {
                size = JSON.stringify(cursor.value).length;
@@ -411,7 +402,7 @@ export async function getAllDebugEntries(): Promise<DebugEntry[]> {
             resolve();
           }
         };
-        request.onerror = () => resolve(); // skip on error
+        request.onerror = () => resolve(); 
       });
     } catch(e) {
       console.warn(`Could not read store ${storeName}`, e);
