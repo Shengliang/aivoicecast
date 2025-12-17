@@ -59,7 +59,7 @@ import { HANDCRAFTED_CHANNELS, CATEGORY_STYLES, TOPIC_CATEGORIES } from './utils
 import { OFFLINE_CHANNEL_ID } from './utils/offlineContent';
 import { GEMINI_API_KEY } from './services/private_keys';
 
-const APP_VERSION = "v3.78.0"; 
+const APP_VERSION = "v3.79.0"; 
 
 const UI_TEXT = {
   en: {
@@ -94,7 +94,7 @@ const UI_TEXT = {
     appTitle: "AI 播客",
     directory: "探索",
     myFeed: "我的订阅",
-    live: "直播间",
+    live: "直播中",
     search: "搜索主题...",
     create: "创建播客",
     host: "主播",

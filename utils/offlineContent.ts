@@ -1,7 +1,7 @@
 
 import { Chapter, GeneratedLecture } from '../types';
 
-export const OFFLINE_CHANNEL_ID = 'offline-architecture-101';
+export const OFFLINE_CHANNEL_ID = 'aivoicecast-platform-official';
 
 export const OFFLINE_CURRICULUM: Chapter[] = [
   {

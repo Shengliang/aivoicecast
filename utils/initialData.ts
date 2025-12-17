@@ -87,7 +87,7 @@ export const HANDCRAFTED_CHANNELS: Channel[] = [
     dislikes: 0,
     comments: [],
     tags: ['Architecture', 'React', 'Canvas', 'GenAI'],
-    imageUrl: 'https://image.pollinations.ai/prompt/isometric%203d%20software%20architecture%20blueprint%20glowing%20holographic%20data%20streams%20serverless%20cloud%20infrastructure%20react%20code%20nodes%20dark%20cyberpunk%20background%20cinematic%20lighting%208k?width=600&height=400&nologo=true',
+    imageUrl: 'https://image.pollinations.ai/prompt/futuristic%20AI%20interface%20holographic%20dashboard%20glowing%20nodes%20dark%20cyberpunk%208k?width=600&height=400&nologo=true',
     welcomeMessage: "Welcome. This platform is a testament to the power of Google AI Studio, Gemini 3, and OpenAI APIs. We have evolved beyond a simple player into a comprehensive Knowledge OS—ready to generate, teach, and build alongside you.",
     starterPrompts: [
       "How does the Card Workshop generate PDFs?",
