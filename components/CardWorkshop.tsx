@@ -189,23 +189,23 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack, cardId, isVi
   const generatePDFBlob = async (): Promise<Blob | null> => {
       try {
           // Give the DOM a moment to ensure images and layout are fully rendered in the hidden export area
-          await new Promise(resolve => setTimeout(resolve, 600));
+          await new Promise(resolve => setTimeout(resolve, 1000));
           
           const pdf = new jsPDF({ orientation: 'portrait', unit: 'px', format: [360, 540] });
           for (let i = 0; i <= 3; i++) { 
               const el = document.getElementById(`export-card-page-${i}`);
               if (el) {
                   const canvas = await html2canvas(el, { 
-                      scale: 3, // Higher scale for print quality
+                      scale: 3, // High scale for crisp printing
                       useCORS: true, 
                       logging: false,
                       backgroundColor: null,
-                      scrollX: 0,
-                      scrollY: 0
+                      width: 360,
+                      height: 540
                   });
                   if (i > 0) pdf.addPage();
-                  // Force exact dimensions to prevent any slivers of background
-                  pdf.addImage(canvas.toDataURL('image/jpeg', 0.98), 'JPEG', 0, 0, 360, 540, undefined, 'FAST');
+                  // Explicitly use page dimensions to avoid any stretch during image placement
+                  pdf.addImage(canvas.toDataURL('image/jpeg', 0.95), 'JPEG', 0, 0, 360, 540, undefined, 'FAST');
               }
           }
           return pdf.output('blob');
@@ -260,7 +260,6 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack, cardId, isVi
           const cid = cardId || crypto.randomUUID();
           const updatedMemory = { ...memory };
 
-          // 1. Helper to upload local blobs to Storage
           const syncMedia = async (url: string | undefined, path: string) => {
               if (!url || !isLocalUrl(url)) return url;
               const res = await fetch(url);
@@ -268,13 +267,11 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack, cardId, isVi
               return await uploadFileToStorage(path, blob);
           };
 
-          // 2. Sync all media parts
           updatedMemory.coverImageUrl = await syncMedia(updatedMemory.coverImageUrl, `cards/${cid}/cover.jpg`);
           updatedMemory.backImageUrl = await syncMedia(updatedMemory.backImageUrl, `cards/${cid}/back.jpg`);
           updatedMemory.voiceMessageUrl = await syncMedia(updatedMemory.voiceMessageUrl, `cards/${cid}/voice.wav`);
           updatedMemory.songUrl = await syncMedia(updatedMemory.songUrl, `cards/${cid}/song.wav`);
 
-          // 3. Sync User Photos
           if (updatedMemory.userImages.length > 0) {
               const newPhotos = [];
               for (let i = 0; i < updatedMemory.userImages.length; i++) {
@@ -287,7 +284,7 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack, cardId, isVi
 
           setPublishProgress('Saving to database...');
           const finalCardId = await saveCard(updatedMemory, cid); 
-          setMemory(updatedMemory); // Update local state with permanent URLs
+          setMemory(updatedMemory);
           setShareLink(`${window.location.origin}?view=card&id=${finalCardId}`);
           setShowShareModal(true);
       } catch(e: any) { 
@@ -355,15 +352,23 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack, cardId, isVi
           )}
 
           {page === 3 && (
-            <div className="p-8 h-full flex flex-col items-center justify-between text-center">
-                {memory.backImageUrl ? (
-                    <img src={memory.backImageUrl} className="w-full h-32 object-cover rounded-xl shadow-md" crossOrigin="anonymous" alt=""/>
-                ) : (
-                    <div className="w-full h-32 bg-slate-100 rounded-xl flex items-center justify-center text-slate-300">
-                        <ImageIcon size={24}/>
-                    </div>
-                )}
-                <div className="flex flex-col items-center gap-2">
+            <div className="p-8 h-full flex flex-col items-center justify-between text-center bg-white">
+                <div className="w-full flex-1 flex flex-col justify-center max-h-[300px] overflow-hidden rounded-xl shadow-md border border-slate-100">
+                    {memory.backImageUrl ? (
+                        <img 
+                            src={memory.backImageUrl} 
+                            className="w-full h-full object-cover" 
+                            crossOrigin="anonymous" 
+                            alt="Back Cover"
+                            style={{ aspectRatio: '16/9' }}
+                        />
+                    ) : (
+                        <div className="w-full aspect-video bg-slate-50 flex items-center justify-center text-slate-200">
+                            <ImageIcon size={48}/>
+                        </div>
+                    )}
+                </div>
+                <div className="flex flex-col items-center gap-2 mt-6">
                     {qrCodeBase64 ? (
                         <img src={qrCodeBase64} className="w-20 h-20 opacity-80" alt="QR Code"/>
                     ) : (
@@ -375,17 +380,20 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack, cardId, isVi
           )}
 
           {page === 4 && (
-            <div className="p-8 h-full flex flex-col items-center">
-                <div className="text-center mb-6">
+            <div className="h-full flex flex-col relative">
+                <div className="flex-shrink-0 p-8 pt-10 text-center bg-white z-10">
                     <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">Voice Greeting</h3>
                     <div className="w-8 h-1 bg-indigo-500 mx-auto rounded-full"></div>
                 </div>
                 
-                <div className="flex-1 w-full overflow-y-auto scrollbar-hide text-center text-slate-600 italic text-sm px-4 mb-6 leading-relaxed flex flex-col justify-center">
-                    "{memory.cardMessage}"
+                <div className="flex-1 w-full overflow-y-auto scrollbar-hide text-center text-slate-600 italic text-sm px-8 leading-relaxed">
+                    {/* Use my-auto on text block to center while allowing scrolling to beginning if tall */}
+                    <div className="min-h-full flex flex-col justify-center py-4">
+                        <p className="whitespace-pre-wrap">"{memory.cardMessage}"</p>
+                    </div>
                 </div>
 
-                <div className="flex flex-col items-center gap-3">
+                <div className="flex-shrink-0 p-8 flex flex-col items-center gap-3 bg-white z-10">
                     <button 
                         onClick={() => memory.voiceMessageUrl && playAudio(memory.voiceMessageUrl)} 
                         className={`w-14 h-14 bg-indigo-600 text-white rounded-full flex items-center justify-center shadow-lg transition-all active:scale-95 ${playingUrl === memory.voiceMessageUrl ? 'ring-4 ring-indigo-500/30 bg-red-500' : 'hover:bg-indigo-500'}`}
@@ -398,17 +406,19 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack, cardId, isVi
           )}
 
           {page === 5 && (
-            <div className="p-8 h-full flex flex-col items-center">
-                <div className="text-center mb-6">
+            <div className="h-full flex flex-col relative">
+                <div className="flex-shrink-0 p-8 pt-10 text-center bg-white z-10">
                     <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">Holiday Song</h3>
                     <div className="w-8 h-1 bg-pink-500 mx-auto rounded-full"></div>
                 </div>
                 
-                <div className="flex-1 w-full overflow-y-auto scrollbar-hide text-center text-slate-600 text-[10px] px-2 mb-6 leading-tight flex flex-col justify-start">
-                    <p className="whitespace-pre-wrap font-medium">{memory.songLyrics || "Generating song lyrics..."}</p>
+                <div className="flex-1 w-full overflow-y-auto scrollbar-hide text-center text-slate-600 text-[10px] px-8 leading-tight">
+                    <div className="min-h-full flex flex-col justify-center py-4">
+                        <p className="whitespace-pre-wrap font-medium">{memory.songLyrics || "Generating song lyrics..."}</p>
+                    </div>
                 </div>
 
-                <div className="flex flex-col items-center gap-3">
+                <div className="flex-shrink-0 p-8 flex flex-col items-center gap-3 bg-white z-10">
                     <button 
                         onClick={() => memory.songUrl && playAudio(memory.songUrl)} 
                         className={`w-14 h-14 bg-pink-600 text-white rounded-full flex items-center justify-center shadow-lg transition-all active:scale-95 ${playingUrl === memory.songUrl ? 'ring-4 ring-pink-500/30 bg-red-500' : 'hover:bg-pink-500'}`}
@@ -423,19 +433,17 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack, cardId, isVi
   );
 
   return (
-    <div className="flex flex-col h-full bg-slate-950 text-slate-100 overflow-hidden">
+    <div className="flex flex-col h-full bg-slate-950 text-slate-100 overflow-hidden relative">
       <div className="flex flex-1 overflow-hidden flex-col md:flex-row">
           
           {/* LEFT PANEL: CONTROLS */}
           {!isViewer && (
           <div className="w-full md:w-96 bg-slate-900 border-r border-slate-800 flex flex-col shrink-0 h-full overflow-hidden z-30">
-              {/* FIXED HEADER: TABS */}
               <div className="flex-shrink-0 flex border-b border-slate-800 bg-slate-900">
                   <button onClick={() => setActiveTab('chat')} className={`flex-1 py-3 text-sm font-bold transition-colors ${activeTab==='chat' ? 'bg-slate-800 text-white border-b-2 border-indigo-500' : 'text-slate-500'}`}>Elf Assistant</button>
                   <button onClick={() => setActiveTab('settings')} className={`flex-1 py-3 text-sm font-bold transition-colors ${activeTab==='settings' ? 'bg-slate-800 text-white border-b-2 border-indigo-500' : 'text-slate-500'}`}>Edit Context</button>
               </div>
 
-              {/* SCROLLABLE BODY: FORMS */}
               <div className="flex-1 overflow-y-auto min-h-0 scrollbar-thin scrollbar-thumb-slate-800">
                   {activeTab === 'settings' ? (
                         <div className="p-6 space-y-8 pb-20">
@@ -545,7 +553,6 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack, cardId, isVi
                   )}
               </div>
 
-              {/* FIXED FOOTER: ACTIONS */}
               <div className="flex-shrink-0 p-4 border-t border-slate-800 bg-slate-950 flex flex-col gap-3">
                   <div className="flex items-center gap-3">
                         <button onClick={handleLiveToggle} className={`flex-1 h-12 rounded-xl font-bold flex items-center justify-center gap-2 transition-all shadow-lg active:scale-95 ${isLiveActive ? 'bg-red-600 text-white animate-pulse' : 'bg-emerald-600 hover:bg-emerald-500 text-white'}`}>
@@ -589,7 +596,8 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack, cardId, isVi
               </div>
 
               {/* SCROLLABLE BODY: PREVIEW AREA */}
-              <div className="flex-1 w-full flex flex-col items-center justify-center min-h-0 overflow-y-auto scrollbar-hide pb-10">
+              {/* Removed items-center and justify-center when in viewer mode to fix starting scroll position */}
+              <div className={`flex-1 w-full flex flex-col min-h-0 overflow-y-auto scrollbar-hide pb-10 ${isViewer ? '' : 'items-center justify-center'}`}>
                   {isViewer ? (
                       <div className="w-full flex flex-col items-center gap-12 py-8">
                           {[0, 1, 2, 3, 4, 5].map((pageNum) => (
@@ -608,10 +616,14 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack, cardId, isVi
                   )}
               </div>
 
-              {/* HIDDEN EXPORT AREA */}
+              {/* HIDDEN EXPORT AREA - Strictly lock dimensions for PDF capture */}
               {(isExporting || isExportingPackage) && (
                   <div style={{ position: 'absolute', left: '-9999px', top: '-9999px', opacity: 0 }}>
-                      {[0, 1, 2, 3].map(pageNum => <div key={pageNum} id={`export-card-page-${pageNum}`} className="w-[360px] h-[540px] overflow-hidden flex flex-col relative">{renderCardContent(pageNum)}</div>)}
+                      {[0, 1, 2, 3].map(pageNum => (
+                        <div key={pageNum} id={`export-card-page-${pageNum}`} style={{ width: '360px', height: '540px' }} className="overflow-hidden flex flex-col relative">
+                            {renderCardContent(pageNum)}
+                        </div>
+                      ))}
                   </div>
               )}
           </div>
