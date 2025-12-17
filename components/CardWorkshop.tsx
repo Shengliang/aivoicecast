@@ -104,7 +104,8 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack, cardId, isVi
   useEffect(() => {
       liveServiceRef.current = new GeminiLiveService();
       liveServiceRef.current.initializeAudio();
-      return () => liveServiceRef.current?.disconnect();
+      // Fix: Wrapping the cleanup call in a block ensures it returns void, avoiding the TypeScript error: Argument of type '() => () => Promise<void>' is not assignable to parameter of type 'EffectCallback'.
+      return () => { liveServiceRef.current?.disconnect(); };
   }, []);
 
   useEffect(() => {
@@ -188,17 +189,31 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack, cardId, isVi
 
   const generatePDFBlob = async (): Promise<Blob | null> => {
       try {
+          // Give the DOM a moment to ensure images are rendered in the hidden export area
+          await new Promise(resolve => setTimeout(resolve, 500));
+          
           const pdf = new jsPDF({ orientation: 'portrait', unit: 'px', format: [360, 540] });
           for (let i = 0; i <= 3; i++) { // Exporting 4 main pages
               const el = document.getElementById(`export-card-page-${i}`);
               if (el) {
-                  const canvas = await html2canvas(el, { scale: 2, useCORS: true, width: 360, height: 540 });
+                  // html2canvas needs useCORS: true and standard img tags for reliable cross-origin capture
+                  const canvas = await html2canvas(el, { 
+                      scale: 2, 
+                      useCORS: true, 
+                      width: 360, 
+                      height: 540,
+                      logging: false,
+                      backgroundColor: null
+                  });
                   if (i > 0) pdf.addPage();
                   pdf.addImage(canvas.toDataURL('image/jpeg', 0.95), 'JPEG', 0, 0, 360, 540);
               }
           }
           return pdf.output('blob');
-      } catch(e) { return null; }
+      } catch(e) { 
+          console.error("PDF generation error", e);
+          return null; 
+      }
   };
 
   const handleExportPDF = async () => {
@@ -295,7 +310,13 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack, cardId, isVi
       <div className={`w-full h-full flex flex-col relative overflow-hidden ${memory.theme === 'chinese-poem' ? 'bg-[#f5f0e1]' : 'bg-white'}`}>
           {page === 0 && (
               memory.coverImageUrl ? (
-                <div className="absolute inset-0" style={{ backgroundImage: `url(${memory.coverImageUrl})`, backgroundSize: 'cover', backgroundPosition: 'center' }} />
+                <img 
+                    src={memory.coverImageUrl} 
+                    className="absolute inset-0 w-full h-full object-cover" 
+                    crossOrigin="anonymous"
+                    alt="Front Cover"
+                    loading="eager"
+                />
               ) : (
                 <div className="w-full h-full bg-slate-200 flex flex-col items-center justify-center text-slate-400 gap-2">
                     <ImageIcon size={48} className="opacity-20"/>
@@ -320,8 +341,8 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack, cardId, isVi
                 <div className="grid grid-cols-2 gap-3 flex-1">
                     {memory.userImages.length > 0 ? (
                         memory.userImages.slice(0,4).map((img, i) => (
-                            <div key={i} className="bg-slate-100 rounded-lg overflow-hidden border border-slate-200 shadow-sm">
-                                <img src={img} className="w-full h-full object-cover" alt=""/>
+                            <div key={i} className="bg-slate-100 rounded-lg overflow-hidden border border-slate-200 shadow-sm relative">
+                                <img src={img} className="w-full h-full object-cover" crossOrigin="anonymous" alt=""/>
                             </div>
                         ))
                     ) : (
@@ -337,7 +358,7 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack, cardId, isVi
           {page === 3 && (
             <div className="p-8 h-full flex flex-col items-center justify-between text-center">
                 {memory.backImageUrl ? (
-                    <img src={memory.backImageUrl} className="w-full h-32 object-cover rounded-xl shadow-md" alt=""/>
+                    <img src={memory.backImageUrl} className="w-full h-32 object-cover rounded-xl shadow-md" crossOrigin="anonymous" alt=""/>
                 ) : (
                     <div className="w-full h-32 bg-slate-100 rounded-xl flex items-center justify-center text-slate-300">
                         <ImageIcon size={24}/>
