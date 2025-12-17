@@ -22,7 +22,7 @@ export async function generateCardMessage(memory: AgentMemory, tone: string = 'w
         const hasCustomDraft = memory.cardMessage && memory.cardMessage.trim() !== defaultMsg && memory.cardMessage.length > 5;
         
         const contextDraft = hasCustomDraft 
-            ? `The user has provided this specific draft/context: "${memory.cardMessage}". Your goal is to POLISH and ENHANCE this message while keeping its core meaning.` 
+            ? `The user has provided this specific draft/context: "${memory.cardMessage}". Your goal is to ENHANCE this specific message. Do NOT replace it with generic holiday greetings. Keep all specific names, dates, and achievements mentioned.` 
             : '';
 
         if (memory.theme === 'chinese-poem') {
@@ -42,7 +42,7 @@ export async function generateCardMessage(memory: AgentMemory, tone: string = 'w
             `;
         } else {
             prompt = `
-                Write a short, heartwarming ${memory.occasion} card message.
+                Write a heartwarming ${memory.occasion} card message.
                 Recipient: ${memory.recipientName}
                 Sender: ${memory.senderName}
                 Tone: ${tone}
@@ -50,7 +50,10 @@ export async function generateCardMessage(memory: AgentMemory, tone: string = 'w
                 ${memory.customThemePrompt ? `IMPORTANT - Include this specific detail/context: "${memory.customThemePrompt}"` : ''}
                 ${contextDraft}
                 
-                Return ONLY the message body text. Keep it under 50 words.
+                Requirements:
+                1. If specific details are provided (jobs, names, specific news), you MUST mention them explicitly.
+                2. Length: Approximately 80-120 words. (The user wants a substantial message, not a one-liner).
+                3. Return ONLY the message body text.
             `;
         }
         
@@ -82,7 +85,7 @@ export async function generateSongLyrics(memory: AgentMemory): Promise<string> {
             : '';
 
         const prompt = `
-            Write a very short, rhyming song or poem (4-6 lines) for a greeting card.
+            Write a rhyming song or poem for a greeting card.
             Occasion: ${memory.occasion}
             To: ${memory.recipientName}
             From: ${memory.senderName}
@@ -92,8 +95,9 @@ export async function generateSongLyrics(memory: AgentMemory): Promise<string> {
             
             Requirements:
             1. Style: Musical, rhythmic, catchy.
-            2. MUST mention the specific details provided above (e.g. names, pets, hobbies, specific news) if any.
-            3. Return ONLY the lyrics.
+            2. MUST mention the specific details provided above (e.g. names, pets, hobbies, specific news like job offers) if any.
+            3. Length: 2 Verses and a Chorus (approx 8-12 lines). The user wants a substantial song.
+            4. Return ONLY the lyrics.
         `;
         const response = await ai.models.generateContent({
             model: 'gemini-2.5-flash',
