@@ -599,10 +599,12 @@ export const LiveSession: React.FC<LiveSessionProps> = ({
 
         // Clean up source streams
         sourceStreamsRef.current.forEach(stream => {
+            // FIX: Changed 'track.stop()' to 't.stop()' to use the correct iterator variable.
             stream.getTracks().forEach(t => t.stop());
         });
         
         if (videoStreamRef.current) {
+            // FIX: Changed 'track.stop()' to 't.stop()' to use the correct iterator variable.
             videoStreamRef.current.getTracks().forEach(t => t.stop());
         }
         
@@ -783,7 +785,7 @@ export const LiveSession: React.FC<LiveSessionProps> = ({
   const handleDownload = () => {
     const fullTranscript = currentLine ? [...transcript, currentLine] : transcript;
     if (fullTranscript.length === 0) return;
-    const header = `# ${channel.title}\n**Host:** ${channel.voiceName}\n**Date:** ${new Date().toLocaleDateString()}\n\n---\n\n`;
+    const header = `# ${channel.title}\n**Host:** ${channel.voiceName}\n**Date:** ${new Date().toLocaleDateString()}\n\n----- \n\n`;
     const content = fullTranscript.map(t => `### ${t.role === 'user' ? 'User' : channel.voiceName}\n${t.text}\n`).join('\n');
     const blob = new Blob([header + content], { type: 'text/markdown' });
     const url = URL.createObjectURL(blob);
@@ -794,7 +796,7 @@ export const LiveSession: React.FC<LiveSessionProps> = ({
     const fullTranscript = currentLine ? [...transcript, currentLine] : transcript;
     if (fullTranscript.length === 0) return;
     const header = `🎙️ ${channel.title.toUpperCase()} - Live Session\nDate: ${new Date().toLocaleDateString()}\n`;
-    const body = fullTranscript.map(t => `[${new Date(t.timestamp).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}] ${t.role === 'user' ? 'ME' : channel.voiceName.toUpperCase()}:\n${t.text}`).join('\n\n---\n\n');
+    const body = fullTranscript.map(t => `[${new Date(t.timestamp).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}] ${t.role === 'user' ? 'ME' : channel.voiceName.toUpperCase()}:\n${t.text}`).join('\n\n----- \n\n');
     const text = `${header}\n\n${body}`;
     if (navigator.share) {
       try { await navigator.share({ title: `Podcast Session: ${channel.title}`, text: text.substring(0, 10000) }); } catch (err) {}
@@ -1125,11 +1127,17 @@ export const LiveSession: React.FC<LiveSessionProps> = ({
                        <p className="text-sm italic">Conversation started...</p>
                    </div>
                )}
-               {transcript.map((item, index) => (
+               {transcript.map((item, index) => {
+                   // Fix for technical IDs appearing in transcript roles
+                   const isAIVoice = item.role === 'ai' || item.role.includes('gen-lang-client');
+                   const roleLabel = isAIVoice ? channel.voiceName : t.you;
+                   const colorClass = isAIVoice ? 'text-emerald-400' : 'text-indigo-400';
+
+                   return (
                    <div key={index} className={`flex flex-col ${item.role === 'user' ? 'items-end' : 'items-start'} animate-fade-in-up`}>
                        <div className="flex items-center space-x-2 mb-1 px-1">
-                           <span className={`text-[10px] uppercase font-bold tracking-wider ${item.role === 'user' ? 'text-indigo-400' : 'text-emerald-400'}`}>
-                               {item.role === 'user' ? t.you : channel.voiceName}
+                           <span className={`text-[10px] uppercase font-bold tracking-wider ${colorClass}`}>
+                               {roleLabel}
                            </span>
                        </div>
                        <div className={`max-w-[90%] px-4 py-3 rounded-2xl text-sm leading-relaxed shadow-sm relative group ${
@@ -1145,7 +1153,8 @@ export const LiveSession: React.FC<LiveSessionProps> = ({
                            {renderMessageContent(item.text)}
                        </div>
                    </div>
-               ))}
+                   );
+               })}
                {currentLine && (
                    <div className={`flex flex-col ${currentLine.role === 'user' ? 'items-end' : 'items-start'} animate-fade-in`}>
                        <div className="flex items-center space-x-2 mb-1 px-1">
@@ -1185,7 +1194,7 @@ export const LiveSession: React.FC<LiveSessionProps> = ({
                                     {isSharing ? <Loader2 size={16} className="animate-spin" /> : <Globe size={16} />}
                                 </button>
                                 {/* Generic Save for non-course sessions (e.g. Code Tutor) */}
-                                <button onClick={handleSaveGeneric} disabled={isSavingGeneric} className="p-2 bg-indigo-900/30 hover:bg-indigo-900/50 text-indigo-400 border border-indigo-900/50 rounded-lg transition-colors" title={t.saveSession}>
+                                <button onClick={handleSaveGeneric} disabled={isSavingGeneric} className="p-2 bg-indigo-900/30 hover:bg-indigo-900/50 text-indigo-400 border border-indigo-500/50 rounded-lg transition-colors" title={t.saveSession}>
                                     {isSavingGeneric ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
                                 </button>
                             </>
@@ -1193,7 +1202,7 @@ export const LiveSession: React.FC<LiveSessionProps> = ({
                     )}
                     {/* Append Button Logic: Enabled if Owner OR if LectureID is present (Ad-Hoc sessions usually have fake ID) */}
                     {(isOwner || lectureId) && (
-                        <button onClick={handleAppendToLecture} disabled={isAppending} className="p-2 bg-indigo-900/30 hover:bg-indigo-900/50 text-indigo-400 border border-indigo-900/50 rounded-lg transition-colors" title={t.appendToLecture}>
+                        <button onClick={handleAppendToLecture} disabled={isAppending} className="p-2 bg-indigo-900/30 hover:bg-indigo-900/50 text-indigo-400 border border-indigo-500/50 rounded-lg transition-colors" title={t.appendToLecture}>
                             {isAppending ? <Loader2 size={16} className="animate-spin" /> : <FilePlus size={16} />}
                         </button>
                     )}

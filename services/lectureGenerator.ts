@@ -80,7 +80,8 @@ async function getAIProvider(): Promise<'gemini' | 'openai'> {
 export async function generateLectureScript(
   topic: string, 
   channelContext: string,
-  language: 'en' | 'zh' = 'en'
+  language: 'en' | 'zh' = 'en',
+  channelId?: string
 ): Promise<GeneratedLecture | null> {
   try {
     const provider = await getAIProvider();
@@ -136,10 +137,16 @@ export async function generateLectureScript(
         text = await callOpenAI(systemPrompt, userPrompt, openaiKey);
     } else {
         const ai = new GoogleGenAI({ apiKey: geminiKey });
+        // Use Gemini 3 Pro for high-complexity channels (1: Software Interview, 2: Linux Kernel)
+        const modelName = (channelId === '1' || channelId === '2') ? 'gemini-3-pro-preview' : 'gemini-3-flash-preview';
+        
         const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash', 
+            model: modelName, 
             contents: `${systemPrompt}\n\n${userPrompt}`,
-            config: { responseMimeType: 'application/json' }
+            config: { 
+                responseMimeType: 'application/json',
+                thinkingConfig: (modelName === 'gemini-3-pro-preview') ? { thinkingBudget: 4000 } : undefined
+            }
         });
         text = response.text || null;
     }
@@ -228,7 +235,7 @@ export async function generateBatchLectures(
     } else {
         const ai = new GoogleGenAI({ apiKey: geminiKey });
         const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash', 
+            model: 'gemini-3-flash-preview', 
             contents: `${systemPrompt}\n\n${userPrompt}`,
             config: { responseMimeType: 'application/json' }
         });
@@ -313,7 +320,7 @@ export async function summarizeDiscussionAsSection(
     } else {
         const ai = new GoogleGenAI({ apiKey: geminiKey });
         const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash', 
+            model: 'gemini-3-flash-preview', 
             contents: `${systemPrompt}\n\n${userPrompt}`,
             config: { responseMimeType: 'application/json' }
         });
@@ -416,7 +423,10 @@ export async function generateDesignDocFromTranscript(
         const ai = new GoogleGenAI({ apiKey: geminiKey });
         const response = await ai.models.generateContent({
             model: 'gemini-3-pro-preview', // Better for large context docs
-            contents: `${systemPrompt}\n\n${userPrompt}`
+            contents: `${systemPrompt}\n\n${userPrompt}`,
+            config: {
+                thinkingConfig: { thinkingBudget: 4000 }
+            }
         });
         text = response.text || null;
     }

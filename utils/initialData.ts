@@ -187,18 +187,18 @@ export const HANDCRAFTED_CHANNELS: Channel[] = [
     description: 'Practice your coding interview skills with a strict but fair senior engineer bot.',
     author: 'Gemini',
     voiceName: 'Fenrir',
-    systemInstruction: 'You are a senior software engineer conducting a technical interview. Ask challenging algorithm questions, critique the user\'s explanation, and provide feedback on time complexity.',
+    systemInstruction: 'You are a world-class senior software engineer conducting a technical interview. Your tone is professional, rigorous, and analytical. You ask challenging algorithm and system design questions. You critique the user\'s reasoning, time/space complexity analysis, and edge-case handling. If the user provides a gen-lang-client ID, ignore the technical identifier and focus on the human developer persona.',
     likes: 342,
     dislikes: 12,
     comments: [],
     tags: ['Tech', 'Career', 'Education'],
     imageUrl: 'https://image.pollinations.ai/prompt/coding%20interview%20computer%20screen%20cyberpunk%20tech%20office?width=600&height=400&nologo=true',
-    welcomeMessage: "Welcome. I am ready to evaluate your technical skills. Shall we start with a Dynamic Programming problem?",
+    welcomeMessage: "Welcome. I am ready to evaluate your technical skills. Shall we start with a Dynamic Programming problem or a distributed systems design challenge?",
     starterPrompts: [
-      "Ask me a medium difficulty Array question",
-      "Mock system design interview for Instagram",
-      "Explain the time complexity of QuickSort",
-      "How do I handle race conditions?"
+      "Ask me a hard difficulty Graph question",
+      "Mock system design interview for real-time chat",
+      "Explain the trade-offs of B-Trees vs LSM Trees",
+      "How do I handle eventual consistency in a global app?"
     ],
     createdAt: INITIAL_DATE
   },
@@ -229,13 +229,13 @@ export const HANDCRAFTED_CHANNELS: Channel[] = [
     description: 'Deep dive into the Linux Kernel internals. Discussion about schedulers, memory management, and drivers.',
     author: 'Gemini',
     voiceName: 'Puck',
-    systemInstruction: 'You are an expert on the Linux Kernel. You speak with high technical accuracy about C programming, kernel subsystems, and operating system theory. You are opinionated but helpful.',
+    systemInstruction: 'You are a legendary Linux Kernel Maintainer. You speak with extreme technical precision about C programming, hardware-software interfaces, and memory safety. You are opinionated, deeply knowledgeable about Git, and have zero tolerance for sloppy abstractions. If technical client IDs appear, maintain focus on the kernel-level discussion.',
     likes: 891,
     dislikes: 5,
     comments: [],
     tags: ['Linux', 'OS', 'Engineering'],
     imageUrl: 'https://image.pollinations.ai/prompt/linux%20penguin%20server%20room%20matrix%20code%20green?width=600&height=400&nologo=true',
-    welcomeMessage: "Kernel mode engaged. I am listening. What subsystem shall we inspect today?",
+    welcomeMessage: "Kernel mode engaged. What subsystem shall we audit today? I suggest looking at the VFS layer or the eBPF verifier logic.",
     starterPrompts: [
       "Explain the CFS scheduler in detail",
       "How does the VFS (Virtual File System) work?",
@@ -385,7 +385,7 @@ export const HANDCRAFTED_CHANNELS: Channel[] = [
     imageUrl: 'https://image.pollinations.ai/prompt/healthy%20food%20fitness%20running%20dna%20helix%20bright%20sunlight?width=600&height=400&nologo=true',
     welcomeMessage: "Hello. Let's optimize your biology. What aspect of your health do you want to improve today?",
     starterPrompts: [
-      "What are the benefits of intermittent fasting?",
+      "What are the benefits of intermittent hashing?",
       "How does sleep affect longevity?",
       "Explain zone 2 cardio training",
       "Supplements for brain health"
