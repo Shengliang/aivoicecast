@@ -8,6 +8,7 @@ import { jsPDF } from 'jspdf';
 import { uploadFileToStorage } from '../services/firestoreService';
 import { auth } from '../services/firebaseConfig';
 import { FunctionDeclaration, Type as GenType } from '@google/genai';
+import { resizeImage } from '../utils/imageUtils';
 
 interface CardWorkshopProps {
   onBack: () => void;
@@ -101,6 +102,15 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack }) => {
         setQrCodeBase64(null);
     }
   }, [memory.googlePhotosUrl]);
+
+  // Reset audio player when source changes
+  useEffect(() => {
+      if (audioRef.current) {
+          audioRef.current.pause();
+          audioRef.current = null;
+      }
+      setIsPlayingAudio(false);
+  }, [memory.audioUrl]);
 
   // Initialize Live Service
   useEffect(() => {
@@ -197,23 +207,26 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack }) => {
       }
   };
 
-  const handleChatImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleChatImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
       if (e.target.files && e.target.files.length > 0) {
-          const file = e.target.files[0];
-          const reader = new FileReader();
-          reader.onloadend = () => {
-              const base64 = (reader.result as string).split(',')[1];
-              const mimeType = file.type;
-              
+          try {
+              // 1. Resize Image Client-Side to prevent Payload Crashes
+              const resizedBase64Url = await resizeImage(e.target.files[0], 800, 0.7);
+              // Strip header for API
+              const base64Data = resizedBase64Url.split(',')[1];
+              const mimeType = 'image/jpeg'; // resizeImage outputs jpeg
+
               if (liveServiceRef.current) {
-                  liveServiceRef.current.sendVideo(base64, mimeType);
+                  liveServiceRef.current.sendVideo(base64Data, mimeType);
                   // Add visual indicator to chat
-                  setTranscript(prev => [...prev, { role: 'user', text: `[Sent Image: ${file.name}]`, timestamp: Date.now() }]);
+                  setTranscript(prev => [...prev, { role: 'user', text: `[Sent Image: ${e.target.files?.[0].name}]`, timestamp: Date.now() }]);
               } else {
                   alert("Start the chat first to send images to Elf!");
               }
-          };
-          reader.readAsDataURL(file);
+          } catch(err) {
+              console.error("Image processing failed", err);
+              alert("Failed to process image.");
+          }
       }
       e.target.value = ''; // Reset
   };
@@ -257,14 +270,24 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack }) => {
           if (!memory.audioUrl) return;
           audioRef.current = new Audio(memory.audioUrl);
           audioRef.current.onended = () => setIsPlayingAudio(false);
+          audioRef.current.onerror = (e) => {
+              console.error("Audio playback error", e);
+              alert("Cannot play audio format.");
+              setIsPlayingAudio(false);
+          };
       }
       
       if (isPlayingAudio) {
           audioRef.current.pause();
           setIsPlayingAudio(false);
       } else {
-          audioRef.current.play();
-          setIsPlayingAudio(true);
+          // Promise handling for play()
+          audioRef.current.play()
+            .then(() => setIsPlayingAudio(true))
+            .catch(e => {
+                console.error("Play failed", e);
+                setIsPlayingAudio(false);
+            });
       }
   };
 
@@ -300,31 +323,30 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack }) => {
       }
   };
   
-  const handleRefImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleRefImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
       if (e.target.files && e.target.files.length > 0) {
-          const file = e.target.files[0];
-          const reader = new FileReader();
-          reader.onloadend = () => {
-              setFrontRefImage(reader.result as string);
-          };
-          reader.readAsDataURL(file);
+          try {
+              // Resize to reasonable dimension for reference image
+              const resized = await resizeImage(e.target.files[0], 512, 0.8);
+              setFrontRefImage(resized);
+          } catch(err) {
+              console.error("Ref image processing error", err);
+          }
       }
   };
 
+  // LOCAL MEMORY UPLOAD for card photos
   const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-      if (!auth.currentUser) {
-          alert("Please sign in to upload photos.");
-          return;
-      }
       if (e.target.files && e.target.files.length > 0) {
           setIsUploadingPhoto(true);
           const newPhotos: string[] = [];
           
           try {
               for (const file of Array.from(e.target.files) as File[]) {
-                  const path = `cards/${auth.currentUser.uid}/photos/${Date.now()}_${file.name}`;
-                  const url = await uploadFileToStorage(path, file);
-                  newPhotos.push(url);
+                  // Client-side Resize & Compression
+                  // 1024px is high enough for PDF, small enough to prevent crashes
+                  const base64Url = await resizeImage(file, 1024, 0.8);
+                  newPhotos.push(base64Url);
               }
               setMemory(prev => ({
                   ...prev,
@@ -332,7 +354,7 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack }) => {
               }));
           } catch(err) {
               console.error(err);
-              alert("Upload failed.");
+              alert("Failed to process photos.");
           } finally {
               setIsUploadingPhoto(false);
           }
@@ -365,6 +387,10 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack }) => {
                           useCORS: true,
                           allowTaint: true,
                           logging: false,
+                          width: 400, // Explicitly enforce dimensions
+                          height: 600,
+                          windowWidth: 400,
+                          windowHeight: 600,
                           backgroundColor: memory.theme === 'chinese-poem' ? '#f5f0e1' : '#ffffff'
                       });
                       const imgData = canvas.toDataURL('image/jpeg', 0.95);
