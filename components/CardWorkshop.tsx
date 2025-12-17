@@ -1,3 +1,4 @@
+
 import React, { useState, useRef, useEffect } from 'react';
 import { AgentMemory, TranscriptItem, Group, ChatChannel } from '../types';
 import { ArrowLeft, Sparkles, Wand2, Image as ImageIcon, Type, Download, Share2, Printer, RefreshCw, Send, Mic, MicOff, Gift, Heart, Loader2, ChevronRight, ChevronLeft, Upload, QrCode, X, Music, Play, Pause, Volume2, Camera, CloudUpload, Lock, Globe, Check, Edit, Package, ArrowDown, Type as TypeIcon, Minus, Plus, Menu } from 'lucide-react';
@@ -848,7 +849,7 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack, cardId, isVi
           
           {/* LEFT PANEL: CONTROLS (Hidden in Viewer Mode) */}
           {!isViewer && (
-          <div className="w-full md:w-96 bg-slate-900 border-r border-slate-800 flex flex-col shrink-0 h-full">
+          <div className="w-full md:w-96 bg-slate-900 border-r border-slate-800 flex flex-col shrink-0 h-full z-30">
               <div className="flex border-b border-slate-800">
                   <button onClick={() => setActiveTab('settings')} className={`flex-1 py-3 text-sm font-bold transition-colors ${activeTab==='settings' ? 'bg-slate-800 text-white border-b-2 border-indigo-500' : 'text-slate-500 hover:text-slate-300'}`}>Edit</button>
                   <button onClick={() => setActiveTab('chat')} className={`flex-1 py-3 text-sm font-bold transition-colors ${activeTab==='chat' ? 'bg-slate-800 text-white border-b-2 border-indigo-500' : 'text-slate-500 hover:text-slate-300'}`}>Elf Assistant</button>
@@ -1150,7 +1151,7 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack, cardId, isVi
                           </div>
                       </>
                   ) : (
-                      <div className="relative h-full flex flex-col bg-slate-900">
+                      <div className="relative h-full flex flex-col bg-slate-900 z-30">
                           <div className="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-thin scrollbar-thumb-slate-800 pb-24">
                               {displayTranscript.length === 0 && (
                                   <div className="text-center text-slate-500 text-sm py-8 px-4 mt-10">
@@ -1215,10 +1216,10 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack, cardId, isVi
           )}
 
           {/* RIGHT PANEL: PREVIEW */}
-          <div className="flex-1 bg-slate-950 p-0 md:p-4 lg:p-8 flex flex-col items-center overflow-hidden relative">
+          <div className="flex-1 bg-slate-950 p-0 md:p-4 lg:p-8 flex flex-col items-center overflow-hidden relative min-h-0">
               
-              {/* Toolbar bar integrated with pagination */}
-              <div className="flex items-center gap-4 mb-6 bg-slate-900 p-2 rounded-full border border-slate-800 shadow-xl z-20 mt-4 md:mt-0">
+              {/* Toolbar bar integrated with pagination - ALWAYS VISIBLE */}
+              <div className="flex items-center gap-4 mb-6 bg-slate-900 p-2 rounded-full border border-slate-800 shadow-xl z-20 mt-4 md:mt-0 shrink-0">
                   {/* Global Back / Close Button */}
                   <button 
                       onClick={onBack} 
@@ -1279,15 +1280,14 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack, cardId, isVi
                   </div>
               </div>
 
-              {/* VIEWER MODE: Vertical Scroll Feed */}
-              {isViewer ? (
-                  <div className="w-full h-full overflow-y-scroll snap-y snap-mandatory scroll-smooth no-scrollbar pb-24">
-                      {[0, 1, 2, 3, 4, 5].map((pageNum) => (
-                          <div key={pageNum} className="w-full h-full snap-start flex items-center justify-center p-6 md:p-8">
-                              <div 
-                                  className="w-full max-w-[400px] aspect-[2/3] shadow-2xl relative overflow-hidden flex flex-col rounded-xl transition-transform"
-                                  style={getCardPageStyle(pageNum)}
-                              >
+              {/* Card Preview scrollable container to prevent shifting UI bars */}
+              <div className="flex-1 w-full overflow-y-auto px-4 pb-8 flex flex-col items-center min-h-0 scrollbar-thin scrollbar-thumb-slate-800">
+                  {/* VIEWER MODE: Vertical Scroll Feed */}
+                  {isViewer ? (
+                      <div className="w-full flex flex-col items-center gap-12 py-8">
+                          {[0, 1, 2, 3, 4, 5].map((pageNum) => (
+                              <div key={pageNum} className="w-full max-w-[400px] aspect-[2/3] shadow-2xl relative overflow-hidden flex flex-col rounded-xl shrink-0"
+                                  style={getCardPageStyle(pageNum)}>
                                   {renderCardContent(pageNum)}
                                   
                                   {/* Scroll Hint on first page */}
@@ -1297,19 +1297,19 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack, cardId, isVi
                                       </div>
                                   )}
                               </div>
-                          </div>
-                      ))}
-                  </div>
-              ) : (
-                  /* EDITOR MODE: Single Card */
-                  <div 
-                      ref={cardRef}
-                      className="w-[400px] h-[600px] shadow-2xl relative overflow-hidden flex flex-col transition-all duration-300 scale-90 md:scale-100 origin-top md:origin-center rounded-xl"
-                      style={getCardPageStyle(activePage)}
-                  >
-                      {renderCardContent(activePage)}
-                  </div>
-              )}
+                          ))}
+                      </div>
+                  ) : (
+                      /* EDITOR MODE: Single Card */
+                      <div 
+                          ref={cardRef}
+                          className="w-[400px] h-[600px] shadow-2xl relative overflow-hidden flex flex-col transition-all duration-300 scale-90 md:scale-100 origin-top rounded-xl shrink-0 my-auto"
+                          style={getCardPageStyle(activePage)}
+                      >
+                          {renderCardContent(activePage)}
+                      </div>
+                  )}
+              </div>
 
               {/* HIDDEN EXPORT AREA */}
               {isExporting || isExportingPackage ? (
