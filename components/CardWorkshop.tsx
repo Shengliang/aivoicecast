@@ -1,7 +1,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { AgentMemory, TranscriptItem, Group, ChatChannel } from '../types';
-import { ArrowLeft, Sparkles, Wand2, Image as ImageIcon, Type, Download, Share2, Printer, RefreshCw, Send, Mic, MicOff, Gift, Heart, Loader2, ChevronRight, ChevronLeft, Upload, QrCode, X, Music, Play, Pause, Volume2, Camera, CloudUpload, Lock, Globe, Check, Edit, Package, ArrowDown, Type as TypeIcon, Minus, Plus, Menu } from 'lucide-react';
+import { ArrowLeft, Sparkles, Wand2, Image as ImageIcon, Type, Download, Share2, Printer, RefreshCw, Send, Mic, MicOff, Gift, Heart, Loader2, ChevronRight, ChevronLeft, Upload, QrCode, X, Music, Play, Pause, Volume2, Camera, CloudUpload, Lock, Globe, Check, Edit, Package, ArrowDown, Type as TypeIcon, Minus, Plus, Menu, Edit3 } from 'lucide-react';
 import { generateCardMessage, generateCardImage, generateCardAudio, generateSongLyrics } from '../services/cardGen';
 import { GeminiLiveService } from '../services/geminiLive';
 import html2canvas from 'html2canvas';
@@ -396,15 +396,15 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack, cardId, isVi
   // Helper function to capture the PDF (reused by both download buttons)
   const generatePDFBlob = async (): Promise<Blob | null> => {
       try {
-          const pdf = new jsPDF({ orientation: 'portrait', unit: 'px', format: [360, 540] });
+          const pdf = new jsPDF({ orientation: 'portrait', unit: 'px', format: [330, 495] });
           // Export all pages (0-5)
           for (let i = 0; i <= 5; i++) {
               const el = document.getElementById(`export-card-page-${i}`);
               if (el) {
-                  const canvas = await html2canvas(el, { scale: 2, useCORS: true, allowTaint: true, logging: false, width: 360, height: 540, windowWidth: 360, windowHeight: 540, backgroundColor: memory.theme === 'chinese-poem' ? '#f5f0e1' : '#ffffff' });
+                  const canvas = await html2canvas(el, { scale: 2, useCORS: true, allowTaint: true, logging: false, width: 330, height: 495, windowWidth: 330, windowHeight: 495, backgroundColor: memory.theme === 'chinese-poem' ? '#f5f0e1' : '#ffffff' });
                   const imgData = canvas.toDataURL('image/jpeg', 0.95);
                   if (i > 0) pdf.addPage();
-                  pdf.addImage(imgData, 'JPEG', 0, 0, 360, 540);
+                  pdf.addImage(imgData, 'JPEG', 0, 0, 330, 495);
               }
           }
           return pdf.output('blob');
@@ -673,7 +673,7 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack, cardId, isVi
                     ) : (
                         <h3 className="font-holiday text-2xl text-red-600 mb-8 opacity-80">Season's Greetings</h3>
                     )}
-                    <div className={`${isVertical ? 'vertical-rl h-full max-h-[380px] flex flex-wrap-reverse gap-4 items-start text-right pr-16 overflow-x-auto' : 'w-full max-h-[380px] overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-slate-300'}`}>
+                    <div className={`${isVertical ? 'vertical-rl h-full max-h-[350px] flex flex-wrap-reverse gap-4 items-start text-right pr-16 overflow-x-auto' : 'w-full max-h-[350px] overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-slate-300'}`}>
                        <p 
                            className={`whitespace-pre-wrap ${getFontFamilyClass()} text-slate-800 ${getDynamicFontSize(memory.cardMessage)}`}
                            style={{ fontSize: memory.fontSizeScale ? `${(memory.fontSizeScale || 1.0) * 0.9}em` : undefined }}
@@ -712,22 +712,22 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack, cardId, isVi
             {page === 3 && (
                 <div className={`w-full h-full flex flex-col items-center justify-between p-10 relative ${memory.theme === 'chinese-poem' ? 'bg-[#f5f0e1]' : 'bg-white'}`}>
                     {memory.backImageUrl ? (
-                        <div className="w-full h-40 overflow-hidden rounded-xl opacity-80 relative">
+                        <div className="w-full h-36 overflow-hidden rounded-xl opacity-80 relative">
                              <div className={`absolute inset-0 ${memory.theme === 'chinese-poem' ? 'mix-blend-multiply grayscale sepia-[.3]' : ''}`} style={{ backgroundImage: `url(${memory.backImageUrl})`, backgroundSize: 'cover', backgroundPosition: 'center' }} />
                         </div>
                     ) : (
-                        <div className="w-full h-40 bg-slate-100 rounded-xl flex items-center justify-center"><ImageIcon className="text-slate-300" /></div>
+                        <div className="w-full h-36 bg-slate-100 rounded-xl flex items-center justify-center"><ImageIcon className="text-slate-300" /></div>
                     )}
                     <div className="text-center space-y-3">
                         {memory.googlePhotosUrl ? (
                             <>
                                 <div className={`p-2 rounded-lg shadow-lg inline-block border ${memory.theme === 'chinese-poem' ? 'bg-[#fdfbf7] border-red-900/10' : 'bg-white border-slate-200'}`}>
-                                    {qrCodeBase64 && <img src={qrCodeBase64} alt="Album QR" className="w-28 h-28 mix-blend-multiply" crossOrigin="anonymous" />}
+                                    {qrCodeBase64 && <img src={qrCodeBase64} alt="Album QR" className="w-24 h-24 mix-blend-multiply" crossOrigin="anonymous" />}
                                 </div>
                                 <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">Scan for Photo Album</p>
                             </>
                         ) : (
-                            <div className="w-28 h-28 bg-slate-100 rounded-lg flex items-center justify-center text-slate-400 text-[10px] text-center p-2">Add Album Link to see QR Code</div>
+                            <div className="w-24 h-24 bg-slate-100 rounded-lg flex items-center justify-center text-slate-400 text-[10px] text-center p-2">Add Album Link to see QR Code</div>
                         )}
                     </div>
                     <div className="text-center">
@@ -740,7 +740,7 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack, cardId, isVi
             {/* --- PAGE 4: VOICE MESSAGE --- */}
             {page === 4 && (
                 <div className={`w-full h-full flex flex-col p-8 relative ${memory.theme === 'chinese-poem' ? 'bg-[#f5f0e1]' : 'bg-slate-50'}`}>
-                     <div className="absolute top-0 right-0 p-8 opacity-5 pointer-events-none"><Mic size={100} className="text-indigo-900" /></div>
+                     <div className="absolute top-0 right-0 p-8 opacity-5 pointer-events-none"><Mic size={80} className="text-indigo-900" /></div>
                      <div className="z-10 flex flex-col h-full gap-5">
                         <div className="text-center shrink-0">
                            <h3 className="text-xl font-holiday font-bold text-indigo-700">Voice Greeting</h3>
@@ -786,7 +786,7 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack, cardId, isVi
             {/* --- PAGE 5: HOLIDAY SONG --- */}
             {page === 5 && (
                 <div className={`w-full h-full flex flex-col p-8 relative ${memory.theme === 'chinese-poem' ? 'bg-[#f5f0e1]' : 'bg-slate-50'}`}>
-                     <div className="absolute top-0 right-0 p-8 opacity-5 pointer-events-none"><Music size={100} className="text-pink-900" /></div>
+                     <div className="absolute top-0 right-0 p-8 opacity-5 pointer-events-none"><Music size={80} className="text-pink-900" /></div>
                      <div className="z-10 flex flex-col h-full gap-5">
                         <div className="text-center shrink-0">
                            <h3 className="text-xl font-holiday font-bold text-pink-700">Festive Song</h3>
@@ -840,15 +840,17 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack, cardId, isVi
           {/* LEFT PANEL: CONTROLS (Hidden in Viewer Mode) */}
           {!isViewer && (
           <div className="w-full md:w-96 bg-slate-900 border-r border-slate-800 flex flex-col shrink-0 h-full max-h-full overflow-hidden z-30 relative">
+              {/* FIXED HEADER: TABS */}
               <div className="flex-shrink-0 flex border-b border-slate-800 bg-slate-900 relative z-20">
                   <button onClick={() => setActiveTab('chat')} className={`flex-1 py-3 text-sm font-bold transition-colors ${activeTab==='chat' ? 'bg-slate-800 text-white border-b-2 border-indigo-500' : 'text-slate-500 hover:text-slate-300'}`}>Elf Assistant</button>
                   <button onClick={() => setActiveTab('settings')} className={`flex-1 py-3 text-sm font-bold transition-colors ${activeTab==='settings' ? 'bg-slate-800 text-white border-b-2 border-indigo-500' : 'text-slate-500 hover:text-slate-300'}`}>Edit context</button>
               </div>
 
-              <div className="flex-1 relative overflow-hidden flex flex-col z-10">
+              {/* DYNAMIC CONTENT AREA */}
+              <div className="flex-1 relative overflow-hidden flex flex-col z-10 min-h-0">
                   {activeTab === 'settings' ? (
-                      <>
-                        <div className="flex-1 overflow-y-auto p-6 space-y-6 scrollbar-thin scrollbar-thumb-slate-800 pb-32">
+                      <div className="flex flex-col h-full overflow-hidden">
+                        <div className="flex-1 overflow-y-auto p-6 space-y-6 scrollbar-thin scrollbar-thumb-slate-800">
                           {/* Common Settings */}
                           <div className="space-y-3 pb-4 border-b border-slate-800">
                               <label className="text-xs font-bold text-slate-500 uppercase">Card Context</label>
@@ -884,7 +886,7 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack, cardId, isVi
                           {/* Contextual Settings based on Page */}
                           <div className="space-y-4">
                               <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                                  <Edit3Icon /> 
+                                  <Edit3 size={16} /> 
                                   <span>Editing: {getPageLabel(activePage)}</span>
                               </h3>
 
@@ -1132,16 +1134,16 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack, cardId, isVi
                           </div>
                         </div>
 
-                        {/* Floating Shortcut - Absolute anchored to bottom of LEFT PANEL */}
-                        <div className="absolute bottom-0 left-0 w-full flex justify-center pointer-events-none z-10 pt-10 pb-6 bg-gradient-to-t from-slate-900 via-slate-900/90 to-transparent">
+                        {/* FIXED FOOTER: TALK TO ELF BUTTON */}
+                        <div className="flex-shrink-0 p-4 border-t border-slate-800 bg-slate-950 flex justify-center">
                             <button 
                                 onClick={() => setActiveTab('chat')}
-                                className="pointer-events-auto bg-emerald-600 hover:bg-emerald-500 text-white px-8 py-3.5 rounded-full font-bold shadow-[0_10px_40px_rgba(0,0,0,0.5)] flex items-center gap-2 transition-all hover:scale-105 border border-emerald-400/50 active:scale-95"
+                                className="w-full bg-emerald-600 hover:bg-emerald-500 text-white py-3.5 rounded-xl font-bold shadow-lg flex items-center justify-center gap-2 transition-all hover:scale-[1.02] border border-emerald-400/30 active:scale-95"
                             >
                                 <Sparkles size={18} /> Talk to Elf
                             </button>
                         </div>
-                      </>
+                      </div>
                   ) : (
                       <div className="relative h-full flex flex-col bg-slate-900 z-30">
                           <div className="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-thin scrollbar-thumb-slate-800 pb-24">
@@ -1208,10 +1210,10 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack, cardId, isVi
           )}
 
           {/* RIGHT PANEL: PREVIEW */}
-          <div className="flex-1 bg-slate-950 p-0 md:p-4 lg:p-8 flex flex-col items-center overflow-hidden relative min-h-0">
+          <div className="flex-1 bg-slate-950 p-4 md:p-8 flex flex-col items-center justify-center overflow-hidden relative min-h-0">
               
               {/* Toolbar bar integrated with pagination - ALWAYS VISIBLE */}
-              <div className="flex-shrink-0 flex items-center gap-4 mb-6 bg-slate-900 p-2 rounded-full border border-slate-800 shadow-xl z-20 mt-4 md:mt-0">
+              <div className="flex-shrink-0 flex items-center gap-4 mb-6 bg-slate-900 p-2 rounded-full border border-slate-800 shadow-xl z-20">
                   {/* Global Back / Close Button */}
                   <button 
                       onClick={onBack} 
@@ -1273,12 +1275,12 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack, cardId, isVi
               </div>
 
               {/* Card Preview scrollable container to prevent shifting UI bars */}
-              <div className="flex-1 w-full overflow-y-auto px-4 pb-8 flex flex-col items-center min-h-0 scrollbar-thin scrollbar-thumb-slate-800">
+              <div className="flex-1 w-full flex flex-col items-center justify-center min-h-0 relative">
                   {/* VIEWER MODE: Vertical Scroll Feed */}
                   {isViewer ? (
-                      <div className="w-full flex flex-col items-center gap-12 py-8">
+                      <div className="w-full h-full overflow-y-auto px-4 pb-8 flex flex-col items-center gap-12 py-8 scrollbar-thin scrollbar-thumb-slate-800">
                           {[0, 1, 2, 3, 4, 5].map((pageNum) => (
-                              <div key={pageNum} className="w-full max-w-[360px] aspect-[2/3] shadow-2xl relative overflow-hidden flex flex-col rounded-xl shrink-0"
+                              <div key={pageNum} className="w-full max-w-[330px] aspect-[2/3] shadow-2xl relative overflow-hidden flex flex-col rounded-xl shrink-0"
                                   style={getCardPageStyle(pageNum)}>
                                   {renderCardContent(pageNum)}
                                   
@@ -1292,13 +1294,15 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack, cardId, isVi
                           ))}
                       </div>
                   ) : (
-                      /* EDITOR MODE: Single Card - Size reduced by 10% (360x540) to fix overflow */
-                      <div 
-                          ref={cardRef}
-                          className="w-[360px] h-[540px] shadow-2xl relative overflow-hidden flex flex-col transition-all duration-300 scale-90 md:scale-100 origin-top rounded-xl shrink-0 my-auto"
-                          style={getCardPageStyle(activePage)}
-                      >
-                          {renderCardContent(activePage)}
+                      /* EDITOR MODE: Single Card - Scaled to fit */
+                      <div className="flex-1 w-full flex items-center justify-center p-4">
+                          <div 
+                              ref={cardRef}
+                              className="w-[330px] h-[495px] shadow-2xl relative overflow-hidden flex flex-col transition-all duration-300 rounded-xl shrink-0"
+                              style={getCardPageStyle(activePage)}
+                          >
+                              {renderCardContent(activePage)}
+                          </div>
                       </div>
                   )}
               </div>
@@ -1310,7 +1314,7 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack, cardId, isVi
                           <div 
                               key={pageNum} 
                               id={`export-card-page-${pageNum}`}
-                              className="w-[360px] h-[540px] overflow-hidden flex flex-col relative"
+                              className="w-[330px] h-[495px] overflow-hidden flex flex-col relative"
                               style={getCardPageStyle(pageNum)}
                           >
                               {renderCardContent(pageNum)}
@@ -1365,7 +1369,3 @@ export const CardWorkshop: React.FC<CardWorkshopProps> = ({ onBack, cardId, isVi
     </div>
   );
 };
-
-const Edit3Icon = () => (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
-);
