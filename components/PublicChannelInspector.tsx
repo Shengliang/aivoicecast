@@ -1,8 +1,8 @@
 
 import React, { useState, useEffect } from 'react';
-import { getPublicChannels, deleteChannelFromFirestore } from '../services/firestoreService';
+import { getPublicChannels, deleteChannelFromFirestore, seedDatabase } from '../services/firestoreService';
 import { Channel } from '../types';
-import { ArrowLeft, RefreshCw, Trash2, Globe, Calendar, User } from 'lucide-react';
+import { ArrowLeft, RefreshCw, Trash2, Globe, Calendar, User, UploadCloud } from 'lucide-react';
 import { auth } from '../services/firebaseConfig';
 
 interface PublicChannelInspectorProps {
@@ -42,6 +42,20 @@ export const PublicChannelInspector: React.FC<PublicChannelInspectorProps> = ({ 
     }
   };
 
+  const handleSeed = async () => {
+    if (!confirm("Upload all system channels (including new AIVoiceCast) to the Public Registry? This will update existing channels.")) return;
+    setIsLoading(true);
+    try {
+        await seedDatabase();
+        await loadData();
+        alert("System channels published successfully!");
+    } catch(e: any) {
+        alert("Failed to publish: " + e.message);
+    } finally {
+        setIsLoading(false);
+    }
+  };
+
   return (
     <div className="h-full overflow-y-auto bg-slate-950 text-slate-100 p-8 scrollbar-thin scrollbar-thumb-slate-800">
       <div className="max-w-6xl mx-auto space-y-8 pb-24">
@@ -60,10 +74,20 @@ export const PublicChannelInspector: React.FC<PublicChannelInspectorProps> = ({ 
                 <p className="text-xs text-slate-500 mt-1">Live View of Firestore 'channels' collection</p>
              </div>
            </div>
-           <button onClick={loadData} className="flex items-center space-x-2 px-4 py-2 bg-indigo-600 rounded-lg hover:bg-indigo-500">
-             <RefreshCw size={16} className={isLoading ? 'animate-spin' : ''} />
-             <span>Refresh</span>
-           </button>
+           
+           <div className="flex gap-2">
+               {currentUser?.email === 'shengliang.song@gmail.com' && (
+                   <button onClick={handleSeed} disabled={isLoading} className="flex items-center space-x-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg shadow-lg font-bold text-xs transition-colors">
+                     <UploadCloud size={16} />
+                     <span>Publish System Channels</span>
+                   </button>
+               )}
+               
+               <button onClick={loadData} className="flex items-center space-x-2 px-4 py-2 bg-indigo-600 rounded-lg hover:bg-indigo-500 text-white font-bold text-xs transition-colors">
+                 <RefreshCw size={16} className={isLoading ? 'animate-spin' : ''} />
+                 <span>Refresh</span>
+               </button>
+           </div>
         </div>
 
         {/* Table */}

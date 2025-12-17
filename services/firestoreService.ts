@@ -14,6 +14,7 @@ import {
   GlobalStats,
   SubscriptionTier
 } from '../types';
+import { HANDCRAFTED_CHANNELS } from '../utils/initialData';
 
 // Constants
 const USERS_COLLECTION = 'users';
@@ -1013,9 +1014,20 @@ export async function getDebugCollectionDocs(collectionName: string, limit = 20)
     return snap.docs.map(d => ({ id: d.id, ...d.data() }));
 }
 
+// --- SEEDER FUNCTION ---
 export async function seedDatabase() {
-    // Implementation to upload initialData.ts content
-    // Left empty for brevity, usually iterates HANDCRAFTED_CHANNELS
+    const batch = db.batch();
+    for (const channel of HANDCRAFTED_CHANNELS) {
+        // Use set with merge to ensure we don't wipe out dynamic fields like likes, but enforce static config
+        const ref = db.collection(CHANNELS_COLLECTION).doc(channel.id);
+        batch.set(ref, sanitizeData({ 
+            ...channel, 
+            visibility: 'public',
+            // Default system owner if none
+            ownerId: channel.ownerId || null
+        }), { merge: true });
+    }
+    await batch.commit();
 }
 
 // --- Saved Words ---
