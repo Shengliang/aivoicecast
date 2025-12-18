@@ -49,6 +49,8 @@ export const DocumentList: React.FC<DocumentListProps> = ({ onBack }) => {
   const handleDelete = async (e: React.MouseEvent, id: string) => {
       e.stopPropagation();
       
+      if (!id || id === 'new') return;
+
       if (id === APP_COMPARISON_DOC.id) {
           if (confirm("This is a system example. Hide it from your list?")) {
               localStorage.setItem('hide_system_doc_v1', 'true');
@@ -64,34 +66,47 @@ export const DocumentList: React.FC<DocumentListProps> = ({ onBack }) => {
           await deleteDiscussion(id);
           setDocs(prev => prev.filter(d => d.id !== id));
       } catch (e) {
-          alert("Failed to delete document.");
+          console.error("Delete failed", e);
+          alert("Failed to delete document. It might have already been removed or you may lack permissions.");
       } finally {
           setIsDeleting(null);
       }
   };
 
   const handleCleanupUntitled = async () => {
-      const untitledDocs = docs.filter(d => (!d.title || d.title === 'Untitled Document') && d.id !== APP_COMPARISON_DOC.id);
+      const untitledDocs = docs.filter(d => (!d.title || d.title === 'Untitled Document') && d.id !== APP_COMPARISON_DOC.id && d.id !== 'new');
       
       if (untitledDocs.length === 0) {
           alert("No untitled documents found to clean up.");
           return;
       }
 
-      if (!confirm(`This will permanently delete ${untitledDocs.length} "Untitled" documents. Continue?`)) return;
+      if (!confirm(`This will attempt to delete ${untitledDocs.length} "Untitled" documents. Continue?`)) return;
 
       setIsCleaningUp(true);
-      try {
-          for (const doc of untitledDocs) {
-              await deleteDiscussion(doc.id);
+      let successCount = 0;
+      let failCount = 0;
+
+      for (const doc of untitledDocs) {
+          try {
+              if (doc.id) {
+                  await deleteDiscussion(doc.id);
+                  successCount++;
+              }
+          } catch (e) {
+              console.error(`Failed to delete doc ${doc.id}`, e);
+              failCount++;
           }
-          await loadData();
-          alert(`Successfully removed ${untitledDocs.length} documents.`);
-      } catch (e) {
-          alert("Error during cleanup. Some documents may remain.");
-      } finally {
-          setIsCleaningUp(false);
       }
+      
+      await loadData();
+      
+      if (failCount === 0) {
+          alert(`Successfully removed ${successCount} documents.`);
+      } else {
+          alert(`Cleanup finished. Removed ${successCount} documents. ${failCount} documents could not be deleted.`);
+      }
+      setIsCleaningUp(false);
   };
 
   const handleCreateNew = async () => {
@@ -150,7 +165,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ onBack }) => {
                 onClick={() => setSelectedDocId(doc.id)}
                 className={`bg-slate-900 border ${isSystem ? 'border-indigo-500/50 bg-indigo-900/10' : hasSynthesis ? 'border-slate-800' : 'border-emerald-500/30 bg-emerald-900/5'} rounded-xl p-5 hover:border-emerald-500/50 hover:bg-slate-800/50 transition-all cursor-pointer group flex flex-col justify-between relative shadow-sm`}
               >
-                {/* Delete Button - Made persistent on card for easier access */}
+                {/* Delete Button */}
                 <button 
                    onClick={(e) => handleDelete(e, doc.id)}
                    disabled={isDeleting === doc.id}

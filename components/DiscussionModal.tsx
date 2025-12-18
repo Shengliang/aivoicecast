@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { X, MessageCircle, FileText, Loader2, CornerDownRight, Edit2, Save, Sparkles, ExternalLink, Cloud, Trash2, RefreshCw, Info } from 'lucide-react';
 import { CommunityDiscussion } from '../types';
@@ -40,7 +41,7 @@ export const DiscussionModal: React.FC<DiscussionModalProps> = ({
   useEffect(() => {
     if (isOpen) {
       setGDocUrl(null);
-      if (!initialDiscussion || initialDiscussion.id !== discussionId) {
+      if (!initialDiscussion || (initialDiscussion.id !== discussionId && discussionId !== 'new')) {
         setLoading(true);
         getDiscussionById(discussionId).then(data => {
           if (data) {
@@ -48,11 +49,9 @@ export const DiscussionModal: React.FC<DiscussionModalProps> = ({
               setDocTitle(data.title || 'Untitled Document');
               setEditedDocContent(data.designDoc || '');
               
-              // LOGIC: If no transcript exists, force 'doc' view so user sees content or editor
               const hasTranscript = data.transcript && data.transcript.length > 0;
               if (data.isManual || data.designDoc || !hasTranscript) {
                   setViewMode('doc');
-                  // If it's completely empty, open editor by default
                   if (!data.designDoc && !hasTranscript) setIsEditingDoc(true);
               } else {
                   setViewMode('transcript');
@@ -78,7 +77,8 @@ export const DiscussionModal: React.FC<DiscussionModalProps> = ({
   if (!isOpen) return null;
 
   const handleGenerateDoc = async () => {
-      if (!activeDiscussion || !activeDiscussion.transcript || activeDiscussion.transcript.length === 0) {
+      if (!activeDiscussion) return;
+      if (!activeDiscussion.transcript || activeDiscussion.transcript.length === 0) {
           alert("Cannot synthesize: The session transcript is empty.");
           return;
       }
@@ -93,7 +93,7 @@ export const DiscussionModal: React.FC<DiscussionModalProps> = ({
 
           const doc = await generateDesignDocFromTranscript(activeDiscussion.transcript, meta, language as 'en' | 'zh');
           if (doc) {
-              if (activeDiscussion.id !== 'new') {
+              if (activeDiscussion.id && activeDiscussion.id !== 'new') {
                 await saveDiscussionDesignDoc(activeDiscussion.id, doc, docTitle);
               }
               setActiveDiscussion({ ...activeDiscussion, designDoc: doc, title: docTitle });
@@ -121,11 +121,15 @@ export const DiscussionModal: React.FC<DiscussionModalProps> = ({
               title: docTitle || 'Untitled Document',
               designDoc: editedDocContent
           };
+          // Remove the 'new' ID so firestore generates a real one
           // @ts-ignore
           delete docToSave.id;
           
           const newId = await saveDiscussion(docToSave as CommunityDiscussion);
-          setActiveDiscussion({ ...activeDiscussion, title: docTitle || 'Untitled Document', designDoc: editedDocContent, id: newId });
+          // CRITICAL: Update local state with the actual Database ID
+          setActiveDiscussion({ ...docToSave, id: newId });
+          setDocTitle(docToSave.title);
+          setEditedDocContent(docToSave.designDoc || '');
       } else {
           await saveDiscussionDesignDoc(activeDiscussion.id, editedDocContent, docTitle || 'Untitled Document');
           setActiveDiscussion({ ...activeDiscussion, title: docTitle || 'Untitled Document', designDoc: editedDocContent });
@@ -208,7 +212,7 @@ export const DiscussionModal: React.FC<DiscussionModalProps> = ({
                   </div>
               </div>
               
-              {/* Tabs - Only show if transcript actually exists */}
+              {/* Tabs */}
               {(activeDiscussion?.transcript && activeDiscussion.transcript.length > 0 && activeDiscussion.id !== 'new') && (
                   <div className="flex space-x-2">
                       <button 
@@ -268,7 +272,6 @@ export const DiscussionModal: React.FC<DiscussionModalProps> = ({
                                       </div>
                                   )) : (
                                       <div className="text-center py-12 text-slate-600 flex flex-col items-center gap-2">
-                                          {/* FIX: Info component now correctly imported from lucide-react */}
                                           <Info size={32} className="opacity-20"/>
                                           <p>This session has no transcript data.</p>
                                           {isOwner && <button onClick={() => setViewMode('doc')} className="text-indigo-400 hover:underline">Switch to Specification Editor</button>}
@@ -280,7 +283,7 @@ export const DiscussionModal: React.FC<DiscussionModalProps> = ({
                           <div className="h-full flex flex-col min-h-[400px]">
                                 <div className="flex justify-between items-center mb-6 sticky top-0 z-10 bg-slate-900 pb-2 border-b border-slate-800">
                                     <div className="flex gap-2">
-                                        {isOwner && !isEditingDoc && activeDiscussion.id !== 'system-doc-001' && (
+                                        {isOwner && !isEditingDoc && activeDiscussion.id && activeDiscussion.id !== 'new' && activeDiscussion.id !== 'system-doc-001' && (
                                             <button 
                                                 onClick={handleDelete}
                                                 className="px-3 py-1.5 text-xs text-red-400 hover:text-white bg-red-900/10 hover:bg-red-600 rounded-lg flex items-center gap-1 transition-all border border-red-900/30"
@@ -309,7 +312,7 @@ export const DiscussionModal: React.FC<DiscussionModalProps> = ({
                                                     </button>
                                                 </>
                                             ) : (
-                                                <button onClick={() => setIsEditingDoc(true)} className="px-4 py-1.5 text-xs text-white bg-indigo-600 hover:bg-indigo-500 rounded-lg flex items-center gap-2 font-bold shadow-lg shadow-emerald-500/20">
+                                                <button onClick={() => setIsEditingDoc(true)} className="px-4 py-1.5 text-xs text-white bg-indigo-600 hover:bg-indigo-500 rounded-lg flex items-center gap-2 font-bold shadow-lg shadow-indigo-500/20">
                                                     <Edit2 size={14}/> Edit Content
                                                 </button>
                                             )

@@ -479,6 +479,7 @@ export async function saveDiscussion(discussion: CommunityDiscussion): Promise<s
 }
 
 export async function deleteDiscussion(id: string): Promise<void> {
+    if (!id) throw new Error("Invalid Document ID");
     await db.collection(DISCUSSIONS_COLLECTION).doc(id).delete();
 }
 
@@ -491,7 +492,7 @@ export async function updateDiscussion(id: string, transcript: any[]) {
 
 export async function getDiscussionById(id: string): Promise<CommunityDiscussion | null> {
   const doc = await db.collection(DISCUSSIONS_COLLECTION).doc(id).get();
-  return doc.exists ? (doc.data() as CommunityDiscussion) : null;
+  return doc.exists ? ({ ...doc.data(), id: doc.id } as CommunityDiscussion) : null;
 }
 
 export async function saveDiscussionDesignDoc(id: string, doc: string, title?: string) {
@@ -513,14 +514,12 @@ export async function linkDiscussionToLectureSegment(channelId: string, lectureI
 }
 
 export async function getUserDesignDocs(uid: string): Promise<CommunityDiscussion[]> {
-    // FIX: Removed the designDoc filter to ensure all sessions (transcripts or manual drafts)
-    // are visible in the Document Studio for the user to read and modify.
     const snap = await db.collection(DISCUSSIONS_COLLECTION)
         .where('userId', '==', uid)
         .get();
         
     return snap.docs
-        .map(d => d.data() as CommunityDiscussion)
+        .map(d => ({ ...d.data(), id: d.id } as CommunityDiscussion))
         .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
 }
 
