@@ -478,6 +478,10 @@ export async function saveDiscussion(discussion: CommunityDiscussion): Promise<s
   return ref.id;
 }
 
+export async function deleteDiscussion(id: string): Promise<void> {
+    await db.collection(DISCUSSIONS_COLLECTION).doc(id).delete();
+}
+
 export async function updateDiscussion(id: string, transcript: any[]) {
     await db.collection(DISCUSSIONS_COLLECTION).doc(id).update({
         transcript: sanitizeData(transcript),

@@ -1,8 +1,8 @@
 
 import React, { useState, useEffect } from 'react';
-import { X, MessageCircle, FileText, Loader2, CornerDownRight, Edit2, Save, Sparkles, ExternalLink, Cloud } from 'lucide-react';
+import { X, MessageCircle, FileText, Loader2, CornerDownRight, Edit2, Save, Sparkles, ExternalLink, Cloud, Trash2 } from 'lucide-react';
 import { CommunityDiscussion } from '../types';
-import { getDiscussionById, saveDiscussionDesignDoc, saveDiscussion } from '../services/firestoreService';
+import { getDiscussionById, saveDiscussionDesignDoc, saveDiscussion, deleteDiscussion } from '../services/firestoreService';
 import { generateDesignDocFromTranscript } from '../services/lectureGenerator';
 import { MarkdownView } from './MarkdownView';
 import { createGoogleDoc } from '../services/googleDriveService';
@@ -16,10 +16,11 @@ interface DiscussionModalProps {
   currentUser?: any;
   language?: 'en' | 'zh';
   activeLectureTopic?: string; // Passed for context generation
+  onDocumentDeleted?: () => void;
 }
 
 export const DiscussionModal: React.FC<DiscussionModalProps> = ({ 
-  isOpen, onClose, discussionId, initialDiscussion, currentUser, language = 'en', activeLectureTopic 
+  isOpen, onClose, discussionId, initialDiscussion, currentUser, language = 'en', activeLectureTopic, onDocumentDeleted
 }) => {
   const [activeDiscussion, setActiveDiscussion] = useState<CommunityDiscussion | null>(initialDiscussion || null);
   const [loading, setLoading] = useState(false);
@@ -30,6 +31,7 @@ export const DiscussionModal: React.FC<DiscussionModalProps> = ({
   const [editedDocContent, setEditedDocContent] = useState('');
   const [docTitle, setDocTitle] = useState('');
   const [isSavingDoc, setIsSavingDoc] = useState(false);
+  const [isDeletingDoc, setIsDeletingDoc] = useState(false);
   const [isGeneratingDoc, setIsGeneratingDoc] = useState(false);
 
   // Google Doc Export State
@@ -108,7 +110,7 @@ export const DiscussionModal: React.FC<DiscussionModalProps> = ({
           // Create new document
           const docToSave = {
               ...activeDiscussion,
-              title: docTitle,
+              title: docTitle || 'Untitled Document',
               designDoc: editedDocContent
           };
           // Remove temporary ID 'new' so it doesn't pollute data
@@ -116,11 +118,11 @@ export const DiscussionModal: React.FC<DiscussionModalProps> = ({
           delete docToSave.id;
           
           const newId = await saveDiscussion(docToSave as CommunityDiscussion);
-          setActiveDiscussion({ ...activeDiscussion, title: docTitle, designDoc: editedDocContent, id: newId });
+          setActiveDiscussion({ ...activeDiscussion, title: docTitle || 'Untitled Document', designDoc: editedDocContent, id: newId });
       } else {
           // Update existing document
-          await saveDiscussionDesignDoc(activeDiscussion.id, editedDocContent, docTitle);
-          setActiveDiscussion({ ...activeDiscussion, title: docTitle, designDoc: editedDocContent });
+          await saveDiscussionDesignDoc(activeDiscussion.id, editedDocContent, docTitle || 'Untitled Document');
+          setActiveDiscussion({ ...activeDiscussion, title: docTitle || 'Untitled Document', designDoc: editedDocContent });
       }
       setIsEditingDoc(false);
     } catch (e) {
@@ -131,13 +133,28 @@ export const DiscussionModal: React.FC<DiscussionModalProps> = ({
     }
   };
 
+  const handleDelete = async () => {
+      if (!activeDiscussion || activeDiscussion.id === 'new' || activeDiscussion.id === 'system-doc-001') return;
+      if (!confirm("Are you sure you want to delete this document?")) return;
+
+      setIsDeletingDoc(true);
+      try {
+          await deleteDiscussion(activeDiscussion.id);
+          if (onDocumentDeleted) onDocumentDeleted();
+          onClose();
+      } catch (e) {
+          alert("Failed to delete document.");
+      } finally {
+          setIsDeletingDoc(false);
+      }
+  };
+
   const handleExportToGoogleDocs = async () => {
       if (!activeDiscussion || !editedDocContent) return;
       
       setIsExportingGDoc(true);
       try {
-          // 1. Get OAuth Token (reusing Code Studio logic)
-          // Note: In a production app, we'd check if we have a valid token in memory first.
+          // 1. Get OAuth Token
           const token = await connectGoogleDrive();
           
           // 2. Create the Doc
@@ -165,13 +182,12 @@ export const DiscussionModal: React.FC<DiscussionModalProps> = ({
                           value={docTitle} 
                           onChange={(e) => setDocTitle(e.target.value)}
                           className="bg-transparent border-b border-transparent hover:border-slate-600 focus:border-indigo-500 text-lg font-bold text-white focus:outline-none w-full transition-colors truncate"
-                          placeholder="Document Title"
+                          placeholder="Untitled Document"
                       />
                   </div>
                   <div className="flex items-center gap-2">
                       {activeDiscussion?.designDoc && !isEditingDoc && (
                           <button 
-                            /* Fix: changed handleExportToGoogleToDocs to handleExportToGoogleDocs */
                             onClick={handleExportToGoogleDocs}
                             disabled={isExportingGDoc}
                             className="flex items-center gap-2 px-3 py-1.5 bg-blue-600/20 hover:bg-blue-600/40 text-blue-300 border border-blue-600/30 rounded-lg text-xs font-bold transition-all"
@@ -249,26 +265,40 @@ export const DiscussionModal: React.FC<DiscussionModalProps> = ({
                           <div className="h-full flex flex-col">
                               {activeDiscussion.designDoc || isEditingDoc ? (
                                   <>
-                                    <div className="flex justify-end mb-4 space-x-2 sticky top-0 z-10 bg-slate-900 pb-2">
-                                        {isEditingDoc ? (
-                                            <>
-                                                <button onClick={() => setIsEditingDoc(false)} className="px-3 py-1.5 text-xs text-slate-400 hover:text-white bg-slate-800 rounded-lg">Cancel</button>
-                                                <button onClick={handleSaveDoc} disabled={isSavingDoc} className="px-3 py-1.5 text-xs text-white bg-emerald-600 hover:bg-emerald-500 rounded-lg flex items-center gap-1 font-bold">
-                                                    {isSavingDoc ? <Loader2 size={12} className="animate-spin"/> : <Save size={12}/>} Save
+                                    <div className="flex justify-between mb-4 sticky top-0 z-10 bg-slate-900 pb-2">
+                                        <div className="flex gap-2">
+                                            {activeDiscussion.id !== 'new' && activeDiscussion.id !== 'system-doc-001' && (
+                                                <button 
+                                                    onClick={handleDelete}
+                                                    disabled={isDeletingDoc}
+                                                    className="px-3 py-1.5 text-xs text-red-400 hover:text-white bg-red-900/10 hover:bg-red-600 rounded-lg flex items-center gap-1 transition-all border border-red-900/30"
+                                                >
+                                                    {isDeletingDoc ? <Loader2 size={12} className="animate-spin"/> : <Trash2 size={12}/>}
+                                                    <span>Delete</span>
                                                 </button>
-                                            </>
-                                        ) : (
-                                            <div className="flex gap-2">
-                                                {gDocUrl && (
-                                                    <a href={gDocUrl} target="_blank" rel="noreferrer" className="px-3 py-1.5 text-xs text-emerald-400 bg-emerald-900/20 border border-emerald-500/30 rounded-lg flex items-center gap-1 font-bold hover:bg-emerald-900/40">
-                                                        <ExternalLink size={12}/> View on Google Docs
-                                                    </a>
-                                                )}
-                                                <button onClick={() => setIsEditingDoc(true)} className="px-3 py-1.5 text-xs text-indigo-300 hover:text-white bg-slate-800 hover:bg-indigo-600 rounded-lg flex items-center gap-1 border border-slate-700 transition-colors">
-                                                    <Edit2 size={12}/> Edit
-                                                </button>
-                                            </div>
-                                        )}
+                                            )}
+                                        </div>
+                                        <div className="flex space-x-2">
+                                            {isEditingDoc ? (
+                                                <>
+                                                    <button onClick={() => setIsEditingDoc(false)} className="px-3 py-1.5 text-xs text-slate-400 hover:text-white bg-slate-800 rounded-lg">Cancel</button>
+                                                    <button onClick={handleSaveDoc} disabled={isSavingDoc} className="px-3 py-1.5 text-xs text-white bg-emerald-600 hover:bg-emerald-500 rounded-lg flex items-center gap-1 font-bold">
+                                                        {isSavingDoc ? <Loader2 size={12} className="animate-spin"/> : <Save size={12}/>} Save
+                                                    </button>
+                                                </>
+                                            ) : (
+                                                <div className="flex gap-2">
+                                                    {gDocUrl && (
+                                                        <a href={gDocUrl} target="_blank" rel="noreferrer" className="px-3 py-1.5 text-xs text-emerald-400 bg-emerald-900/20 border border-emerald-500/30 rounded-lg flex items-center gap-1 font-bold hover:bg-emerald-900/40">
+                                                            <ExternalLink size={12}/> View on Google Docs
+                                                        </a>
+                                                    )}
+                                                    <button onClick={() => setIsEditingDoc(true)} className="px-3 py-1.5 text-xs text-indigo-300 hover:text-white bg-slate-800 hover:bg-indigo-600 rounded-lg flex items-center gap-1 border border-slate-700 transition-colors">
+                                                        <Edit2 size={12}/> Edit
+                                                    </button>
+                                                </div>
+                                            )}
+                                        </div>
                                     </div>
 
                                     {isEditingDoc ? (
