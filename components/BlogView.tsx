@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { Blog, BlogPost, Comment } from '../types';
 import { ensureUserBlog, getCommunityPosts, getUserPosts, createBlogPost, updateBlogPost, deleteBlogPost, updateBlogSettings, addPostComment, getBlogPost } from '../services/firestoreService';
 import { auth } from '../services/firebaseConfig';
-import { Edit3, Plus, Trash2, Globe, User, MessageSquare, Loader2, ArrowLeft, Save, Image as ImageIcon, Search, LayoutList, PenTool, Rss, X, Pin, AlertCircle } from 'lucide-react';
+import { Edit3, Plus, Trash2, Globe, User, MessageSquare, Loader2, ArrowLeft, Save, Image as ImageIcon, Search, LayoutList, PenTool, Rss, X, Pin, AlertCircle, RefreshCw } from 'lucide-react';
 import { MarkdownView } from './MarkdownView';
 import { CommentsModal } from './CommentsModal';
 import { ARCHITECTURE_BLOG_POST } from '../utils/blogContent';
@@ -16,6 +16,7 @@ interface BlogViewProps {
 export const BlogView: React.FC<BlogViewProps> = ({ currentUser, onBack }) => {
   const [activeTab, setActiveTab] = useState<'feed' | 'my_blog' | 'editor' | 'post_detail'>('feed');
   const [loading, setLoading] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [posts, setPosts] = useState<BlogPost[]>([]);
   
   // My Blog State
@@ -33,8 +34,9 @@ export const BlogView: React.FC<BlogViewProps> = ({ currentUser, onBack }) => {
   const [activePost, setActivePost] = useState<BlogPost | null>(null);
   const [isCommentsOpen, setIsCommentsOpen] = useState(false);
 
-  // Load Feed on Mount
+  // Load data based on tab
   useEffect(() => {
+    setErrorMsg(null);
     if (activeTab === 'feed') {
       loadFeed();
     } else if (activeTab === 'my_blog' && currentUser) {
@@ -44,19 +46,27 @@ export const BlogView: React.FC<BlogViewProps> = ({ currentUser, onBack }) => {
 
   const loadFeed = async () => {
     setLoading(true);
+    setErrorMsg(null);
     try {
       const data = await getCommunityPosts();
       
       // Merge static architecture post if not already in DB
       const dbHasStatic = data.some(p => p.id === ARCHITECTURE_BLOG_POST.id);
+      
+      let finalPosts: BlogPost[] = [];
       if (!dbHasStatic) {
-          const combined = [ARCHITECTURE_BLOG_POST, ...data].sort((a, b) => b.createdAt - a.createdAt);
-          setPosts([ARCHITECTURE_BLOG_POST, ...data.filter(p => p.id !== ARCHITECTURE_BLOG_POST.id)]);
+          finalPosts = [ARCHITECTURE_BLOG_POST, ...data.filter(p => p.id !== ARCHITECTURE_BLOG_POST.id)];
       } else {
-          setPosts(data);
+          finalPosts = data;
       }
-    } catch (e) {
+      
+      // Ensure strict sort by creation date for the feed view
+      setPosts(finalPosts.sort((a, b) => b.createdAt - a.createdAt));
+      
+    } catch (e: any) {
       console.error("Feed load error:", e);
+      setErrorMsg("Failed to load community feed. Please try refreshing.");
+      // Fallback to static post so screen isn't empty
       setPosts([ARCHITECTURE_BLOG_POST]);
     } finally {
       setLoading(false);
@@ -66,6 +76,7 @@ export const BlogView: React.FC<BlogViewProps> = ({ currentUser, onBack }) => {
   const loadMyBlog = async () => {
     if (!currentUser) return;
     setLoading(true);
+    setErrorMsg(null);
     try {
       const blog = await ensureUserBlog(currentUser);
       setMyBlog(blog);
@@ -74,8 +85,9 @@ export const BlogView: React.FC<BlogViewProps> = ({ currentUser, onBack }) => {
       
       const userPosts = await getUserPosts(blog.id);
       setMyPosts(userPosts);
-    } catch (e) {
+    } catch (e: any) {
       console.error("My blog load error:", e);
+      setErrorMsg("Database error loading your posts. This usually happens if you're offline or a network error occurred.");
     } finally {
       setLoading(false);
     }
@@ -140,7 +152,6 @@ export const BlogView: React.FC<BlogViewProps> = ({ currentUser, onBack }) => {
             await createBlogPost(postData);
         }
         
-        // Return to "My Blog" list and reload
         setActiveTab('my_blog');
         await loadMyBlog(); 
         alert(editingPost.status === 'published' ? "Post published successfully!" : "Draft saved successfully!");
@@ -270,6 +281,15 @@ export const BlogView: React.FC<BlogViewProps> = ({ currentUser, onBack }) => {
         {/* Content Area */}
         <div className="flex-1 overflow-y-auto p-4 md:p-8 max-w-5xl mx-auto w-full">
             
+            {/* Error Message Display */}
+            {errorMsg && (
+                <div className="bg-red-900/20 border border-red-900/50 rounded-xl p-4 flex items-center gap-3 text-red-200 mb-6 animate-fade-in">
+                    <AlertCircle size={20} className="shrink-0" />
+                    <div className="flex-1 text-sm">{errorMsg}</div>
+                    <button onClick={() => activeTab === 'feed' ? loadFeed() : loadMyBlog()} className="p-2 hover:bg-red-900/30 rounded-full"><RefreshCw size={16}/></button>
+                </div>
+            )}
+
             {activeTab === 'feed' && (
                 <div className="space-y-6 animate-fade-in">
                     <div className="flex items-center justify-between">
@@ -451,7 +471,7 @@ export const BlogView: React.FC<BlogViewProps> = ({ currentUser, onBack }) => {
                         <div className="mt-12 pt-6 border-t border-slate-800 flex items-center justify-between">
                             <button className="flex items-center gap-2 text-slate-400 hover:text-indigo-400 transition-colors">
                                 <MessageSquare size={20}/>
-                                <span>{activePost.comments?.length || 0} Comments</span>
+                                <span>{activePost.commentCount || 0} Comments</span>
                             </button>
                             {currentUser && (
                                 <button 

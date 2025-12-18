@@ -508,11 +508,15 @@ export async function linkDiscussionToLectureSegment(channelId: string, lectureI
 }
 
 export async function getUserDesignDocs(uid: string): Promise<CommunityDiscussion[]> {
+    // Index Safety: Removed orderBy and combined filters to avoid composite index requirement
     const snap = await db.collection(DISCUSSIONS_COLLECTION)
         .where('userId', '==', uid)
-        .where('designDoc', '!=', null)
         .get();
-    return snap.docs.map(d => d.data() as CommunityDiscussion);
+        
+    return snap.docs
+        .map(d => d.data() as CommunityDiscussion)
+        .filter(d => d.designDoc !== undefined && d.designDoc !== null)
+        .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
 }
 
 // --- Bookings ---
@@ -620,8 +624,10 @@ export async function saveRecordingReference(rec: RecordingSession) {
 }
 
 export async function getUserRecordings(uid: string): Promise<RecordingSession[]> {
-    const snap = await db.collection(RECORDINGS_COLLECTION).where('userId', '==', uid).orderBy('timestamp', 'desc').get();
-    return snap.docs.map(d => d.data() as RecordingSession);
+    const snap = await db.collection(RECORDINGS_COLLECTION).where('userId', '==', uid).get();
+    return snap.docs
+        .map(d => d.data() as RecordingSession)
+        .sort((a, b) => b.timestamp - a.timestamp);
 }
 
 export async function deleteRecordingReference(id: string, mediaUrl: string, transcriptUrl: string) {
@@ -834,23 +840,26 @@ export async function ensureUserBlog(user: any): Promise<Blog> {
 }
 
 export async function getCommunityPosts(): Promise<BlogPost[]> {
+    // Index Safety: Perform client-side filtering on status to avoid composite index requirement
     const snap = await db.collection(POSTS_COLLECTION)
         .orderBy('createdAt', 'desc')
-        .limit(50)
+        .limit(100) // Increase limit slightly to ensure enough published posts are captured
         .get();
         
-    // Filter published status locally to avoid requiring composite index immediately
     return snap.docs
         .map(d => d.data() as BlogPost)
         .filter(p => p.status === 'published');
 }
 
 export async function getUserPosts(blogId: string): Promise<BlogPost[]> {
+    // Index Safety: Removed orderBy and handled sorting in memory to avoid composite index requirement
     const snap = await db.collection(POSTS_COLLECTION)
         .where('blogId', '==', blogId)
-        .orderBy('createdAt', 'desc')
         .get();
-    return snap.docs.map(d => d.data() as BlogPost);
+        
+    return snap.docs
+        .map(d => d.data() as BlogPost)
+        .sort((a, b) => b.createdAt - a.createdAt);
 }
 
 export async function createBlogPost(post: BlogPost) {
@@ -886,8 +895,10 @@ export async function getBlogPost(id: string): Promise<BlogPost | null> {
 // --- Career ---
 
 export async function getJobPostings(): Promise<JobPosting[]> {
-    const snap = await db.collection(JOBS_COLLECTION).orderBy('postedAt', 'desc').get();
-    return snap.docs.map(d => d.data() as JobPosting);
+    const snap = await db.collection(JOBS_COLLECTION).get();
+    return snap.docs
+        .map(d => d.data() as JobPosting)
+        .sort((a, b) => b.postedAt - a.postedAt);
 }
 
 export async function createJobPosting(job: JobPosting) {
@@ -901,8 +912,10 @@ export async function submitCareerApplication(app: CareerApplication) {
 }
 
 export async function getAllCareerApplications(): Promise<CareerApplication[]> {
-    const snap = await db.collection(APPLICATIONS_COLLECTION).orderBy('createdAt', 'desc').get();
-    return snap.docs.map(d => d.data() as CareerApplication);
+    const snap = await db.collection(APPLICATIONS_COLLECTION).get();
+    return snap.docs
+        .map(d => d.data() as CareerApplication)
+        .sort((a, b) => b.createdAt - a.createdAt);
 }
 
 // --- Storage Utils ---
