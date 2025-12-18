@@ -10,30 +10,11 @@ export async function generateCurriculum(
 ): Promise<Chapter[] | null> {
   try {
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-
-    const langInstruction = language === 'zh' 
-      ? 'Output Language: Simplified Chinese (Mandarin). Use professional academic terminology.'
-      : 'Output Language: English.';
+    const langInstruction = language === 'zh' ? 'Output Simplified Chinese.' : 'Output English.';
 
     const prompt = `
-      You are an expert curriculum designer. Design a 10-chapter learning path for a podcast about: "${topic}".
-      Context: ${context}
-      ${langInstruction}
-      
-      Requirements:
-      1. Exactly 10 chapters.
-      2. Each chapter should have 3-5 specific sub-topics (lessons).
-      3. Topics should progress from fundamentals to advanced concepts.
-      
-      Return ONLY a JSON array with this structure:
-      [
-        {
-          "title": "Chapter 1: ...",
-          "subTopics": [
-            { "title": "Lesson 1.1: ..." }
-          ]
-        }
-      ]
+      Create a 10-chapter path for: "${topic}". Context: ${context}. ${langInstruction}
+      Return ONLY a JSON array: [ { "title": "...", "subTopics": [ { "title": "..." } ] } ]
     `;
 
     const response = await ai.models.generateContent({
@@ -54,7 +35,6 @@ export async function generateCurriculum(
       }))
     }));
   } catch (error) {
-    console.error("Failed to generate curriculum:", error);
     return null;
   }
 }
