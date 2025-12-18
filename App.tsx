@@ -59,7 +59,7 @@ import { HANDCRAFTED_CHANNELS, CATEGORY_STYLES, TOPIC_CATEGORIES } from './utils
 import { OFFLINE_CHANNEL_ID } from './utils/offlineContent';
 import { GEMINI_API_KEY } from './services/private_keys';
 
-const APP_VERSION = "v3.80.0"; 
+const APP_VERSION = "v3.80.1"; 
 
 const UI_TEXT = {
   en: {
@@ -148,7 +148,7 @@ const App: React.FC = () => {
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [searchQuery, setSearchQuery] = useState('');
   
-  // Layout & Sorting (Kept for fallback, but main view is now Feed)
+  // Layout & Sorting
   const [layoutMode, setLayoutMode] = useState<'grid' | 'table'>('grid');
   const [sortConfig, setSortConfig] = useState<{ key: SortKey; direction: 'asc' | 'desc' }>({ key: 'createdAt', direction: 'desc' });
 
@@ -160,7 +160,7 @@ const App: React.FC = () => {
   
   // Modals
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
-  const [createModalDate, setCreateModalDate] = useState<Date | null>(null); // For Calendar Scheduling
+  const [createModalDate, setCreateModalDate] = useState<Date | null>(null);
   
   const [isVoiceCreateOpen, setIsVoiceCreateOpen] = useState(false);
   const [isApiKeyModalOpen, setIsApiKeyModalOpen] = useState(false);
@@ -217,6 +217,7 @@ const App: React.FC = () => {
     { label: t.docs, icon: FileText, action: () => { setViewState('directory'); setActiveTab('docs'); }, color: 'text-gray-400' },
   ];
 
+  // URL Sync Effect: Mount (Read from URL)
   useEffect(() => {
     const key = localStorage.getItem('gemini_api_key') || GEMINI_API_KEY || process.env.API_KEY;
     setHasApiKey(!!key);
@@ -231,23 +232,50 @@ const App: React.FC = () => {
     if (view === 'card' && id) {
         setViewCardId(id);
         setViewState('card_viewer');
-    }
-    
-    if (view === 'card_workshop' && id) {
-        setViewCardId(id);
+    } else if (view === 'card_workshop') {
+        if (id) setViewCardId(id);
         setViewState('card_workshop');
+    } else if (view === 'card_explorer') {
+        setViewState('card_explorer');
+    } else if (view === 'code') {
+        setViewState('code_studio');
+    } else if (view === 'whiteboard') {
+        setViewState('whiteboard');
+    } else if (view === 'blog') {
+        setViewState('blog');
+    } else if (view === 'chat') {
+        setViewState('chat');
+    } else if (view === 'careers') {
+        setViewState('careers');
+    } else if (view === 'guide') {
+        setViewState('user_guide');
+    } else if (view === 'mission') {
+        setViewState('mission');
+    } else if (view === 'notebooks') {
+        setViewState('notebook_viewer');
+    } else if (view === 'podcast' && id) {
+        setActiveChannelId(id);
+        setViewState('podcast_detail');
+    } else if (view === 'debug_local') {
+        setViewState('debug');
+    } else if (view === 'debug_firestore') {
+        setViewState('firestore_debug');
+    } else if (view === 'debug_storage') {
+        setViewState('cloud_debug');
+    } else if (view === 'debug_registry') {
+        setViewState('public_debug');
+    } else if (view === 'debug_my_channels') {
+        setViewState('my_channel_debug');
     }
 
     if (session) {
         setSharedSessionId(session);
         if (keyParam) setAccessKey(keyParam);
         
-        if (viewState !== 'code_studio' && viewState !== 'whiteboard' && viewState !== 'card_viewer' && viewState !== 'card_workshop') {
-            if (mode === 'whiteboard') {
-                 setViewState('whiteboard');
-            } else {
-                 setViewState('code_studio');
-            }
+        // Ensure correct view state for shared sessions if not explicitly set by 'view' param
+        if (!view) {
+            if (mode === 'whiteboard') setViewState('whiteboard');
+            else setViewState('code_studio');
         }
     }
 
@@ -276,6 +304,53 @@ const App: React.FC = () => {
 
     return () => unsubscribeAuth();
   }, []);
+
+  // URL Sync Effect: Persistence (Update URL on state change)
+  useEffect(() => {
+      const url = new URL(window.location.href);
+      const params = url.searchParams;
+
+      // Map ViewState to URL param
+      let viewParam: string | null = null;
+      switch(viewState) {
+          case 'code_studio': viewParam = 'code'; break;
+          case 'whiteboard': viewParam = 'whiteboard'; break;
+          case 'blog': viewParam = 'blog'; break;
+          case 'chat': viewParam = 'chat'; break;
+          case 'careers': viewParam = 'careers'; break;
+          case 'user_guide': viewParam = 'guide'; break;
+          case 'mission': viewParam = 'mission'; break;
+          case 'notebook_viewer': viewParam = 'notebooks'; break;
+          case 'card_workshop': viewParam = 'card_workshop'; break;
+          case 'card_explorer': viewParam = 'card_explorer'; break;
+          case 'card_viewer': viewParam = 'card'; break;
+          case 'podcast_detail': viewParam = 'podcast'; break;
+          case 'debug': viewParam = 'debug_local'; break;
+          case 'firestore_debug': viewParam = 'debug_firestore'; break;
+          case 'cloud_debug': viewParam = 'debug_storage'; break;
+          case 'public_debug': viewParam = 'debug_registry'; break;
+          case 'my_channel_debug': viewParam = 'debug_my_channels'; break;
+          default: viewParam = null;
+      }
+
+      if (viewParam) {
+          params.set('view', viewParam);
+          if (viewState === 'podcast_detail' && activeChannelId) {
+              params.set('id', activeChannelId);
+          } else if (viewState === 'card_workshop' && viewCardId) {
+              params.set('id', viewCardId);
+          } else if (viewState === 'card_viewer' && viewCardId) {
+              params.set('id', viewCardId);
+          } else if (viewState !== 'podcast_detail' && viewState !== 'card_viewer' && viewState !== 'card_workshop') {
+              params.delete('id');
+          }
+      } else {
+          params.delete('view');
+          params.delete('id');
+      }
+
+      window.history.replaceState({}, '', url.toString());
+  }, [viewState, activeChannelId, viewCardId]);
 
   useEffect(() => {
       if (currentUser && isFirebaseConfigured) {
@@ -345,22 +420,16 @@ const App: React.FC = () => {
   const handleVote = async (id: string, type: 'like' | 'dislike', e: React.MouseEvent) => {
     e.stopPropagation();
     
-    // 1. Optimistic UI Update (Channel Count)
     setChannels(prev => prev.map(c => {
       if (c.id === id) {
-        // Simple increment for visual feedback
         return type === 'like' ? { ...c, likes: c.likes + 1 } : { ...c, dislikes: c.dislikes + 1 };
       }
       return c;
     }));
 
-    // 2. Persist to Firestore
     const channel = channels.find(c => c.id === id);
     if (channel) {
         await voteChannel(channel, type);
-        
-        // 3. Update User Profile Locally (Optimistic)
-        // This ensures visual "Heart" state stays consistent across the app
         if (currentUser && userProfile) {
             const currentLikes = userProfile.likedChannelIds || [];
             let newLikesList = [...currentLikes];
@@ -378,20 +447,17 @@ const App: React.FC = () => {
 
   const handleCreateChannel = async (newChannel: Channel) => {
     try {
-        // Ensure createdAt is present, fallback to now if missing
         const channelToSave = {
             ...newChannel,
             createdAt: newChannel.createdAt || Date.now()
         };
 
-        // Always save to userChannels state so it appears in "My Podcast" filter and persists locally immediately
         setUserChannels(prev => {
              const exists = prev.find(c => c.id === channelToSave.id);
              if (exists) return prev.map(c => c.id === channelToSave.id ? channelToSave : c);
              return [channelToSave, ...prev];
         });
         
-        // Also save to IndexedDB for "My Channels" persistence even if public
         await saveUserChannel(channelToSave);
         
         if (channelToSave.visibility === 'public' || channelToSave.visibility === 'group') {
@@ -506,7 +572,7 @@ const App: React.FC = () => {
       };
       setTempChannel(quickChannel);
       setActiveChannelId(quickChannel.id);
-      setLiveConfig({ recording: false }); // Default config
+      setLiveConfig({ recording: false }); 
       setViewState('live_session');
   };
 
@@ -515,15 +581,8 @@ const App: React.FC = () => {
       setAccessKey(undefined);
       
       const url = new URL(window.location.href);
-      url.searchParams.delete('session');
-      url.searchParams.delete('code_session');
-      url.searchParams.delete('whiteboard_session');
-      url.searchParams.delete('view');
-      url.searchParams.delete('key');
-      url.searchParams.delete('mode');
-
       url.searchParams.set('session', id);
-      window.history.pushState({}, '', url.toString());
+      window.history.replaceState({}, '', url.toString());
   };
 
   const handleSessionStop = () => {
@@ -532,10 +591,9 @@ const App: React.FC = () => {
       const url = new URL(window.location.href);
       url.searchParams.delete('session');
       url.searchParams.delete('key');
-      window.history.pushState({}, '', url.toString());
+      window.history.replaceState({}, '', url.toString());
   };
 
-  // --- Messaging Logic ---
   const handleMessageCreator = async (creatorId: string, creatorName: string) => {
       if (!currentUser) { 
           alert("Please sign in to message creators.");
@@ -552,7 +610,6 @@ const App: React.FC = () => {
       }
   };
 
-  // --- Sorting Logic ---
   const handleSort = (key: SortKey) => {
       setSortConfig(current => ({
           key,
@@ -560,11 +617,9 @@ const App: React.FC = () => {
       }));
   };
 
-  // Combined Channel List for Feed
   const feedChannels = useMemo(() => {
       let data = [...channels];
       
-      // Filter for "Following" tab (Mobile)
       if (mobileFeedTab === 'following') {
           if (userProfile) {
               const followingIds = userProfile.following || [];
@@ -579,7 +634,6 @@ const App: React.FC = () => {
                   data = [];
               }
           } else {
-              // Guest viewing "Following" -> Empty
               data = [];
           }
       }
@@ -597,7 +651,6 @@ const App: React.FC = () => {
   }, [channels, searchQuery, mobileFeedTab, userProfile]);
 
   const handleRefreshFeed = () => {
-      // Simulate fetch new data by reshuffling locally for demo
       setChannels(prev => [...prev.sort(() => 0.5 - Math.random())]);
   };
 
@@ -613,7 +666,6 @@ const App: React.FC = () => {
       }
   };
   
-  // Safe user profile for Settings Modal (fallback to basic auth data if profile fetch failed)
   const safeUserProfile = useMemo(() => {
       if (userProfile) return userProfile;
       if (currentUser) {
@@ -641,7 +693,6 @@ const App: React.FC = () => {
       return <PrivacyPolicy onBack={() => setIsPrivacyOpen(false)} />;
   }
 
-  // PUBLIC CARD VIEWER
   if (viewState === 'card_viewer') {
       return <CardWorkshop onBack={() => { setViewState('directory'); setViewCardId(undefined); }} cardId={viewCardId} isViewer={true} />;
   }
@@ -650,7 +701,6 @@ const App: React.FC = () => {
       return <LoginPage onPrivacyClick={() => setIsPrivacyOpen(true)} />;
   }
 
-  // Mobile Bottom Nav Component
   const MobileBottomNav = () => (
       <div className="md:hidden fixed bottom-0 left-0 w-full bg-slate-950/90 backdrop-blur-md border-t border-slate-800 z-50 px-6 py-2 flex justify-between items-center safe-area-bottom">
           <button 
@@ -659,13 +709,6 @@ const App: React.FC = () => {
           >
               <Home size={24} fill={viewState === 'directory' && activeTab === 'categories' && !isAppsMenuOpen && !isUserMenuOpen ? "currentColor" : "none"} />
               <span className="text-[10px]">Home</span>
-          </button>
-          
-          <button 
-              onClick={() => { setViewState('directory'); setActiveTab('groups'); setIsAppsMenuOpen(false); setIsUserMenuOpen(false); }}
-              className={`flex-1 flex-col items-center gap-1 hidden ${activeTab === 'groups' && !isAppsMenuOpen && !isUserMenuOpen ? 'text-white' : 'text-slate-500'}`}
-          >
-              {/* Hidden in simplified layout to fix spacing, or use flex-1 properly */}
           </button>
           
           <button 
@@ -705,7 +748,6 @@ const App: React.FC = () => {
       </div>
   );
 
-  // Mobile Top Nav Component (Overlay on Feed)
   const MobileTopNav = () => {
       if (viewState !== 'directory' || activeTab !== 'categories') return null;
       return (
@@ -737,7 +779,6 @@ const App: React.FC = () => {
       );
   };
 
-  // Mobile Search Overlay
   const MobileSearchOverlay = () => {
       if (!isMobileSearchOpen) return null;
       
@@ -813,7 +854,6 @@ const App: React.FC = () => {
   return (
     <div className="min-h-screen supports-[min-height:100dvh]:min-h-[100dvh] bg-slate-950 text-slate-100 font-sans overflow-hidden">
       
-      {/* Navbar - Desktop Only */}
       {viewState !== 'live_session' && (
       <nav className="hidden md:block sticky top-0 z-50 bg-slate-900/90 backdrop-blur-md border-b border-slate-800">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -845,7 +885,6 @@ const App: React.FC = () => {
 
             <div className="flex items-center space-x-2 sm:space-x-4">
               
-              {/* Desktop Creation Buttons (Restored) */}
               <div className="hidden lg:flex items-center space-x-2 mr-2">
                   <button
                       onClick={() => setIsCreateModalOpen(true)}
@@ -863,7 +902,6 @@ const App: React.FC = () => {
                   </button>
               </div>
 
-              {/* Desktop App Group Dropdown */}
               <div className="relative">
                   <button 
                     onClick={() => setIsDesktopAppsOpen(!isDesktopAppsOpen)}
@@ -922,10 +960,6 @@ const App: React.FC = () => {
                 >
                   <Menu size={24} />
                 </button>
-                {/* 
-                   MOVED OUTSIDE: StudioMenu is no longer rendered here to avoid z-index stacking context issues.
-                   It is now rendered at the root level of App.tsx 
-                */}
               </div>
             </div>
           </div>
@@ -936,7 +970,6 @@ const App: React.FC = () => {
       <MobileTopNav />
       <MobileSearchOverlay />
 
-      {/* Main Content */}
       <div className="flex-1 overflow-hidden h-[calc(100vh-64px)] md:h-[calc(100vh-64px)] pb-16 md:pb-0">
         {viewState === 'mission' && <MissionManifesto onBack={() => setViewState('directory')} />}
         {viewState === 'user_guide' && <UserManual onBack={() => setViewState('directory')} />}
@@ -978,10 +1011,7 @@ const App: React.FC = () => {
 
         {viewState === 'directory' && (
           <div className="h-full flex flex-col">
-            {/* Content Area */}
             <div className="flex-1 overflow-hidden relative">
-               
-               {/* 1. Main Feed (Hybrid Layout) */}
                {activeTab === 'categories' && (
                    <PodcastFeed 
                        channels={feedChannels}
@@ -1001,7 +1031,6 @@ const App: React.FC = () => {
                    />
                )}
 
-               {/* 2. Other Tabs (Standard Layout) */}
                {activeTab !== 'categories' && (
                    <div className="h-full overflow-y-auto p-4 md:p-8 animate-fade-in max-w-7xl mx-auto w-full pb-20">
                        {activeTab === 'calendar' && (
@@ -1127,11 +1156,6 @@ const App: React.FC = () => {
         </div>
       )}
 
-      {/* 
-          STUDIO MENU (ROOT LEVEL)
-          This single instance handles both desktop and mobile positioning responsively.
-          It is placed here to escape the stacking context of the navbar and other containers.
-      */}
       {isUserMenuOpen && (
         <StudioMenu 
            isUserMenuOpen={isUserMenuOpen} 
