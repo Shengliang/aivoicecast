@@ -1,5 +1,7 @@
+
 import { GoogleGenAI, LiveServerMessage, Modality } from '@google/genai';
 import { base64ToBytes, decodeAudioData, createPcmBlob } from '../utils/audioUtils';
+import { GEMINI_API_KEY } from './private_keys';
 
 export interface LiveConnectionCallbacks {
   onOpen: () => void;
@@ -28,7 +30,9 @@ export class GeminiLiveService {
   private isPlayingResponse: boolean = false; // Gate mic while AI is talking to prevent echo-interruption
   private speakingTimer: any = null;
 
-  constructor() {}
+  constructor() {
+    // Constructor no longer initializes AI client to allow for dynamic key injection
+  }
 
   // PUBLIC SYNC METHOD FOR IOS SUPPORT
   public initializeAudio() {
@@ -52,6 +56,7 @@ export class GeminiLiveService {
   }
 
   public sendVideo(base64Data: string, mimeType: string = 'image/jpeg') {
+      // CRITICAL: Solely rely on sessionPromise resolves and then call session.sendRealtimeInput
       this.sessionPromise?.then((session) => {
           if (session) {
               try {
@@ -75,7 +80,7 @@ export class GeminiLiveService {
     tools?: any[]
   ) {
     try {
-      // Always use process.env.API_KEY exclusively
+      /* Initialization: Always use const ai = new GoogleGenAI({apiKey: process.env.API_KEY}); */
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
       // Fallback: Ensure audio contexts exist if not initialized via sync method
@@ -91,11 +96,14 @@ export class GeminiLiveService {
       const connectionPromise = ai.live.connect({
         model: 'gemini-2.5-flash-native-audio-preview-09-2025',
         config: {
+          /* responseModalities: Must be an array with a single Modality.AUDIO element. */
           responseModalities: [Modality.AUDIO], 
           speechConfig: {
             voiceConfig: { prebuiltVoiceConfig: { voiceName: validVoice } },
           },
+          /* systemInstruction should be a string in config */
           systemInstruction: systemInstruction,
+          // Explicitly enable transcription with empty objects
           inputAudioTranscription: {}, 
           outputAudioTranscription: {},
           tools: tools,
@@ -104,28 +112,34 @@ export class GeminiLiveService {
           onopen: () => {
             console.log("Gemini Live Connection Opened");
             this.startAudioInput(callbacks.onVolumeUpdate);
+            // Resume output context to ensure audio plays
             this.outputAudioContext?.resume();
             callbacks.onOpen();
           },
           onmessage: async (message: LiveServerMessage) => {
+            // Handle Tool Call
             if (message.toolCall) {
                 if (callbacks.onToolCall) {
                     callbacks.onToolCall(message.toolCall);
                 }
             }
 
+            // Handle audio output from model
             const base64Audio = message.serverContent?.modelTurn?.parts?.[0]?.inlineData?.data;
             if (base64Audio && this.outputAudioContext) {
               try {
+                // MARK AI AS SPEAKING: This helps prevent the mic from picking up the speakers (echo)
+                // and interrupting the AI immediately.
                 this.isPlayingResponse = true;
                 if (this.speakingTimer) clearTimeout(this.speakingTimer);
                 
                 const bytes = base64ToBytes(base64Audio);
                 
+                // Calculate volume for visualization from output
                 let sum = 0;
                 for (let i=0; i<bytes.length; i++) sum += Math.abs(bytes[i] - 128);
                 const avg = sum / bytes.length;
-                callbacks.onVolumeUpdate(avg * 0.5);
+                callbacks.onVolumeUpdate(avg * 0.5); // Heuristic scale
 
                 this.nextStartTime = Math.max(this.nextStartTime, this.outputAudioContext.currentTime);
                 
@@ -139,6 +153,7 @@ export class GeminiLiveService {
                 const source = this.outputAudioContext.createBufferSource();
                 source.buffer = audioBuffer;
                 
+                // CONNECT TO BOTH SPEAKERS AND RECORDING DESTINATION
                 source.connect(this.outputAudioContext.destination);
                 if (this.outputDestination) {
                     source.connect(this.outputDestination);
@@ -146,10 +161,11 @@ export class GeminiLiveService {
 
                 source.addEventListener('ended', () => {
                   this.sources.delete(source);
+                  // Check if this was the last source, if so, release the gate after a brief pause
                   if (this.sources.size === 0) {
                      this.speakingTimer = setTimeout(() => {
                         this.isPlayingResponse = false;
-                     }, 500);
+                     }, 500); // 500ms tail to be safe
                   }
                 });
                 source.start(this.nextStartTime);
@@ -161,6 +177,7 @@ export class GeminiLiveService {
               }
             }
 
+            // Handle Transcription
             const outputText = message.serverContent?.outputTranscription?.text;
             if (outputText) {
                callbacks.onTranscript(outputText, false);
@@ -173,6 +190,7 @@ export class GeminiLiveService {
 
             const interrupted = message.serverContent?.interrupted;
             if (interrupted) {
+              console.log("Session interrupted by user");
               this.stopAllSources();
               this.nextStartTime = 0;
               this.isPlayingResponse = false;
@@ -197,6 +215,7 @@ export class GeminiLiveService {
         }
       });
 
+      // Add a timeout to reject if connection hangs
       const timeoutPromise = new Promise((_, reject) => 
         setTimeout(() => reject(new Error("Connection timeout")), 15000)
       );
@@ -211,7 +230,9 @@ export class GeminiLiveService {
     }
   }
 
+  // Send text as a user turn (context update) without speaking
   public sendText(text: string) {
+    // CRITICAL: Use sessionPromise to ensure valid session
     this.sessionPromise?.then((session) => {
         if (session) {
             try {
@@ -229,6 +250,7 @@ export class GeminiLiveService {
   }
 
   public sendToolResponse(functionResponses: any) {
+      // CRITICAL: Use sessionPromise to ensure valid session
       this.sessionPromise?.then((session) => {
           if (session) {
               try {
@@ -249,31 +271,45 @@ export class GeminiLiveService {
     this.processor = this.inputAudioContext.createScriptProcessor(4096, 1, 1);
 
     this.processor.onaudioprocess = (e) => {
+      // Safety check: if we are disconnected or cleaning up, stop processing
       if (!this.inputAudioContext || !this.processor) return;
+
       const inputData = e.inputBuffer.getChannelData(0);
 
+      // AUDIO GATING:
+      // isPlayingResponse: AI is currently speaking. Block mic to prevent echo-based interruption.
       if (this.isPlayingResponse) {
           onVolume(0); 
           return; 
       }
       
+      // Calculate volume for visualizer
       let sum = 0;
       for(let i = 0; i < inputData.length; i++) {
         sum += inputData[i] * inputData[i];
       }
       const rms = Math.sqrt(sum / inputData.length);
-      onVolume(rms * 5);
+      onVolume(rms * 5); // Scale up for visibility
 
       const pcmBlob = createPcmBlob(inputData);
+      
+      // Use sessionPromise to ensure we have a valid session before sending
       this.sessionPromise?.then(session => {
         try {
           if (session) {
+             // Wrap send in try-catch to ignore "Socket Closed" errors during disconnects
              try {
                 session.sendRealtimeInput({ media: pcmBlob });
-             } catch(sendError) {}
+             } catch(sendError) {
+                // Ignore network errors during streaming usually caused by race conditions on close
+             }
           }
-        } catch (err) {}
-      }).catch(err => {});
+        } catch (err) {
+          // This often happens if the session is closed while data is still buffering
+        }
+      }).catch(err => {
+         // This catch handles promise rejection from sessionPromise
+      });
     };
 
     this.source.connect(this.processor);
@@ -284,7 +320,9 @@ export class GeminiLiveService {
     for (const source of this.sources) {
       try {
         source.stop();
-      } catch (e) {}
+      } catch (e) {
+        // ignore errors if already stopped
+      }
     }
     this.sources.clear();
   }
@@ -302,6 +340,8 @@ export class GeminiLiveService {
 
   private cleanup() {
     this.stopAllSources();
+    
+    // Reset flags
     this.isPlayingResponse = false;
     if (this.speakingTimer) clearTimeout(this.speakingTimer);
     
@@ -319,6 +359,7 @@ export class GeminiLiveService {
     
     this.stream?.getTracks().forEach(track => track.stop());
     
+    // Close audio contexts safely
     if (this.inputAudioContext && this.inputAudioContext.state !== 'closed') {
       try {
         this.inputAudioContext.close();
