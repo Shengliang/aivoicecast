@@ -1,5 +1,5 @@
 
-// Service for Google Drive API interactions
+// Service for Google Drive and Google Docs API interactions
 
 export interface DriveFile {
   id: string;
@@ -49,6 +49,56 @@ export async function ensureCodeStudioFolder(accessToken: string): Promise<strin
   
   const folder = await createRes.json();
   return folder.id;
+}
+
+/**
+ * Creates a new Google Doc with content from a design doc/transcript.
+ */
+export async function createGoogleDoc(accessToken: string, title: string, content: string): Promise<string> {
+    // 1. Create a blank document
+    const createRes = await fetch('https://docs.googleapis.com/v1/documents', {
+        method: 'POST',
+        headers: {
+            Authorization: `Bearer ${accessToken}`,
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ title })
+    });
+
+    if (!createRes.ok) {
+        throw new Error(`Failed to create Google Doc: ${createRes.status}`);
+    }
+
+    const doc = await createRes.json();
+    const documentId = doc.documentId;
+
+    // 2. Populate content
+    // We send a batch update to insert text
+    // Note: Simple version just inserts plain text. 
+    // Complex version would parse Markdown to Google Doc structural elements.
+    const updateRes = await fetch(`https://docs.googleapis.com/v1/documents/${documentId}:batchUpdate`, {
+        method: 'POST',
+        headers: {
+            Authorization: `Bearer ${accessToken}`,
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+            requests: [
+                {
+                    insertText: {
+                        location: { index: 1 },
+                        text: content
+                    }
+                }
+            ]
+        })
+    });
+
+    if (!updateRes.ok) {
+        throw new Error(`Failed to populate Google Doc: ${updateRes.status}`);
+    }
+
+    return `https://docs.google.com/document/d/${documentId}/edit`;
 }
 
 export async function createDriveFolder(accessToken: string, parentId: string, folderName: string): Promise<DriveFile> {
@@ -147,6 +197,7 @@ export async function readDriveFile(accessToken: string, fileId: string): Promis
       const errText = await res.text();
       throw new Error(`Drive Read Failed (${res.status}): ${errText}`);
   }
+  /* Fix: changed 'return await text;' to 'return await res.text();' */
   return await res.text();
 }
 

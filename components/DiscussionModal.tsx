@@ -1,10 +1,12 @@
 
 import React, { useState, useEffect } from 'react';
-import { X, MessageCircle, FileText, Loader2, CornerDownRight, Edit2, Save, Sparkles } from 'lucide-react';
+import { X, MessageCircle, FileText, Loader2, CornerDownRight, Edit2, Save, Sparkles, ExternalLink, Cloud } from 'lucide-react';
 import { CommunityDiscussion } from '../types';
 import { getDiscussionById, saveDiscussionDesignDoc, saveDiscussion } from '../services/firestoreService';
 import { generateDesignDocFromTranscript } from '../services/lectureGenerator';
 import { MarkdownView } from './MarkdownView';
+import { createGoogleDoc } from '../services/googleDriveService';
+import { connectGoogleDrive } from '../services/authService';
 
 interface DiscussionModalProps {
   isOpen: boolean;
@@ -30,8 +32,13 @@ export const DiscussionModal: React.FC<DiscussionModalProps> = ({
   const [isSavingDoc, setIsSavingDoc] = useState(false);
   const [isGeneratingDoc, setIsGeneratingDoc] = useState(false);
 
+  // Google Doc Export State
+  const [isExportingGDoc, setIsExportingGDoc] = useState(false);
+  const [gDocUrl, setGDocUrl] = useState<string | null>(null);
+
   useEffect(() => {
     if (isOpen) {
+      setGDocUrl(null);
       if (!initialDiscussion || initialDiscussion.id !== discussionId) {
         setLoading(true);
         getDiscussionById(discussionId).then(data => {
@@ -124,6 +131,28 @@ export const DiscussionModal: React.FC<DiscussionModalProps> = ({
     }
   };
 
+  const handleExportToGoogleDocs = async () => {
+      if (!activeDiscussion || !editedDocContent) return;
+      
+      setIsExportingGDoc(true);
+      try {
+          // 1. Get OAuth Token (reusing Code Studio logic)
+          // Note: In a production app, we'd check if we have a valid token in memory first.
+          const token = await connectGoogleDrive();
+          
+          // 2. Create the Doc
+          const url = await createGoogleDoc(token, docTitle || "AIVoiceCast Design Doc", editedDocContent);
+          
+          setGDocUrl(url);
+          window.open(url, '_blank');
+      } catch(e: any) {
+          console.error("GDoc Export Failed", e);
+          alert(`Failed to export to Google Docs: ${e.message}`);
+      } finally {
+          setIsExportingGDoc(false);
+      }
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/90 backdrop-blur-md">
       <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-2xl shadow-2xl flex flex-col max-h-[85vh] animate-fade-in-up">
@@ -139,7 +168,21 @@ export const DiscussionModal: React.FC<DiscussionModalProps> = ({
                           placeholder="Document Title"
                       />
                   </div>
-                  <button onClick={onClose} className="text-slate-400 hover:text-white"><X size={20}/></button>
+                  <div className="flex items-center gap-2">
+                      {activeDiscussion?.designDoc && !isEditingDoc && (
+                          <button 
+                            /* Fix: changed handleExportToGoogleToDocs to handleExportToGoogleDocs */
+                            onClick={handleExportToGoogleDocs}
+                            disabled={isExportingGDoc}
+                            className="flex items-center gap-2 px-3 py-1.5 bg-blue-600/20 hover:bg-blue-600/40 text-blue-300 border border-blue-600/30 rounded-lg text-xs font-bold transition-all"
+                            title="Export to Google Docs"
+                          >
+                            {isExportingGDoc ? <Loader2 size={14} className="animate-spin"/> : <Cloud size={14} />}
+                            <span className="hidden sm:inline">Google Doc</span>
+                          </button>
+                      )}
+                      <button onClick={onClose} className="text-slate-400 hover:text-white p-2"><X size={20}/></button>
+                  </div>
               </div>
               
               {/* Tabs - Hidden for Manual or New Documents (Clean UX) */}
@@ -215,9 +258,16 @@ export const DiscussionModal: React.FC<DiscussionModalProps> = ({
                                                 </button>
                                             </>
                                         ) : (
-                                            <button onClick={() => setIsEditingDoc(true)} className="px-3 py-1.5 text-xs text-indigo-300 hover:text-white bg-slate-800 hover:bg-indigo-600 rounded-lg flex items-center gap-1 border border-slate-700">
-                                                <Edit2 size={12}/> Edit
-                                            </button>
+                                            <div className="flex gap-2">
+                                                {gDocUrl && (
+                                                    <a href={gDocUrl} target="_blank" rel="noreferrer" className="px-3 py-1.5 text-xs text-emerald-400 bg-emerald-900/20 border border-emerald-500/30 rounded-lg flex items-center gap-1 font-bold hover:bg-emerald-900/40">
+                                                        <ExternalLink size={12}/> View on Google Docs
+                                                    </a>
+                                                )}
+                                                <button onClick={() => setIsEditingDoc(true)} className="px-3 py-1.5 text-xs text-indigo-300 hover:text-white bg-slate-800 hover:bg-indigo-600 rounded-lg flex items-center gap-1 border border-slate-700 transition-colors">
+                                                    <Edit2 size={12}/> Edit
+                                                </button>
+                                            </div>
                                         )}
                                     </div>
 
