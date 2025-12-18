@@ -212,6 +212,32 @@ export const LiveSession: React.FC<LiveSessionProps> = ({
   const currentUser = auth.currentUser;
   const isOwner = currentUser && (channel.ownerId === currentUser.uid || currentUser.email === 'shengliang.song@gmail.com');
 
+  // Helper to generate a descriptive title based on metadata
+  const getDescriptiveTitle = () => {
+    const podcastTitle = channel.title;
+    
+    if (activeSegment) {
+        const chapter = channel.chapters?.find(c => c.subTopics.some(s => s.id === activeSegment.lectureId));
+        const subTopic = chapter?.subTopics.find(s => s.id === activeSegment.lectureId);
+        
+        const chPrefix = chapter ? `${chapter.title} > ` : "";
+        const lecTitle = subTopic?.title || activeSegment.lectureId;
+        return `${podcastTitle}: ${chPrefix}${lecTitle} (Part ${activeSegment.index + 1})`;
+    }
+    
+    if (lectureId) {
+        const subTopic = channel.chapters?.flatMap(c => c.subTopics).find(s => s.id === lectureId);
+        if (subTopic) {
+            const chapter = channel.chapters?.find(c => c.subTopics.some(s => s.id === lectureId));
+            const chPrefix = chapter ? `${chapter.title} > ` : "";
+            return `${podcastTitle}: ${chPrefix}${subTopic.title}`;
+        }
+        return `${podcastTitle}: ${lectureId}`;
+    }
+    
+    return `${podcastTitle}: General Discussion`;
+  };
+
   useEffect(() => {
     if (!initialTranscript) {
         const savedHistory = localStorage.getItem(`transcript_${channel.id}`);
@@ -699,6 +725,7 @@ export const LiveSession: React.FC<LiveSessionProps> = ({
                  // CREATE NEW DISCUSSION
                  // Use activeSegment.lectureId if available, else lectureId passed in prop, else channel.id
                  const targetLectureId = activeSegment?.lectureId || lectureId || channel.id;
+                 const descriptiveTitle = getDescriptiveTitle();
                  
                  const discussion: CommunityDiscussion = {
                     id: '', 
@@ -709,7 +736,8 @@ export const LiveSession: React.FC<LiveSessionProps> = ({
                     transcript: fullTranscript,
                     createdAt: Date.now(),
                     segmentIndex: activeSegment?.index,
-                    summary: "Auto-saved session"
+                    summary: "Auto-saved session",
+                    title: descriptiveTitle
                  };
                  
                  const discussionId = await saveDiscussion(discussion);
@@ -812,6 +840,7 @@ export const LiveSession: React.FC<LiveSessionProps> = ({
 
     setIsSharing(true);
     try {
+        const descriptiveTitle = getDescriptiveTitle();
         const discussion: CommunityDiscussion = {
             id: '', 
             lectureId,
@@ -819,7 +848,8 @@ export const LiveSession: React.FC<LiveSessionProps> = ({
             userId: currentUser.uid,
             userName: currentUser.displayName || 'Anonymous',
             transcript: fullTranscript,
-            createdAt: Date.now()
+            createdAt: Date.now(),
+            title: descriptiveTitle
         };
         await saveDiscussion(discussion);
         alert(t.sharedSuccess);
@@ -837,6 +867,7 @@ export const LiveSession: React.FC<LiveSessionProps> = ({
 
       setIsSavingGeneric(true);
       try {
+          const descriptiveTitle = getDescriptiveTitle();
           const discussion: CommunityDiscussion = {
               id: '', 
               lectureId,
@@ -844,7 +875,8 @@ export const LiveSession: React.FC<LiveSessionProps> = ({
               userId: currentUser.uid,
               userName: currentUser.displayName || 'Anonymous',
               transcript: fullTranscript,
-              createdAt: Date.now()
+              createdAt: Date.now(),
+              title: descriptiveTitle
           };
           await saveDiscussion(discussion);
           alert("Session saved to your history.");
@@ -893,9 +925,10 @@ export const LiveSession: React.FC<LiveSessionProps> = ({
         // 2. Fallback: Generate Design Doc
         if (!appended) {
             if (confirm("Original lecture not found in cache. Would you like to generate a standalone Design Document instead?")) {
+                 const descriptiveTitle = getDescriptiveTitle();
                  const meta = {
                     date: new Date().toLocaleDateString(),
-                    topic: channel.title,
+                    topic: descriptiveTitle,
                     segmentIndex: activeSegment?.index
                  };
                  const doc = await generateDesignDocFromTranscript(fullTranscript, meta, language);
@@ -913,7 +946,8 @@ export const LiveSession: React.FC<LiveSessionProps> = ({
                             transcript: fullTranscript,
                             createdAt: Date.now(),
                             segmentIndex: activeSegment?.index,
-                            summary: "Auto-saved for Design Doc"
+                            summary: "Auto-saved for Design Doc",
+                            title: descriptiveTitle
                          };
                          targetDiscussionId = await saveDiscussion(discussion);
                      }
@@ -974,6 +1008,7 @@ export const LiveSession: React.FC<LiveSessionProps> = ({
               alert("Discussion updated!");
           } else {
               // Create new and link
+              const descriptiveTitle = getDescriptiveTitle();
               const discussion: CommunityDiscussion = {
                   id: '', 
                   lectureId: activeSegment.lectureId,
@@ -982,7 +1017,8 @@ export const LiveSession: React.FC<LiveSessionProps> = ({
                   userName: currentUser.displayName || 'Anonymous',
                   transcript: fullTranscript,
                   createdAt: Date.now(),
-                  segmentIndex: activeSegment.index
+                  segmentIndex: activeSegment.index,
+                  title: descriptiveTitle
               };
               
               const discussionId = await saveDiscussion(discussion);

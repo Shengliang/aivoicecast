@@ -244,7 +244,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ onBack }) => {
               createdAt: Date.now(),
               designDoc: "# New Specification\n\nStart writing...",
               isManual: true,
-              title: "Untitled Document"
+              title: "[Manual] New Specification"
            } : (selectedDocId === APP_COMPARISON_DOC.id ? APP_COMPARISON_DOC : undefined)}
         />
       )}
