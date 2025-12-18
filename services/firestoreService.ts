@@ -15,6 +15,7 @@ import {
   SubscriptionTier
 } from '../types';
 import { HANDCRAFTED_CHANNELS } from '../utils/initialData';
+import { MOCK_NOTEBOOKS } from '../utils/notebookContent';
 
 // Constants - Synced with firestore.rules
 const USERS_COLLECTION = 'users';
@@ -508,7 +509,7 @@ export async function linkDiscussionToLectureSegment(channelId: string, lectureI
 }
 
 export async function getUserDesignDocs(uid: string): Promise<CommunityDiscussion[]> {
-    // Index Safety: Removed orderBy and combined filters to avoid composite index requirement
+    // Index Safety: Perform client-side filtering on status to avoid composite index requirement
     const snap = await db.collection(DISCUSSIONS_COLLECTION)
         .where('userId', '==', uid)
         .get();
@@ -1017,6 +1018,9 @@ export async function getSavedWordForUser(uid: string, word: string) {
 
 // --- Notebooks ---
 export async function getCreatorNotebooks(creatorId: string): Promise<Notebook[]> {
+    if (creatorId === 'system') {
+        return MOCK_NOTEBOOKS;
+    }
     return [];
 }
 
