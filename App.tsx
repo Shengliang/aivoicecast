@@ -59,7 +59,7 @@ import { HANDCRAFTED_CHANNELS, CATEGORY_STYLES, TOPIC_CATEGORIES } from './utils
 import { OFFLINE_CHANNEL_ID } from './utils/offlineContent';
 import { GEMINI_API_KEY } from './services/private_keys';
 
-const APP_VERSION = "v3.80.2"; 
+const APP_VERSION = "v3.80.3"; 
 
 const UI_TEXT = {
   en: {
@@ -259,16 +259,16 @@ const App: React.FC = () => {
     } else if (view === 'calendar') {
         setViewState('directory');
         setActiveTab('calendar');
-    } else if (view === 'mentorship') {
+    } else if (view === 'membership') {
         setViewState('directory');
         setActiveTab('mentorship');
-    } else if (view === 'groups') {
+    } else if (view === 'group') {
         setViewState('directory');
         setActiveTab('groups');
-    } else if (view === 'recordings') {
+    } else if (view === 'recording') {
         setViewState('directory');
         setActiveTab('recordings');
-    } else if (view === 'docs') {
+    } else if (view === 'document') {
         setViewState('directory');
         setActiveTab('docs');
     } else if (view === 'debug_local') {
@@ -331,27 +331,37 @@ const App: React.FC = () => {
       // Map ViewState to URL param
       let viewParam: string | null = null;
       
-      // UNDO: Sub-tab directory mapping which caused navigation churn
-      switch(viewState) {
-          case 'directory': viewParam = 'directory'; break;
-          case 'code_studio': viewParam = 'code'; break;
-          case 'whiteboard': viewParam = 'whiteboard'; break;
-          case 'blog': viewParam = 'blog'; break;
-          case 'chat': viewParam = 'chat'; break;
-          case 'careers': viewParam = 'careers'; break;
-          case 'user_guide': viewParam = 'guide'; break;
-          case 'mission': viewParam = 'mission'; break;
-          case 'notebook_viewer': viewParam = 'notebooks'; break;
-          case 'card_workshop': viewParam = 'card_workshop'; break;
-          case 'card_explorer': viewParam = 'card_explorer'; break;
-          case 'card_viewer': viewParam = 'card'; break;
-          case 'podcast_detail': viewParam = 'podcast'; break;
-          case 'debug': viewParam = 'debug_local'; break;
-          case 'firestore_debug': viewParam = 'debug_firestore'; break;
-          case 'cloud_debug': viewParam = 'debug_storage'; break;
-          case 'public_debug': viewParam = 'debug_registry'; break;
-          case 'my_channel_debug': viewParam = 'debug_my_channels'; break;
-          default: viewParam = null;
+      // Map ViewState to flat URL params as requested
+      if (viewState === 'directory') {
+          switch(activeTab) {
+              case 'calendar': viewParam = 'calendar'; break;
+              case 'mentorship': viewParam = 'membership'; break;
+              case 'groups': viewParam = 'group'; break;
+              case 'recordings': viewParam = 'recording'; break;
+              case 'docs': viewParam = 'document'; break;
+              default: viewParam = 'directory';
+          }
+      } else {
+          switch(viewState) {
+              case 'code_studio': viewParam = 'code'; break;
+              case 'whiteboard': viewParam = 'whiteboard'; break;
+              case 'blog': viewParam = 'blog'; break;
+              case 'chat': viewParam = 'chat'; break;
+              case 'careers': viewParam = 'careers'; break;
+              case 'user_guide': viewParam = 'guide'; break;
+              case 'mission': viewParam = 'mission'; break;
+              case 'notebook_viewer': viewParam = 'notebooks'; break;
+              case 'card_workshop': viewParam = 'card_workshop'; break;
+              case 'card_explorer': viewParam = 'card_explorer'; break;
+              case 'card_viewer': viewParam = 'card'; break;
+              case 'podcast_detail': viewParam = 'podcast'; break;
+              case 'debug': viewParam = 'debug_local'; break;
+              case 'firestore_debug': viewParam = 'debug_firestore'; break;
+              case 'cloud_debug': viewParam = 'debug_storage'; break;
+              case 'public_debug': viewParam = 'debug_registry'; break;
+              case 'my_channel_debug': viewParam = 'debug_my_channels'; break;
+              default: viewParam = null;
+          }
       }
 
       if (viewParam) {
@@ -847,7 +857,7 @@ const App: React.FC = () => {
                                           setViewState('podcast_detail');
                                           setIsMobileSearchOpen(false);
                                       }}
-                                      className="flex items-center gap-4 p-3 bg-slate-900 border border-slate-800 rounded-xl active:scale-95 transition-transform"
+                                      className="flex items-center gap-4 p-3 bg-slate-900 border border-slate-800 rounded-xl animate-fade-in group active:scale-95 transition-transform"
                                   >
                                       <img src={channel.imageUrl} className="w-12 h-12 rounded-lg object-cover" alt="" />
                                       <div className="flex-1 min-w-0">
