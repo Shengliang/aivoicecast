@@ -155,7 +155,7 @@ const UI_TEXT = {
     sessionSetup: "会话设置",
     recordSession: "录制会话",
     recordDesc: "保存音频和字幕到云端",
-    start: "开始",
+    start: "Start",
     generateCourse: "生成课程大纲"
   }
 };
@@ -456,7 +456,7 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
   };
 
   useEffect(() => {
-    const sessionId = playSessionIdRef.current;
+    const sessionId = ++playSessionIdRef.current;
     if (isPlaying) {
       if (voiceProvider !== 'system') {
         const schedule = async () => {
@@ -503,18 +503,16 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
                    activeSourcesRef.current.push(source);
                    source.onended = () => { activeSourcesRef.current = activeSourcesRef.current.filter(s => s !== source); };
                    
-                   // ROOT CAUSE FIX: Clamp to context time if synthesis was slow
                    const actualStart = Math.max(nextScheduleTimeRef.current, ctx.currentTime);
                    source.start(actualStart);
                    
-                   // UI Sync Fix: Use actualStart delta
                    const timerId = window.setTimeout(() => {
                        if (isPlayingRef.current && playSessionIdRef.current === sessionId) {
                            setCurrentSectionIndex(scheduleIdx); 
                            sectionRefs.current[scheduleIdx]?.scrollIntoView({ behavior: 'smooth', block: 'center' });
                        }
                    }, Math.max(0, (actualStart - ctx.currentTime) * 1000));
-                   uiTimersRef.push(timerId); 
+                   uiTimersRef.current.push(timerId); 
                    
                    nextScheduleTimeRef.current = actualStart + audioBuffer.duration;
                    schedulingCursorRef.current++; 
@@ -537,6 +535,7 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
            const idx = schedulingCursorRef.current;
            if (!activeLecture || idx >= activeLecture.sections.length) { stopAudio(); setCurrentSectionIndex(0); return; }
            if (playSessionIdRef.current !== sessionId) return;
+
            setCurrentSectionIndex(idx);
            sectionRefs.current[idx]?.scrollIntoView({ behavior: 'smooth', block: 'center' });
            const section = activeLecture.sections[idx];
@@ -546,13 +545,18 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
            if (v) utter.voice = v;
            utter.onend = () => { if (isPlayingRef.current && playSessionIdRef.current === sessionId) { schedulingCursorRef.current++; playSystem(); } };
            activeUtteranceRef.current = utter;
+           window.speechSynthesis.cancel(); // Clear any previous system queue
            window.speechSynthesis.speak(utter);
         };
         isPlayingRef.current = true;
         playSystem();
       }
     }
-    return () => { if (schedulerTimerRef.current) clearTimeout(schedulerTimerRef.current); };
+    return () => { 
+        if (schedulerTimerRef.current) clearTimeout(schedulerTimerRef.current);
+        playSessionIdRef.current++; // Invalidate current session on change
+        window.speechSynthesis.cancel(); // Strictly stop any system voice leftovers
+    };
   }, [isPlaying, activeLecture, voiceProvider, teacherVoice, studentVoice, sysTeacherVoiceURI, sysStudentVoiceURI]);
 
   const handleTopicClick = async (topicTitle: string, subTopicId?: string) => {
@@ -626,7 +630,6 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
         <div className="col-span-12 lg:col-span-4 h-full"><div className="bg-slate-900 border border-slate-800 rounded-xl shadow-xl overflow-hidden h-full flex flex-col"><div className="flex border-b border-slate-800"><button onClick={() => setActiveTab('curriculum')} className={`flex-1 py-3 text-sm font-bold ${activeTab === 'curriculum' ? 'bg-slate-800 text-white' : 'text-slate-500'}`}>{t.curriculum}</button></div><div className="flex-1 overflow-y-auto">{chapters.map((ch, cIdx) => (<div key={ch.id}><button onClick={() => setExpandedChapterId(expandedChapterId === ch.id ? null : ch.id)} className="w-full flex items-center justify-between p-4 hover:bg-slate-800 transition-colors text-left"><span className="font-semibold text-sm text-slate-200">{ch.title}</span>{expandedChapterId === ch.id ? <ChevronDown size={16} /> : <ChevronRight size={16} />}</button>{expandedChapterId === ch.id && (<div className="bg-slate-950/50 py-2">{ch.subTopics.map((sub, sIdx) => (<button key={sub.id} onClick={() => handleTopicClick(sub.title, sub.id)} className={`w-full flex items-start space-x-3 px-6 py-3 ${activeSubTopicId === sub.id ? 'bg-indigo-900/20 border-l-2 border-indigo-500' : 'hover:bg-slate-800'}`}><span className={`text-sm ${activeSubTopicId === sub.id ? 'text-indigo-200' : 'text-slate-400'}`}>{sub.title}</span></button>))}</div>)}</div>))}</div></div></div>
         <div className="col-span-12 lg:col-span-8">
           {isLiveActive && liveSessionChannel ? (
-              // FIX: Added missing 'language' prop to LiveSession component and removed sync onEndSession.
               <div className="h-[calc(100vh-20rem)] min-h-[500px] w-full bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-2xl relative"><LiveSession channel={liveSessionChannel} initialContext={liveConfig.context} lectureId={liveConfig.lectureId} recordingEnabled={liveConfig.recording} videoEnabled={liveConfig.video} cameraEnabled={liveConfig.camera} activeSegment={liveConfig.segment} initialTranscript={liveConfig.initialTranscript} onEndSession={() => { setIsLiveActive(false); }} language={language} /></div>
           ) : activeLecture ? (
             <div className="space-y-8"><div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl sticky top-8 z-20 backdrop-blur-md bg-slate-900/90"><div className="flex items-center justify-between mb-4"><div><h2 className="text-xl font-bold text-white">{activeLecture.topic}</h2></div><button onClick={() => setShowVoiceSettings(!showVoiceSettings)} className={`p-2 rounded-full ${showVoiceSettings ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-400'}`}><Settings size={18} /></button></div>
