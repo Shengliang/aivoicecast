@@ -59,7 +59,7 @@ import { HANDCRAFTED_CHANNELS, CATEGORY_STYLES, TOPIC_CATEGORIES } from './utils
 import { OFFLINE_CHANNEL_ID } from './utils/offlineContent';
 import { GEMINI_API_KEY } from './services/private_keys';
 
-const APP_VERSION = "v3.80.1"; 
+const APP_VERSION = "v3.80.2"; 
 
 const UI_TEXT = {
   en: {
@@ -256,6 +256,21 @@ const App: React.FC = () => {
     } else if (view === 'podcast' && id) {
         setActiveChannelId(id);
         setViewState('podcast_detail');
+    } else if (view === 'calendar') {
+        setViewState('directory');
+        setActiveTab('calendar');
+    } else if (view === 'mentorship') {
+        setViewState('directory');
+        setActiveTab('mentorship');
+    } else if (view === 'groups') {
+        setViewState('directory');
+        setActiveTab('groups');
+    } else if (view === 'recordings') {
+        setViewState('directory');
+        setActiveTab('recordings');
+    } else if (view === 'docs') {
+        setViewState('directory');
+        setActiveTab('docs');
     } else if (view === 'debug_local') {
         setViewState('debug');
     } else if (view === 'debug_firestore') {
@@ -307,12 +322,18 @@ const App: React.FC = () => {
 
   // URL Sync Effect: Persistence (Update URL on state change)
   useEffect(() => {
+      // FIX: Only update URL when user is logged in to prevent login page "DIRTY URL" issues
+      if (!currentUser) return;
+
       const url = new URL(window.location.href);
       const params = url.searchParams;
 
       // Map ViewState to URL param
       let viewParam: string | null = null;
+      
+      // UNDO: Sub-tab directory mapping which caused navigation churn
       switch(viewState) {
+          case 'directory': viewParam = 'directory'; break;
           case 'code_studio': viewParam = 'code'; break;
           case 'whiteboard': viewParam = 'whiteboard'; break;
           case 'blog': viewParam = 'blog'; break;
@@ -350,7 +371,7 @@ const App: React.FC = () => {
       }
 
       window.history.replaceState({}, '', url.toString());
-  }, [viewState, activeChannelId, viewCardId]);
+  }, [viewState, activeChannelId, viewCardId, activeTab, currentUser]);
 
   useEffect(() => {
       if (currentUser && isFirebaseConfigured) {
@@ -858,7 +879,7 @@ const App: React.FC = () => {
       <nav className="hidden md:block sticky top-0 z-50 bg-slate-900/90 backdrop-blur-md border-b border-slate-800">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
-            <div className="flex items-center cursor-pointer" onClick={() => { setViewState('directory'); }}>
+            <div className="flex items-center cursor-pointer" onClick={() => { setViewState('directory'); setActiveTab('categories'); }}>
               <div className="bg-gradient-to-tr from-indigo-600 to-purple-600 p-2 rounded-xl shadow-lg shadow-indigo-500/20">
                 <Podcast className="text-white w-6 h-6" />
               </div>
