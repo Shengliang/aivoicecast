@@ -1,5 +1,4 @@
-
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Blog, BlogPost, Comment } from '../types';
 import { ensureUserBlog, getCommunityPosts, getUserPosts, createBlogPost, updateBlogPost, deleteBlogPost, updateBlogSettings, addPostComment, getBlogPost } from '../services/firestoreService';
 import { auth } from '../services/firebaseConfig';
@@ -18,6 +17,7 @@ export const BlogView: React.FC<BlogViewProps> = ({ currentUser, onBack }) => {
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [posts, setPosts] = useState<BlogPost[]>([]);
+  const [searchQuery, setSearchQuery] = useState('');
   
   // My Blog State
   const [myBlog, setMyBlog] = useState<Blog | null>(null);
@@ -50,7 +50,6 @@ export const BlogView: React.FC<BlogViewProps> = ({ currentUser, onBack }) => {
     try {
       const data = await getCommunityPosts();
       
-      // Merge static architecture post if not already in DB
       const dbHasStatic = data.some(p => p.id === ARCHITECTURE_BLOG_POST.id);
       
       let finalPosts: BlogPost[] = [];
@@ -60,13 +59,11 @@ export const BlogView: React.FC<BlogViewProps> = ({ currentUser, onBack }) => {
           finalPosts = data;
       }
       
-      // Ensure strict sort by creation date for the feed view
       setPosts(finalPosts.sort((a, b) => b.createdAt - a.createdAt));
       
     } catch (e: any) {
       console.error("Feed load error:", e);
       setErrorMsg("Failed to load community feed. Please try refreshing.");
-      // Fallback to static post so screen isn't empty
       setPosts([ARCHITECTURE_BLOG_POST]);
     } finally {
       setLoading(false);
@@ -92,6 +89,16 @@ export const BlogView: React.FC<BlogViewProps> = ({ currentUser, onBack }) => {
       setLoading(false);
     }
   };
+
+  const filteredPosts = useMemo(() => {
+      if (!searchQuery.trim()) return posts;
+      const q = searchQuery.toLowerCase();
+      return posts.filter(p => 
+          p.title.toLowerCase().includes(q) || 
+          p.excerpt.toLowerCase().includes(q) || 
+          p.tags.some(t => t.toLowerCase().includes(q))
+      );
+  }, [posts, searchQuery]);
 
   const handleSaveSettings = async () => {
     if (!myBlog) return;
@@ -292,21 +299,37 @@ export const BlogView: React.FC<BlogViewProps> = ({ currentUser, onBack }) => {
 
             {activeTab === 'feed' && (
                 <div className="space-y-6 animate-fade-in">
-                    <div className="flex items-center justify-between">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                         <h2 className="text-lg font-bold text-white flex items-center gap-2"><Globe size={18} className="text-emerald-400"/> Latest Posts</h2>
                         <div className="relative">
-                            <input type="text" placeholder="Search topics..." className="bg-slate-900 border border-slate-700 rounded-lg pl-8 pr-4 py-1.5 text-sm text-white focus:outline-none focus:border-indigo-500 w-64"/>
+                            <input 
+                                type="text" 
+                                placeholder="Search topics..." 
+                                value={searchQuery}
+                                onChange={(e) => setSearchQuery(e.target.value)}
+                                className="bg-slate-900 border border-slate-700 rounded-lg pl-8 pr-10 py-1.5 text-sm text-white focus:outline-none focus:border-indigo-500 w-full sm:w-64 transition-all"
+                            />
                             <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500"/>
+                            {searchQuery && (
+                                <button 
+                                    onClick={() => setSearchQuery('')}
+                                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white"
+                                >
+                                    <X size={14} />
+                                </button>
+                            )}
                         </div>
                     </div>
                     
                     {loading ? (
                         <div className="py-12 text-center"><Loader2 className="animate-spin mx-auto text-indigo-400" size={32}/></div>
-                    ) : posts.length === 0 ? (
-                        <div className="py-12 text-center text-slate-500 italic">No posts yet. Be the first to write one!</div>
+                    ) : filteredPosts.length === 0 ? (
+                        <div className="py-12 text-center text-slate-500 italic border border-dashed border-slate-800 rounded-xl">
+                            {searchQuery ? `No posts found for "${searchQuery}"` : "No posts yet. Be the first to write one!"}
+                        </div>
                     ) : (
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            {posts.map(post => renderPostCard(post, currentUser && post.authorId === currentUser.uid))}
+                            {filteredPosts.map(post => renderPostCard(post, currentUser && post.authorId === currentUser.uid))}
                         </div>
                     )}
                 </div>

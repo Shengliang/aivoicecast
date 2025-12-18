@@ -1,10 +1,91 @@
-
-import React from 'react';
-import { Copy, Check } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Copy, Check, Image as ImageIcon, Loader2, Code as CodeIcon, ExternalLink } from 'lucide-react';
+import { encodePlantUML } from '../utils/plantuml';
 
 interface MarkdownViewProps {
   content: string;
 }
+
+const PlantUMLRenderer: React.FC<{ code: string }> = ({ code }) => {
+    const [url, setUrl] = useState<string | null>(null);
+    const [loading, setLoading] = useState(true);
+    const [showCode, setShowCode] = useState(false);
+    const [copied, setCopied] = useState(false);
+
+    useEffect(() => {
+        let isMounted = true;
+        setLoading(true);
+        encodePlantUML(code).then(encoded => {
+            if (isMounted) {
+                setUrl(`http://www.plantuml.com/plantuml/svg/${encoded}`);
+                setLoading(false);
+            }
+        }).catch(err => {
+            console.error("PlantUML encoding failed", err);
+            if (isMounted) setLoading(false);
+        });
+        return () => { isMounted = false; };
+    }, [code]);
+
+    const handleCopyUrl = () => {
+        if (url) {
+            navigator.clipboard.writeText(url);
+            setCopied(true);
+            setTimeout(() => setCopied(false), 2000);
+        }
+    };
+
+    return (
+        <div className="my-6 border border-slate-700 rounded-xl overflow-hidden bg-slate-900 shadow-lg">
+            <div className="flex items-center justify-between px-4 py-2 bg-slate-800/80 border-b border-slate-700">
+                <div className="flex items-center gap-2">
+                    <ImageIcon size={14} className="text-pink-400" />
+                    <span className="text-xs font-bold text-slate-300 uppercase tracking-wider">System Diagram</span>
+                </div>
+                <div className="flex items-center gap-3">
+                    <button 
+                        onClick={() => setShowCode(!showCode)}
+                        className="text-[10px] font-bold text-slate-400 hover:text-white flex items-center gap-1 transition-colors"
+                    >
+                        {showCode ? <ImageIcon size={12}/> : <CodeIcon size={12}/>}
+                        {showCode ? 'View Diagram' : 'View Source'}
+                    </button>
+                    <button 
+                        onClick={handleCopyUrl}
+                        className="text-[10px] font-bold text-slate-400 hover:text-indigo-400 flex items-center gap-1 transition-colors"
+                    >
+                        {copied ? <Check size={12} className="text-emerald-400"/> : <ExternalLink size={12}/>}
+                        {copied ? 'Copied' : 'Copy SVG Link'}
+                    </button>
+                </div>
+            </div>
+
+            <div className="p-1 bg-white flex justify-center min-h-[100px] relative">
+                {loading && (
+                    <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-900/50 backdrop-blur-sm z-10 text-white gap-2">
+                        <Loader2 size={24} className="animate-spin text-indigo-400" />
+                        <span className="text-[10px] font-bold uppercase">Rendering...</span>
+                    </div>
+                )}
+                
+                {showCode ? (
+                    <pre className="w-full p-4 bg-slate-950 text-indigo-200 text-xs font-mono overflow-x-auto whitespace-pre">
+                        {code}
+                    </pre>
+                ) : url ? (
+                    <img 
+                        src={url} 
+                        alt="PlantUML Diagram" 
+                        className="max-w-full h-auto py-4"
+                        onLoad={() => setLoading(false)}
+                    />
+                ) : !loading && (
+                    <div className="p-8 text-slate-400 text-sm italic">Failed to load diagram.</div>
+                )}
+            </div>
+        </div>
+    );
+};
 
 export const MarkdownView: React.FC<MarkdownViewProps> = ({ content }) => {
   const [copiedIndex, setCopiedIndex] = React.useState<number | null>(null);
@@ -15,7 +96,6 @@ export const MarkdownView: React.FC<MarkdownViewProps> = ({ content }) => {
     setTimeout(() => setCopiedIndex(null), 2000);
   };
 
-  // Helper to parse bold text (**text**)
   const formatInline = (text: string) => {
     const parts = text.split(/(\*\*.*?\*\*)/g);
     return parts.map((p, i) => 
@@ -26,16 +106,18 @@ export const MarkdownView: React.FC<MarkdownViewProps> = ({ content }) => {
   };
 
   const renderContent = (text: string) => {
-    // Split by code blocks first
     const parts = text.split(/(```[\s\S]*?```)/g);
     
     return parts.map((part, index) => {
       if (part.startsWith('```')) {
-        // Code Block
         const content = part.replace(/^```\w*\n?/, '').replace(/```$/, '');
         const langMatch = part.match(/^```(\w+)/);
-        const language = langMatch ? langMatch[1] : 'Code';
+        const language = langMatch ? langMatch[1].toLowerCase() : 'code';
         
+        if (language === 'plantuml' || language === 'puml') {
+            return <PlantUMLRenderer key={index} code={content} />;
+        }
+
         return (
           <div key={index} className="my-4 rounded-lg overflow-hidden border border-slate-700 bg-slate-950 shadow-sm">
              <div className="flex items-center justify-between px-4 py-2 bg-slate-800/80 border-b border-slate-700">
@@ -58,15 +140,10 @@ export const MarkdownView: React.FC<MarkdownViewProps> = ({ content }) => {
 
         const processTableBuffer = () => {
             if (tableBuffer.length < 2) {
-                // Not enough lines for a table, dump as text
                 tableBuffer.forEach((line, i) => {
                     renderedElements.push(<p key={`tbl-fail-${index}-${renderedElements.length}-${i}`} className="mb-2 text-slate-300">{formatInline(line)}</p>);
                 });
             } else {
-                // Render Table
-                // Row 0 is headers
-                // Row 1 is separator |---|---| (ignore)
-                // Row 2+ are body
                 const headers = tableBuffer[0].split('|').filter(c => c.trim() !== '').map(c => c.trim());
                 const bodyRows = tableBuffer.slice(2).map(row => row.split('|').filter(c => c.trim() !== '').map(c => c.trim()));
                 
@@ -84,7 +161,6 @@ export const MarkdownView: React.FC<MarkdownViewProps> = ({ content }) => {
                                         {row.map((cell, cI) => (
                                             <td key={cI} className="px-6 py-4 align-top leading-relaxed">{formatInline(cell)}</td>
                                         ))}
-                                        {/* Handle row with fewer cells than headers */}
                                         {Array.from({ length: Math.max(0, headers.length - row.length) }).map((_, i) => <td key={`empty-${i}`} className="px-6 py-4"></td>)}
                                     </tr>
                                 ))}
@@ -98,19 +174,14 @@ export const MarkdownView: React.FC<MarkdownViewProps> = ({ content }) => {
 
         lines.forEach((line, lineIdx) => {
             const trimmed = line.trim();
-            
-            // Check for Table Row (lines starting with |)
             if (trimmed.startsWith('|')) {
                 tableBuffer.push(trimmed);
             } else {
-                // Flush Table if exists
                 if (tableBuffer.length > 0) processTableBuffer();
-
                 if (!trimmed) {
-                    renderedElements.push(<div key={`${index}-${lineIdx}`} className="h-2" />); // Spacer
+                    renderedElements.push(<div key={`${index}-${lineIdx}`} className="h-2" />);
                     return;
                 }
-
                 if (line.startsWith('# ')) {
                     renderedElements.push(<h1 key={`${index}-${lineIdx}`} className="text-2xl font-bold text-white mt-6 mb-3 border-b border-slate-700 pb-2">{formatInline(line.substring(2))}</h1>);
                 } else if (line.startsWith('## ')) {
@@ -134,9 +205,7 @@ export const MarkdownView: React.FC<MarkdownViewProps> = ({ content }) => {
             }
         });
         
-        // Flush remaining table buffer at end of block
         if (tableBuffer.length > 0) processTableBuffer();
-
         return <React.Fragment key={index}>{renderedElements}</React.Fragment>;
       }
     });
