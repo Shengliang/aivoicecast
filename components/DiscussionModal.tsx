@@ -1,7 +1,5 @@
-
 import React, { useState, useEffect } from 'react';
-/* Added RefreshCw to imports from lucide-react */
-import { X, MessageCircle, FileText, Loader2, CornerDownRight, Edit2, Save, Sparkles, ExternalLink, Cloud, Trash2, RefreshCw } from 'lucide-react';
+import { X, MessageCircle, FileText, Loader2, CornerDownRight, Edit2, Save, Sparkles, ExternalLink, Cloud, Trash2, RefreshCw, Info } from 'lucide-react';
 import { CommunityDiscussion } from '../types';
 import { getDiscussionById, saveDiscussionDesignDoc, saveDiscussion, deleteDiscussion } from '../services/firestoreService';
 import { generateDesignDocFromTranscript } from '../services/lectureGenerator';
@@ -49,9 +47,13 @@ export const DiscussionModal: React.FC<DiscussionModalProps> = ({
               setActiveDiscussion(data);
               setDocTitle(data.title || 'Untitled Document');
               setEditedDocContent(data.designDoc || '');
-              // Default to Doc view if manual or if designDoc exists
-              if (data.isManual || data.designDoc) {
+              
+              // LOGIC: If no transcript exists, force 'doc' view so user sees content or editor
+              const hasTranscript = data.transcript && data.transcript.length > 0;
+              if (data.isManual || data.designDoc || !hasTranscript) {
                   setViewMode('doc');
+                  // If it's completely empty, open editor by default
+                  if (!data.designDoc && !hasTranscript) setIsEditingDoc(true);
               } else {
                   setViewMode('transcript');
               }
@@ -64,9 +66,10 @@ export const DiscussionModal: React.FC<DiscussionModalProps> = ({
         setActiveDiscussion(initialDiscussion);
         setDocTitle(initialDiscussion.title || 'Untitled Document');
         setEditedDocContent(initialDiscussion.designDoc || '');
-        if (initialDiscussion.id === 'new' || initialDiscussion.designDoc) {
+        const hasTranscript = initialDiscussion.transcript && initialDiscussion.transcript.length > 0;
+        if (initialDiscussion.id === 'new' || initialDiscussion.designDoc || !hasTranscript) {
             setViewMode('doc');
-            if (initialDiscussion.id === 'new') setIsEditingDoc(true);
+            if (initialDiscussion.id === 'new' || !initialDiscussion.designDoc) setIsEditingDoc(true);
         }
       }
     }
@@ -75,7 +78,10 @@ export const DiscussionModal: React.FC<DiscussionModalProps> = ({
   if (!isOpen) return null;
 
   const handleGenerateDoc = async () => {
-      if (!activeDiscussion || !activeDiscussion.transcript) return;
+      if (!activeDiscussion || !activeDiscussion.transcript || activeDiscussion.transcript.length === 0) {
+          alert("Cannot synthesize: The session transcript is empty.");
+          return;
+      }
       setIsGeneratingDoc(true);
       try {
           const dateStr = new Date().toLocaleDateString('en-US');
@@ -87,14 +93,13 @@ export const DiscussionModal: React.FC<DiscussionModalProps> = ({
 
           const doc = await generateDesignDocFromTranscript(activeDiscussion.transcript, meta, language as 'en' | 'zh');
           if (doc) {
-              // Update remote if not 'new'
               if (activeDiscussion.id !== 'new') {
                 await saveDiscussionDesignDoc(activeDiscussion.id, doc, docTitle);
               }
-              // Update local state
               setActiveDiscussion({ ...activeDiscussion, designDoc: doc, title: docTitle });
               setEditedDocContent(doc);
               setViewMode('doc');
+              setIsEditingDoc(false);
           } else {
               alert("Failed to generate document.");
           }
@@ -111,25 +116,21 @@ export const DiscussionModal: React.FC<DiscussionModalProps> = ({
     setIsSavingDoc(true);
     try {
       if (activeDiscussion.id === 'new') {
-          // Create new document
           const docToSave = {
               ...activeDiscussion,
               title: docTitle || 'Untitled Document',
               designDoc: editedDocContent
           };
-          // Remove temporary ID 'new' so it doesn't pollute data
           // @ts-ignore
           delete docToSave.id;
           
           const newId = await saveDiscussion(docToSave as CommunityDiscussion);
           setActiveDiscussion({ ...activeDiscussion, title: docTitle || 'Untitled Document', designDoc: editedDocContent, id: newId });
       } else {
-          // Update existing document
           await saveDiscussionDesignDoc(activeDiscussion.id, editedDocContent, docTitle || 'Untitled Document');
           setActiveDiscussion({ ...activeDiscussion, title: docTitle || 'Untitled Document', designDoc: editedDocContent });
       }
       setIsEditingDoc(false);
-      alert("Document saved successfully.");
     } catch (e) {
       console.error(e);
       alert("Failed to save document.");
@@ -171,9 +172,11 @@ export const DiscussionModal: React.FC<DiscussionModalProps> = ({
       }
   };
 
+  const isOwner = currentUser && activeDiscussion && (activeDiscussion.userId === currentUser.uid || currentUser.email === 'shengliang.song@gmail.com');
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/90 backdrop-blur-md">
-      <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-3xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh] animate-fade-in-up">
+      <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-4xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh] animate-fade-in-up">
           
           {/* Header */}
           <div className="p-4 border-b border-slate-800 bg-slate-900">
@@ -183,9 +186,10 @@ export const DiscussionModal: React.FC<DiscussionModalProps> = ({
                       <input 
                           type="text" 
                           value={docTitle} 
+                          readOnly={!isOwner}
                           onChange={(e) => setDocTitle(e.target.value)}
-                          className="bg-transparent border-b border-transparent hover:border-slate-700 focus:border-indigo-500 text-lg font-bold text-white focus:outline-none w-full transition-colors truncate"
-                          placeholder="Document Title (e.g. mpmc_bounded_queue.hpp)"
+                          className={`bg-transparent border-b border-transparent ${isOwner ? 'hover:border-slate-700 focus:border-indigo-500' : ''} text-lg font-bold text-white focus:outline-none w-full transition-colors truncate`}
+                          placeholder="Document Title"
                       />
                   </div>
                   <div className="flex items-center gap-2">
@@ -204,8 +208,8 @@ export const DiscussionModal: React.FC<DiscussionModalProps> = ({
                   </div>
               </div>
               
-              {/* Tabs */}
-              {(!activeDiscussion?.isManual && activeDiscussion?.id !== 'new') && (
+              {/* Tabs - Only show if transcript actually exists */}
+              {(activeDiscussion?.transcript && activeDiscussion.transcript.length > 0 && activeDiscussion.id !== 'new') && (
                   <div className="flex space-x-2">
                       <button 
                           onClick={() => setViewMode('transcript')}
@@ -219,7 +223,7 @@ export const DiscussionModal: React.FC<DiscussionModalProps> = ({
                           className={`flex-1 py-2 text-sm font-bold rounded-lg transition-colors flex items-center justify-center space-x-2 ${viewMode === 'doc' ? 'bg-slate-800 text-indigo-400' : 'text-slate-500 hover:text-slate-300'}`}
                       >
                           <FileText size={16} />
-                          <span>Formal Specification</span>
+                          <span>Specification</span>
                       </button>
                   </div>
               )}
@@ -229,28 +233,30 @@ export const DiscussionModal: React.FC<DiscussionModalProps> = ({
               {loading ? (
                   <div className="text-center py-12 text-slate-500">
                       <Loader2 size={32} className="animate-spin mx-auto mb-2"/>
-                      <p>Fetching document details...</p>
+                      <p>Fetching document...</p>
                   </div>
               ) : activeDiscussion ? (
                   <>
-                      {viewMode === 'transcript' && !activeDiscussion.isManual ? (
+                      {viewMode === 'transcript' ? (
                           <div className="space-y-4">
                               <div className="bg-slate-800/50 p-4 rounded-xl text-xs border border-slate-700 flex justify-between items-center">
                                   <div className="flex items-center gap-3">
                                       <div className="p-2 bg-emerald-900/30 rounded-full text-emerald-400"><Sparkles size={16}/></div>
                                       <div>
-                                          <p className="font-bold text-slate-200">Raw Session Transcript</p>
-                                          <p className="text-slate-500">Created by {activeDiscussion.userName} • {new Date(activeDiscussion.createdAt).toLocaleDateString()}</p>
+                                          <p className="font-bold text-slate-200">Session Context</p>
+                                          <p className="text-slate-500">{activeDiscussion.userName} • {new Date(activeDiscussion.createdAt).toLocaleDateString()}</p>
                                       </div>
                                   </div>
-                                  <button 
-                                      onClick={handleGenerateDoc}
-                                      disabled={isGeneratingDoc}
-                                      className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg font-bold flex items-center gap-2 shadow-lg transition-all"
-                                  >
-                                      {isGeneratingDoc ? <Loader2 size={14} className="animate-spin"/> : <Sparkles size={14} />}
-                                      Synthesize to Spec
-                                  </button>
+                                  {isOwner && (
+                                    <button 
+                                        onClick={handleGenerateDoc}
+                                        disabled={isGeneratingDoc}
+                                        className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg font-bold flex items-center gap-2 shadow-lg transition-all"
+                                    >
+                                        {isGeneratingDoc ? <Loader2 size={14} className="animate-spin"/> : <Sparkles size={14} />}
+                                        Synthesize
+                                    </button>
+                                  )}
                               </div>
                               <div className="space-y-4 pt-4">
                                   {activeDiscussion.transcript && activeDiscussion.transcript.length > 0 ? activeDiscussion.transcript.map((item, idx) => (
@@ -261,7 +267,12 @@ export const DiscussionModal: React.FC<DiscussionModalProps> = ({
                                           </div>
                                       </div>
                                   )) : (
-                                      <div className="text-center py-8 text-slate-600 italic">This manual document has no transcript attached.</div>
+                                      <div className="text-center py-12 text-slate-600 flex flex-col items-center gap-2">
+                                          {/* FIX: Info component now correctly imported from lucide-react */}
+                                          <Info size={32} className="opacity-20"/>
+                                          <p>This session has no transcript data.</p>
+                                          {isOwner && <button onClick={() => setViewMode('doc')} className="text-indigo-400 hover:underline">Switch to Specification Editor</button>}
+                                      </div>
                                   )}
                               </div>
                           </div>
@@ -269,7 +280,7 @@ export const DiscussionModal: React.FC<DiscussionModalProps> = ({
                           <div className="h-full flex flex-col min-h-[400px]">
                                 <div className="flex justify-between items-center mb-6 sticky top-0 z-10 bg-slate-900 pb-2 border-b border-slate-800">
                                     <div className="flex gap-2">
-                                        {!isEditingDoc && activeDiscussion.id !== 'system-doc-001' && (
+                                        {isOwner && !isEditingDoc && activeDiscussion.id !== 'system-doc-001' && (
                                             <button 
                                                 onClick={handleDelete}
                                                 className="px-3 py-1.5 text-xs text-red-400 hover:text-white bg-red-900/10 hover:bg-red-600 rounded-lg flex items-center gap-1 transition-all border border-red-900/30"
@@ -277,7 +288,7 @@ export const DiscussionModal: React.FC<DiscussionModalProps> = ({
                                                 <Trash2 size={14}/> <span>Delete</span>
                                             </button>
                                         )}
-                                        {activeDiscussion.transcript && activeDiscussion.transcript.length > 0 && (
+                                        {isOwner && activeDiscussion.transcript && activeDiscussion.transcript.length > 0 && (
                                             <button 
                                                 onClick={handleGenerateDoc}
                                                 disabled={isGeneratingDoc}
@@ -289,17 +300,19 @@ export const DiscussionModal: React.FC<DiscussionModalProps> = ({
                                         )}
                                     </div>
                                     <div className="flex space-x-2">
-                                        {isEditingDoc ? (
-                                            <>
-                                                <button onClick={() => setIsEditingDoc(false)} className="px-3 py-1.5 text-xs text-slate-400 hover:text-white bg-slate-800 rounded-lg border border-slate-700">Cancel</button>
-                                                <button onClick={handleSaveDoc} disabled={isSavingDoc} className="px-4 py-1.5 text-xs text-white bg-emerald-600 hover:bg-emerald-500 rounded-lg flex items-center gap-2 font-bold shadow-lg shadow-emerald-500/20">
-                                                    {isSavingDoc ? <Loader2 size={14} className="animate-spin"/> : <Save size={14}/>} Save Changes
+                                        {isOwner && (
+                                            isEditingDoc ? (
+                                                <>
+                                                    <button onClick={() => setIsEditingDoc(false)} className="px-3 py-1.5 text-xs text-slate-400 hover:text-white bg-slate-800 rounded-lg border border-slate-700">Cancel</button>
+                                                    <button onClick={handleSaveDoc} disabled={isSavingDoc} className="px-4 py-1.5 text-xs text-white bg-emerald-600 hover:bg-emerald-500 rounded-lg flex items-center gap-2 font-bold shadow-lg shadow-emerald-500/20">
+                                                        {isSavingDoc ? <Loader2 size={14} className="animate-spin"/> : <Save size={14}/>} Save Changes
+                                                    </button>
+                                                </>
+                                            ) : (
+                                                <button onClick={() => setIsEditingDoc(true)} className="px-4 py-1.5 text-xs text-white bg-indigo-600 hover:bg-indigo-500 rounded-lg flex items-center gap-2 font-bold shadow-lg shadow-emerald-500/20">
+                                                    <Edit2 size={14}/> Edit Content
                                                 </button>
-                                            </>
-                                        ) : (
-                                            <button onClick={() => setIsEditingDoc(true)} className="px-4 py-1.5 text-xs text-white bg-indigo-600 hover:bg-indigo-500 rounded-lg flex items-center gap-2 font-bold shadow-lg shadow-emerald-500/20">
-                                                <Edit2 size={14}/> Edit Content
-                                            </button>
+                                            )
                                         )}
                                     </div>
                                 </div>
@@ -314,7 +327,15 @@ export const DiscussionModal: React.FC<DiscussionModalProps> = ({
                                     />
                                 ) : (
                                     <div className="prose prose-invert prose-sm max-w-none bg-slate-900/50 p-6 rounded-xl border border-slate-800/50 min-h-[500px]">
-                                        <MarkdownView content={editedDocContent || ''} />
+                                        {editedDocContent ? (
+                                            <MarkdownView content={editedDocContent} />
+                                        ) : (
+                                            <div className="h-full flex flex-col items-center justify-center text-slate-500 italic py-20">
+                                                <FileText size={48} className="mb-4 opacity-10"/>
+                                                <p>This document is currently empty.</p>
+                                                {isOwner && <p className="text-xs mt-2 not-italic">Click "Edit Content" to start writing.</p>}
+                                            </div>
+                                        )}
                                     </div>
                                 )}
                           </div>

@@ -1,4 +1,3 @@
-
 import { GoogleGenAI } from '@google/genai';
 import { Channel, Chapter } from '../types';
 import { incrementApiUsage, getUserProfile } from './firestoreService';
@@ -49,12 +48,11 @@ export async function generateChannelFromPrompt(
 ): Promise<Channel | null> {
   try {
     const provider = await getAIProvider();
-    const geminiKey = localStorage.getItem('gemini_api_key') || GEMINI_API_KEY || process.env.API_KEY || '';
+    // FIX: OpenAI key resolution remains unchanged, but Gemini key resolution is exclusively via process.env.API_KEY.
     const openaiKey = localStorage.getItem('openai_api_key') || OPENAI_API_KEY || process.env.OPENAI_API_KEY || '';
 
     let activeProvider = provider;
     if (provider === 'openai' && !openaiKey) activeProvider = 'gemini';
-    if (activeProvider === 'gemini' && !geminiKey) throw new Error("API Key missing");
 
     const langInstruction = language === 'zh' 
       ? 'Output Language: Simplified Chinese (Mandarin) for all content.' 
@@ -98,7 +96,8 @@ export async function generateChannelFromPrompt(
     if (activeProvider === 'openai') {
         text = await callOpenAI(systemPrompt, userRequest, openaiKey);
     } else {
-        const ai = new GoogleGenAI({ apiKey: geminiKey });
+        // FIX: Always use const ai = new GoogleGenAI({apiKey: process.env.API_KEY}); exclusively from process.env.API_KEY.
+        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
         const response = await ai.models.generateContent({
             model: 'gemini-3-pro-preview',
             contents: `${systemPrompt}\n\n${userRequest}`,
@@ -166,12 +165,10 @@ export async function modifyCurriculumWithAI(
 ): Promise<Chapter[] | null> {
   try {
     const provider = await getAIProvider();
-    const geminiKey = localStorage.getItem('gemini_api_key') || GEMINI_API_KEY || process.env.API_KEY || '';
     const openaiKey = localStorage.getItem('openai_api_key') || OPENAI_API_KEY || process.env.OPENAI_API_KEY || '';
 
     let activeProvider = provider;
     if (provider === 'openai' && !openaiKey) activeProvider = 'gemini';
-    if (activeProvider === 'gemini' && !geminiKey) throw new Error("API Key missing");
 
     const langInstruction = language === 'zh' ? 'Output Language: Chinese.' : 'Output Language: English.';
     const systemPrompt = `You are a Curriculum Editor AI. ${langInstruction}`;
@@ -204,7 +201,8 @@ export async function modifyCurriculumWithAI(
     if (activeProvider === 'openai') {
         text = await callOpenAI(systemPrompt, userRequest, openaiKey);
     } else {
-        const ai = new GoogleGenAI({ apiKey: geminiKey });
+        // FIX: Always use const ai = new GoogleGenAI({apiKey: process.env.API_KEY}); exclusively from process.env.API_KEY.
+        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
         const response = await ai.models.generateContent({
             model: 'gemini-3-pro-preview',
             contents: `${systemPrompt}\n\n${userRequest}`,
@@ -246,12 +244,10 @@ export async function generateChannelFromDocument(
 ): Promise<Channel | null> {
   try {
     const provider = await getAIProvider();
-    const geminiKey = localStorage.getItem('gemini_api_key') || GEMINI_API_KEY || process.env.API_KEY || '';
     const openaiKey = localStorage.getItem('openai_api_key') || OPENAI_API_KEY || process.env.OPENAI_API_KEY || '';
 
     let activeProvider = provider;
     if (provider === 'openai' && !openaiKey) activeProvider = 'gemini';
-    if (activeProvider === 'gemini' && !geminiKey) throw new Error("API Key missing");
 
     const langInstruction = language === 'zh' ? 'Output Language: Simplified Chinese (Mandarin).' : 'Output Language: English.';
     const safeText = documentText.substring(0, 30000);
@@ -297,7 +293,8 @@ export async function generateChannelFromDocument(
     if (activeProvider === 'openai') {
         text = await callOpenAI(systemPrompt, userRequest, openaiKey, 'gpt-4o'); // Use 4o for large context
     } else {
-        const ai = new GoogleGenAI({ apiKey: geminiKey });
+        // FIX: Always use const ai = new GoogleGenAI({apiKey: process.env.API_KEY}); exclusively from process.env.API_KEY.
+        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
         const response = await ai.models.generateContent({
             model: 'gemini-3-pro-preview',
             contents: `${systemPrompt}\n\n${userRequest}`,

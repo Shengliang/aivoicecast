@@ -1,4 +1,3 @@
-
 import { GoogleGenAI } from '@google/genai';
 import { GeneratedLecture, SubTopic, TranscriptItem } from '../types';
 import { incrementApiUsage, getUserProfile } from './firestoreService';
@@ -28,7 +27,7 @@ async function callOpenAI(
     model: string = 'gpt-4o'
 ): Promise<string | null> {
     try {
-        const response = await fetch("https://api.openai.com/v1/chat/completions", {
+        const response = await fetch("https://api.openai.com/v1/audio/speech", {
             method: "POST",
             headers: {
                 "Authorization": `Bearer ${apiKey}`,
@@ -129,7 +128,7 @@ export async function generateLectureScript(
     if (activeProvider === 'openai') {
         text = await callOpenAI(systemPrompt, userPrompt, openaiKey);
     } else {
-        /* Initialization: Always use const ai = new GoogleGenAI({apiKey: process.env.API_KEY}); */
+        // FIX: Always use const ai = new GoogleGenAI({apiKey: process.env.API_KEY}); exclusively from process.env.API_KEY.
         const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
         // Use Gemini 3 Pro for high-complexity channels (1: Software Interview, 2: Linux Kernel)
         const modelName = (channelId === '1' || channelId === '2') ? 'gemini-3-pro-preview' : 'gemini-3-flash-preview';
@@ -139,7 +138,7 @@ export async function generateLectureScript(
             contents: `${systemPrompt}\n\n${userPrompt}`,
             config: { 
                 responseMimeType: 'application/json',
-                /* Set thinkingBudget for Gemini 3 series models */
+                // FIX: Set thinkingConfig for Gemini 3 series models
                 thinkingConfig: (modelName === 'gemini-3-pro-preview') ? { thinkingBudget: 4000 } : undefined
             }
         });
@@ -226,7 +225,7 @@ export async function generateBatchLectures(
     if (activeProvider === 'openai') {
         text = await callOpenAI(systemPrompt, userPrompt, openaiKey);
     } else {
-        /* Initialization: Always use const ai = new GoogleGenAI({apiKey: process.env.API_KEY}); */
+        // FIX: Always use const ai = new GoogleGenAI({apiKey: process.env.API_KEY}); exclusively from process.env.API_KEY.
         const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
         const response = await ai.models.generateContent({
             model: 'gemini-3-flash-preview', 
@@ -310,7 +309,7 @@ export async function summarizeDiscussionAsSection(
     if (activeProvider === 'openai') {
         text = await callOpenAI(systemPrompt, userPrompt, openaiKey);
     } else {
-        /* Initialization: Always use const ai = new GoogleGenAI({apiKey: process.env.API_KEY}); */
+        // FIX: Always use const ai = new GoogleGenAI({apiKey: process.env.API_KEY}); exclusively from process.env.API_KEY.
         const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
         const response = await ai.models.generateContent({
             model: 'gemini-3-flash-preview', 
@@ -410,12 +409,13 @@ export async function generateDesignDocFromTranscript(
             text = data.choices[0]?.message?.content || null;
         }
     } else {
-        /* Initialization: Always use const ai = new GoogleGenAI({apiKey: process.env.API_KEY}); */
+        // FIX: Always use const ai = new GoogleGenAI({apiKey: process.env.API_KEY}); exclusively from process.env.API_KEY.
         const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
         const response = await ai.models.generateContent({
             model: 'gemini-3-pro-preview', // Better for large context docs
             contents: `${systemPrompt}\n\n${userPrompt}`,
             config: {
+                // FIX: Set thinkingConfig correctly for Gemini 3 series models.
                 thinkingConfig: { thinkingBudget: 4000 }
             }
         });

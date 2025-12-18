@@ -1,6 +1,5 @@
-
 // [FORCE-SYNC-v3.78.0] Timestamp: 2025-12-16T10:00:00.000Z
-import { GoogleGenAI } from '@google/genai';
+import { GoogleGenAI, Modality } from '@google/genai';
 import { base64ToBytes, decodeAudioData } from '../utils/audioUtils';
 import { getCachedAudioBuffer, cacheAudioBuffer } from '../utils/db';
 import { GEMINI_API_KEY, OPENAI_API_KEY } from './private_keys';
@@ -107,8 +106,10 @@ async function synthesizeOpenAI(text: string, voice: string, apiKey: string): Pr
   return await response.arrayBuffer();
 }
 
-async function synthesizeGemini(text: string, voice: string, apiKey: string): Promise<ArrayBuffer> {
-    const ai = new GoogleGenAI({ apiKey });
+// FIX: synthesizeGemini now correctly initializes GoogleGenAI using process.env.API_KEY exclusively.
+async function synthesizeGemini(text: string, voice: string): Promise<ArrayBuffer> {
+    // FIX: Always use const ai = new GoogleGenAI({apiKey: process.env.API_KEY}); exclusively from process.env.API_KEY.
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     
     // Create a timeout promise that rejects after 25 seconds
     const timeoutPromise = new Promise<never>((_, reject) => 
@@ -119,7 +120,8 @@ async function synthesizeGemini(text: string, voice: string, apiKey: string): Pr
         model: 'gemini-2.5-flash-preview-tts',
         contents: [{ parts: [{ text: text }] }],
         config: {
-          responseModalities: ['AUDIO'] as any, 
+          // FIX: responseModalities must be an array with a single Modality.AUDIO element.
+          responseModalities: [Modality.AUDIO], 
           speechConfig: {
             voiceConfig: {
               prebuiltVoiceConfig: { voiceName: voice },
@@ -188,12 +190,9 @@ export async function synthesizeSpeech(
           rawBuffer = await synthesizeOpenAI(cleanText, voiceName, openAiKey);
       } else {
           // Default to Gemini
-          const geminiKey = localStorage.getItem('gemini_api_key') || GEMINI_API_KEY || process.env.API_KEY || '';
-          if (!geminiKey) {
-              return { buffer: null, errorType: 'auth', errorMessage: 'Gemini API Key missing' };
-          }
+          // FIX: synthesizeGemini now uses process.env.API_KEY exclusively.
           usedProvider = 'gemini';
-          rawBuffer = await synthesizeGemini(cleanText, voiceName, geminiKey);
+          rawBuffer = await synthesizeGemini(cleanText, voiceName);
       }
 
       // 3c. Save to Persistent Cache (IndexedDB)
