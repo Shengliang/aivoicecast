@@ -513,14 +513,14 @@ export async function linkDiscussionToLectureSegment(channelId: string, lectureI
 }
 
 export async function getUserDesignDocs(uid: string): Promise<CommunityDiscussion[]> {
-    // Index Safety: Perform client-side filtering on status to avoid composite index requirement
+    // FIX: Removed the designDoc filter to ensure all sessions (transcripts or manual drafts)
+    // are visible in the Document Studio for the user to read and modify.
     const snap = await db.collection(DISCUSSIONS_COLLECTION)
         .where('userId', '==', uid)
         .get();
         
     return snap.docs
         .map(d => d.data() as CommunityDiscussion)
-        .filter(d => d.designDoc !== undefined && d.designDoc !== null)
         .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
 }
 

@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { CommunityDiscussion } from '../types';
 import { getUserDesignDocs, deleteDiscussion } from '../services/firestoreService';
-import { FileText, Calendar, ArrowRight, Loader2, MessageSquare, Plus, Edit, ShieldCheck, Trash2, Info } from 'lucide-react';
+import { FileText, Calendar, ArrowRight, Loader2, MessageSquare, Plus, Edit, ShieldCheck, Trash2, Info, Sparkles, FileCode } from 'lucide-react';
 import { auth } from '../services/firebaseConfig';
 import { DiscussionModal } from './DiscussionModal';
 import { APP_COMPARISON_DOC } from '../utils/docContent';
@@ -88,16 +88,16 @@ export const DocumentList: React.FC<DocumentListProps> = ({ onBack }) => {
       <div className="flex items-center justify-between">
         <h2 className="text-xl font-bold text-white flex items-center gap-2">
           <span className="w-2 h-6 bg-emerald-500 rounded-full"></span>
-          <span>My Design Docs</span>
+          <span>Document Studio</span>
         </h2>
         <div className="flex items-center gap-4">
-            <span className="text-xs text-slate-500 font-mono">{docs.length} docs</span>
+            <span className="text-xs text-slate-500 font-mono">{docs.length} files</span>
             <button 
                 onClick={handleCreateNew}
                 className="flex items-center space-x-2 px-3 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg transition-colors text-xs font-bold shadow-md shadow-emerald-500/20"
             >
                 <Plus size={14} />
-                <span>New Doc</span>
+                <span>Create Manual Doc</span>
             </button>
         </div>
       </div>
@@ -110,11 +110,14 @@ export const DocumentList: React.FC<DocumentListProps> = ({ onBack }) => {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {docs.map((doc) => {
             const isSystem = doc.id === APP_COMPARISON_DOC.id;
+            const hasSynthesis = !!doc.designDoc;
+            const isCodeDoc = doc.title?.endsWith('.hpp') || doc.title?.endsWith('.cpp') || doc.title?.endsWith('.py');
+
             return (
               <div 
                 key={doc.id} 
                 onClick={() => setSelectedDocId(doc.id)}
-                className={`bg-slate-900 border ${isSystem ? 'border-indigo-500/50 bg-indigo-900/10' : 'border-slate-800'} rounded-xl p-5 hover:border-emerald-500/50 hover:bg-slate-800/50 transition-all cursor-pointer group flex flex-col justify-between relative`}
+                className={`bg-slate-900 border ${isSystem ? 'border-indigo-500/50 bg-indigo-900/10' : hasSynthesis ? 'border-slate-800' : 'border-emerald-500/30 bg-emerald-900/5'} rounded-xl p-5 hover:border-emerald-500/50 hover:bg-slate-800/50 transition-all cursor-pointer group flex flex-col justify-between relative`}
               >
                 {/* Delete Button */}
                 <button 
@@ -128,19 +131,26 @@ export const DocumentList: React.FC<DocumentListProps> = ({ onBack }) => {
 
                 <div>
                   <div className="flex items-start justify-between mb-3">
-                     <div className={`p-2 rounded-lg ${isSystem ? 'bg-indigo-900/30 text-indigo-400' : 'bg-emerald-900/20 text-emerald-400'}`}>
-                        {isSystem ? <ShieldCheck size={20}/> : <FileText size={20} />}
+                     <div className={`p-2 rounded-lg ${isSystem ? 'bg-indigo-900/30 text-indigo-400' : isCodeDoc ? 'bg-amber-900/20 text-amber-400' : 'bg-emerald-900/20 text-emerald-400'}`}>
+                        {isSystem ? <ShieldCheck size={20}/> : isCodeDoc ? <FileCode size={20}/> : <FileText size={20} />}
                      </div>
-                     <span className="text-[10px] text-slate-500 font-mono bg-slate-950 px-2 py-1 rounded">
-                        {isSystem ? 'EXAMPLE' : new Date(doc.createdAt).toLocaleDateString()}
-                     </span>
+                     <div className="flex flex-col items-end gap-1">
+                        <span className="text-[10px] text-slate-500 font-mono bg-slate-950 px-2 py-1 rounded">
+                            {isSystem ? 'EXAMPLE' : new Date(doc.createdAt).toLocaleDateString()}
+                        </span>
+                        {!hasSynthesis && !isSystem && (
+                            <span className="text-[9px] font-bold bg-indigo-600 text-white px-1.5 py-0.5 rounded animate-pulse">
+                                RAW SESSION
+                            </span>
+                        )}
+                     </div>
                   </div>
                   
                   <h3 className={`text-lg font-bold mb-1 line-clamp-1 group-hover:text-emerald-400 transition-colors pr-8 ${isSystem ? 'text-indigo-100' : 'text-white'}`}>
                      {doc.title || "Untitled Document"}
                   </h3>
                   <p className="text-xs text-slate-400 mb-4 line-clamp-2">
-                     {isSystem ? "Official distinction between platform pillars." : doc.isManual ? "Created in Editor" : `Linked to Lecture ID: ${doc.lectureId}`}
+                     {isSystem ? "Official distinction between platform pillars." : doc.isManual ? "Manual Technical Specification" : `AI Discussion from Lecture: ${doc.lectureId}`}
                   </p>
                 </div>
 
@@ -149,13 +159,13 @@ export const DocumentList: React.FC<DocumentListProps> = ({ onBack }) => {
                       {isSystem ? (
                           <span className="text-indigo-400 font-bold uppercase tracking-widest text-[9px]">Platform Spec</span>
                       ) : doc.transcript && doc.transcript.length > 0 ? (
-                          <><MessageSquare size={12} /><span>Transcript</span></>
+                          <><MessageSquare size={12} /><span>{doc.transcript.length} Messages</span></>
                       ) : (
-                          <><Edit size={12} /><span>Manual Entry</span></>
+                          <><Edit size={12} /><span>Manual Editor</span></>
                       )}
                    </div>
                    <button className="text-emerald-400 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1 text-xs font-bold">
-                      Read & Edit <ArrowRight size={12} />
+                      {hasSynthesis ? 'Read & Edit' : 'Synthesize Spec'} <ArrowRight size={12} />
                    </button>
                 </div>
               </div>
@@ -186,7 +196,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ onBack }) => {
               userName: currentUser.displayName || 'User',
               transcript: [],
               createdAt: Date.now(),
-              designDoc: "# New Document\n\n",
+              designDoc: "# New Specification\n\nWrite your technical notes here...",
               isManual: true,
               title: "Untitled Document"
            } : (selectedDocId === APP_COMPARISON_DOC.id ? APP_COMPARISON_DOC : undefined)}
