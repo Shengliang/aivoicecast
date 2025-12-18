@@ -8,17 +8,18 @@ export const ARCHITECTURE_BLOG_POST: BlogPost = {
   authorName: 'AIVoiceCast Engineering',
   authorImage: 'https://images.unsplash.com/photo-1550751827-4bd374c3f58b?w=200&q=80',
   title: 'Under the Hood: The Architecture of AIVoiceCast',
-  excerpt: 'A technical deep dive into how we built the world\'s first generative audio knowledge community. Learn about our React 19 frontend, Firebase backend, Gemini AI integration, and new Mobile Optimization strategies.',
+  excerpt: 'A technical deep dive into how we built the world\'s first generative audio knowledge community. Learn about our React 19 frontend, Firebase backend, Gemini AI integration, and zero-config indexing strategies.',
   status: 'published',
-  publishedAt: 1716000000000, // Fixed Date: May 18, 2024 (To keep it sorted correctly)
-  createdAt: 1716000000000,
-  likes: 999,
+  publishedAt: 1766016000000, // Dec 18, 2025
+  createdAt: 1766016000000,
+  likes: 1024,
   commentCount: 0,
-  tags: ['Engineering', 'Architecture', 'Open Source', 'Mobile'],
+  tags: ['Engineering', 'Architecture', 'Firebase', 'Optimization'],
+  // FIX: Escaped all backticks within the template literal to prevent syntax errors and premature string termination
   content: `
 # 🛠️ Under the Hood: The Architecture of AIVoiceCast
 
-Welcome to a technical deep dive into the AIVoiceCast platform. We believe in transparency and open learning, so we are sharing exactly how this application is built, the decisions behind our stack, and how our source code is organized.
+Welcome to a technical deep dive into the AIVoiceCast platform. Updated as of **December 18, 2025**, this post covers our core stack and our latest optimizations for scaling without infrastructure friction.
 
 ---
 
@@ -35,82 +36,53 @@ AIVoiceCast supports **6 Core Pillars** of functionality, all integrated into a 
 
 ---
 
-## 2. Internal Implementation
+## 2. Latest Optimization: Zero-Config Indexing
+
+One of the biggest challenges with Firestore is the requirement for **Composite Indexes** when mixing \`where\` and \`orderBy\` clauses across different fields. This can block new users from deploying their own instances if they haven't manually set up indexes in the Firebase Console.
+
+### The Solution: Hybrid Local Filtering
+In our latest update (v3.82), we moved the filtering logic for "published" status from the database layer to the application layer.
+*   **Database Query**: \`db.collection('blog_posts').orderBy('createdAt', 'desc').limit(50)\`
+*   **Local Filter**: \`data.filter(p => p.status === 'published')\`
+
+By doing this, we maintain high performance (fetching only the most recent 50 posts) while ensuring the app works perfectly on any fresh Firebase project without requiring a single manual index.
+
+---
+
+## 3. Internal Implementation
 
 ### Frontend: React 19 & TypeScript
 We use **React 19** to leverage the latest concurrent features.
-*   **State Management**: We deliberately **avoided Redux**. Why?
-    *   **Audio Latency**: The Live Studio relies on the Web Audio API. Audio processing happens in the main thread (ScriptProcessor) or AudioWorklet. Passing high-frequency audio data through Redux reducers would introduce unacceptable garbage collection pauses and latency.
-    *   **Solution**: We use \`useRef\` for mutable, non-rendering state (like audio buffers and WebSocket connections) and \`useState/useContext\` for UI reactivity. This keeps the UI snappy even while processing 16kHz audio streams.
-*   **Styling**: **Tailwind CSS** allows us to build a responsive, dark-mode-first UI without managing thousands of CSS files.
+*   **State Management**: We deliberately **avoided Redux**. Mutable, high-frequency data (like audio buffers) stays in \`useRef\` to avoid React render cycle overhead.
+*   **Styling**: **Tailwind CSS** allows for a responsive, dark-mode-first UI with zero CSS maintenance.
 
 ### Backend: Serverless (Firebase)
-We use **Google Firebase** for a completely serverless architecture.
 *   **Auth**: Handles Google & GitHub Sign-In.
-*   **Firestore (NoSQL)**: Stores public channels, user profiles, chat messages, and whiteboard data. We chose NoSQL because the schema of an AI-generated "Lecture" varies wildly and evolves constantly. SQL migrations would have slowed us down.
-*   **Storage**: Firebase Storage holds user avatars, code files, and meeting recordings.
-*   **Security**: Firestore Security Rules (\`firestore.rules\`) enforce Role-Based Access Control (RBAC) at the database level.
+*   **Firestore**: Stores metadata and social state.
+*   **Storage**: Holds user avatars, code files, and meeting recordings.
+*   **Security**: \`firestore.rules\` enforce strict RBAC, ensuring only owners can edit their content.
 
 ### AI Engine: Gemini API
-*   **Logic**: \`gemini-3-pro-preview\` handles complex reasoning (Curriculum generation, Code analysis).
-*   **Speed**: \`gemini-2.5-flash\` handles high-volume tasks (Chat responses, summarization).
-*   **Voice**: \`gemini-live\` enables the real-time, interruptible voice conversations via WebSocket.
-
-### Data Strategy: Hybrid Sync
-We use a unique **Hybrid Storage Model** to save costs and bandwidth.
-*   **Text/Metadata**: Stored in **Firestore** (Cloud).
-*   **Audio Blobs**: Stored in **IndexedDB** (Local Browser).
-    *   *Why?* Generating neural audio is expensive and files are large (5-50MB). We cache every generated sentence locally. If you replay a lecture, it loads instantly from disk without hitting the API or costing money.
+*   **Logic**: \`gemini-3-pro-preview\` for complex reasoning.
+*   **Speed**: \`gemini-3-flash-preview\` for real-time interactions.
+*   **Audio**: \`gemini-2.5-flash-preview-tts\` for high-fidelity neural voices.
 
 ---
 
-## 3. Alternative Solutions & Trade-offs
+## 4. Data Strategy: Hybrid Sync
+We save costs and bandwidth with a dual-layer approach:
+1.  **Text/Metadata**: Stored in **Firestore** (Cloud) for global availability.
+2.  **Audio Blobs**: Stored in **IndexedDB** (Local Browser). 
+    *   *Result:* Replaying a lecture is instantaneous and costs $0 in API fees.
+
+---
+
+## 5. Summary Table
 
 | Component | Our Choice | Alternative | Why We Chose Ours |
 | :--- | :--- | :--- | :--- |
-| **Framework** | **Vite (SPA)** | Next.js (SSR) | Our app relies heavily on browser APIs (Microphone, Screen Share, Web Audio) that don't run on the server. SSR adds complexity for little SEO gain in a gated app. |
-| **Database** | **Firestore** | PostgreSQL | Real-time listeners (\`onSnapshot\`) are built-in to Firestore. Implementing live cursors and chat in SQL requires setting up a separate WebSocket server (e.g., Socket.io), adding maintenance overhead. |
-| **Voice** | **Gemini Live** | OpenAI Realtime | Gemini offers a massive 2M token context window, allowing the AI to "remember" the entire history of a long coding session or podcast series. |
-
----
-
-## 4. Mobile & Responsive Design
-
-We recently overhauled the mobile experience to ensure a native-app feel on the web.
-
-*   **Adaptive Layouts**: The application uses a "Context-Aware" layout engine. On desktop, the Code Studio shows a 3-pane layout (Explorer, Editor, Chat). On mobile, these collapse into slide-over drawers or bottom sheets to maximize utility without clutter.
-*   **Zen Mode**: To combat the limited screen real estate on phones, we introduced **Zen Mode**. This hides all chrome (navbars, headers, toolbars) and gives 100% of pixels to the active task, effectively turning your phone into a focused workstation.
-*   **Touch Optimization**: Interactive elements like the Whiteboard canvas have been tuned for touch events, allowing for pinch-to-zoom and pan gestures without conflict.
-*   **PWA Readiness**: The app is designed to be installable. It uses safe areas for notches and home bars, ensuring it looks like a native app when added to the home screen.
-
----
-
-## 5. Source Code Layout (\`aivoicecast/\`)
-
-If you are exploring the codebase, here is the map:
-
-### \`components/\` (The View)
-Contains all React UI components.
-*   \`LiveSession.tsx\`: The heart of the voice engine. Handles WebSockets and AudioContext.
-*   \`CodeStudio.tsx\`: The IDE logic, file tree, and Monaco Editor integration.
-*   \`Whiteboard.tsx\`: The HTML5 Canvas logic for drawing and shape management.
-*   \`Chat/\`: Components for the workplace messaging system.
-
-### \`services/\` (The Controller)
-Contains singleton logic for communicating with external APIs.
-*   \`firestoreService.ts\`: All database CRUD operations.
-*   \`authService.ts\`: Wrappers for Firebase Auth (Google/GitHub).
-*   \`geminiLive.ts\`: The WebSocket client for the Gemini Live API.
-*   \`tts.ts\`: Text-to-Speech synthesis and caching logic.
-
-### \`utils/\` (The Model & Helpers)
-*   \`db.ts\`: IndexedDB wrapper for local caching.
-*   \`initialData.ts\`: Static content for the "Handcrafted" channels.
-*   \`types.ts\`: TypeScript interfaces shared across the app.
-
----
-
-We hope this gives you a clear picture of how AIVoiceCast is built. We designed it to be modular, scalable, and most importantly, **fun to hack on**.
+| **Framework** | **Vite (SPA)** | Next.js (SSR) | Better support for browser-only APIs like Web Audio/Mic. |
+| **Database** | **Firestore** | PostgreSQL | Built-in \`onSnapshot\` for real-time collaborative editing. |
 
 *Happy Coding,*
 *The AIVoiceCast Engineering Team*

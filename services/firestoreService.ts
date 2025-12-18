@@ -835,11 +835,14 @@ export async function ensureUserBlog(user: any): Promise<Blog> {
 
 export async function getCommunityPosts(): Promise<BlogPost[]> {
     const snap = await db.collection(POSTS_COLLECTION)
-        .where('status', '==', 'published')
         .orderBy('createdAt', 'desc')
-        .limit(20)
+        .limit(50)
         .get();
-    return snap.docs.map(d => d.data() as BlogPost);
+        
+    // Filter published status locally to avoid requiring composite index immediately
+    return snap.docs
+        .map(d => d.data() as BlogPost)
+        .filter(p => p.status === 'published');
 }
 
 export async function getUserPosts(blogId: string): Promise<BlogPost[]> {

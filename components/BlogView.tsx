@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { Blog, BlogPost, Comment } from '../types';
 import { ensureUserBlog, getCommunityPosts, getUserPosts, createBlogPost, updateBlogPost, deleteBlogPost, updateBlogSettings, addPostComment, getBlogPost } from '../services/firestoreService';
 import { auth } from '../services/firebaseConfig';
-import { Edit3, Plus, Trash2, Globe, User, MessageSquare, Loader2, ArrowLeft, Save, Image as ImageIcon, Search, LayoutList, PenTool, Rss, X, Pin } from 'lucide-react';
+import { Edit3, Plus, Trash2, Globe, User, MessageSquare, Loader2, ArrowLeft, Save, Image as ImageIcon, Search, LayoutList, PenTool, Rss, X, Pin, AlertCircle } from 'lucide-react';
 import { MarkdownView } from './MarkdownView';
 import { CommentsModal } from './CommentsModal';
 import { ARCHITECTURE_BLOG_POST } from '../utils/blogContent';
@@ -50,17 +50,13 @@ export const BlogView: React.FC<BlogViewProps> = ({ currentUser, onBack }) => {
       // Merge static architecture post if not already in DB
       const dbHasStatic = data.some(p => p.id === ARCHITECTURE_BLOG_POST.id);
       if (!dbHasStatic) {
-          // Sort combined list by date
           const combined = [ARCHITECTURE_BLOG_POST, ...data].sort((a, b) => b.createdAt - a.createdAt);
-          // Ensure pinned/static post is at top if desired, or just let date sort handle it
-          // Force architecture post to top for visibility if it's the "Welcome" post
           setPosts([ARCHITECTURE_BLOG_POST, ...data.filter(p => p.id !== ARCHITECTURE_BLOG_POST.id)]);
       } else {
           setPosts(data);
       }
     } catch (e) {
-      console.error(e);
-      // Fallback to showing static post on error (e.g. offline)
+      console.error("Feed load error:", e);
       setPosts([ARCHITECTURE_BLOG_POST]);
     } finally {
       setLoading(false);
@@ -79,7 +75,7 @@ export const BlogView: React.FC<BlogViewProps> = ({ currentUser, onBack }) => {
       const userPosts = await getUserPosts(blog.id);
       setMyPosts(userPosts);
     } catch (e) {
-      console.error(e);
+      console.error("My blog load error:", e);
     } finally {
       setLoading(false);
     }
@@ -124,6 +120,7 @@ export const BlogView: React.FC<BlogViewProps> = ({ currentUser, onBack }) => {
     
     setLoading(true);
     try {
+        const now = Date.now();
         const postData: any = {
             ...editingPost,
             blogId: myBlog.id,
@@ -131,8 +128,8 @@ export const BlogView: React.FC<BlogViewProps> = ({ currentUser, onBack }) => {
             authorName: currentUser.displayName || 'Anonymous',
             authorImage: currentUser.photoURL || '',
             excerpt: editingPost.content?.substring(0, 150) + '...',
-            publishedAt: editingPost.status === 'published' ? Date.now() : undefined,
-            createdAt: editingPost.createdAt || Date.now(),
+            publishedAt: editingPost.status === 'published' ? (editingPost.publishedAt || now) : null,
+            createdAt: editingPost.createdAt || now,
             likes: editingPost.likes || 0,
             commentCount: editingPost.commentCount || 0
         };
@@ -143,11 +140,13 @@ export const BlogView: React.FC<BlogViewProps> = ({ currentUser, onBack }) => {
             await createBlogPost(postData);
         }
         
+        // Return to "My Blog" list and reload
         setActiveTab('my_blog');
-        loadMyBlog(); // Refresh list
-    } catch(e) {
-        console.error(e);
-        alert("Failed to save post.");
+        await loadMyBlog(); 
+        alert(editingPost.status === 'published' ? "Post published successfully!" : "Draft saved successfully!");
+    } catch(e: any) {
+        console.error("Save error details:", e);
+        alert("Failed to save post: " + (e.message || "Unknown error"));
     } finally {
         setLoading(false);
     }
@@ -171,10 +170,7 @@ export const BlogView: React.FC<BlogViewProps> = ({ currentUser, onBack }) => {
       };
       
       try {
-          // If it's the static architecture post, we can't save comments to Firestore easily 
-          // without a real document ID. 
           if (activePost.id === ARCHITECTURE_BLOG_POST.id) {
-              // Just optimistic update for session
               const updatedPost = { 
                   ...activePost, 
                   comments: [...(activePost.comments || []), newComment],
@@ -186,24 +182,18 @@ export const BlogView: React.FC<BlogViewProps> = ({ currentUser, onBack }) => {
           }
 
           await addPostComment(activePost.id, newComment);
-          // Optimistic update
           const updatedPost = { 
               ...activePost, 
               comments: [...(activePost.comments || []), newComment],
               commentCount: (activePost.commentCount || 0) + 1
           };
           setActivePost(updatedPost);
-          
-          // Also update in lists
           setPosts(prev => prev.map(p => p.id === activePost.id ? updatedPost : p));
           setMyPosts(prev => prev.map(p => p.id === activePost.id ? updatedPost : p));
-          
       } catch(e) {
           alert("Failed to post comment.");
       }
   };
-
-  // --- RENDERERS ---
 
   const renderPostCard = (post: BlogPost, isOwner = false) => {
       const isPinned = post.id === 'arch-deep-dive-v1';
@@ -474,12 +464,11 @@ export const BlogView: React.FC<BlogViewProps> = ({ currentUser, onBack }) => {
                         </div>
                     </div>
                     
-                    {/* Inline Comments Section could go here, but using Modal for consistency with rest of app */}
                     {isCommentsOpen && (
                         <CommentsModal 
                             isOpen={true}
                             onClose={() => setIsCommentsOpen(false)}
-                            channel={{ ...activePost, comments: activePost.comments || [] } as any} // duck type adapter
+                            channel={{ ...activePost, comments: activePost.comments || [] } as any} 
                             onAddComment={handleAddComment}
                             currentUser={currentUser}
                         />
