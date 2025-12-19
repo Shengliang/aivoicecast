@@ -7,6 +7,23 @@ let audioBridgeElement: HTMLAudioElement | null = null;
 let mediaStreamDest: MediaStreamAudioDestinationNode | null = null;
 let keepAliveOscillator: OscillatorNode | null = null;
 
+/**
+ * GLOBAL AUDIO REGISTRY
+ * Used to ensure only one component (Feed or Detail) is playing at a time.
+ */
+export let globalStopPlayback: (() => void) | null = null;
+
+export function setGlobalStopPlayback(stopFn: (() => void) | null) {
+    if (globalStopPlayback && globalStopPlayback !== stopFn) {
+        try {
+            globalStopPlayback();
+        } catch (e) {
+            console.warn("Error stopping previous playback", e);
+        }
+    }
+    globalStopPlayback = stopFn;
+}
+
 export function getGlobalAudioContext(sampleRate: number = 24000): AudioContext {
   if (!mainAudioContext || mainAudioContext.state === 'closed') {
     mainAudioContext = new (window.AudioContext || (window as any).webkitAudioContext)({ 

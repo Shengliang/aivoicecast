@@ -13,7 +13,7 @@ import { saveLectureToFirestore, getLectureFromFirestore, saveCurriculumToFirest
 import { LiveSession } from './LiveSession';
 import { DiscussionModal } from './DiscussionModal';
 import { GEMINI_API_KEY, OPENAI_API_KEY } from '../services/private_keys';
-import { getGlobalAudioContext, warmUpAudioContext, coolDownAudioContext, connectOutput } from '../utils/audioUtils';
+import { getGlobalAudioContext, warmUpAudioContext, coolDownAudioContext, connectOutput, setGlobalStopPlayback } from '../utils/audioUtils';
 
 interface PodcastDetailProps {
   channel: Channel;
@@ -151,8 +151,12 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
   }, []);
 
   const togglePlayback = async () => {
-    if (isPlaying) { stopAudio(); } else {
+    if (isPlaying) { 
       stopAudio(); 
+    } else {
+      // CLEAR ANY PREVIOUS PLATFORM AUDIO (prevent dual-voice)
+      setGlobalStopPlayback(stopAudio);
+
       const ctx = getGlobalAudioContext();
       await warmUpAudioContext(ctx);
       const sessionId = ++playSessionIdRef.current;

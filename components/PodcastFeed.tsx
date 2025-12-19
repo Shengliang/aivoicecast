@@ -11,7 +11,7 @@ import { getCachedLectureScript, cacheLectureScript, getUserChannels } from '../
 import { GEMINI_API_KEY, OPENAI_API_KEY } from '../services/private_keys';
 import { SPOTLIGHT_DATA } from '../utils/spotlightContent';
 import { OFFLINE_CHANNEL_ID, OFFLINE_CURRICULUM, OFFLINE_LECTURES } from '../utils/offlineContent';
-import { warmUpAudioContext, getGlobalAudioContext } from '../utils/audioUtils';
+import { warmUpAudioContext, getGlobalAudioContext, setGlobalStopPlayback } from '../utils/audioUtils';
 
 interface PodcastFeedProps {
   channels: Channel[];
@@ -31,9 +31,6 @@ interface PodcastFeedProps {
   
   filterMode?: 'foryou' | 'following' | 'mine';
 }
-
-// Global control to stop any other feed items from playing
-let globalStopPlayback: (() => void) | null = null;
 
 const MobileFeedCard = ({ 
     channel, 
@@ -144,8 +141,9 @@ const MobileFeedCard = ({
             return;
         }
 
-        if (globalStopPlayback && globalStopPlayback !== stopAudio) globalStopPlayback();
-        globalStopPlayback = stopAudio;
+        // Use global stop to clear any other component's audio
+        setGlobalStopPlayback(stopAudio);
+
         const sessionId = ++playbackSessionRef.current;
         runTrackSequence(-1, sessionId);
     };
@@ -156,8 +154,10 @@ const MobileFeedCard = ({
         try {
             await warmUpAudioContext(ctx);
             setIsAutoplayBlocked(false);
-            if (globalStopPlayback && globalStopPlayback !== stopAudio) globalStopPlayback();
-            globalStopPlayback = stopAudio;
+            
+            // Use global stop to clear any other component's audio
+            setGlobalStopPlayback(stopAudio);
+
             const sessionId = ++playbackSessionRef.current;
             runTrackSequence(-1, sessionId);
         } catch(err) {
@@ -192,8 +192,8 @@ const MobileFeedCard = ({
             return; 
         }
         
-        if (globalStopPlayback && globalStopPlayback !== stopAudio) globalStopPlayback();
-        globalStopPlayback = stopAudio;
+        // Use global stop to clear any other component's audio
+        setGlobalStopPlayback(stopAudio);
         
         const sessionId = ++playbackSessionRef.current;
         runTrackSequence(trackIndex >= totalLessons ? -1 : trackIndex, sessionId);
