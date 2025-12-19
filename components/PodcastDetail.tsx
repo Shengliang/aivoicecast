@@ -106,14 +106,33 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
   const stopAudio = useCallback(() => {
     logAudioEvent(MY_TOKEN, 'STOP', `Session ${playSessionIdRef.current} ending`);
     playSessionIdRef.current++; 
-    if (typeof window !== 'undefined' && window.speechSynthesis) window.speechSynthesis.cancel();
-    activeSourcesRef.current.forEach(source => { try { source.stop(); source.disconnect(); } catch(e) {} });
+    
+    // Clear scheduled timer
+    if (schedulerTimerRef.current) { 
+        clearTimeout(schedulerTimerRef.current); 
+        schedulerTimerRef.current = null; 
+    }
+
+    // Kill all active sources
+    activeSourcesRef.current.forEach(source => { 
+        try { 
+            source.stop(); 
+            source.disconnect(); 
+        } catch(e) {} 
+    });
     activeSourcesRef.current = [];
+    
+    // Reset scheduling markers
     nextScheduleTimeRef.current = 0;
-    if (schedulerTimerRef.current) { clearTimeout(schedulerTimerRef.current); schedulerTimerRef.current = null; }
     isPlayingRef.current = false;
     setIsPlaying(false);
     setIsBuffering(false);
+    
+    // Stop system voice
+    if (typeof window !== 'undefined' && window.speechSynthesis) {
+        window.speechSynthesis.cancel();
+    }
+    
     coolDownAudioContext();
     if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'paused';
   }, [MY_TOKEN]);
@@ -121,7 +140,7 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
   useEffect(() => {
       stopAllPlatformAudio(MY_TOKEN);
       return () => stopAudio();
-  }, [stopAudio, MY_TOKEN]);
+  }, [stopAudio, MY_TOKEN, channel.id]);
 
   const togglePlayback = async () => {
     if (isPlaying) { 
@@ -134,7 +153,7 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
       await warmUpAudioContext(ctx);
       
       const sessionId = ++playSessionIdRef.current;
-      const startIdx = currentSectionIndex && currentSectionIndex < (activeLecture?.sections.length || 0) ? currentSectionIndex : 0;
+      const startIdx = currentSectionIndex !== null && currentSectionIndex < (activeLecture?.sections.length || 0) ? currentSectionIndex : 0;
       schedulingCursorRef.current = startIdx;
       
       setIsPlaying(true);
@@ -150,15 +169,11 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
   };
 
   const runWebAudioScheduler = async (sessionId: number) => {
-      if (!isPlayingRef.current || sessionId !== playSessionIdRef.current || !activeLecture) return;
-      
-      // Mutex Check: Did someone else take over while we were sleeping?
-      if (!isAudioOwner(MY_TOKEN)) {
-          logAudioEvent(MY_TOKEN, 'ABORT_STALE', "Lost lock during scheduler iteration");
-          stopAudio();
+      // STALE CHECK
+      if (!isPlayingRef.current || sessionId !== playSessionIdRef.current || !activeLecture || !isAudioOwner(MY_TOKEN)) {
           return;
       }
-
+      
       const ctx = getGlobalAudioContext();
       const lookahead = 3.0; 
       
@@ -167,7 +182,8 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
       }
 
       while (nextScheduleTimeRef.current < ctx.currentTime + lookahead) {
-          if (sessionId !== playSessionIdRef.current) return;
+          // Inner session check
+          if (sessionId !== playSessionIdRef.current || !isAudioOwner(MY_TOKEN)) break;
 
           const idx = schedulingCursorRef.current;
           if (idx >= activeLecture.sections.length) {
@@ -196,14 +212,14 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
                   connectOutput(source, ctx);
                   
                   const startAt = Math.max(nextScheduleTimeRef.current, ctx.currentTime);
-                  logAudioEvent(MY_TOKEN, 'PLAY_BUFFER', `Playing idx ${idx}`);
+                  logAudioEvent(MY_TOKEN, 'PLAY_BUFFER', `Playing idx ${idx} @ ${startAt.toFixed(2)}s`);
                   
                   source.start(startAt);
                   activeSourcesRef.current.push(source);
                   
                   const delay = (startAt - ctx.currentTime) * 1000;
                   setTimeout(() => {
-                      if (sessionId === playSessionIdRef.current) {
+                      if (sessionId === playSessionIdRef.current && isAudioOwner(MY_TOKEN)) {
                           setCurrentSectionIndex(idx);
                           sectionRefs.current[idx]?.scrollIntoView({ behavior: 'smooth', block: 'center' });
                       }
@@ -212,14 +228,18 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
                   nextScheduleTimeRef.current = startAt + result.buffer.duration;
                   schedulingCursorRef.current++;
               } else {
-                  if (sessionId === playSessionIdRef.current) {
-                    setVoiceProvider('system');
-                    runSystemTts(sessionId);
+                  // Fallback: Clear current scheduled web audio nodes before switching to system voice
+                  if (sessionId === playSessionIdRef.current && isAudioOwner(MY_TOKEN)) {
+                      logAudioEvent(MY_TOKEN, 'ERROR', `Synthesize failed for idx ${idx}. Falling back.`);
+                      activeSourcesRef.current.forEach(s => { try { s.stop(); s.disconnect(); } catch(e) {} });
+                      activeSourcesRef.current = [];
+                      setVoiceProvider('system');
+                      runSystemTts(sessionId);
                   }
                   return;
               }
           } catch(e) {
-              if (sessionId === playSessionIdRef.current) {
+              if (sessionId === playSessionIdRef.current && isAudioOwner(MY_TOKEN)) {
                 setVoiceProvider('system');
                 runSystemTts(sessionId);
               }
@@ -227,7 +247,7 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
           }
       }
 
-      if (sessionId === playSessionIdRef.current) {
+      if (sessionId === playSessionIdRef.current && isAudioOwner(MY_TOKEN)) {
         schedulerTimerRef.current = setTimeout(() => runWebAudioScheduler(sessionId), 500);
       }
   };
@@ -260,9 +280,7 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
   };
 
   const handleTopicClick = async (topicTitle: string, subTopicId?: string) => {
-    stopAllPlatformAudio(MY_TOKEN);
     stopAudio();
-
     setActiveSubTopicId(subTopicId || null);
     setCurrentSectionIndex(0);
     schedulingCursorRef.current = 0;

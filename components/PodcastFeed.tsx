@@ -217,7 +217,7 @@ const MobileFeedCard = ({
 
     const playAudioBuffer = (buffer: AudioBuffer, sessionId: number): Promise<void> => {
         return new Promise(async (resolve) => {
-            // STALE CHECK: Session ID or Lock Token mismatch
+            // STALE CHECK
             if (!mountedRef.current || !isActiveRef.current || sessionId !== playbackSessionRef.current || !isAudioOwner(MY_TOKEN)) { 
                 logAudioEvent(MY_TOKEN, 'ABORT_STALE', "PlayBuffer request rejected");
                 resolve(); 
@@ -298,7 +298,7 @@ const MobileFeedCard = ({
                         lecture = await fetchLectureData(lessonMeta); 
                     }
                     
-                    // CRITICAL: Verification after async network/llm task
+                    // RE-VERIFY LOCK after async task
                     if (sessionId !== playbackSessionRef.current || !isAudioOwner(MY_TOKEN)) {
                         logAudioEvent(MY_TOKEN, 'ABORT_STALE', "Task finished but component no longer owns lock");
                         return;
@@ -321,7 +321,9 @@ const MobileFeedCard = ({
                 }
 
                 for (let i = 0; i < textParts.length; i++) {
+                    // Pre-check before each sentence
                     if (sessionId !== playbackSessionRef.current || !isAudioOwner(MY_TOKEN)) return;
+                    
                     const part = textParts[i];
                     setTranscript({ speaker: part.speaker, text: part.text });
                     
@@ -331,7 +333,7 @@ const MobileFeedCard = ({
                         setStatusMessage(`Preparing...`);
                         const audioResult = await synthesizeSpeech(part.text, part.voice, getGlobalAudioContext());
                         
-                        // CRITICAL: Verification after async TTS task
+                        // RE-VERIFY LOCK after async TTS task
                         if (sessionId !== playbackSessionRef.current || !isAudioOwner(MY_TOKEN)) {
                             logAudioEvent(MY_TOKEN, 'ABORT_STALE', `TTS ready but lock lost for part ${i}`);
                             return;
@@ -369,7 +371,8 @@ const MobileFeedCard = ({
     };
 
     const handleCardClick = (e: React.MouseEvent) => {
-        // SYNCHRONOUS KILL
+        // SYNCHRONOUS KILL before navigation
+        stopAudio();
         stopAllPlatformAudio(`Navigating:${channel.id}`);
         onChannelClick(channel.id);
     };

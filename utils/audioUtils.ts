@@ -39,15 +39,18 @@ export function getCurrentAudioOwner() {
  * Hard kill for all platform audio.
  */
 export function stopAllPlatformAudio(sourceCaller: string = "Global") {
-    logAudioEvent(sourceCaller, 'STOP', `Clearing lock. Previous owner: ${currentOwnerToken}`);
+    logAudioEvent(sourceCaller, 'STOP', `Clearing lock. Current owner: ${currentOwnerToken}`);
     
-    if (currentStopFn) {
-        try { currentStopFn(); } catch (e) {}
-        currentStopFn = null;
-    }
-
+    // 1. Synchronously kill system voice
     if (typeof window !== 'undefined' && window.speechSynthesis) {
         window.speechSynthesis.cancel();
+    }
+
+    // 2. Call the registered stop function of the current owner
+    if (currentStopFn) {
+        const fn = currentStopFn;
+        currentStopFn = null; // Clear first to avoid recursion if stopFn calls register
+        try { fn(); } catch (e) {}
     }
     
     currentOwnerToken = null;
@@ -58,8 +61,10 @@ export function stopAllPlatformAudio(sourceCaller: string = "Global") {
  * Prevents multiple instances of the same component type from overlapping.
  */
 export function registerAudioOwner(uniqueToken: string, stopFn: () => void) {
-    // 1. Kill existing
-    stopAllPlatformAudio(`Handover to ${uniqueToken}`);
+    // 1. Kill existing owner
+    if (currentOwnerToken !== uniqueToken) {
+        stopAllPlatformAudio(`Handover to ${uniqueToken}`);
+    }
     
     // 2. Assign new
     currentOwnerToken = uniqueToken;
@@ -71,11 +76,7 @@ export function registerAudioOwner(uniqueToken: string, stopFn: () => void) {
  * Checks if the provided token is still the legitimate owner.
  */
 export function isAudioOwner(token: string): boolean {
-    const valid = currentOwnerToken === token;
-    if (!valid && token) {
-        // Optional: log why it failed
-    }
-    return valid;
+    return currentOwnerToken === token;
 }
 
 export function getGlobalAudioContext(sampleRate: number = 24000): AudioContext {
