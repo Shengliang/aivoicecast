@@ -95,45 +95,47 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
 
   /**
    * ATOMIC STOP
+   * Terminate all active and future scheduled audio.
    */
   const stopAudio = useCallback(() => {
-    logAudioEvent(MY_TOKEN, 'STOP', `Session ${playSessionIdRef.current} hard kill`);
+    logAudioEvent(MY_TOKEN, 'STOP', `Session ${playSessionIdRef.current} termination`);
     
-    // 1. Invalidate Session ID immediately
+    // 1. Invalidate Session ID BEFORE cleanup
     playSessionIdRef.current++; 
     
-    // 2. Kill pending timers
+    // 2. Kill loop timers
     if (schedulerTimerRef.current) { 
         clearTimeout(schedulerTimerRef.current); 
         schedulerTimerRef.current = null; 
     }
 
-    // 3. HARD KILL all Web Audio nodes
+    // 3. Force stop all scheduled Web Audio sources
     activeSourcesRef.current.forEach(source => { 
         try { 
-            source.stop(0); // Stop immediately
+            source.stop(0); 
             source.disconnect(); 
         } catch(e) {} 
     });
     activeSourcesRef.current.clear();
     
-    // 4. Reset state
+    // 4. Reset internal playback tracking
     nextScheduleTimeRef.current = 0;
     isPlayingRef.current = false;
     setIsPlaying(false);
     setIsBuffering(false);
     
-    // 5. HARD KILL System Synthesis
+    // 5. Aggressive System Speech Reset
     if (typeof window !== 'undefined' && window.speechSynthesis) {
         window.speechSynthesis.cancel();
         if (lastUtteranceRef.current) {
             lastUtteranceRef.current.onend = null;
             lastUtteranceRef.current.onerror = null;
         }
-        // Force a flush
+        // Push a silent utterance to clear the driver queue
         const dummy = new SpeechSynthesisUtterance("");
         dummy.volume = 0;
         window.speechSynthesis.speak(dummy);
+        window.speechSynthesis.cancel();
     }
     
     coolDownAudioContext();
@@ -149,12 +151,13 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
       return;
     }
 
-    // 1. Acquire Exclusive Lock
+    // 1. Acquire global platform lock
     registerAudioOwner(MY_TOKEN, stopAudio);
 
     const ctx = getGlobalAudioContext();
     await warmUpAudioContext(ctx);
     
+    // Create unique session ID for this playback run
     const sessionId = ++playSessionIdRef.current;
     const startIdx = currentSectionIndex !== null && currentSectionIndex < (activeLecture?.sections.length || 0) ? currentSectionIndex : 0;
     schedulingCursorRef.current = startIdx;
@@ -171,7 +174,7 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
   };
 
   const runWebAudioScheduler = async (sessionId: number) => {
-      // TRIPLE GUARD 1: Initial check
+      // GUARD 1: Entrance check
       if (!isPlayingRef.current || sessionId !== playSessionIdRef.current || !activeLecture || !isAudioOwner(MY_TOKEN)) {
           return;
       }
@@ -180,7 +183,7 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
       const lookahead = 2.0; 
       
       while (nextScheduleTimeRef.current < ctx.currentTime + lookahead) {
-          // TRIPLE GUARD 2: Loop check
+          // GUARD 2: Loop validity check
           if (sessionId !== playSessionIdRef.current || !isAudioOwner(MY_TOKEN)) break;
 
           const idx = schedulingCursorRef.current;
@@ -197,10 +200,10 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
 
           const section = activeLecture.sections[idx];
           
-          // VOICE PROVIDER MAPPING
+          // OpenAI VOICE MAPPING FIX
           let voice = section.speaker === 'Teacher' ? teacherVoice : studentVoice;
           if (voiceProvider === 'openai') {
-              // Map Gemini names to OpenAI defaults to prevent fallback to system
+              // Standardize names for OpenAI to prevent synthesis errors
               voice = section.speaker === 'Teacher' ? 'Alloy' : 'Echo';
           }
           
@@ -209,9 +212,9 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
               const result = await synthesizeSpeech(section.text, voice, ctx);
               setIsBuffering(false);
               
-              // TRIPLE GUARD 3: Post-await check (Most common point of overlapping audio)
+              // GUARD 3: Post-await Check (Critical point for overlapping voice)
               if (sessionId !== playSessionIdRef.current || !isAudioOwner(MY_TOKEN)) {
-                  logAudioEvent(MY_TOKEN, 'ABORT_STALE', `Session ${sessionId} was cancelled during async synthesis for idx ${idx}`);
+                  logAudioEvent(MY_TOKEN, 'ABORT_STALE', `Aborting stale session ${sessionId} after network call`);
                   return;
               }
               
@@ -222,7 +225,7 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
                   
                   const startAt = Math.max(nextScheduleTimeRef.current, ctx.currentTime);
                   
-                  // Final sanity check before hardware commitment
+                  // GUARD 4: Final hardware commitment check
                   if (sessionId !== playSessionIdRef.current || !isAudioOwner(MY_TOKEN)) {
                       source.disconnect();
                       return;
@@ -298,7 +301,9 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
           }
       };
 
-      window.speechSynthesis.speak(utter);
+      if (sessionId === playSessionIdRef.current && isAudioOwner(MY_TOKEN)) {
+        window.speechSynthesis.speak(utter);
+      }
   };
 
   const handleTopicClick = async (topicTitle: string, subTopicId?: string) => {

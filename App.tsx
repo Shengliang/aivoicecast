@@ -224,6 +224,15 @@ const App: React.FC = () => {
     setViewState(newState);
   };
 
+  // Browser Navigation Fix: Stop audio when back/forward button is pressed
+  useEffect(() => {
+      const handlePopState = () => {
+          stopAllPlatformAudio("BrowserNavigation");
+      };
+      window.addEventListener('popstate', handlePopState);
+      return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
   // Global Audio Unlock Listener for Mobile Autoplay
   useEffect(() => {
       const handleFirstInteraction = () => {

@@ -41,15 +41,20 @@ export function getCurrentAudioOwner() {
 export function stopAllPlatformAudio(sourceCaller: string = "Global") {
     logAudioEvent(sourceCaller, 'STOP', `Clearing lock. Current owner: ${currentOwnerToken}`);
     
-    // 1. Synchronously kill system voice
+    // 1. Aggressively kill system voice
     if (typeof window !== 'undefined' && window.speechSynthesis) {
+        window.speechSynthesis.cancel();
+        // Flush internal driver queue with silent empty utterance
+        const dummy = new SpeechSynthesisUtterance("");
+        dummy.volume = 0;
+        window.speechSynthesis.speak(dummy);
         window.speechSynthesis.cancel();
     }
 
     // 2. Call the registered stop function of the current owner
     if (currentStopFn) {
         const fn = currentStopFn;
-        currentStopFn = null; // Clear first to avoid recursion if stopFn calls register
+        currentStopFn = null; 
         try { fn(); } catch (e) {}
     }
     
@@ -58,25 +63,18 @@ export function stopAllPlatformAudio(sourceCaller: string = "Global") {
 
 /**
  * Register a unique ownership token.
- * Prevents multiple instances of different components from overlapping.
- * Also terminates previous session of the same component if it re-registers.
  */
 export function registerAudioOwner(uniqueToken: string, stopFn: () => void) {
-    // CRITICAL: Always stop the previous owner, even if it's the same token.
-    // This handles the case where a component restarts its playback session.
+    // Terminate previous session even if it's the same component re-initializing
     if (currentOwnerToken) {
         stopAllPlatformAudio(`Reset for ${uniqueToken}`);
     }
     
-    // Assign new
     currentOwnerToken = uniqueToken;
     currentStopFn = stopFn;
     logAudioEvent(uniqueToken, 'REGISTER', "Acquired Exclusive Lock");
 }
 
-/**
- * Checks if the provided token is still the legitimate owner.
- */
 export function isAudioOwner(token: string): boolean {
     return currentOwnerToken === token;
 }
@@ -198,9 +196,6 @@ export async function hashString(str: string): Promise<string> {
   return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
-/**
- * Completing pcmToWavBlobUrl implementation to resolve return value error.
- */
 export function pcmToWavBlobUrl(pcmData: Uint8Array, sampleRate: number = 24000): string {
     const numChannels = 1;
     const bitsPerSample = 16;
@@ -230,7 +225,6 @@ export function pcmToWavBlobUrl(pcmData: Uint8Array, sampleRate: number = 24000)
     writeString(36, 'data');
     view.setUint32(40, dataSize, true);
 
-    // Copy pcmData into the buffer starting after the 44-byte header
     const pcmDest = new Uint8Array(buffer, 44);
     pcmDest.set(pcmData);
 
