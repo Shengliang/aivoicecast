@@ -21,7 +21,6 @@ interface PodcastFeedProps {
   onRefresh?: () => void;
   onMessageCreator?: (creatorId: string, creatorName: string) => void;
   
-  // Props for ChannelCard (Desktop View)
   t?: any;
   currentUser?: any;
   setChannelToEdit?: (channel: Channel) => void;
@@ -29,7 +28,6 @@ interface PodcastFeedProps {
   onCommentClick?: (channel: Channel) => void;
   handleVote?: (id: string, type: 'like' | 'dislike', e: React.MouseEvent) => void;
   
-  // New Prop for filtering logic ('mine' added for my-podcast support)
   filterMode?: 'foryou' | 'following' | 'mine';
 }
 
@@ -60,12 +58,11 @@ const MobileFeedCard = ({
     onChannelClick, 
     onChannelFinish 
 }: any) => {
-    // UI State
     const [playbackState, setPlaybackState] = useState<'idle' | 'buffering' | 'playing' | 'error'>('idle');
     const [statusMessage, setStatusMessage] = useState('');
     const [transcript, setTranscript] = useState<{speaker: string, text: string} | null>(null);
+    const [isAutoplayBlocked, setIsAutoplayBlocked] = useState(false);
     
-    // Provider State: 'system', 'gemini', 'openai'
     const [provider, setProvider] = useState<'system' | 'gemini' | 'openai'>(() => {
         const hasOpenAI = !!(localStorage.getItem('openai_api_key') || OPENAI_API_KEY || process.env.OPENAI_API_KEY);
         if (hasOpenAI) return 'openai';
@@ -74,20 +71,13 @@ const MobileFeedCard = ({
     });
     const providerRef = useRef<'system' | 'gemini' | 'openai'>(provider); 
     
-    // Logic State
     const [trackIndex, setTrackIndex] = useState(-1); 
-    
-    // Refs
     const sourceRef = useRef<AudioBufferSourceNode | null>(null);
     const mountedRef = useRef(true);
     const playbackSessionRef = useRef(0); 
     const isActiveRef = useRef(isActive); 
-    
-    // Buffering Refs
     const preloadedScriptRef = useRef<Promise<GeneratedLecture | null> | null>(null);
-    const preloadedAudioRef = useRef<Promise<any> | null>(null);
 
-    // Sync Ref
     useEffect(() => { providerRef.current = provider; }, [provider]);
     useEffect(() => { isActiveRef.current = isActive; }, [isActive]);
 
@@ -144,18 +134,36 @@ const MobileFeedCard = ({
             setPlaybackState('idle');
             playbackSessionRef.current++;
             preloadedScriptRef.current = null;
-            preloadedAudioRef.current = null;
         }
     }, [isActive, channel.id]);
 
     const attemptAutoPlay = async () => {
         if (playbackState === 'playing' || playbackState === 'buffering') return;
+        const ctx = getSharedAudioContext();
+        
+        // DETECTION: Browser blocks autoplay if context is suspended and can't be resumed without gesture
+        if (ctx.state === 'suspended') {
+            setIsAutoplayBlocked(true);
+            return;
+        }
+
         if (globalStopPlayback && globalStopPlayback !== stopAudio) globalStopPlayback();
         globalStopPlayback = stopAudio;
-        const ctx = getSharedAudioContext();
-        if (ctx.state === 'suspended') { try { await ctx.resume(); } catch(e) {} }
         const sessionId = ++playbackSessionRef.current;
         runTrackSequence(-1, sessionId);
+    };
+
+    const handleEnableAudio = async () => {
+        const ctx = getSharedAudioContext();
+        try {
+            await ctx.resume();
+            setIsAutoplayBlocked(false);
+            if (globalStopPlayback && globalStopPlayback !== stopAudio) globalStopPlayback();
+            globalStopPlayback = stopAudio;
+            runTrackSequence(-1, ++playbackSessionRef.current);
+        } catch(e) {
+            console.error("Audio resume failed", e);
+        }
     };
 
     const handleStop = (e: React.MouseEvent) => {
@@ -170,11 +178,16 @@ const MobileFeedCard = ({
     const handleTogglePlay = async (e: React.MouseEvent) => {
         e.stopPropagation();
         if (!isActive) { onChannelClick(channel.id); if (globalStopPlayback) globalStopPlayback(); return; }
+        
+        const ctx = getSharedAudioContext();
+        if (ctx.state === 'suspended') {
+            handleEnableAudio();
+            return;
+        }
+
         if (playbackState === 'playing' || playbackState === 'buffering') { stopAudio(); playbackSessionRef.current++; setPlaybackState('idle'); setStatusMessage("Paused"); return; }
         if (globalStopPlayback && globalStopPlayback !== stopAudio) globalStopPlayback();
         globalStopPlayback = stopAudio;
-        const ctx = getSharedAudioContext();
-        if (ctx.state === 'suspended') { try { await ctx.resume(); } catch(e) {} }
         const sessionId = ++playbackSessionRef.current;
         runTrackSequence(trackIndex >= totalLessons ? -1 : trackIndex, sessionId);
     };
@@ -197,7 +210,14 @@ const MobileFeedCard = ({
         return new Promise(async (resolve) => {
             if (!mountedRef.current || !isActiveRef.current || sessionId !== playbackSessionRef.current) { resolve(); return; }
             const ctx = getSharedAudioContext();
-            if (ctx.state === 'suspended') { try { await ctx.resume(); } catch(e) {} }
+            
+            // Re-check context state just before playing
+            if (ctx.state === 'suspended') {
+                setIsAutoplayBlocked(true);
+                resolve();
+                return;
+            }
+
             const source = ctx.createBufferSource();
             source.buffer = buffer;
             source.connect(ctx.destination);
@@ -300,6 +320,20 @@ const MobileFeedCard = ({
             <div className="absolute inset-0">
                 <img src={channel.imageUrl} alt={channel.title} className="w-full h-full object-cover opacity-60" loading={isActive ? "eager" : "lazy"} />
                 <div className="absolute inset-0 bg-gradient-to-b from-black/30 via-transparent to-black/90"></div>
+                
+                {/* Autoplay Blocked Overlay */}
+                {isAutoplayBlocked && isActive && (
+                    <div className="absolute inset-0 z-40 bg-black/40 backdrop-blur-sm flex flex-col items-center justify-center animate-fade-in">
+                        <button 
+                            onClick={handleEnableAudio}
+                            className="w-20 h-20 bg-indigo-600 hover:bg-indigo-500 text-white rounded-full flex items-center justify-center shadow-2xl transition-transform active:scale-95"
+                        >
+                            <Play size={40} fill="currentColor" className="ml-1" />
+                        </button>
+                        <p className="text-white font-bold mt-4 tracking-wide uppercase text-sm">Tap to Start AI Audio</p>
+                    </div>
+                )}
+
                 <div className="absolute top-20 right-4 z-30 flex flex-col items-end gap-2">
                     <button onClick={toggleTtsMode} className={`backdrop-blur-md px-3 py-1.5 rounded-full flex items-center gap-2 border text-xs font-bold shadow-lg transition-all ${provider === 'openai' ? 'bg-emerald-900/60 border-emerald-500/50 text-emerald-300' : provider === 'gemini' ? 'bg-indigo-900/60 border-indigo-500/50 text-indigo-300' : 'bg-slate-800/60 border-slate-600 text-slate-300'}`}>
                         {provider === 'openai' ? <Sparkles size={12} fill="currentColor"/> : provider === 'gemini' ? <Zap size={12} fill="currentColor"/> : <Radio size={12} />}

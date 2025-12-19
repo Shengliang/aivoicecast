@@ -1,3 +1,4 @@
+
 import { GoogleGenAI } from '@google/genai';
 import { GeneratedLecture, SubTopic, TranscriptItem } from '../types';
 import { incrementApiUsage, getUserProfile } from './firestoreService';
@@ -27,7 +28,8 @@ async function callOpenAI(
     model: string = 'gpt-4o'
 ): Promise<string | null> {
     try {
-        const response = await fetch("https://api.openai.com/v1/audio/speech", {
+        // FIX: The endpoint for text generation must be chat/completions, not audio/speech.
+        const response = await fetch("https://api.openai.com/v1/chat/completions", {
             method: "POST",
             headers: {
                 "Authorization": `Bearer ${apiKey}`,
@@ -128,9 +130,7 @@ export async function generateLectureScript(
     if (activeProvider === 'openai') {
         text = await callOpenAI(systemPrompt, userPrompt, openaiKey);
     } else {
-        // FIX: Always use const ai = new GoogleGenAI({apiKey: process.env.API_KEY}); exclusively from process.env.API_KEY.
         const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-        // Use Gemini 3 Pro for high-complexity channels (1: Software Interview, 2: Linux Kernel)
         const modelName = (channelId === '1' || channelId === '2') ? 'gemini-3-pro-preview' : 'gemini-3-flash-preview';
         
         const response = await ai.models.generateContent({
@@ -138,7 +138,6 @@ export async function generateLectureScript(
             contents: `${systemPrompt}\n\n${userPrompt}`,
             config: { 
                 responseMimeType: 'application/json',
-                // FIX: Set thinkingConfig for Gemini 3 series models
                 thinkingConfig: (modelName === 'gemini-3-pro-preview') ? { thinkingBudget: 4000 } : undefined
             }
         });
@@ -150,12 +149,10 @@ export async function generateLectureScript(
     const parsed = safeJsonParse(text);
     if (!parsed) return null;
     
-    // Track Usage if logged in
     if (auth.currentUser) {
        incrementApiUsage(auth.currentUser.uid);
     }
 
-    // Inject the topic back into the object for the UI
     return {
       topic,
       professorName: parsed.professorName || (language === 'zh' ? "教授" : "Professor"),
@@ -225,7 +222,6 @@ export async function generateBatchLectures(
     if (activeProvider === 'openai') {
         text = await callOpenAI(systemPrompt, userPrompt, openaiKey);
     } else {
-        // FIX: Always use const ai = new GoogleGenAI({apiKey: process.env.API_KEY}); exclusively from process.env.API_KEY.
         const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
         const response = await ai.models.generateContent({
             model: 'gemini-3-flash-preview', 
@@ -244,7 +240,6 @@ export async function generateBatchLectures(
 
     if (parsed.results && Array.isArray(parsed.results)) {
       parsed.results.forEach((item: any) => {
-        // Find the original title to inject
         const original = subTopics.find(s => s.id === item.id);
         if (original && item.lecture) {
            resultMap[item.id] = {
@@ -309,7 +304,6 @@ export async function summarizeDiscussionAsSection(
     if (activeProvider === 'openai') {
         text = await callOpenAI(systemPrompt, userPrompt, openaiKey);
     } else {
-        // FIX: Always use const ai = new GoogleGenAI({apiKey: process.env.API_KEY}); exclusively from process.env.API_KEY.
         const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
         const response = await ai.models.generateContent({
             model: 'gemini-3-flash-preview', 
@@ -389,7 +383,6 @@ export async function generateDesignDocFromTranscript(
     let text: string | null = null;
 
     if (activeProvider === 'openai') {
-        // OpenAI Chat Completion (Text Mode)
         const response = await fetch("https://api.openai.com/v1/chat/completions", {
             method: "POST",
             headers: {
@@ -409,13 +402,11 @@ export async function generateDesignDocFromTranscript(
             text = data.choices[0]?.message?.content || null;
         }
     } else {
-        // FIX: Always use const ai = new GoogleGenAI({apiKey: process.env.API_KEY}); exclusively from process.env.API_KEY.
         const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
         const response = await ai.models.generateContent({
-            model: 'gemini-3-pro-preview', // Better for large context docs
+            model: 'gemini-3-pro-preview', 
             contents: `${systemPrompt}\n\n${userPrompt}`,
             config: {
-                // FIX: Set thinkingConfig correctly for Gemini 3 series models.
                 thinkingConfig: { thinkingBudget: 4000 }
             }
         });

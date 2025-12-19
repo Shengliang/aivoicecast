@@ -1,3 +1,4 @@
+
 // [FORCE-SYNC-v3.78.0] Timestamp: 2025-12-16T10:00:00.000Z
 import { GoogleGenAI, Modality } from '@google/genai';
 import { base64ToBytes, decodeAudioData } from '../utils/audioUtils';
@@ -100,15 +101,14 @@ async function synthesizeOpenAI(text: string, voice: string, apiKey: string): Pr
 
   if (!response.ok) {
     const err = await response.json();
-    throw new Error(`OpenAI Error: ${err.error?.message || response.statusText}`);
+    throw new Error(`OpenAI Error: ${err.error?.message || response.statusText} (Status: ${response.status})`);
   }
 
   return await response.arrayBuffer();
 }
 
-// FIX: synthesizeGemini now correctly initializes GoogleGenAI using process.env.API_KEY exclusively.
+// synthesizeGemini correctly initializes GoogleGenAI using process.env.API_KEY exclusively.
 async function synthesizeGemini(text: string, voice: string): Promise<ArrayBuffer> {
-    // FIX: Always use const ai = new GoogleGenAI({apiKey: process.env.API_KEY}); exclusively from process.env.API_KEY.
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     
     // Create a timeout promise that rejects after 25 seconds
@@ -120,7 +120,6 @@ async function synthesizeGemini(text: string, voice: string): Promise<ArrayBuffe
         model: 'gemini-2.5-flash-preview-tts',
         contents: [{ parts: [{ text: text }] }],
         config: {
-          // FIX: responseModalities must be an array with a single Modality.AUDIO element.
           responseModalities: [Modality.AUDIO], 
           speechConfig: {
             voiceConfig: {
@@ -163,7 +162,6 @@ export async function synthesizeSpeech(
       if (cachedArrayBuffer) {
         let audioBuffer: AudioBuffer;
         
-        // Correctly handle decoding based on provider type inferred from voice name
         if (isOpenAIVoice(voiceName)) {
             // OpenAI = MP3 = Native Browser Decode
             audioBuffer = await audioContext.decodeAudioData(cachedArrayBuffer.slice(0));
@@ -190,7 +188,6 @@ export async function synthesizeSpeech(
           rawBuffer = await synthesizeOpenAI(cleanText, voiceName, openAiKey);
       } else {
           // Default to Gemini
-          // FIX: synthesizeGemini now uses process.env.API_KEY exclusively.
           usedProvider = 'gemini';
           rawBuffer = await synthesizeGemini(cleanText, voiceName);
       }
