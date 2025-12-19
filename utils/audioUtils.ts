@@ -44,11 +44,13 @@ export function stopAllPlatformAudio(sourceCaller: string = "Global") {
     // 1. Aggressively kill system voice
     if (typeof window !== 'undefined' && window.speechSynthesis) {
         window.speechSynthesis.cancel();
-        // Flush internal driver queue with silent empty utterance
-        const dummy = new SpeechSynthesisUtterance("");
-        dummy.volume = 0;
-        window.speechSynthesis.speak(dummy);
-        window.speechSynthesis.cancel();
+        // Nuclear Flush: Chrome/Safari sometimes hang in speech queue
+        try {
+            const dummy = new SpeechSynthesisUtterance("");
+            dummy.volume = 0;
+            window.speechSynthesis.speak(dummy);
+            window.speechSynthesis.cancel();
+        } catch (e) {}
     }
 
     // 2. Call the registered stop function of the current owner

@@ -48,7 +48,6 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
   const [showVoiceSettings, setShowVoiceSettings] = useState(false);
   const [showDebugger, setShowDebugger] = useState(false);
   
-  // Hard-coded default voices for specific gen-lang profiles
   const [teacherVoice, setTeacherVoice] = useState(channel.voiceName || 'Puck');
   const [studentVoice, setStudentVoice] = useState('Zephyr');
   
@@ -100,7 +99,7 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
   const stopAudio = useCallback(() => {
     logAudioEvent(MY_TOKEN, 'STOP', `Session ${playSessionIdRef.current} hard shutdown`);
     
-    // Increment Session ID BEFORE doing anything to invalidate all async callbacks
+    // 1. Invalidate current session ID immediately
     playSessionIdRef.current++; 
     
     if (schedulerTimerRef.current) { 
@@ -108,7 +107,7 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
         schedulerTimerRef.current = null; 
     }
 
-    // KILL all Web Audio sources immediately
+    // 2. Kill all Web Audio sources
     activeSourcesRef.current.forEach(source => { 
         try { 
             source.stop(0); 
@@ -122,7 +121,7 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
     setIsPlaying(false);
     setIsBuffering(false);
     
-    // KILL System Speech aggressively
+    // 3. Kill System Speech
     if (typeof window !== 'undefined' && window.speechSynthesis) {
         window.speechSynthesis.cancel();
         if (lastUtteranceRef.current) {
@@ -130,20 +129,21 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
             lastUtteranceRef.current.onerror = null;
         }
         // Force flush internal browser queue
-        const dummy = new SpeechSynthesisUtterance("");
-        dummy.volume = 0;
-        window.speechSynthesis.speak(dummy);
-        window.speechSynthesis.cancel();
+        try {
+            const dummy = new SpeechSynthesisUtterance("");
+            dummy.volume = 0;
+            window.speechSynthesis.speak(dummy);
+            window.speechSynthesis.cancel();
+        } catch (e) {}
     }
     
     coolDownAudioContext();
   }, [MY_TOKEN]);
 
-  // CRITICAL: Stop everything when entering OR leaving the detail page
   useEffect(() => {
-      stopAllPlatformAudio(`PodcastDetail:Mount:${channel.id}`);
+      // Ensure we clean up when navigating away
       return () => stopAudio();
-  }, [stopAudio, channel.id]);
+  }, [stopAudio]);
 
   /**
    * STRICT MANUAL START
@@ -154,16 +154,16 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
       return;
     }
 
-    // 1. Terminate EVERY other possible sound on the platform
+    // 1. Kill everything else on platform
     stopAllPlatformAudio(`PodcastDetail:${channel.id}`);
     
-    // 2. Claim exclusive ownership for this component
+    // 2. Claim lock
     registerAudioOwner(MY_TOKEN, stopAudio);
 
     const ctx = getGlobalAudioContext();
     await warmUpAudioContext(ctx);
     
-    // 3. New Session Identity
+    // 3. New Session ID
     const sessionId = ++playSessionIdRef.current;
     const startIdx = currentSectionIndex !== null && currentSectionIndex < (activeLecture?.sections.length || 0) ? currentSectionIndex : 0;
     schedulingCursorRef.current = startIdx;
@@ -180,7 +180,7 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
   };
 
   const runWebAudioScheduler = async (sessionId: number) => {
-      // TRIPLE GUARD 1: Entrance check
+      // GUARD 1: Entrance check
       if (!isPlayingRef.current || sessionId !== playSessionIdRef.current || !activeLecture || !isAudioOwner(MY_TOKEN)) {
           return;
       }
@@ -189,7 +189,7 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
       const lookahead = 2.0; 
       
       while (nextScheduleTimeRef.current < ctx.currentTime + lookahead) {
-          // TRIPLE GUARD 2: Loop check
+          // GUARD 2: Loop check
           if (sessionId !== playSessionIdRef.current || !isAudioOwner(MY_TOKEN)) break;
 
           const idx = schedulingCursorRef.current;
@@ -212,7 +212,7 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
               const result = await synthesizeSpeech(section.text, voice, ctx);
               setIsBuffering(false);
               
-              // TRIPLE GUARD 3: Post-Await check (Most common point of zombie voice overlap)
+              // GUARD 3: Post-Await check
               if (sessionId !== playSessionIdRef.current || !isAudioOwner(MY_TOKEN)) {
                   logAudioEvent(MY_TOKEN, 'ABORT_STALE', `Aborting stale audio from session ${sessionId}`);
                   return;
@@ -225,7 +225,7 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
                   
                   const startAt = Math.max(nextScheduleTimeRef.current, ctx.currentTime);
                   
-                  // TRIPLE GUARD 4: hardware commitment check
+                  // GUARD 4: Final Start check
                   if (sessionId !== playSessionIdRef.current || !isAudioOwner(MY_TOKEN)) {
                       source.disconnect();
                       return;
@@ -251,6 +251,7 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
                   nextScheduleTimeRef.current = startAt + result.buffer.duration;
                   schedulingCursorRef.current++;
               } else {
+                  // Fallback to system on single segment failure
                   if (sessionId === playSessionIdRef.current && isAudioOwner(MY_TOKEN)) {
                       setVoiceProvider('system');
                       runSystemTts(sessionId);
@@ -307,7 +308,7 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
   };
 
   const handleTopicClick = async (topicTitle: string, subTopicId?: string) => {
-    // Kill existing audio immediately on selection
+    // Kill existing session BEFORE starting a new load to prevent race
     stopAudio();
     
     setActiveSubTopicId(subTopicId || null);
