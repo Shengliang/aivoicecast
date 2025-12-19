@@ -56,9 +56,9 @@ import {
 import { getUserChannels, saveUserChannel, deleteUserChannel } from './utils/db';
 import { HANDCRAFTED_CHANNELS, CATEGORY_STYLES, TOPIC_CATEGORIES } from './utils/initialData';
 import { OFFLINE_CHANNEL_ID } from './utils/offlineContent';
-import { warmUpAudioContext } from './utils/audioUtils';
+import { warmUpAudioContext, stopAllPlatformAudio } from './utils/audioUtils';
 
-const APP_VERSION = "v3.83.0"; 
+const APP_VERSION = "v3.83.1"; 
 
 const UI_TEXT = {
   en: {
@@ -199,20 +199,31 @@ const App: React.FC = () => {
   const [chatTargetId, setChatTargetId] = useState<string | null>(null);
 
   const allApps = [
-    { id: 'podcasts', label: t.podcasts, icon: Podcast, action: () => { setViewState('directory'); setActiveTab('categories'); }, color: 'text-indigo-400' },
-    { id: 'code_studio', label: t.code, icon: Code, action: () => setViewState('code_studio'), color: 'text-blue-400' },
-    { id: 'notebook_viewer', label: t.notebooks, icon: Book, action: () => setViewState('notebook_viewer'), color: 'text-orange-300' },
-    { id: 'whiteboard', label: t.whiteboard, icon: PenTool, action: () => setViewState('whiteboard'), color: 'text-pink-400' },
-    { id: 'chat', label: t.chat, icon: MessageSquare, action: () => setViewState('chat'), color: 'text-indigo-400' },
-    { id: 'calendar', label: t.calendar, icon: Calendar, action: () => { setViewState('directory'); setActiveTab('calendar'); }, color: 'text-emerald-400' },
-    { id: 'careers', label: t.careers, icon: Briefcase, action: () => setViewState('careers'), color: 'text-yellow-400' },
-    { id: 'blog', label: t.blog, icon: Rss, action: () => setViewState('blog'), color: 'text-orange-400' },
-    { id: 'card_workshop', label: t.cards, icon: Gift, action: () => setViewState('card_workshop'), color: 'text-red-400' },
-    { id: 'mentorship', label: t.mentorship, icon: Users, action: () => { setViewState('directory'); setActiveTab('mentorship'); }, color: 'text-purple-400' },
-    { id: 'groups', label: t.groups, icon: Users, action: () => { setViewState('directory'); setActiveTab('groups'); }, color: 'text-cyan-400' },
-    { id: 'recordings', label: t.recordings, icon: Disc, action: () => { setViewState('directory'); setActiveTab('recordings'); }, color: 'text-red-400' },
-    { id: 'docs', label: t.docs, icon: FileText, action: () => { setViewState('directory'); setActiveTab('docs'); }, color: 'text-gray-400' },
+    { id: 'podcasts', label: t.podcasts, icon: Podcast, action: () => { handleSetViewState('directory'); setActiveTab('categories'); }, color: 'text-indigo-400' },
+    { id: 'code_studio', label: t.code, icon: Code, action: () => handleSetViewState('code_studio'), color: 'text-blue-400' },
+    { id: 'notebook_viewer', label: t.notebooks, icon: Book, action: () => handleSetViewState('notebook_viewer'), color: 'text-orange-300' },
+    { id: 'whiteboard', label: t.whiteboard, icon: PenTool, action: () => handleSetViewState('whiteboard'), color: 'text-pink-400' },
+    { id: 'chat', label: t.chat, icon: MessageSquare, action: () => handleSetViewState('chat'), color: 'text-indigo-400' },
+    { id: 'calendar', label: t.calendar, icon: Calendar, action: () => { handleSetViewState('directory'); setActiveTab('calendar'); }, color: 'text-emerald-400' },
+    { id: 'careers', label: t.careers, icon: Briefcase, action: () => handleSetViewState('careers'), color: 'text-yellow-400' },
+    { id: 'blog', label: t.blog, icon: Rss, action: () => handleSetViewState('blog'), color: 'text-orange-400' },
+    { id: 'card_workshop', label: t.cards, icon: Gift, action: () => handleSetViewState('card_workshop'), color: 'text-red-400' },
+    { id: 'mentorship', label: t.mentorship, icon: Users, action: () => { handleSetViewState('directory'); setActiveTab('mentorship'); }, color: 'text-purple-400' },
+    { id: 'groups', label: t.groups, icon: Users, action: () => { handleSetViewState('directory'); setActiveTab('groups'); }, color: 'text-cyan-400' },
+    { id: 'recordings', label: t.recordings, icon: Disc, action: () => { handleSetViewState('directory'); setActiveTab('recordings'); }, color: 'text-red-400' },
+    { id: 'docs', label: t.docs, icon: FileText, action: () => { handleSetViewState('directory'); setActiveTab('docs'); }, color: 'text-gray-400' },
   ];
+
+  /**
+   * GLOBAL NAVIGATION INTERCEPTOR
+   * Kills all audio when switching views to prevent dual-voice.
+   */
+  const handleSetViewState = (newState: ExtendedViewState) => {
+    if (newState !== viewState) {
+        stopAllPlatformAudio();
+    }
+    setViewState(newState);
+  };
 
   // Global Audio Unlock Listener for Mobile Autoplay
   useEffect(() => {
@@ -221,7 +232,6 @@ const App: React.FC = () => {
           if (audioCtx) {
               warmUpAudioContext(audioCtx);
           }
-          // Remove listener after first successful interaction
           window.removeEventListener('touchstart', handleFirstInteraction);
           window.removeEventListener('click', handleFirstInteraction);
       };
@@ -246,66 +256,65 @@ const App: React.FC = () => {
 
     if (view === 'card' && id) {
         setViewCardId(id);
-        setViewState('card_viewer');
+        handleSetViewState('card_viewer');
     } else if (view === 'card_workshop') {
         if (id) setViewCardId(id);
-        setViewState('card_workshop');
+        handleSetViewState('card_workshop');
     } else if (view === 'card_explorer') {
-        setViewState('card_explorer');
+        handleSetViewState('card_explorer');
     } else if (view === 'code') {
-        setViewState('code_studio');
+        handleSetViewState('code_studio');
     } else if (view === 'whiteboard') {
-        setViewState('whiteboard');
+        handleSetViewState('whiteboard');
     } else if (view === 'blog') {
-        setViewState('blog');
+        handleSetViewState('blog');
     } else if (view === 'chat') {
-        setViewState('chat');
+        handleSetViewState('chat');
     } else if (view === 'careers') {
-        setViewState('careers');
+        handleSetViewState('careers');
     } else if (view === 'guide') {
-        setViewState('user_guide');
+        handleSetViewState('user_guide');
     } else if (view === 'mission') {
-        setViewState('mission');
+        handleSetViewState('mission');
     } else if (view === 'notebooks') {
-        setViewState('notebook_viewer');
+        handleSetViewState('notebook_viewer');
     } else if (view === 'podcast' && id) {
         setActiveChannelId(id);
-        setViewState('podcast_detail');
+        handleSetViewState('podcast_detail');
     } else if (view === 'calendar') {
-        setViewState('directory');
+        handleSetViewState('directory');
         setActiveTab('calendar');
     } else if (view === 'membership') {
-        setViewState('directory');
+        handleSetViewState('directory');
         setActiveTab('mentorship');
     } else if (view === 'group') {
-        setViewState('directory');
+        handleSetViewState('directory');
         setActiveTab('groups');
     } else if (view === 'recording') {
-        setViewState('directory');
+        handleSetViewState('directory');
         setActiveTab('recordings');
     } else if (view === 'document') {
-        setViewState('directory');
+        handleSetViewState('directory');
         setActiveTab('docs');
     } else if (view === 'debug_local') {
-        setViewState('debug');
+        handleSetViewState('debug');
     } else if (view === 'debug_firestore') {
-        setViewState('firestore_debug');
+        handleSetViewState('firestore_debug');
     } else if (view === 'debug_storage') {
-        setViewState('cloud_debug');
+        handleSetViewState('cloud_debug');
     } else if (view === 'debug_registry') {
-        setViewState('public_debug');
+        handleSetViewState('public_debug');
     } else if (view === 'debug_my_channels') {
-        setViewState('my_channel_debug');
+        handleSetViewState('my_channel_debug');
     }
 
     if (session) {
         setSharedSessionId(session);
         if (keyParam) setAccessKey(keyParam);
         
-        // Ensure correct view state for shared sessions if not explicitly set by 'view' param
         if (!view) {
-            if (mode === 'whiteboard') setViewState('whiteboard');
-            else setViewState('code_studio');
+            if (mode === 'whiteboard') handleSetViewState('whiteboard');
+            else handleSetViewState('code_studio');
         }
     }
 
@@ -337,16 +346,13 @@ const App: React.FC = () => {
 
   // URL Sync Effect: Persistence (Update URL on state change)
   useEffect(() => {
-      // FIX: Only update URL when user is logged in to prevent login page "DIRTY URL" issues
       if (!currentUser) return;
 
       const url = new URL(window.location.href);
       const params = url.searchParams;
 
-      // Map ViewState to URL param
       let viewParam: string | null = null;
       
-      // Map ViewState to flat URL params as requested
       if (viewState === 'directory') {
           switch(activeTab) {
               case 'calendar': viewParam = 'calendar'; break;
@@ -414,8 +420,6 @@ const App: React.FC = () => {
 
   useEffect(() => {
     if (isFirebaseConfigured && currentUser) {
-        
-        // ADMIN OVERRIDE: If super admin, fetch everything regardless of visibility
         if (currentUser.email === 'shengliang.song@gmail.com') {
              const unsubAdmin = subscribeToAllChannelsAdmin(
                  (data) => setPublicChannels(data), 
@@ -599,7 +603,7 @@ const App: React.FC = () => {
           video: videoEnabled,
           camera: cameraEnabled
       });
-      setViewState('live_session');
+      handleSetViewState('live_session');
   };
 
   const handleMobileQuickStart = () => {
@@ -622,7 +626,7 @@ const App: React.FC = () => {
       setTempChannel(quickChannel);
       setActiveChannelId(quickChannel.id);
       setLiveConfig({ recording: false }); 
-      setViewState('live_session');
+      handleSetViewState('live_session');
   };
 
   const handleSessionStart = (id: string) => {
@@ -652,7 +656,7 @@ const App: React.FC = () => {
       try {
           const dmId = await createOrGetDMChannel(creatorId, creatorName);
           setChatTargetId(dmId);
-          setViewState('chat');
+          handleSetViewState('chat');
       } catch(e) {
           console.error("Failed to create DM:", e);
           alert("Could not start chat.");
@@ -743,7 +747,7 @@ const App: React.FC = () => {
   }
 
   if (viewState === 'card_viewer') {
-      return <CardWorkshop onBack={() => { setViewState('directory'); setViewCardId(undefined); }} cardId={viewCardId} isViewer={true} />;
+      return <CardWorkshop onBack={() => { handleSetViewState('directory'); setViewCardId(undefined); }} cardId={viewCardId} isViewer={true} />;
   }
 
   if (!currentUser) {
@@ -757,7 +761,7 @@ const App: React.FC = () => {
     return (
       <div className="md:hidden fixed bottom-0 left-0 w-full bg-slate-950/90 backdrop-blur-md border-t border-slate-800 z-50 px-6 py-2 flex justify-between items-center safe-area-bottom">
           <button 
-              onClick={() => { setViewState('directory'); setActiveTab('categories'); setIsAppsMenuOpen(false); setIsUserMenuOpen(false); }}
+              onClick={() => { handleSetViewState('directory'); setActiveTab('categories'); setIsAppsMenuOpen(false); setIsUserMenuOpen(false); }}
               className={`flex flex-col items-center gap-1 ${viewState === 'directory' && activeTab === 'categories' && !isAppsMenuOpen && !isUserMenuOpen ? 'text-white' : 'text-slate-500'}`}
           >
               <Home size={24} fill={viewState === 'directory' && activeTab === 'categories' && !isAppsMenuOpen && !isUserMenuOpen ? "currentColor" : "none"} />
@@ -886,7 +890,7 @@ const App: React.FC = () => {
                                       key={channel.id} 
                                       onClick={() => {
                                           setActiveChannelId(channel.id);
-                                          setViewState('podcast_detail');
+                                          handleSetViewState('podcast_detail');
                                           setIsMobileSearchOpen(false);
                                       }}
                                       className="flex items-center gap-4 p-3 bg-slate-900 border border-slate-800 rounded-xl animate-fade-in group active:scale-95 transition-transform"
@@ -921,7 +925,7 @@ const App: React.FC = () => {
       <nav className="hidden md:block sticky top-0 z-50 bg-slate-900/90 backdrop-blur-md border-b border-slate-800">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
-            <div className="flex items-center cursor-pointer" onClick={() => { setViewState('directory'); setActiveTab('categories'); }}>
+            <div className="flex items-center cursor-pointer" onClick={() => { handleSetViewState('directory'); setActiveTab('categories'); }}>
               <div className="bg-gradient-to-tr from-indigo-600 to-purple-600 p-2 rounded-xl shadow-lg shadow-indigo-500/20">
                 <Podcast className="text-white w-6 h-6" />
               </div>
@@ -941,7 +945,7 @@ const App: React.FC = () => {
                 value={searchQuery}
                 onChange={(e) => {
                     setSearchQuery(e.target.value);
-                    if (e.target.value && viewState !== 'directory') setViewState('directory');
+                    if (e.target.value && viewState !== 'directory') handleSetViewState('directory');
                 }}
               />
             </div>
@@ -1034,21 +1038,21 @@ const App: React.FC = () => {
       <MobileSearchOverlay />
 
       <div className="flex-1 overflow-hidden h-[calc(100vh-64px)] md:h-[calc(100vh-64px)] pb-16 md:pb-0">
-        {viewState === 'mission' && <MissionManifesto onBack={() => setViewState('directory')} />}
-        {viewState === 'user_guide' && <UserManual onBack={() => setViewState('directory')} />}
-        {viewState === 'notebook_viewer' && <NotebookViewer onBack={() => setViewState('directory')} currentUser={currentUser} />}
-        {viewState === 'card_workshop' && <CardWorkshop onBack={() => setViewState('directory')} cardId={viewCardId} />}
+        {viewState === 'mission' && <MissionManifesto onBack={() => handleSetViewState('directory')} />}
+        {viewState === 'user_guide' && <UserManual onBack={() => handleSetViewState('directory')} />}
+        {viewState === 'notebook_viewer' && <NotebookViewer onBack={() => handleSetViewState('directory')} currentUser={currentUser} />}
+        {viewState === 'card_workshop' && <CardWorkshop onBack={() => handleSetViewState('directory')} cardId={viewCardId} />}
         {viewState === 'card_explorer' && (
             <CardExplorer 
-                onBack={() => setViewState('directory')}
-                onOpenCard={(id) => { setViewCardId(id); setViewState('card_workshop'); }}
-                onCreateNew={() => { setViewCardId(undefined); setViewState('card_workshop'); }}
+                onBack={() => handleSetViewState('directory')}
+                onOpenCard={(id) => { setViewCardId(id); handleSetViewState('card_workshop'); }}
+                onCreateNew={() => { setViewCardId(undefined); handleSetViewState('card_workshop'); }}
             />
         )}
         
         {viewState === 'code_studio' && (
             <CodeStudio 
-                onBack={() => { setViewState('directory'); }} 
+                onBack={() => { handleSetViewState('directory'); }} 
                 currentUser={currentUser} 
                 userProfile={userProfile}
                 sessionId={sharedSessionId}
@@ -1061,16 +1065,16 @@ const App: React.FC = () => {
         
         {viewState === 'whiteboard' && (
             <Whiteboard 
-                onBack={() => { setViewState('directory'); }}
+                onBack={() => { handleSetViewState('directory'); }}
                 sessionId={sharedSessionId}
                 accessKey={accessKey}
                 onSessionStart={handleSessionStart} 
             />
         )}
         
-        {viewState === 'blog' && <BlogView onBack={() => setViewState('directory')} currentUser={currentUser} />}
-        {viewState === 'chat' && <WorkplaceChat onBack={() => setViewState('directory')} currentUser={currentUser} initialChannelId={chatTargetId} />}
-        {viewState === 'careers' && <CareerCenter onBack={() => setViewState('directory')} currentUser={currentUser} />}
+        {viewState === 'blog' && <BlogView onBack={() => handleSetViewState('directory')} currentUser={currentUser} />}
+        {viewState === 'chat' && <WorkplaceChat onBack={() => handleSetViewState('directory')} currentUser={currentUser} initialChannelId={chatTargetId} />}
+        {viewState === 'careers' && <CareerCenter onBack={() => handleSetViewState('directory')} currentUser={currentUser} />}
 
         {viewState === 'directory' && (
           <div className="h-full flex flex-col">
@@ -1078,7 +1082,7 @@ const App: React.FC = () => {
                {activeTab === 'categories' && (
                    <PodcastFeed 
                        channels={feedChannels}
-                       onChannelClick={(id) => { setActiveChannelId(id); setViewState('podcast_detail'); }}
+                       onChannelClick={(id) => { setActiveChannelId(id); handleSetViewState('podcast_detail'); }}
                        onStartLiveSession={(channel) => handleStartLiveSession(channel)}
                        userProfile={userProfile}
                        globalVoice={globalVoice}
@@ -1099,7 +1103,7 @@ const App: React.FC = () => {
                        {activeTab === 'calendar' && (
                           <CalendarView 
                              channels={channels}
-                             handleChannelClick={(id) => { setActiveChannelId(id); setViewState('podcast_detail'); }}
+                             handleChannelClick={(id) => { setActiveChannelId(id); handleSetViewState('podcast_detail'); }}
                              handleVote={handleVote}
                              currentUser={currentUser}
                              setChannelToEdit={setChannelToEdit}
@@ -1133,7 +1137,7 @@ const App: React.FC = () => {
         {viewState === 'podcast_detail' && activeChannel && (
           <PodcastDetail 
             channel={activeChannel} 
-            onBack={() => setViewState('directory')}
+            onBack={() => handleSetViewState('directory')}
             onStartLiveSession={(context, lectureId, recordingEnabled, videoEnabled, activeSegment, cameraEnabled) => {
                setLiveConfig({
                    context,
@@ -1143,7 +1147,7 @@ const App: React.FC = () => {
                    camera: cameraEnabled,
                    segment: activeSegment
                });
-               setViewState('live_session');
+               handleSetViewState('live_session');
             }}
             language={language}
             onEditChannel={() => {
@@ -1170,10 +1174,10 @@ const App: React.FC = () => {
                    if (tempChannel) {
                        setTempChannel(null);
                        setActiveChannelId(null);
-                       setViewState('directory');
+                       handleSetViewState('directory');
                        setActiveTab('recordings');
                    } else {
-                       setViewState('podcast_detail');
+                       handleSetViewState('podcast_detail');
                    }
                }}
                language={language}
@@ -1181,11 +1185,11 @@ const App: React.FC = () => {
           </div>
         )}
 
-        {viewState === 'debug' && <DebugView onBack={() => setViewState('directory')} />}
-        {viewState === 'cloud_debug' && <CloudDebugView onBack={() => setViewState('directory')} />}
-        {viewState === 'public_debug' && <PublicChannelInspector onBack={() => setViewState('directory')} />}
-        {viewState === 'my_channel_debug' && <MyChannelInspector onBack={() => setViewState('directory')} />}
-        {viewState === 'firestore_debug' && <FirestoreInspector onBack={() => setViewState('directory')} />}
+        {viewState === 'debug' && <DebugView onBack={() => handleSetViewState('directory')} />}
+        {viewState === 'cloud_debug' && <CloudDebugView onBack={() => handleSetViewState('directory')} />}
+        {viewState === 'public_debug' && <PublicChannelInspector onBack={() => handleSetViewState('directory')} />}
+        {viewState === 'my_channel_debug' && <MyChannelInspector onBack={() => handleSetViewState('directory')} />}
+        {viewState === 'firestore_debug' && <FirestoreInspector onBack={() => handleSetViewState('directory')} />}
       </div>
 
       {isAppsMenuOpen && (
@@ -1232,8 +1236,8 @@ const App: React.FC = () => {
            setIsVoiceCreateOpen={setIsVoiceCreateOpen}
            setIsSyncModalOpen={setIsSyncModalOpen}
            setIsSettingsModalOpen={setIsAccountSettingsOpen}
-           onOpenUserGuide={() => setViewState('user_guide')}
-           onNavigate={(view: any) => setViewState(view)}
+           onOpenUserGuide={() => handleSetViewState('user_guide')}
+           onNavigate={(view: any) => handleSetViewState(view)}
            t={t}
            className="fixed bottom-24 right-4 md:bottom-auto md:top-16 md:right-4 z-[100] shadow-2xl border-slate-700"
            channels={channels}

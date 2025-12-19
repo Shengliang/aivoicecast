@@ -101,6 +101,10 @@ export async function synthesizeSpeech(
       memoryCache.set(cacheKey, audioBuffer);
       return { buffer: audioBuffer, errorType: 'none', provider: usedProvider };
     } catch (error: any) {
+      // CRITICAL: If we fall back to system, make sure the global synthesis engine is purged
+      if (typeof window !== 'undefined' && window.speechSynthesis) {
+          window.speechSynthesis.cancel();
+      }
       return { buffer: null, errorType: 'unknown', errorMessage: error.message };
     } finally {
       pendingRequests.delete(cacheKey);

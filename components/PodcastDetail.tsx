@@ -80,11 +80,16 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
     playSessionIdRef.current++; 
     
     // 2. Clear native synthesis
-    if (window.speechSynthesis) window.speechSynthesis.cancel();
+    if (typeof window !== 'undefined' && window.speechSynthesis) {
+        window.speechSynthesis.cancel();
+    }
     
     // 3. Clear Web Audio Nodes
     activeSourcesRef.current.forEach(source => {
-        try { source.stop(); source.disconnect(); } catch(e) {}
+        try { 
+            source.stop(); 
+            source.disconnect(); 
+        } catch(e) {}
     });
     activeSourcesRef.current = [];
     
@@ -103,7 +108,9 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
     if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'paused';
   }, []);
 
+  // Kill all existing audio on MOUNT to ensure a clean slate
   useEffect(() => {
+      stopAllPlatformAudio();
       return () => {
           stopAudio();
       };
@@ -114,7 +121,8 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
           if (document.visibilityState === 'visible' && isPlayingRef.current) {
               const ctx = getGlobalAudioContext();
               ctx.resume().then(() => {
-                  if (!schedulerTimerRef.current && voiceProvider !== 'system') {
+                  // Safety: Check if we are still the active session before restarting loop
+                  if (!schedulerTimerRef.current && voiceProvider !== 'system' && isPlayingRef.current) {
                       runWebAudioScheduler(playSessionIdRef.current);
                   }
               });
@@ -173,7 +181,10 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
     if (isPlaying) { 
       stopAudio(); 
     } else {
-      // 1. REGISTER AS AUDIO OWNER (Kills everything else platform-wide)
+      // 1. HARD STOP PLATFORM-WIDE (Kills Feed background audio if somehow still alive)
+      stopAllPlatformAudio();
+      
+      // 2. REGISTER LOCAL AS AUDIO OWNER
       registerAudioOwner(stopAudio);
 
       const ctx = getGlobalAudioContext();
@@ -214,7 +225,12 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
           const idx = schedulingCursorRef.current;
           if (idx >= activeLecture.sections.length) {
               const remaining = (nextScheduleTimeRef.current - ctx.currentTime) * 1000;
-              setTimeout(() => { if (sessionId === playSessionIdRef.current) { stopAudio(); setCurrentSectionIndex(0); } }, Math.max(0, remaining));
+              setTimeout(() => { 
+                if (sessionId === playSessionIdRef.current) { 
+                    stopAudio(); 
+                    setCurrentSectionIndex(0); 
+                } 
+              }, Math.max(0, remaining));
               schedulerTimerRef.current = null;
               return;
           }
@@ -249,8 +265,11 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
                   nextScheduleTimeRef.current = startAt + result.buffer.duration;
                   schedulingCursorRef.current++;
               } else {
-                  setVoiceProvider('system');
-                  runSystemTts(sessionId);
+                  // If TTS fails, strictly kill current and switch to system
+                  if (sessionId === playSessionIdRef.current) {
+                    setVoiceProvider('system');
+                    runSystemTts(sessionId);
+                  }
                   return;
               }
           } catch(e) {
@@ -293,6 +312,8 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
   };
 
   const handleTopicClick = async (topicTitle: string, subTopicId?: string) => {
+    // 1. Kill everything platform-wide immediately when changing topics
+    stopAllPlatformAudio();
     stopAudio();
 
     setActiveSubTopicId(subTopicId || null);
