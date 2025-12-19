@@ -625,12 +625,10 @@ export const LiveSession: React.FC<LiveSessionProps> = ({
 
         // Clean up source streams
         sourceStreamsRef.current.forEach(stream => {
-            // FIX: Changed 'track.stop()' to 't.stop()' to use the correct iterator variable.
             stream.getTracks().forEach(t => t.stop());
         });
         
         if (videoStreamRef.current) {
-            // FIX: Changed 'track.stop()' to 't.stop()' to use the correct iterator variable.
             videoStreamRef.current.getTracks().forEach(t => t.stop());
         }
         
@@ -1164,8 +1162,8 @@ export const LiveSession: React.FC<LiveSessionProps> = ({
                    </div>
                )}
                {transcript.map((item, index) => {
-                   // Fix for technical IDs appearing in transcript roles
-                   const isAIVoice = item.role === 'ai' || item.role.includes('gen-lang-client');
+                   // Fix for technical IDs and aliases appearing in transcript roles
+                   const isAIVoice = item.role === 'ai' || item.role.includes('gen-lang-client') || item.role.toLowerCase().includes('gem');
                    const roleLabel = isAIVoice ? channel.voiceName : t.you;
                    const colorClass = isAIVoice ? 'text-emerald-400' : 'text-indigo-400';
 

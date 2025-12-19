@@ -5,7 +5,6 @@ import { Notebook, NotebookCell } from '../types';
 import { getCreatorNotebooks } from '../services/firestoreService';
 import { MarkdownView } from './MarkdownView';
 import { GoogleGenAI } from '@google/genai';
-import { GEMINI_API_KEY } from '../services/private_keys';
 
 interface NotebookViewerProps {
   onBack: () => void;
@@ -40,17 +39,13 @@ export const NotebookViewer: React.FC<NotebookViewerProps> = ({ onBack, currentU
       setExplanation(null);
       
       try {
-          const apiKey = localStorage.getItem('gemini_api_key') || GEMINI_API_KEY || process.env.API_KEY || '';
-          if (!apiKey) {
-              setExplanation("API Key required for explanation.");
-              return;
-          }
-          
-          const ai = new GoogleGenAI({ apiKey });
+          // FIX: Always use const ai = new GoogleGenAI({apiKey: process.env.API_KEY}); exclusively from process.env.API_KEY.
+          const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
           const prompt = `Explain the following code snippet concisely for a student:\n\n${cell.content}`;
           
           const response = await ai.models.generateContent({
-              model: 'gemini-2.5-flash',
+              // FIX: Use gemini-3-flash-preview as recommended for text explanation tasks
+              model: 'gemini-3-flash-preview',
               contents: prompt
           });
           

@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { CodeProject, CodeFile, UserProfile, Channel, CursorPosition, CloudItem } from '../types';
 import { ArrowLeft, Save, Plus, Github, Cloud, HardDrive, Code, X, ChevronRight, ChevronDown, File, Folder, DownloadCloud, Loader2, CheckCircle, AlertTriangle, Info, FolderPlus, FileCode, RefreshCw, LogIn, CloudUpload, Trash2, ArrowUp, Edit2, FolderOpen, MoreVertical, Send, MessageSquare, Bot, Mic, Sparkles, SidebarClose, SidebarOpen, Users, Eye, FileText as FileTextIcon, Image as ImageIcon, StopCircle, Minus, Maximize2, Minimize2, Lock, Unlock, Share2, Terminal, Copy, WifiOff, PanelRightClose, PanelRightOpen, Monitor, Laptop, PenTool, Edit3, ShieldAlert } from 'lucide-react';
@@ -9,7 +10,6 @@ import { MarkdownView } from './MarkdownView';
 import { encodePlantUML } from '../utils/plantuml';
 import { Whiteboard } from './Whiteboard';
 import { GoogleGenAI } from '@google/genai';
-import { GEMINI_API_KEY } from '../services/private_keys';
 import { ShareModal } from './ShareModal';
 
 // --- Interfaces & Constants ---
@@ -44,7 +44,7 @@ function getLanguageFromExt(filename: string): any {
     if (ext === 'json') return 'json';
     if (ext === 'md') return 'markdown';
     if (['puml', 'plantuml'].includes(ext || '')) return 'plantuml';
-    if (['wb', 'draw', 'whiteboard'].includes(ext || '')) return 'whiteboard';
+    if (['draw', 'whiteboard'].includes(ext || '')) return 'whiteboard';
     return 'text';
 }
 
@@ -349,9 +349,8 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
       const contextType = isWhiteboard ? "Whiteboard / System Design" : "Code Editor";
       
       try {
-          const apiKey = localStorage.getItem('gemini_api_key') || GEMINI_API_KEY || process.env.API_KEY || '';
-          if (!apiKey) throw new Error("API Key missing");
-          const ai = new GoogleGenAI({ apiKey });
+          // FIX: Always use const ai = new GoogleGenAI({apiKey: process.env.API_KEY}); exclusively from process.env.API_KEY.
+          const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
           if (isWhiteboard && activeFile) {
               const currentElements = JSON.parse(activeFile.content || "[]");
@@ -540,9 +539,8 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
 
   const generateAICommitMessage = async (filename: string, code: string): Promise<string> => {
       try {
-          const apiKey = localStorage.getItem('gemini_api_key') || GEMINI_API_KEY || process.env.API_KEY || '';
-          if (!apiKey) return `Update ${filename}`;
-          const ai = new GoogleGenAI({ apiKey });
+          // FIX: Always use const ai = new GoogleGenAI({apiKey: process.env.API_KEY}); exclusively from process.env.API_KEY.
+          const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
           const prompt = `Write a concise commit message for ${filename}:\n${code.substring(0, 500)}`;
           const resp = await ai.models.generateContent({ model: 'gemini-3-flash-preview', contents: prompt });
           return resp.text?.trim() || `Update ${filename}`;
