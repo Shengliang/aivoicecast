@@ -1,15 +1,46 @@
 
 import { Blob as GeminiBlob } from '@google/genai';
 
-// Singleton AudioContexts to prevent resource exhaustion on mobile
 let mainAudioContext: AudioContext | null = null;
 let silentLoopElement: HTMLAudioElement | null = null;
+let audioBridgeElement: HTMLAudioElement | null = null;
+let mediaStreamDest: MediaStreamAudioDestinationNode | null = null;
 
 export function getGlobalAudioContext(sampleRate: number = 24000): AudioContext {
   if (!mainAudioContext || mainAudioContext.state === 'closed') {
     mainAudioContext = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate });
+    
+    // THE BRIDGE: Connect AudioContext to a hidden <audio> tag via MediaStream
+    // This is critical for keeping Web Audio alive in the background on mobile.
+    mediaStreamDest = mainAudioContext.createMediaStreamDestination();
+    
+    if (!audioBridgeElement) {
+        audioBridgeElement = new Audio();
+        audioBridgeElement.id = 'web-audio-bridge';
+        audioBridgeElement.style.display = 'none';
+        audioBridgeElement.muted = false;
+        audioBridgeElement.volume = 1.0;
+        audioBridgeElement.srcObject = mediaStreamDest.stream;
+        audioBridgeElement.setAttribute('playsinline', 'true');
+        document.body.appendChild(audioBridgeElement);
+    }
   }
   return mainAudioContext;
+}
+
+/**
+ * Connects an audio node to both the hardware speakers and the background bridge.
+ */
+export function connectOutput(source: AudioNode, ctx: AudioContext) {
+    source.connect(ctx.destination);
+    if (mediaStreamDest) {
+        source.connect(mediaStreamDest);
+    }
+    
+    // Ensure the bridge tag is actually "playing"
+    if (audioBridgeElement && audioBridgeElement.paused) {
+        audioBridgeElement.play().catch(() => {});
+    }
 }
 
 export function base64ToBytes(base64: string): Uint8Array {
@@ -31,9 +62,6 @@ export function bytesToBase64(bytes: Uint8Array): string {
   return btoa(binary);
 }
 
-/**
- * Decodes raw 16-bit PCM data into an AudioBuffer.
- */
 export async function decodeRawPcm(
   data: Uint8Array,
   ctx: AudioContext,
@@ -53,58 +81,44 @@ export async function decodeRawPcm(
   return buffer;
 }
 
-/**
- * Aggressively unlocks and maintains AudioContext on mobile.
- */
 export async function warmUpAudioContext(ctx: AudioContext) {
     if (ctx.state === 'suspended' || (ctx.state as any) === 'interrupted') {
-        try {
-            await ctx.resume();
-        } catch (e) {
-            console.warn("Direct resume failed, attempting interaction unlock", e);
-        }
+        await ctx.resume();
     }
     
-    // 1. Web Audio Prime: Play a nearly-silent high frequency pulse
-    // Some mobile OSs ignore absolute silence in Web Audio
+    // 1. Web Audio Prime: A nearly silent 1Hz oscillation
+    // Pure silence is often optimized out by OS power management.
     const buffer = ctx.createBuffer(1, 441, ctx.sampleRate);
-    const data = buffer.getChannelData(0);
-    for(let i=0; i<441; i++) data[i] = Math.sin(i * 0.001) * 0.0001; // Low amplitude hum
+    const channelData = buffer.getChannelData(0);
+    for(let i=0; i<441; i++) channelData[i] = Math.sin(i * 0.0001) * 0.0001;
     
     const source = ctx.createBufferSource();
     source.buffer = buffer;
-    source.connect(ctx.destination);
+    source.loop = true;
+    connectOutput(source, ctx);
     source.start(0);
 
-    // 2. HTML5 Audio Prime: The "Media Player" mode trigger.
-    // Critical for iOS backgrounding. Playing a tiny loop via <audio> 
-    // elevates the tab's priority in the OS.
+    // 2. HTML5 Audio Prime: Persistent Silence Loop
     if (!silentLoopElement) {
         silentLoopElement = new Audio();
-        // A 0.5s silent but technically non-empty WAV to satisfy Safari
         silentLoopElement.src = 'data:audio/wav;base64,UklGRigAAABXQVZFRm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQQAAAAAAAAA';
         silentLoopElement.loop = true;
         silentLoopElement.setAttribute('playsinline', 'true');
-        silentLoopElement.muted = false; // Must be unmuted to affect priority
-        silentLoopElement.volume = 0.01; // Barely audible
+        silentLoopElement.volume = 0.01;
         (window as any)._persistentSilence = silentLoopElement;
     }
     
     try {
         await silentLoopElement.play();
-        console.log("OS Media Priority elevated.");
+        if (audioBridgeElement) await audioBridgeElement.play();
     } catch(e) {
-        console.warn("Media Priority elevation failed. May need user click.", e);
+        console.warn("Media Prime failed", e);
     }
 }
 
-/**
- * Stops the background priority loop.
- */
 export function coolDownAudioContext() {
-    if (silentLoopElement) {
-        silentLoopElement.pause();
-    }
+    if (silentLoopElement) silentLoopElement.pause();
+    if (audioBridgeElement) audioBridgeElement.pause();
 }
 
 export function createPcmBlob(data: Float32Array): GeminiBlob {
@@ -155,10 +169,8 @@ export function pcmToWavBlobUrl(pcmData: Uint8Array, sampleRate: number = 24000)
     view.setUint16(34, bitsPerSample, true);
     writeString(36, 'data');
     view.setUint32(40, dataSize, true);
-
     const pcmBytes = new Uint8Array(buffer, 44);
     pcmBytes.set(pcmData);
-
     const blob = new Blob([buffer], { type: 'audio/wav' });
     return URL.createObjectURL(blob);
 }

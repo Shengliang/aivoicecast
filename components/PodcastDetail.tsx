@@ -13,7 +13,7 @@ import { saveLectureToFirestore, getLectureFromFirestore, saveCurriculumToFirest
 import { LiveSession } from './LiveSession';
 import { DiscussionModal } from './DiscussionModal';
 import { GEMINI_API_KEY, OPENAI_API_KEY } from '../services/private_keys';
-import { getGlobalAudioContext, warmUpAudioContext, coolDownAudioContext } from '../utils/audioUtils';
+import { getGlobalAudioContext, warmUpAudioContext, coolDownAudioContext, connectOutput } from '../utils/audioUtils';
 
 interface PodcastDetailProps {
   channel: Channel;
@@ -25,17 +25,12 @@ interface PodcastDetailProps {
   currentUser: any; 
 }
 
-const GEMINI_VOICES = ['Puck', 'Charon', 'Kore', 'Fenrir', 'Zephyr'];
-const OPENAI_VOICES = ['Alloy', 'Echo', 'Fable', 'Onyx', 'Nova', 'Shimmer'];
-const BLOCKLIST = ['Fred', 'Trinoids', 'Albert', 'Bad News', 'Bells', 'Cellos', 'Good News', 'Organ', 'Zarvox', 'Deranged', 'Hysterical', 'Boing', 'Bubbles', 'Bahh', 'Whisper', 'Wobble'];
-const QUALITY_KEYWORDS = ['Google', 'Premium', 'Enhanced', 'Natural', 'Siri', 'Neural', 'Alex'];
-
 const UI_TEXT = {
   en: {
     back: "Back", series: "Series", startLive: "Start Live Chat", curriculum: "Curriculum", reading: "Reading", appendix: "Appendix", lessons: "Lessons", chapters: "Chapters", selectTopic: "Select a lesson to begin", generating: "Preparing Content...", genDesc: "Our AI professor is preparing the material.", transcript: "Interactive Transcript", segments: "Segments", discuss: "Discuss", continue: "Continue", viewDiscussion: "View History", askAbout: "Ask about this", noLesson: "No Lesson Selected", chooseChapter: "Choose a chapter and lesson from the curriculum menu.", player: "Lecture Player", prev: "Prev Lesson", next: "Next Lesson", startFree: "Start Free Talk", voiceSettings: "Voice Settings", teacherVoice: "Teacher Voice", studentVoice: "Student Voice", preview: "Test", close: "Close", download: "Export", regenerate: "Regenerate", cached: "Loaded from cache", genCurriculum: "Designing Course Syllabus...", loadingAudio: "Preparing...", downloadCourse: "Download Course", cancelDownload: "Stop Download", downloading: "Downloading Chapter...", edit: "Edit Podcast", loginReq: "Login Required", guestRestrict: "Guests can only view pre-generated content. Please login to generate new AI lectures.", systemVoice: "System Voice (Offline/Free)", quotaError: "Neural Audio Quota Exceeded. Switching to System Voice.", networkError: "Network timeout generating audio. Using System Voice.", upgradeReq: "Daily Neural Limit Reached. Upgrade to Pro for unlimited high-quality audio.", enableNeural: "Enable Neural Audio (Gemini API)", jump: "Double-click to play", preGenAudio: "Stream Audio", preGenDesc: "Generate high-quality Neural Audio for this lecture (Pro Member Only).", communityInsights: "Community Discussions", genAudio: "Stream Audio", genComplete: "Audio Ready!", errorPlayback: "Playback Error", resumeGen: "Resume Generation", genAbsorbed: "Processing...", dailyUsage: "Daily Usage", comments: "Comments", sessionSetup: "Session Setup", recordSession: "Record Session", recordDesc: "Save audio and transcript to cloud", start: "Start", generateCourse: "Generate Course Curriculum"
   },
   zh: {
-    back: "返回", series: "系列", startLive: "开始实时对话", curriculum: "课程大纲", reading: "阅读材料", appendix: "附录", lessons: "节课程", chapters: "章", selectTopic: "请选择一个主题开始", generating: "正在准备内容...", genDesc: "AI 教授正在准备教学材料。", transcript: "互动字幕", segments: "段对话", discuss: "讨论", continue: "继续", viewDiscussion: "查看历史", askAbout: "询问详情", noLesson: "未选择课程", chooseChapter: "请从课程大纲菜单中选择章节和课程。", player: "播放器", prev: "上一节", next: "下一节", startFree: "开始自由对话", voiceSettings: "语音设置", teacherVoice: "老师声音", studentVoice: "学生声音", preview: "试听", close: "关闭", download: "导出", regenerate: "重新生成", cached: "已加载缓存", genCurriculum: "正在设计课程大纲...", loadingAudio: "准备中...", downloadCourse: "下载全套课程", cancelDownload: "停止下载", downloading: "正在下载章节...", edit: "编辑播客", loginReq: "需要登录", guestRestrict: "访客只能查看预生成的内容。请登录以使用 AI 生成新课程。", systemVoice: "系统语音 (离线/免费)", quotaError: "神经语音配额已满。切换到系统语音。", networkError: "网络超时。切换到系统语音。", upgradeReq: "今日神经语音额度已用完。升级 Pro 以解锁无限量高质量语音。", enableNeural: "启用神经语音 (Gemini API)", jump: "双击播放", preGenAudio: "流式播放", preGenDesc: "生成高质量神经语音（仅限Pro会员）。", communityInsights: "社区讨论", genAudio: "流式播放", genComplete: "音频就绪！", errorPlayback: "播放错误", resumeGen: "恢复生成", genAbsorbed: "处理中...", dailyUsage: "今日用量", comments: "评论", sessionSetup: "会话设置", recordSession: "录制会话", recordDesc: "保存音频和字幕到云端", start: "开始", generateCourse: "生成课程大纲"
+    back: "返回", series: "系列", startLive: "开始实时对话", curriculum: "课程大纲", reading: "阅读材料", appendix: "附录", lessons: "节课程", chapters: "章", selectTopic: "请选择一个主题开始", generating: "正在准备内容...", genDesc: "AI 教授正在准备教学材料。", transcript: "互动字幕", segments: "段对话", discuss: "讨论", continue: "继续", viewDiscussion: "查看历史", askAbout: "询问详情", noLesson: "未选择课程", chooseChapter: "请从课程大纲菜单中选择章节和课程。", player: "播放器", prev: "上一节", next: "下一节", startFree: "开始自由对话", voiceSettings: "语音设置", teacherVoice: "老师声音", studentVoice: "学生声音", preview: "试听", close: "关闭", download: "导出", regenerate: "重新生成", cached: "已加载缓存", genCurriculum: "正在设计课程大纲...", loadingAudio: "准备中...", downloadCourse: "下载全套课程", cancelDownload: "停止下载", downloading: "正在下载章节...", edit: "编辑播客", loginReq: "需要登录", guestRestrict: "访客只能查看预生成的内容。请登录以使用 AI 生成新课程。", systemVoice: "系统语音 (离线/免费)", quotaError: "神经语音配额已满。切换到系统语音。", networkError: "网络超时。切换到系统语音。", upgradeReq: "今日神经语音额度已用完。升级 Pro 以解锁无限量高质量语音。", enableNeural: "启用神经语音 (Gemini API)", jump: "双击播放", preGenAudio: "流式播放", preGenDesc: "生成高质量神经语音（仅限Pro会员）。", communityInsights: "社区讨论", genAudio: "流式播放", genComplete: "音频就绪！", errorPlayback: "播放错误", resumeGen: "恢复生成", genAbsorbed: "处理中...", dailyUsage: "今日用量", comments: "评论", sessionSetup: "会话设置", recordSession: "录制会话", recordDesc: "保存音频 and 幕到云端", start: "开始", generateCourse: "生成课程大纲"
   }
 };
 
@@ -49,8 +44,6 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
   
   const [chapters, setChapters] = useState<Chapter[]>(channel.chapters || []);
   const [isGeneratingCurriculum, setIsGeneratingCurriculum] = useState(false);
-  
-  const staticReading = STATIC_READING_MATERIALS[channel.title];
   
   const [isPlaying, setIsPlaying] = useState(false);
   const [isBuffering, setIsBuffering] = useState(false);
@@ -73,57 +66,34 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
   const [sysStudentVoiceURI, setSysStudentVoiceURI] = useState('');
   const [expandedChapterId, setExpandedChapterId] = useState<string | null>(null);
   const [activeSubTopicId, setActiveSubTopicId] = useState<string | null>(null);
-  const [guestError, setGuestError] = useState<string | null>(null);
   
-  const [isAudioReady, setIsAudioReady] = useState(false);
-  const [isSessionSetupOpen, setIsSessionSetupOpen] = useState(false);
-  const [isLiveActive, setIsLiveActive] = useState(false);
-  const [liveConfig, setLiveConfig] = useState<{context?: string; lectureId?: string; recording?: boolean; video?: boolean; camera?: boolean; segment?: { index: number, lectureId: string }; initialTranscript?: TranscriptItem[]; discussionId?: string;}>({});
-
   const sectionRefs = useRef<(HTMLDivElement | null)[]>([]);
   const nextScheduleTimeRef = useRef(0);
   const schedulerTimerRef = useRef<any>(null);
   const isPlayingRef = useRef(false);
-  const activeUtteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
   const activeSourcesRef = useRef<AudioBufferSourceNode[]>([]);
-  
   const schedulingCursorRef = useRef(0); 
-  const uiTimersRef = useRef<number[]>([]); 
   const playSessionIdRef = useRef(0);
   
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
 
   useEffect(() => { if (currentUser) getUserProfile(currentUser.uid).then(setUserProfile); }, [currentUser]);
 
-  // Handle Playback State specifically for MediaSession
-  const handleTogglePlayMedia = useCallback(() => {
-    if (isPlayingRef.current) {
-        stopAudio();
-    } else {
-        togglePlayback();
-    }
-  }, []);
-
-  // Media Session API Setup: Robust background playback support
+  // Media Session API for background control
   useEffect(() => {
     if ('mediaSession' in navigator && activeLecture) {
         navigator.mediaSession.metadata = new MediaMetadata({
             title: activeLecture.topic,
             artist: channel.title,
-            album: 'AIVoiceCast Lecture',
-            artwork: [
-                { src: channel.imageUrl, sizes: '512x512', type: 'image/jpeg' }
-            ]
+            album: 'AIVoiceCast',
+            artwork: [{ src: channel.imageUrl, sizes: '512x512', type: 'image/jpeg' }]
         });
-
-        navigator.mediaSession.setActionHandler('play', handleTogglePlayMedia);
-        navigator.mediaSession.setActionHandler('pause', handleTogglePlayMedia);
+        navigator.mediaSession.setActionHandler('play', () => togglePlayback());
+        navigator.mediaSession.setActionHandler('pause', () => stopAudio());
         navigator.mediaSession.setActionHandler('previoustrack', handlePrevLesson);
         navigator.mediaSession.setActionHandler('nexttrack', handleNextLesson);
-        
-        navigator.mediaSession.playbackState = isPlaying ? 'playing' : 'paused';
     }
-  }, [activeLecture, isPlaying, handleTogglePlayMedia]);
+  }, [activeLecture]);
 
   const flatCurriculum = useMemo(() => {
       if(!chapters) return [];
@@ -135,59 +105,29 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
       return flatCurriculum.findIndex(item => item.id === activeSubTopicId);
   }, [activeSubTopicId, flatCurriculum]);
 
+  // Force catch-up when coming back to app
   useEffect(() => {
-      const handleResize = () => { stopAudio(); clearAudioCache(); };
-      
-      const resumeAudioOnWake = () => {
-          if (document.visibilityState === 'visible') {
+      const handleVisibilityChange = () => {
+          if (document.visibilityState === 'visible' && isPlayingRef.current) {
               const ctx = getGlobalAudioContext();
-              if (ctx.state === 'suspended' || (ctx.state as any) === 'interrupted') {
-                  console.log("Wake-up detected. Force resuming AudioContext.");
-                  ctx.resume().catch(e => console.warn("Background auto-resume failed", e));
-              }
+              ctx.resume().then(() => {
+                  // If we detect the scheduler has stopped due to backgrounding, kickstart it
+                  if (!schedulerTimerRef.current) {
+                      startScheduler(playSessionIdRef.current);
+                  }
+              });
           }
       };
-      
-      window.addEventListener('resize', handleResize);
-      window.addEventListener('visibilitychange', resumeAudioOnWake);
-      window.addEventListener('pageshow', resumeAudioOnWake);
-
-      return () => { 
-          window.removeEventListener('resize', handleResize); 
-          window.removeEventListener('visibilitychange', resumeAudioOnWake);
-          window.removeEventListener('pageshow', resumeAudioOnWake);
-          stopAudio(); 
-          clearAudioCache(); 
-      };
+      window.addEventListener('visibilitychange', handleVisibilityChange);
+      return () => window.removeEventListener('visibilitychange', handleVisibilityChange);
   }, []);
-
-  const loadVoices = useCallback(() => {
-    const voices = window.speechSynthesis.getVoices();
-    const langCode = language === 'zh' ? 'zh' : 'en';
-    let filtered = voices.filter(v => (v.lang.startsWith(langCode) || (langCode === 'en' && v.lang.startsWith('en'))) && !BLOCKLIST.some(bad => v.name.includes(bad)));
-    setSystemVoices(filtered);
-    if (filtered.length > 0) {
-        setSysTeacherVoiceURI(prev => prev || filtered[0].voiceURI);
-        setSysStudentVoiceURI(prev => prev || (filtered.length > 1 ? filtered[1].voiceURI : filtered[0].voiceURI));
-    }
-  }, [language]);
-
-  useEffect(() => {
-    loadVoices();
-    if (window.speechSynthesis.onvoiceschanged !== undefined) window.speechSynthesis.onvoiceschanged = loadVoices;
-    const intervalId = setInterval(loadVoices, 1000);
-    return () => clearInterval(intervalId);
-  }, [loadVoices]);
 
   const stopAudio = useCallback(() => {
     window.speechSynthesis.cancel();
-    activeUtteranceRef.current = null;
     activeSourcesRef.current.forEach(source => { try { source.stop(); } catch(e) {} });
     activeSourcesRef.current = [];
     nextScheduleTimeRef.current = 0;
     if (schedulerTimerRef.current) { clearTimeout(schedulerTimerRef.current); schedulerTimerRef.current = null; }
-    uiTimersRef.current.forEach(id => clearTimeout(id));
-    uiTimersRef.current = [];
     isPlayingRef.current = false;
     setIsPlaying(false);
     setIsBuffering(false);
@@ -196,125 +136,138 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
     if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'paused';
   }, []);
 
-  const handleTopicClick = async (topicTitle: string, subTopicId?: string) => {
-    if (isLiveActive) setIsLiveActive(false); 
-    if (!topicTitle) return;
-    setActiveSubTopicId(subTopicId || null);
-    stopAudio(); setCurrentSectionIndex(0); schedulingCursorRef.current = 0; 
-    setActiveLecture(null); setGuestError(null); setIsLoadingLecture(true);
-    setFallbackReason('none');
-    
-    try {
-        if (OFFLINE_LECTURES[topicTitle]) { setActiveLecture(OFFLINE_LECTURES[topicTitle]); return; }
-        if (channel.id && SPOTLIGHT_DATA[channel.id]?.lectures?.[topicTitle]) { setActiveLecture(SPOTLIGHT_DATA[channel.id].lectures[topicTitle]); return; }
-
-        const cacheKey = `lecture_${channel.id}_${subTopicId}_${language}`;
-        const cached = await getCachedLectureScript(cacheKey);
-        if (cached) { setActiveLecture(cached); setIsLoadedFromCache(true); return; }
-
-        if (subTopicId) {
-            const cloudData = await getLectureFromFirestore(channel.id, subTopicId);
-            if (cloudData) { setActiveLecture(cloudData); await cacheLectureScript(cacheKey, cloudData); return; }
-        }
-
-        const script = await generateLectureScript(topicTitle, channel.description, language);
-        if (script) {
-          setActiveLecture(script);
-          await cacheLectureScript(cacheKey, script);
-          if (currentUser && subTopicId) await saveLectureToFirestore(channel.id, subTopicId, script);
-        }
-    } catch (e: any) { console.error(e); } finally { setIsLoadingLecture(false); }
-  };
-
   const togglePlayback = async () => {
-    if (isPlaying) { 
-        stopAudio(); 
-    } else {
+    if (isPlaying) { stopAudio(); } else {
       stopAudio(); 
       const ctx = getGlobalAudioContext();
       await warmUpAudioContext(ctx);
-      playSessionIdRef.current++; 
+      const sessionId = ++playSessionIdRef.current;
       const startIdx = currentSectionIndex && currentSectionIndex < (activeLecture?.sections.length || 0) ? currentSectionIndex : 0;
       schedulingCursorRef.current = startIdx;
       setIsPlaying(true);
       isPlayingRef.current = true;
       if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'playing';
+      startScheduler(sessionId);
     }
   };
 
-  useEffect(() => {
-    const sessionId = ++playSessionIdRef.current;
-    if (isPlaying && activeLecture) {
-      if (voiceProvider !== 'system') {
-        const schedule = async () => {
-          if (!isPlayingRef.current || sessionId !== playSessionIdRef.current) return;
-          const ctx = getGlobalAudioContext();
-          
-          // Force resume if suspended (common on mobile unlock)
-          if (ctx.state === 'suspended' || (ctx.state as any) === 'interrupted') {
-              try { await ctx.resume(); } catch(e) {}
+  const startScheduler = (sessionId: number) => {
+    if (voiceProvider === 'system') {
+        runSystemTts(sessionId);
+    } else {
+        runWebAudioScheduler(sessionId);
+    }
+  };
+
+  const runWebAudioScheduler = async (sessionId: number) => {
+      if (!isPlayingRef.current || sessionId !== playSessionIdRef.current || !activeLecture) return;
+      const ctx = getGlobalAudioContext();
+      
+      const lookahead = 2.0; // Queue 2 seconds of audio ahead
+      if (nextScheduleTimeRef.current < ctx.currentTime) {
+          nextScheduleTimeRef.current = ctx.currentTime + 0.1;
+      }
+
+      while (nextScheduleTimeRef.current < ctx.currentTime + lookahead) {
+          const idx = schedulingCursorRef.current;
+          if (idx >= activeLecture.sections.length) {
+              // End of lecture logic
+              const remainingTime = (nextScheduleTimeRef.current - ctx.currentTime) * 1000;
+              setTimeout(() => {
+                  if (sessionId === playSessionIdRef.current) {
+                      stopAudio();
+                      setCurrentSectionIndex(0);
+                  }
+              }, Math.max(0, remainingTime));
+              return;
           }
 
-          const lookahead = 0.5; 
-          if (nextScheduleTimeRef.current < ctx.currentTime) nextScheduleTimeRef.current = ctx.currentTime + 0.1; 
+          const section = activeLecture.sections[idx];
+          const voice = section.speaker === 'Teacher' ? teacherVoice : studentVoice;
           
-          while (nextScheduleTimeRef.current < ctx.currentTime + lookahead) {
-             const scheduleIdx = schedulingCursorRef.current; 
-             if (playSessionIdRef.current !== sessionId) return; 
-             if (scheduleIdx >= activeLecture.sections.length) {
-                setTimeout(() => { 
-                    if (isPlayingRef.current && playSessionIdRef.current === sessionId) { 
-                        stopAudio(); 
-                        setCurrentSectionIndex(0); 
-                    } 
-                }, (nextScheduleTimeRef.current - ctx.currentTime) * 1000);
-                return;
-             }
-             const section = activeLecture.sections[scheduleIdx];
-             let targetVoice = section.speaker === 'Teacher' ? teacherVoice : studentVoice;
-             try {
-                setIsBuffering(true);
-                const result = await synthesizeSpeech(section.text, targetVoice, ctx);
-                setIsBuffering(false);
-                if (playSessionIdRef.current !== sessionId) return; 
-                if (result.buffer) {
-                   const source = ctx.createBufferSource();
-                   source.buffer = result.buffer;
-                   source.connect(ctx.destination);
-                   activeSourcesRef.current.push(source);
-                   const actualStart = Math.max(nextScheduleTimeRef.current, ctx.currentTime);
-                   source.start(actualStart);
-                   const timerId = window.setTimeout(() => { if (isPlayingRef.current && playSessionIdRef.current === sessionId) { setCurrentSectionIndex(scheduleIdx); sectionRefs.current[scheduleIdx]?.scrollIntoView({ behavior: 'smooth', block: 'center' }); } }, Math.max(0, (actualStart - ctx.currentTime) * 1000));
-                   uiTimersRef.current.push(timerId); 
-                   nextScheduleTimeRef.current = actualStart + result.buffer.duration;
-                   schedulingCursorRef.current++; 
-                   break; 
-                } else { setFallbackReason(result.errorType); setVoiceProvider('system'); return; }
-             } catch(e) { setFallbackReason('unknown'); setVoiceProvider('system'); return; }
+          try {
+              setIsBuffering(true);
+              const result = await synthesizeSpeech(section.text, voice, ctx);
+              setIsBuffering(false);
+              
+              if (sessionId !== playSessionIdRef.current) return;
+              
+              if (result.buffer) {
+                  const source = ctx.createBufferSource();
+                  source.buffer = result.buffer;
+                  connectOutput(source, ctx);
+                  
+                  const startAt = Math.max(nextScheduleTimeRef.current, ctx.currentTime);
+                  source.start(startAt);
+                  activeSourcesRef.current.push(source);
+                  
+                  // Update UI when this buffer actually starts playing
+                  const delay = (startAt - ctx.currentTime) * 1000;
+                  setTimeout(() => {
+                      if (sessionId === playSessionIdRef.current) {
+                          setCurrentSectionIndex(idx);
+                          sectionRefs.current[idx]?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                      }
+                  }, Math.max(0, delay));
+
+                  nextScheduleTimeRef.current = startAt + result.buffer.duration;
+                  schedulingCursorRef.current++;
+              } else {
+                  setVoiceProvider('system');
+                  runSystemTts(sessionId);
+                  return;
+              }
+          } catch(e) {
+              setVoiceProvider('system');
+              runSystemTts(sessionId);
+              return;
           }
-          if (isPlayingRef.current && playSessionIdRef.current === sessionId) schedulerTimerRef.current = setTimeout(schedule, 200);
-        };
-        isPlayingRef.current = true;
-        schedule();
-      } else {
-        const playSystem = () => {
-           const idx = schedulingCursorRef.current;
-           if (!activeLecture || idx >= activeLecture.sections.length || playSessionIdRef.current !== sessionId) { stopAudio(); return; }
-           setCurrentSectionIndex(idx);
-           sectionRefs.current[idx]?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-           const utter = new SpeechSynthesisUtterance(cleanTextForTTS(activeLecture.sections[idx].text));
-           const targetURI = activeLecture.sections[idx].speaker === 'Teacher' ? sysTeacherVoiceURI : sysStudentVoiceURI;
-           const v = systemVoices.find(v => v.voiceURI === targetURI);
-           if (v) utter.voice = v;
-           utter.onend = () => { if (isPlayingRef.current && playSessionIdRef.current === sessionId) { schedulingCursorRef.current++; playSystem(); } };
-           window.speechSynthesis.speak(utter);
-        };
-        isPlayingRef.current = true;
-        playSystem();
       }
-    }
-    return () => { playSessionIdRef.current++; window.speechSynthesis.cancel(); };
-  }, [isPlaying, activeLecture, voiceProvider, teacherVoice, studentVoice, sysTeacherVoiceURI, sysStudentVoiceURI]);
+
+      schedulerTimerRef.current = setTimeout(() => runWebAudioScheduler(sessionId), 500);
+  };
+
+  const runSystemTts = (sessionId: number) => {
+      const idx = schedulingCursorRef.current;
+      if (!activeLecture || idx >= activeLecture.sections.length || sessionId !== playSessionIdRef.current) {
+          stopAudio();
+          return;
+      }
+      setCurrentSectionIndex(idx);
+      sectionRefs.current[idx]?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      const utter = new SpeechSynthesisUtterance(cleanTextForTTS(activeLecture.sections[idx].text));
+      const targetURI = activeLecture.sections[idx].speaker === 'Teacher' ? sysTeacherVoiceURI : sysStudentVoiceURI;
+      const v = systemVoices.find(v => v.voiceURI === targetURI);
+      if (v) utter.voice = v;
+      utter.onend = () => {
+          if (sessionId === playSessionIdRef.current) {
+              schedulingCursorRef.current++;
+              runSystemTts(sessionId);
+          }
+      };
+      window.speechSynthesis.speak(utter);
+  };
+
+  const handleTopicClick = async (topicTitle: string, subTopicId?: string) => {
+    stopAudio();
+    setActiveSubTopicId(subTopicId || null);
+    setCurrentSectionIndex(0);
+    schedulingCursorRef.current = 0;
+    setActiveLecture(null);
+    setIsLoadingLecture(true);
+    
+    try {
+        if (OFFLINE_LECTURES[topicTitle]) { setActiveLecture(OFFLINE_LECTURES[topicTitle]); return; }
+        const cacheKey = `lecture_${channel.id}_${subTopicId}_${language}`;
+        const cached = await getCachedLectureScript(cacheKey);
+        if (cached) { setActiveLecture(cached); return; }
+        const script = await generateLectureScript(topicTitle, channel.description, language);
+        if (script) {
+          setActiveLecture(script);
+          await cacheLectureScript(cacheKey, script);
+        }
+    } catch (e: any) { console.error(e); } finally { setIsLoadingLecture(false); }
+  };
 
   const handlePrevLesson = () => { if (currentLectureIndex > 0) { const prev = flatCurriculum[currentLectureIndex - 1]; handleTopicClick(prev.title, prev.id); } };
   const handleNextLesson = () => { if (currentLectureIndex !== -1 && currentLectureIndex < flatCurriculum.length - 1) { const next = flatCurriculum[currentLectureIndex + 1]; handleTopicClick(next.title, next.id); } };
@@ -327,30 +280,86 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
         <div className="absolute bottom-0 left-0 w-full p-6 md:p-8 max-w-7xl mx-auto">
            <div className="flex items-end justify-between">
              <div><h1 className="text-4xl md:text-5xl font-bold text-white mb-2">{channel.title}</h1><p className="text-lg text-slate-300 max-w-2xl line-clamp-2">{channel.description}</p></div>
-             <div className="hidden md:flex items-center space-x-3">{!isLiveActive && <button onClick={() => setIsSessionSetupOpen(true)} className="flex items-center space-x-2 bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-3 rounded-full font-bold shadow-lg"><Play size={20} fill="currentColor" /><span>{t.startLive}</span></button>}</div>
+             <div className="hidden md:flex items-center space-x-3"><button onClick={() => onStartLiveSession()} className="flex items-center space-x-2 bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-3 rounded-full font-bold shadow-lg"><Play size={20} fill="currentColor" /><span>{t.startLive}</span></button></div>
            </div>
         </div>
       </div>
 
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 py-8 grid grid-cols-12 gap-8 relative">
-        <div className="col-span-12 lg:col-span-4 h-full"><div className="bg-slate-900 border border-slate-800 rounded-xl shadow-xl overflow-hidden h-full flex flex-col"><div className="flex border-b border-slate-800"><button onClick={() => setActiveTab('curriculum')} className={`flex-1 py-3 text-sm font-bold ${activeTab === 'curriculum' ? 'bg-slate-800 text-white' : 'text-slate-500'}`}>{t.curriculum}</button></div><div className="flex-1 overflow-y-auto">{chapters.map((ch) => (<div key={ch.id}><button onClick={() => setExpandedChapterId(expandedChapterId === ch.id ? null : ch.id)} className="w-full flex items-center justify-between p-4 hover:bg-slate-800 transition-colors text-left"><span className="font-semibold text-sm text-slate-200">{ch.title}</span>{expandedChapterId === ch.id ? <ChevronDown size={16} /> : <ChevronRight size={16} />}</button>{expandedChapterId === ch.id && (<div className="bg-slate-950/50 py-2">{ch.subTopics.map((sub) => (<button key={sub.id} onClick={() => handleTopicClick(sub.title, sub.id)} className={`w-full flex items-start space-x-3 px-6 py-3 ${activeSubTopicId === sub.id ? 'bg-indigo-900/20 border-l-2 border-indigo-500' : 'hover:bg-slate-800'}`}><span className={`text-sm ${activeSubTopicId === sub.id ? 'text-indigo-200' : 'text-slate-400'}`}>{sub.title}</span></button>))}</div>)}</div>))}</div></div></div>
+        <div className="col-span-12 lg:col-span-4 h-full">
+            <div className="bg-slate-900 border border-slate-800 rounded-xl shadow-xl overflow-hidden h-full flex flex-col">
+                <div className="flex border-b border-slate-800"><button className="flex-1 py-3 text-sm font-bold bg-slate-800 text-white">{t.curriculum}</button></div>
+                <div className="flex-1 overflow-y-auto">
+                    {chapters.map((ch) => (
+                        <div key={ch.id}>
+                            <button onClick={() => setExpandedChapterId(expandedChapterId === ch.id ? null : ch.id)} className="w-full flex items-center justify-between p-4 hover:bg-slate-800 transition-colors text-left">
+                                <span className="font-semibold text-sm text-slate-200">{ch.title}</span>
+                                {expandedChapterId === ch.id ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                            </button>
+                            {expandedChapterId === ch.id && (
+                                <div className="bg-slate-950/50 py-2">
+                                    {ch.subTopics.map((sub) => (
+                                        <button key={sub.id} onClick={() => handleTopicClick(sub.title, sub.id)} className={`w-full flex items-start space-x-3 px-6 py-3 ${activeSubTopicId === sub.id ? 'bg-indigo-900/20 border-l-2 border-indigo-500' : 'hover:bg-slate-800'}`}>
+                                            <span className={`text-sm ${activeSubTopicId === sub.id ? 'text-indigo-200' : 'text-slate-400'}`}>{sub.title}</span>
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    ))}
+                </div>
+            </div>
+        </div>
         <div className="col-span-12 lg:col-span-8">
-          {isLiveActive ? (
-              <div className="h-[calc(100vh-20rem)] min-h-[500px] w-full bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-2xl relative"><LiveSession channel={channel} onEndSession={() => setIsLiveActive(false)} language={language} /></div>
-          ) : activeLecture ? (
-            <div className="space-y-8"><div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl sticky top-8 z-20 backdrop-blur-md bg-slate-900/90"><div className="flex items-center justify-between mb-4"><div><h2 className="text-xl font-bold text-white">{activeLecture.topic}</h2></div><button onClick={() => setShowVoiceSettings(!showVoiceSettings)} className={`p-2 rounded-full ${showVoiceSettings ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-400'}`}><Settings size={18} /></button></div>
+          {activeLecture ? (
+            <div className="space-y-8">
+                <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl sticky top-8 z-20 backdrop-blur-md bg-slate-900/90">
+                    <div className="flex items-center justify-between mb-4">
+                        <h2 className="text-xl font-bold text-white">{activeLecture.topic}</h2>
+                        <button onClick={() => setShowVoiceSettings(!showVoiceSettings)} className={`p-2 rounded-full ${showVoiceSettings ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-400'}`}><Settings size={18} /></button>
+                    </div>
                     {showVoiceSettings && (
                         <div className="mb-4 p-4 bg-slate-800/50 rounded-xl border border-slate-700 animate-fade-in">
-                            <div className="flex justify-between items-center mb-4"><h4 className="text-xs font-bold text-slate-400 uppercase">{t.voiceSettings}</h4><div className="flex items-center bg-slate-900 rounded-lg p-1"><button onClick={() => setVoiceProvider('system')} className={`px-3 py-1.5 text-xs font-bold rounded-md ${voiceProvider === 'system' ? 'bg-indigo-600 text-white' : 'text-slate-500'}`}>System</button><button onClick={() => setVoiceProvider('gemini')} className={`px-3 py-1.5 text-xs font-bold rounded-md ${voiceProvider === 'gemini' ? 'bg-indigo-600 text-white' : 'text-slate-500'}`}>Gemini</button><button onClick={() => setVoiceProvider('openai')} className={`px-3 py-1.5 text-xs font-bold rounded-md ${voiceProvider === 'openai' ? 'bg-indigo-600 text-white' : 'text-slate-500'}`}>OpenAI</button></div></div>
-                            {fallbackReason !== 'none' && <div className="p-3 rounded-lg bg-red-900/20 border border-red-500/30 text-red-300 text-[10px]"><p className="font-bold uppercase">Playback Fallback</p><p>{fallbackReason}</p></div>}
+                            <div className="flex justify-between items-center mb-4">
+                                <h4 className="text-xs font-bold text-slate-400 uppercase">{t.voiceSettings}</h4>
+                                <div className="flex items-center bg-slate-900 rounded-lg p-1">
+                                    <button onClick={() => { setVoiceProvider('system'); stopAudio(); }} className={`px-3 py-1.5 text-xs font-bold rounded-md ${voiceProvider === 'system' ? 'bg-indigo-600 text-white' : 'text-slate-500'}`}>System</button>
+                                    <button onClick={() => { setVoiceProvider('gemini'); stopAudio(); }} className={`px-3 py-1.5 text-xs font-bold rounded-md ${voiceProvider === 'gemini' ? 'bg-indigo-600 text-white' : 'text-slate-500'}`}>Gemini</button>
+                                    <button onClick={() => { setVoiceProvider('openai'); stopAudio(); }} className={`px-3 py-1.5 text-xs font-bold rounded-md ${voiceProvider === 'openai' ? 'bg-indigo-600 text-white' : 'text-slate-500'}`}>OpenAI</button>
+                                </div>
+                            </div>
                         </div>
                     )}
-                    <div className="flex justify-between items-center mt-6 pt-6 border-t border-slate-800"><button onClick={handlePrevLesson} disabled={currentLectureIndex <= 0} className="text-slate-400 disabled:opacity-30 flex items-center space-x-2 text-sm font-bold"><SkipBack size={20} /></button><div className="flex flex-col items-center gap-2"><button onClick={togglePlayback} className={`w-16 h-16 rounded-full flex items-center justify-center ${isPlaying ? 'bg-slate-800 text-red-400' : 'bg-emerald-600 text-white'}`}>{isBuffering ? <Loader2 className="animate-spin" /> : isPlaying ? <Pause fill="currentColor" size={28} /> : <Play fill="currentColor" size={28} />}</button>{isBuffering && <span className="text-xs text-slate-500">{t.loadingAudio}</span>}</div><button onClick={handleNextLesson} disabled={currentLectureIndex === -1 || currentLectureIndex >= flatCurriculum.length - 1} className="text-slate-400 disabled:opacity-30 flex items-center space-x-2 text-sm font-bold"><SkipForward size={20} /></button></div></div>
-                <div className="space-y-6 max-w-4xl mx-auto">{activeLecture.sections.map((section, idx) => (<div key={idx} ref={(el) => { sectionRefs.current[idx] = el; }} className={`p-4 rounded-xl transition-all cursor-pointer ${currentSectionIndex === idx ? 'bg-indigo-900/40 border border-indigo-500/50 shadow-lg' : 'hover:bg-slate-800/30 border border-transparent'}`}><div className="flex items-start space-x-4"><div className={`flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center text-xs font-bold border ${section.speaker === 'Teacher' ? 'bg-slate-800 border-indigo-500 text-indigo-400' : 'bg-slate-800 border-purple-500 text-purple-400'}`}>{section.speaker === 'Teacher' ? 'Pro' : 'Stu'}</div><div className="flex-1"><p className="text-xs font-bold text-slate-500 uppercase mb-1">{section.speaker === 'Teacher' ? activeLecture.professorName : activeLecture.studentName}</p><p className={`text-base leading-relaxed ${currentSectionIndex === idx ? 'text-white font-medium' : 'text-slate-400'}`}>{section.text}</p></div></div></div>))}</div></div>
-          ) : (<div className="h-full flex flex-col items-center justify-center text-slate-500 p-8"><h3 className="text-xl font-bold text-slate-300 mb-2">{t.generating}</h3></div>)}
+                    <div className="flex justify-between items-center mt-6 pt-6 border-t border-slate-800">
+                        <button onClick={handlePrevLesson} disabled={currentLectureIndex <= 0} className="text-slate-400 disabled:opacity-30 flex items-center space-x-2 text-sm font-bold"><SkipBack size={20} /></button>
+                        <div className="flex flex-col items-center gap-2">
+                            <button onClick={togglePlayback} className={`w-16 h-16 rounded-full flex items-center justify-center ${isPlaying ? 'bg-slate-800 text-red-400' : 'bg-emerald-600 text-white'}`}>
+                                {isBuffering ? <Loader2 className="animate-spin" /> : isPlaying ? <Pause fill="currentColor" size={28} /> : <Play fill="currentColor" size={28} />}
+                            </button>
+                            {isBuffering && <span className="text-xs text-slate-500">{t.loadingAudio}</span>}
+                        </div>
+                        <button onClick={handleNextLesson} disabled={currentLectureIndex === -1 || currentLectureIndex >= flatCurriculum.length - 1} className="text-slate-400 disabled:opacity-30 flex items-center space-x-2 text-sm font-bold"><SkipForward size={20} /></button>
+                    </div>
+                </div>
+                <div className="space-y-6 max-w-4xl mx-auto">
+                    {activeLecture.sections.map((section, idx) => (
+                        <div key={idx} ref={(el) => { sectionRefs.current[idx] = el; }} className={`p-4 rounded-xl transition-all ${currentSectionIndex === idx ? 'bg-indigo-900/40 border border-indigo-500/50 shadow-lg' : 'hover:bg-slate-800/30 border border-transparent'}`}>
+                            <div className="flex items-start space-x-4">
+                                <div className={`flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center text-xs font-bold border ${section.speaker === 'Teacher' ? 'bg-slate-800 border-indigo-500 text-indigo-400' : 'bg-slate-800 border-purple-500 text-purple-400'}`}>{section.speaker === 'Teacher' ? 'Pro' : 'Stu'}</div>
+                                <div className="flex-1">
+                                    <p className="text-xs font-bold text-slate-500 uppercase mb-1">{section.speaker === 'Teacher' ? activeLecture.professorName : activeLecture.studentName}</p>
+                                    <p className={`text-base leading-relaxed ${currentSectionIndex === idx ? 'text-white font-medium' : 'text-slate-400'}`}>{section.text}</p>
+                                </div>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            </div>
+          ) : (
+            <div className="h-full flex flex-col items-center justify-center text-slate-500 p-8"><h3 className="text-xl font-bold text-slate-300 mb-2">{t.selectTopic}</h3></div>
+          )}
         </div>
       </main>
-      {isSessionSetupOpen && (<div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm"><div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-md shadow-2xl p-6"><div className="flex justify-between items-center mb-6"><h3 className="text-xl font-bold text-white flex items-center gap-2"><Mic className="text-indigo-500"/> {t.sessionSetup}</h3><button onClick={() => setIsSessionSetupOpen(false)}><X size={20}/></button></div><button onClick={() => { setIsSessionSetupOpen(false); setIsLiveActive(true); }} className="w-full py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl mt-4">{t.start}</button></div></div>)}
     </div>
   );
 };
