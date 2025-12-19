@@ -69,7 +69,8 @@ export class GeminiLiveService {
   ) {
     try {
       // 1. REGISTER OWNER TO KILL OTHER AUDIO
-      registerAudioOwner(() => this.disconnect());
+      // Fixed: Added source name "GeminiLive" as the first argument to registerAudioOwner
+      registerAudioOwner("GeminiLive", () => this.disconnect());
 
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       if (!this.inputAudioContext) this.initializeAudio();

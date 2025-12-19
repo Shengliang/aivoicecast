@@ -7,17 +7,43 @@ let audioBridgeElement: HTMLAudioElement | null = null;
 let silentLoopElement: HTMLAudioElement | null = null;
 
 /**
- * GLOBAL AUDIO MUTEX
- * Tracks the current active component's stop function.
+ * GLOBAL AUDIO AUDIT
+ * Tracks exactly who is playing and when.
  */
+export interface AudioEvent {
+    timestamp: number;
+    source: string;
+    action: 'REGISTER' | 'STOP' | 'PLAY_BUFFER' | 'PLAY_SYSTEM' | 'ERROR' | 'ABORT_STALE';
+    details?: string;
+}
+
+let audioAuditLogs: AudioEvent[] = [];
+let currentOwner: string | null = null;
 let currentStopFn: (() => void) | null = null;
+
+export function getAudioAuditLogs() {
+    return audioAuditLogs;
+}
+
+export function logAudioEvent(source: string, action: AudioEvent['action'], details?: string) {
+    const event = { timestamp: Date.now(), source, action, details };
+    audioAuditLogs = [event, ...audioAuditLogs].slice(0, 50); // Keep last 50
+    console.log(`[AUDIO_DEBUG] ${source}: ${action} ${details || ''}`);
+    
+    // Dispatch a custom event so UIs can update debug windows
+    window.dispatchEvent(new CustomEvent('audio-audit-updated', { detail: event }));
+}
+
+export function getCurrentAudioOwner() {
+    return currentOwner;
+}
 
 /**
  * Stops all platform audio sources immediately.
- * Call this before starting any new audio sequence.
  */
-export function stopAllPlatformAudio() {
-    // 1. Call the registered component stop function
+export function stopAllPlatformAudio(sourceCaller: string = "Global") {
+    logAudioEvent(sourceCaller, 'STOP', `Killing current owner: ${currentOwner}`);
+    
     if (currentStopFn) {
         try {
             currentStopFn();
@@ -27,22 +53,29 @@ export function stopAllPlatformAudio() {
         currentStopFn = null;
     }
 
-    // 2. Kill Browser Native Speech Synthesis
     if (typeof window !== 'undefined' && window.speechSynthesis) {
         window.speechSynthesis.cancel();
     }
-
-    // 3. Close/Reset Web Audio contexts if they are in a bad state
-    // We don't close the main context to avoid re-init lag, but we ensure
-    // components stop their specific source nodes.
+    
+    currentOwner = null;
 }
 
 /**
  * Register a component's stop function and kill existing audio.
  */
-export function registerAudioOwner(stopFn: () => void) {
-    stopAllPlatformAudio();
+export function registerAudioOwner(sourceName: string, stopFn: () => void) {
+    stopAllPlatformAudio(`Registering ${sourceName}`);
+    currentOwner = sourceName;
     currentStopFn = stopFn;
+    logAudioEvent(sourceName, 'REGISTER', "Acquired Mutex Lock");
+}
+
+/**
+ * Check if a component is still the valid owner of the audio platform.
+ * Use this after every 'await' to ensure the component hasn't been preempted.
+ */
+export function isAudioOwner(sourceName: string): boolean {
+    return currentOwner === sourceName;
 }
 
 export function getGlobalAudioContext(sampleRate: number = 24000): AudioContext {

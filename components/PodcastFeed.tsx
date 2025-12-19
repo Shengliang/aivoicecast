@@ -11,7 +11,7 @@ import { getCachedLectureScript, cacheLectureScript, getUserChannels } from '../
 import { GEMINI_API_KEY, OPENAI_API_KEY } from '../services/private_keys';
 import { SPOTLIGHT_DATA } from '../utils/spotlightContent';
 import { OFFLINE_CHANNEL_ID, OFFLINE_CURRICULUM, OFFLINE_LECTURES } from '../utils/offlineContent';
-import { warmUpAudioContext, getGlobalAudioContext, stopAllPlatformAudio, registerAudioOwner } from '../utils/audioUtils';
+import { warmUpAudioContext, getGlobalAudioContext, stopAllPlatformAudio, registerAudioOwner, logAudioEvent, isAudioOwner } from '../utils/audioUtils';
 
 interface PodcastFeedProps {
   channels: Channel[];
@@ -31,6 +31,8 @@ interface PodcastFeedProps {
   
   filterMode?: 'foryou' | 'following' | 'mine';
 }
+
+const COMPONENT_ID = "MobileFeed";
 
 const MobileFeedCard = ({ 
     channel, 
@@ -72,7 +74,7 @@ const MobileFeedCard = ({
      * CLEAN LOCAL STOP
      */
     const stopAudio = useCallback(() => {
-        // Increment session ID to immediately kill any async loops
+        logAudioEvent(`${COMPONENT_ID}:${channel.id.substring(0,6)}`, 'STOP', "Local session ended");
         playbackSessionRef.current++;
         if (typeof window !== 'undefined' && window.speechSynthesis) {
             window.speechSynthesis.cancel();
@@ -86,7 +88,7 @@ const MobileFeedCard = ({
         }
         setPlaybackState('idle');
         setStatusMessage("");
-    }, []);
+    }, [channel.id]);
 
     const flatCurriculum = useMemo(() => {
         let chapters = channel.chapters;
@@ -112,12 +114,10 @@ const MobileFeedCard = ({
         mountedRef.current = true;
         return () => { 
             mountedRef.current = false;
-            // HARD STOP ON UNMOUNT
             stopAudio();
         };
     }, [stopAudio]);
 
-    // Handle Active/Inactive transitions carefully
     useEffect(() => {
         if (isActive) {
             const introText = channel.welcomeMessage || channel.description || `Welcome to ${channel.title}.`;
@@ -137,7 +137,6 @@ const MobileFeedCard = ({
                 };
             }
         } else {
-            // THE MOST IMPORTANT LINE: kill audio the moment we scroll away OR navigate away
             stopAudio();
             preloadedScriptRef.current = null;
             setIsAutoplayBlocked(false);
@@ -153,8 +152,7 @@ const MobileFeedCard = ({
             return;
         }
 
-        // REGISTER AS AUDIO OWNER - kills existing detail/live audio
-        registerAudioOwner(stopAudio);
+        registerAudioOwner(COMPONENT_ID, stopAudio);
         runTrackSequence(-1, playbackSessionRef.current);
     };
 
@@ -164,7 +162,7 @@ const MobileFeedCard = ({
         try {
             await warmUpAudioContext(ctx);
             setIsAutoplayBlocked(false);
-            registerAudioOwner(stopAudio);
+            registerAudioOwner(COMPONENT_ID, stopAudio);
             runTrackSequence(-1, playbackSessionRef.current);
         } catch(err) {
             console.error("Audio resume failed", err);
@@ -179,8 +177,7 @@ const MobileFeedCard = ({
     const handleTogglePlay = async (e: React.MouseEvent) => {
         e.stopPropagation();
         if (!isActive) { 
-            // Navigation event - stop everything first
-            stopAllPlatformAudio();
+            stopAllPlatformAudio(COMPONENT_ID);
             onChannelClick(channel.id); 
             return; 
         }
@@ -196,7 +193,7 @@ const MobileFeedCard = ({
             return; 
         }
         
-        registerAudioOwner(stopAudio);
+        registerAudioOwner(COMPONENT_ID, stopAudio);
         runTrackSequence(trackIndex >= totalLessons ? -1 : trackIndex, playbackSessionRef.current);
     };
 
@@ -219,7 +216,11 @@ const MobileFeedCard = ({
 
     const playAudioBuffer = (buffer: AudioBuffer, sessionId: number): Promise<void> => {
         return new Promise(async (resolve) => {
-            if (!mountedRef.current || !isActiveRef.current || sessionId !== playbackSessionRef.current) { resolve(); return; }
+            if (!mountedRef.current || !isActiveRef.current || sessionId !== playbackSessionRef.current || !isAudioOwner(COMPONENT_ID)) { 
+                logAudioEvent(COMPONENT_ID, 'ABORT_STALE', "PlayBuffer request blocked - owner mismatch");
+                resolve(); 
+                return; 
+            }
             const ctx = getGlobalAudioContext();
             
             if (ctx.state === 'suspended') {
@@ -242,7 +243,7 @@ const MobileFeedCard = ({
 
     const playSystemAudio = (text: string, voiceName: string, sessionId: number): Promise<void> => {
         return new Promise((resolve) => {
-            if (!mountedRef.current || !isActiveRef.current || sessionId !== playbackSessionRef.current) { resolve(); return; }
+            if (!mountedRef.current || !isActiveRef.current || sessionId !== playbackSessionRef.current || !isAudioOwner(COMPONENT_ID)) { resolve(); return; }
             if (window.speechSynthesis) window.speechSynthesis.cancel();
             
             const utterance = new SpeechSynthesisUtterance(text);
@@ -260,7 +261,7 @@ const MobileFeedCard = ({
         setPlaybackState('playing');
         let currentIndex = startIndex;
         
-        while (mountedRef.current && isActiveRef.current && sessionId === playbackSessionRef.current) {
+        while (mountedRef.current && isActiveRef.current && sessionId === playbackSessionRef.current && isAudioOwner(COMPONENT_ID)) {
             try {
                 setTrackIndex(currentIndex); 
                 let textParts: {speaker: string, text: string, voice: string}[] = [];
@@ -295,7 +296,7 @@ const MobileFeedCard = ({
                         lecture = await fetchLectureData(lessonMeta); 
                     }
                     
-                    if (sessionId !== playbackSessionRef.current) return;
+                    if (sessionId !== playbackSessionRef.current || !isAudioOwner(COMPONENT_ID)) return;
                     if (!lecture || !lecture.sections || lecture.sections.length === 0) { currentIndex++; continue; }
                     
                     setPlaybackState('playing');
@@ -313,7 +314,7 @@ const MobileFeedCard = ({
                 }
 
                 for (let i = 0; i < textParts.length; i++) {
-                    if (sessionId !== playbackSessionRef.current) return;
+                    if (sessionId !== playbackSessionRef.current || !isAudioOwner(COMPONENT_ID)) return;
                     const part = textParts[i];
                     setTranscript({ speaker: part.speaker, text: part.text });
                     
@@ -322,7 +323,7 @@ const MobileFeedCard = ({
                     } else {
                         setStatusMessage(`Preparing...`);
                         const audioResult = await synthesizeSpeech(part.text, part.voice, getGlobalAudioContext());
-                        if (sessionId !== playbackSessionRef.current) return;
+                        if (sessionId !== playbackSessionRef.current || !isAudioOwner(COMPONENT_ID)) return;
                         if (audioResult && audioResult.buffer) {
                             setStatusMessage("Playing");
                             await playAudioBuffer(audioResult.buffer, sessionId);
@@ -330,7 +331,7 @@ const MobileFeedCard = ({
                             await playSystemAudio(part.text, part.voice, sessionId);
                         }
                     }
-                    if (sessionId !== playbackSessionRef.current) return;
+                    if (sessionId !== playbackSessionRef.current || !isAudioOwner(COMPONENT_ID)) return;
                     await new Promise(r => setTimeout(r, 200));
                 }
                 currentIndex++;
@@ -355,8 +356,7 @@ const MobileFeedCard = ({
     };
 
     const handleCardClick = (e: React.MouseEvent) => {
-        // Navigation: Kill audio baseline FIRST
-        stopAllPlatformAudio();
+        stopAllPlatformAudio(COMPONENT_ID);
         onChannelClick(channel.id);
     };
 
