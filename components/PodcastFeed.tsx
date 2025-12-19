@@ -268,6 +268,22 @@ const MobileFeedCard = ({
         });
     };
 
+    const playBackgroundHeartbeat = () => {
+        const ctx = getGlobalAudioContext();
+        if (ctx.state === 'suspended') return;
+        
+        // Background Audio Fix: Infrasonic 20Hz hum at 0.1% volume
+        // Prevents tab from sleeping on mobile and keeps timers active.
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.frequency.value = 20; 
+        gain.gain.value = 0.001; 
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start();
+        return { osc, gain };
+    };
+
     const runTrackSequence = async (startIndex: number, sessionId: number) => {
         // PRE-FLIGHT CHECK
         if (!isActiveRef.current || sessionId !== playbackSessionRef.current || !isAudioOwner(MY_TOKEN)) return;
@@ -275,6 +291,7 @@ const MobileFeedCard = ({
         isLoopingRef.current = true;
         setPlaybackState('playing');
         
+        const heartbeat = playBackgroundHeartbeat();
         let currentIndex = startIndex;
         
         while (mountedRef.current && isActiveRef.current && sessionId === playbackSessionRef.current && isAudioOwner(MY_TOKEN)) {
@@ -316,7 +333,7 @@ const MobileFeedCard = ({
                     // ATOMIC CHECK: Did user scroll away during lecture fetch?
                     if (!isActiveRef.current || sessionId !== playbackSessionRef.current || !isAudioOwner(MY_TOKEN)) {
                         logAudioEvent(MY_TOKEN, 'ABORT_STALE', `Aborted session ${sessionId} after lecture fetch`);
-                        return;
+                        break;
                     }
 
                     if (!lecture || !lecture.sections || lecture.sections.length === 0) { currentIndex++; continue; }
@@ -337,7 +354,7 @@ const MobileFeedCard = ({
 
                 for (let i = 0; i < textParts.length; i++) {
                     // ATOMIC CHECK: Check owner before every single line of dialogue
-                    if (!isActiveRef.current || sessionId !== playbackSessionRef.current || !isAudioOwner(MY_TOKEN)) return;
+                    if (!isActiveRef.current || sessionId !== playbackSessionRef.current || !isAudioOwner(MY_TOKEN)) break;
                     
                     const part = textParts[i];
                     setTranscript({ speaker: part.speaker, text: part.text });
@@ -351,7 +368,7 @@ const MobileFeedCard = ({
                         // ATOMIC CHECK: Did user stop or scroll during TTS network delay?
                         if (!isActiveRef.current || sessionId !== playbackSessionRef.current || !isAudioOwner(MY_TOKEN)) {
                             logAudioEvent(MY_TOKEN, 'ABORT_STALE', `Aborted session ${sessionId} after synthesis`);
-                            return;
+                            break;
                         }
 
                         if (audioResult && audioResult.buffer) {
@@ -363,11 +380,16 @@ const MobileFeedCard = ({
                     }
                     
                     // FINAL ATOMIC CHECK
-                    if (!isActiveRef.current || sessionId !== playbackSessionRef.current || !isAudioOwner(MY_TOKEN)) return;
+                    if (!isActiveRef.current || sessionId !== playbackSessionRef.current || !isAudioOwner(MY_TOKEN)) break;
                     await new Promise(r => setTimeout(r, 250));
                 }
                 currentIndex++;
             } catch (e) { break; }
+        }
+        
+        if (heartbeat) {
+            heartbeat.osc.stop();
+            heartbeat.osc.disconnect();
         }
         isLoopingRef.current = false;
     };

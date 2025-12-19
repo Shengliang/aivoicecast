@@ -7,7 +7,7 @@ let audioBridgeElement: HTMLAudioElement | null = null;
 let silentLoopElement: HTMLAudioElement | null = null;
 
 /**
- * GLOBAL AUDIO AUDIT
+ * GLOBAL AUDIO AUDIT & MUTEX
  */
 export interface AudioEvent {
     timestamp: number;
@@ -37,6 +37,7 @@ export function getCurrentAudioOwner() {
 
 /**
  * Hard kill for all platform audio.
+ * Resets the global lock.
  */
 export function stopAllPlatformAudio(sourceCaller: string = "Global") {
     logAudioEvent(sourceCaller, 'STOP', `Clearing lock. Current owner: ${currentOwnerToken}`);
@@ -70,6 +71,7 @@ export function stopAllPlatformAudio(sourceCaller: string = "Global") {
 
 /**
  * Register a unique ownership token.
+ * If someone else has the lock, it triggers their stop function first.
  */
 export function registerAudioOwner(uniqueToken: string, stopFn: () => void) {
     // If someone else has the lock, kill them first

@@ -297,7 +297,7 @@ const App: React.FC = () => {
         setActiveTab('mentorship');
     } else if (view === 'group') {
         handleSetViewState('directory');
-        setActiveTab('group');
+        setActiveTab('groups');
     } else if (view === 'recording') {
         handleSetViewState('directory');
         setActiveTab('recordings');
