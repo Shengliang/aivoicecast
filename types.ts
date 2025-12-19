@@ -203,7 +203,7 @@ export interface TodoItem {
 
 export interface CodeFile {
   name: string;
-  language: 'python' | 'javascript' | 'typescript' | 'html' | 'css' | 'java' | 'c++' | 'c' | 'rust' | 'go' | 'c#' | 'json' | 'markdown' | 'text' | 'typescript (react)' | 'javascript (react)' | 'plantuml';
+  language: 'python' | 'javascript' | 'typescript' | 'html' | 'css' | 'java' | 'c++' | 'c' | 'rust' | 'go' | 'c#' | 'json' | 'markdown' | 'text' | 'typescript (react)' | 'javascript (react)' | 'plantuml' | 'whiteboard';
   content: string;
   sha?: string;
   path?: string;

@@ -44,7 +44,7 @@ function getLanguageFromExt(filename: string): any {
     if (ext === 'json') return 'json';
     if (ext === 'md') return 'markdown';
     if (['puml', 'plantuml'].includes(ext || '')) return 'plantuml';
-    if (['draw', 'whiteboard'].includes(ext || '')) return 'whiteboard';
+    if (['draw', 'whiteboard', 'wb'].includes(ext || '')) return 'whiteboard';
     return 'text';
 }
 
@@ -820,7 +820,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
                   )}
                   {activeTab === 'drive' && (
                       <div className="p-2">
-                          {!driveToken ? <div className="p-4 text-center"><button onClick={handleConnectDrive} className="px-4 py-2 bg-slate-800 text-white text-xs font-bold rounded-lg border border-slate-700 hover:bg-slate-700">Connect Drive</button></div> : driveTree.map(node => <FileTreeItem key={node.id} node={node} depth={0} activeId={selectedExplorerNode?.id} onSelect={handleExplorerSelect} onToggle={handleDriveToggle} expandedIds={expandedFolders} loadingIds={loadingFolders} onDragStart={handleDragStart} onDrop={handleDrop}/>)}
+                          {!driveToken ? <div className="p-4 text-center"><button onClick={handleConnectDrive} className="px-4 py-2 bg-slate-800 text-white text-xs font-bold rounded-lg border border-slate-700 hover:bg-slate-700">Connect Drive</button></div> : driveTree.map(node => <FileTreeItem key={node.id} node={node} depth={0} activeId={selectedExplorerNode?.id} onSelect={handleDriveSelect} onToggle={handleDriveToggle} expandedIds={expandedFolders} loadingIds={loadingFolders} onDragStart={handleDragStart} onDrop={handleDrop}/>)}
                       </div>
                   )}
                   {activeTab === 'github' && (
