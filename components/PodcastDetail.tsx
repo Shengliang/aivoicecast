@@ -137,8 +137,12 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
   }, [MY_TOKEN]);
 
   useEffect(() => {
-      return () => stopAudio();
-  }, [stopAudio]);
+      return () => {
+          stopAudio();
+          // Also explicitly kill platform lock if we leave the detail view
+          stopAllPlatformAudio(`PodcastDetailUnmount:${channel.id}`);
+      };
+  }, [stopAudio, channel.id]);
 
   /**
    * ATOMIC TOGGLE
@@ -150,11 +154,11 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
     }
 
     // 1. Kill other components' audio
-    stopAllPlatformAudio(`PodcastDetail:${channel.id}`);
+    stopAllPlatformAudio(`PodcastDetailToggle:${channel.id}`);
     
     // 2. Clear our own stale state and start new session
     stopAudio();
-    const sessionId = playSessionIdRef.current; // Already incremented by stopAudio above
+    const sessionId = playSessionIdRef.current; // Set in stopAudio then incremented by current loop logic
 
     // 3. Re-acquire Lock
     registerAudioOwner(MY_TOKEN, stopAudio);
@@ -187,7 +191,7 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
       
       while (nextScheduleTimeRef.current < ctx.currentTime + lookahead) {
           // SYNC CHECK inside loop
-          if (sessionId !== playSessionIdRef.current || !isAudioOwner(MY_TOKEN)) break;
+          if (!isPlayingRef.current || sessionId !== playSessionIdRef.current || !isAudioOwner(MY_TOKEN)) break;
 
           const idx = schedulingCursorRef.current;
           if (idx >= activeLecture.sections.length) {
@@ -209,8 +213,8 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
               const result = await synthesizeSpeech(section.text, voice, ctx);
               setIsBuffering(false);
               
-              // ZOMBIE CHECK 1: Did session change during TTS network fetch?
-              if (sessionId !== playSessionIdRef.current || !isAudioOwner(MY_TOKEN)) {
+              // CRITICAL ZOMBIE CHECK 1: Did session change during TTS network fetch?
+              if (!isPlayingRef.current || sessionId !== playSessionIdRef.current || !isAudioOwner(MY_TOKEN)) {
                   logAudioEvent(MY_TOKEN, 'ABORT_STALE', `Session ${sessionId} aborted after TTS fetch`);
                   return;
               }
@@ -221,7 +225,7 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
                   
                   const startAt = Math.max(nextScheduleTimeRef.current, ctx.currentTime);
                   
-                  // ZOMBIE CHECK 2: Absolute final check before touching destination
+                  // CRITICAL ZOMBIE CHECK 2: Final check before touching destination
                   if (sessionId !== playSessionIdRef.current || !isAudioOwner(MY_TOKEN)) {
                       source.disconnect();
                       return;

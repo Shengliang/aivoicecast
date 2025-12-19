@@ -72,7 +72,8 @@ export function stopAllPlatformAudio(sourceCaller: string = "Global") {
  * Register a unique ownership token.
  */
 export function registerAudioOwner(uniqueToken: string, stopFn: () => void) {
-    if (currentOwnerToken) {
+    // If someone else has the lock, kill them first
+    if (currentOwnerToken && currentOwnerToken !== uniqueToken) {
         stopAllPlatformAudio(`Auto-reset for ${uniqueToken}`);
     }
     
