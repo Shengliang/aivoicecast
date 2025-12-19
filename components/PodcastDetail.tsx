@@ -153,12 +153,12 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
       return;
     }
 
-    // 1. Kill other components' audio
+    // 1. Kill other components' audio (like the Feed)
     stopAllPlatformAudio(`PodcastDetailToggle:${channel.id}`);
     
     // 2. Clear our own stale state and start new session
     stopAudio();
-    const sessionId = playSessionIdRef.current; // Set in stopAudio then incremented by current loop logic
+    const sessionId = playSessionIdRef.current; 
 
     // 3. Re-acquire Lock
     registerAudioOwner(MY_TOKEN, stopAudio);
@@ -166,6 +166,9 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
     const ctx = getGlobalAudioContext();
     await warmUpAudioContext(ctx);
     
+    // Re-check after async warmup
+    if (sessionId !== playSessionIdRef.current) return;
+
     const startIdx = currentSectionIndex !== null && currentSectionIndex < (activeLecture?.sections.length || 0) ? currentSectionIndex : 0;
     schedulingCursorRef.current = startIdx;
     
@@ -213,9 +216,9 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
               const result = await synthesizeSpeech(section.text, voice, ctx);
               setIsBuffering(false);
               
-              // CRITICAL ZOMBIE CHECK 1: Did session change during TTS network fetch?
+              // CRITICAL ZOMBIE CHECK: Did user stop or switch during TTS network delay?
               if (!isPlayingRef.current || sessionId !== playSessionIdRef.current || !isAudioOwner(MY_TOKEN)) {
-                  logAudioEvent(MY_TOKEN, 'ABORT_STALE', `Session ${sessionId} aborted after TTS fetch`);
+                  logAudioEvent(MY_TOKEN, 'ABORT_STALE', `Aborted session ${sessionId} after TTS delay`);
                   return;
               }
               
@@ -225,7 +228,7 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
                   
                   const startAt = Math.max(nextScheduleTimeRef.current, ctx.currentTime);
                   
-                  // CRITICAL ZOMBIE CHECK 2: Final check before touching destination
+                  // FINAL ZOMBIE CHECK before touching destination
                   if (sessionId !== playSessionIdRef.current || !isAudioOwner(MY_TOKEN)) {
                       source.disconnect();
                       return;

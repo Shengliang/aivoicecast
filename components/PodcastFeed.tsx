@@ -72,11 +72,11 @@ const MobileFeedCard = ({
     useEffect(() => { isActiveRef.current = isActive; }, [isActive]);
 
     /**
-     * LOCAL STOP
+     * ATOMIC STOP
      */
     const stopAudio = useCallback(() => {
-        logAudioEvent(MY_TOKEN, 'STOP', `Session ${playbackSessionRef.current} stop`);
-        playbackSessionRef.current++;
+        logAudioEvent(MY_TOKEN, 'STOP', `Session ${playbackSessionRef.current} hard stop`);
+        playbackSessionRef.current++; // Invalidate current session
         isLoopingRef.current = false;
         
         if (typeof window !== 'undefined' && window.speechSynthesis) {
@@ -84,7 +84,10 @@ const MobileFeedCard = ({
         }
         
         activeSourcesRef.current.forEach(source => {
-            try { source.stop(); source.disconnect(); } catch(e) {}
+            try { 
+                source.stop(); 
+                source.disconnect(); 
+            } catch(e) {}
         });
         activeSourcesRef.current.clear();
         
@@ -180,7 +183,7 @@ const MobileFeedCard = ({
     const handleTogglePlay = async (e: React.MouseEvent) => {
         e.stopPropagation();
         if (!isActive) { 
-            stopAllPlatformAudio(`Navigation:${channel.id}`);
+            stopAllPlatformAudio(`NavigationTransition:${channel.id}`);
             onChannelClick(channel.id); 
             return; 
         }
@@ -223,6 +226,7 @@ const MobileFeedCard = ({
 
     const playAudioBuffer = (buffer: AudioBuffer, sessionId: number): Promise<void> => {
         return new Promise(async (resolve) => {
+            // ATOMIC CHECK: Resolve instantly if session changed while we were called
             if (!mountedRef.current || !isActiveRef.current || sessionId !== playbackSessionRef.current || !isAudioOwner(MY_TOKEN)) { 
                 resolve(); 
                 return; 
@@ -264,6 +268,7 @@ const MobileFeedCard = ({
     };
 
     const runTrackSequence = async (startIndex: number, sessionId: number) => {
+        // PRE-FLIGHT CHECK
         if (!isActiveRef.current || sessionId !== playbackSessionRef.current || !isAudioOwner(MY_TOKEN)) return;
         
         isLoopingRef.current = true;
@@ -307,8 +312,11 @@ const MobileFeedCard = ({
                         lecture = await fetchLectureData(lessonMeta); 
                     }
                     
-                    // CRITICAL POST-FETCH CHECK
-                    if (!isActiveRef.current || sessionId !== playbackSessionRef.current || !isAudioOwner(MY_TOKEN)) return;
+                    // ATOMIC CHECK: Did user scroll away during lecture fetch?
+                    if (!isActiveRef.current || sessionId !== playbackSessionRef.current || !isAudioOwner(MY_TOKEN)) {
+                        logAudioEvent(MY_TOKEN, 'ABORT_STALE', `Aborted session ${sessionId} after lecture fetch`);
+                        return;
+                    }
 
                     if (!lecture || !lecture.sections || lecture.sections.length === 0) { currentIndex++; continue; }
                     
@@ -327,7 +335,7 @@ const MobileFeedCard = ({
                 }
 
                 for (let i = 0; i < textParts.length; i++) {
-                    // CRITICAL LOOP CHECK
+                    // ATOMIC CHECK: Check owner before every single line of dialogue
                     if (!isActiveRef.current || sessionId !== playbackSessionRef.current || !isAudioOwner(MY_TOKEN)) return;
                     
                     const part = textParts[i];
@@ -336,11 +344,14 @@ const MobileFeedCard = ({
                     if (provider === 'system') {
                         await playSystemAudio(part.text, part.voice, sessionId);
                     } else {
-                        setStatusMessage(`Preparing...`);
+                        setStatusMessage(`Synthesizing...`);
                         const audioResult = await synthesizeSpeech(part.text, part.voice, getGlobalAudioContext());
                         
-                        // CRITICAL POST-SYNTH CHECK
-                        if (!isActiveRef.current || sessionId !== playbackSessionRef.current || !isAudioOwner(MY_TOKEN)) return;
+                        // ATOMIC CHECK: Did user stop or scroll during TTS network delay?
+                        if (!isActiveRef.current || sessionId !== playbackSessionRef.current || !isAudioOwner(MY_TOKEN)) {
+                            logAudioEvent(MY_TOKEN, 'ABORT_STALE', `Aborted session ${sessionId} after synthesis`);
+                            return;
+                        }
 
                         if (audioResult && audioResult.buffer) {
                             setStatusMessage("Playing");
@@ -349,6 +360,8 @@ const MobileFeedCard = ({
                             await playSystemAudio(part.text, part.voice, sessionId);
                         }
                     }
+                    
+                    // FINAL ATOMIC CHECK
                     if (!isActiveRef.current || sessionId !== playbackSessionRef.current || !isAudioOwner(MY_TOKEN)) return;
                     await new Promise(r => setTimeout(r, 250));
                 }
@@ -376,7 +389,7 @@ const MobileFeedCard = ({
 
     const handleCardClick = (e: React.MouseEvent) => {
         stopAudio();
-        stopAllPlatformAudio(`Navigating:${channel.id}`);
+        stopAllPlatformAudio(`NavigatingToDetail:${channel.id}`);
         onChannelClick(channel.id);
     };
 
@@ -405,7 +418,7 @@ const MobileFeedCard = ({
                     </button>
                     {(playbackState === 'buffering' || statusMessage) && (
                         <div className={`backdrop-blur-md px-3 py-1.5 rounded-full flex items-center gap-2 border shadow-lg bg-black/60 border-white/10`}>
-                            {statusMessage === "Preparing..." ? <Loader2 size={12} className="animate-spin text-indigo-400" /> : <Music size={12} className="text-slate-400" />}
+                            {statusMessage === "Synthesizing..." || statusMessage === "Preparing..." ? <Loader2 size={12} className="animate-spin text-indigo-400" /> : <Music size={12} className="text-slate-400" />}
                             <span className="text-[10px] font-bold text-white uppercase tracking-wider">{statusMessage || "Active"}</span>
                         </div>
                     )}
@@ -439,9 +452,9 @@ const MobileFeedCard = ({
                 </div>
                 <div className="flex items-center gap-3 mb-2">
                     <button onClick={handleTogglePlay} className={`w-10 h-10 rounded-full flex items-center justify-center transition-all shadow-lg ${playbackState === 'playing' ? 'bg-slate-800 text-indigo-400 border border-slate-600' : 'bg-white text-black'}`}>
-                        {statusMessage === "Preparing..." ? <Loader2 size={20} className="animate-spin" /> : playbackState === 'playing' ? <Pause size={20} fill="currentColor" /> : <Play size={20} fill="currentColor" className="ml-0.5" />}
+                        {statusMessage === "Synthesizing..." || statusMessage === "Preparing..." ? <Loader2 size={20} className="animate-spin" /> : playbackState === 'playing' ? <Pause size={20} fill="currentColor" /> : <Play size={20} fill="currentColor" className="ml-0.5" />}
                     </button>
-                    {(playbackState === 'playing' || statusMessage === "Preparing...") && (
+                    {(playbackState === 'playing' || statusMessage === "Synthesizing..." || statusMessage === "Preparing...") && (
                         <button onClick={stopAudio} className="w-10 h-10 rounded-full flex items-center justify-center transition-all shadow-lg bg-slate-800 text-red-400 border border-slate-600 animate-fade-in"><Square size={16} fill="currentColor" /></button>
                     )}
                     <div onClick={handleCardClick} className="cursor-pointer">
