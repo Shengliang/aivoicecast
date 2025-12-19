@@ -5,23 +5,28 @@ let mainAudioContext: AudioContext | null = null;
 let silentLoopElement: HTMLAudioElement | null = null;
 let audioBridgeElement: HTMLAudioElement | null = null;
 let mediaStreamDest: MediaStreamAudioDestinationNode | null = null;
+let keepAliveOscillator: OscillatorNode | null = null;
 
 export function getGlobalAudioContext(sampleRate: number = 24000): AudioContext {
   if (!mainAudioContext || mainAudioContext.state === 'closed') {
-    mainAudioContext = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate });
+    mainAudioContext = new (window.AudioContext || (window as any).webkitAudioContext)({ 
+        sampleRate,
+        // High latency hint tells the OS this is a playback app, not a game
+        latencyHint: 'playback' 
+    });
     
-    // THE BRIDGE: Connect AudioContext to a hidden <audio> tag via MediaStream
-    // This is critical for keeping Web Audio alive in the background on mobile.
+    // THE BRIDGE: Capture all Web Audio output into a MediaStream
     mediaStreamDest = mainAudioContext.createMediaStreamDestination();
     
     if (!audioBridgeElement) {
         audioBridgeElement = new Audio();
-        audioBridgeElement.id = 'web-audio-bridge';
-        audioBridgeElement.style.display = 'none';
+        audioBridgeElement.id = 'web-audio-bg-bridge';
         audioBridgeElement.muted = false;
         audioBridgeElement.volume = 1.0;
+        // This connects the JavaScript Audio Graph to a standard HTML5 Audio element
         audioBridgeElement.srcObject = mediaStreamDest.stream;
         audioBridgeElement.setAttribute('playsinline', 'true');
+        audioBridgeElement.setAttribute('autoplay', 'true');
         document.body.appendChild(audioBridgeElement);
     }
   }
@@ -29,7 +34,7 @@ export function getGlobalAudioContext(sampleRate: number = 24000): AudioContext 
 }
 
 /**
- * Connects an audio node to both the hardware speakers and the background bridge.
+ * Connects an audio node to both hardware and the background bridge.
  */
 export function connectOutput(source: AudioNode, ctx: AudioContext) {
     source.connect(ctx.destination);
@@ -37,7 +42,7 @@ export function connectOutput(source: AudioNode, ctx: AudioContext) {
         source.connect(mediaStreamDest);
     }
     
-    // Ensure the bridge tag is actually "playing"
+    // Force the bridge to stay in 'playing' state
     if (audioBridgeElement && audioBridgeElement.paused) {
         audioBridgeElement.play().catch(() => {});
     }
@@ -81,30 +86,37 @@ export async function decodeRawPcm(
   return buffer;
 }
 
+/**
+ * Aggressively unlocks audio hardware.
+ */
 export async function warmUpAudioContext(ctx: AudioContext) {
     if (ctx.state === 'suspended' || (ctx.state as any) === 'interrupted') {
         await ctx.resume();
     }
     
-    // 1. Web Audio Prime: A nearly silent 1Hz oscillation
-    // Pure silence is often optimized out by OS power management.
-    const buffer = ctx.createBuffer(1, 441, ctx.sampleRate);
-    const channelData = buffer.getChannelData(0);
-    for(let i=0; i<441; i++) channelData[i] = Math.sin(i * 0.0001) * 0.0001;
-    
-    const source = ctx.createBufferSource();
-    source.buffer = buffer;
-    source.loop = true;
-    connectOutput(source, ctx);
-    source.start(0);
+    // 1. INFRASONIC KEEP-ALIVE
+    // We play a 20Hz tone (bottom of human hearing). 
+    // Absolute silence is often optimized out by iOS. A 20Hz hum keeps the hardware 'hot'.
+    if (!keepAliveOscillator) {
+        const gain = ctx.createGain();
+        gain.gain.value = 0.001; // Extremely quiet
+        
+        keepAliveOscillator = ctx.createOscillator();
+        keepAliveOscillator.type = 'sine';
+        keepAliveOscillator.frequency.value = 20; 
+        keepAliveOscillator.connect(gain);
+        connectOutput(gain, ctx);
+        keepAliveOscillator.start(0);
+    }
 
-    // 2. HTML5 Audio Prime: Persistent Silence Loop
+    // 2. HTML5 MEDIA ELEMENT
+    // Playing a 'real' file via <audio> tag is the only way to get background priority.
     if (!silentLoopElement) {
         silentLoopElement = new Audio();
+        // 1 second of near-silence white noise
         silentLoopElement.src = 'data:audio/wav;base64,UklGRigAAABXQVZFRm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQQAAAAAAAAA';
         silentLoopElement.loop = true;
         silentLoopElement.setAttribute('playsinline', 'true');
-        silentLoopElement.volume = 0.01;
         (window as any)._persistentSilence = silentLoopElement;
     }
     
@@ -112,13 +124,17 @@ export async function warmUpAudioContext(ctx: AudioContext) {
         await silentLoopElement.play();
         if (audioBridgeElement) await audioBridgeElement.play();
     } catch(e) {
-        console.warn("Media Prime failed", e);
+        console.warn("Background Audio failed to prime. User interaction may be required.", e);
     }
 }
 
 export function coolDownAudioContext() {
     if (silentLoopElement) silentLoopElement.pause();
     if (audioBridgeElement) audioBridgeElement.pause();
+    if (keepAliveOscillator) {
+        try { keepAliveOscillator.stop(); } catch(e) {}
+        keepAliveOscillator = null;
+    }
 }
 
 export function createPcmBlob(data: Float32Array): GeminiBlob {

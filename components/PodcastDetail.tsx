@@ -40,10 +40,8 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
   const [activeLecture, setActiveLecture] = useState<GeneratedLecture | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [isLoadingLecture, setIsLoadingLecture] = useState(false);
-  const [isLoadedFromCache, setIsLoadedFromCache] = useState(false);
   
   const [chapters, setChapters] = useState<Chapter[]>(channel.chapters || []);
-  const [isGeneratingCurriculum, setIsGeneratingCurriculum] = useState(false);
   
   const [isPlaying, setIsPlaying] = useState(false);
   const [isBuffering, setIsBuffering] = useState(false);
@@ -74,12 +72,29 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
   const activeSourcesRef = useRef<AudioBufferSourceNode[]>([]);
   const schedulingCursorRef = useRef(0); 
   const playSessionIdRef = useRef(0);
-  
-  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
 
-  useEffect(() => { if (currentUser) getUserProfile(currentUser.uid).then(setUserProfile); }, [currentUser]);
+  // --- BACKGROUND KEEP-ALIVE ---
+  useEffect(() => {
+      const handleVisibilityChange = () => {
+          if (document.visibilityState === 'visible' && isPlayingRef.current) {
+              console.log("App visible, resuming audio chain...");
+              const ctx = getGlobalAudioContext();
+              ctx.resume().then(() => {
+                  // If backgrounding killed the timer, restart it immediately
+                  if (!schedulerTimerRef.current && voiceProvider !== 'system') {
+                      runWebAudioScheduler(playSessionIdRef.current);
+                  }
+              });
+          }
+      };
+      window.addEventListener('visibilitychange', handleVisibilityChange);
+      window.addEventListener('pageshow', handleVisibilityChange);
+      return () => {
+          window.removeEventListener('visibilitychange', handleVisibilityChange);
+          window.removeEventListener('pageshow', handleVisibilityChange);
+      };
+  }, [voiceProvider]);
 
-  // Media Session API for background control
   useEffect(() => {
     if ('mediaSession' in navigator && activeLecture) {
         navigator.mediaSession.metadata = new MediaMetadata({
@@ -105,22 +120,21 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
       return flatCurriculum.findIndex(item => item.id === activeSubTopicId);
   }, [activeSubTopicId, flatCurriculum]);
 
-  // Force catch-up when coming back to app
+  const loadVoices = useCallback(() => {
+    const voices = window.speechSynthesis.getVoices();
+    const langCode = language === 'zh' ? 'zh' : 'en';
+    let filtered = voices.filter(v => (v.lang.startsWith(langCode) || (langCode === 'en' && v.lang.startsWith('en'))));
+    setSystemVoices(filtered);
+    if (filtered.length > 0) {
+        setSysTeacherVoiceURI(prev => prev || filtered[0].voiceURI);
+        setSysStudentVoiceURI(prev => prev || (filtered.length > 1 ? filtered[1].voiceURI : filtered[0].voiceURI));
+    }
+  }, [language]);
+
   useEffect(() => {
-      const handleVisibilityChange = () => {
-          if (document.visibilityState === 'visible' && isPlayingRef.current) {
-              const ctx = getGlobalAudioContext();
-              ctx.resume().then(() => {
-                  // If we detect the scheduler has stopped due to backgrounding, kickstart it
-                  if (!schedulerTimerRef.current) {
-                      startScheduler(playSessionIdRef.current);
-                  }
-              });
-          }
-      };
-      window.addEventListener('visibilitychange', handleVisibilityChange);
-      return () => window.removeEventListener('visibilitychange', handleVisibilityChange);
-  }, []);
+    loadVoices();
+    if (window.speechSynthesis.onvoiceschanged !== undefined) window.speechSynthesis.onvoiceschanged = loadVoices;
+  }, [loadVoices]);
 
   const stopAudio = useCallback(() => {
     window.speechSynthesis.cancel();
@@ -147,23 +161,24 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
       setIsPlaying(true);
       isPlayingRef.current = true;
       if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'playing';
-      startScheduler(sessionId);
-    }
-  };
-
-  const startScheduler = (sessionId: number) => {
-    if (voiceProvider === 'system') {
-        runSystemTts(sessionId);
-    } else {
-        runWebAudioScheduler(sessionId);
+      
+      if (voiceProvider === 'system') {
+          runSystemTts(sessionId);
+      } else {
+          runWebAudioScheduler(sessionId);
+      }
     }
   };
 
   const runWebAudioScheduler = async (sessionId: number) => {
-      if (!isPlayingRef.current || sessionId !== playSessionIdRef.current || !activeLecture) return;
-      const ctx = getGlobalAudioContext();
+      if (!isPlayingRef.current || sessionId !== playSessionIdRef.current || !activeLecture) {
+          schedulerTimerRef.current = null;
+          return;
+      }
       
-      const lookahead = 2.0; // Queue 2 seconds of audio ahead
+      const ctx = getGlobalAudioContext();
+      const lookahead = 3.0; // Queue 3 seconds ahead to buffer against JS freezing
+      
       if (nextScheduleTimeRef.current < ctx.currentTime) {
           nextScheduleTimeRef.current = ctx.currentTime + 0.1;
       }
@@ -171,14 +186,9 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
       while (nextScheduleTimeRef.current < ctx.currentTime + lookahead) {
           const idx = schedulingCursorRef.current;
           if (idx >= activeLecture.sections.length) {
-              // End of lecture logic
-              const remainingTime = (nextScheduleTimeRef.current - ctx.currentTime) * 1000;
-              setTimeout(() => {
-                  if (sessionId === playSessionIdRef.current) {
-                      stopAudio();
-                      setCurrentSectionIndex(0);
-                  }
-              }, Math.max(0, remainingTime));
+              const remaining = (nextScheduleTimeRef.current - ctx.currentTime) * 1000;
+              setTimeout(() => { if (sessionId === playSessionIdRef.current) { stopAudio(); setCurrentSectionIndex(0); } }, Math.max(0, remaining));
+              schedulerTimerRef.current = null;
               return;
           }
 
@@ -195,13 +205,12 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
               if (result.buffer) {
                   const source = ctx.createBufferSource();
                   source.buffer = result.buffer;
-                  connectOutput(source, ctx);
+                  connectOutput(source, ctx); // Connect to hardware AND the background bridge
                   
                   const startAt = Math.max(nextScheduleTimeRef.current, ctx.currentTime);
                   source.start(startAt);
                   activeSourcesRef.current.push(source);
                   
-                  // Update UI when this buffer actually starts playing
                   const delay = (startAt - ctx.currentTime) * 1000;
                   setTimeout(() => {
                       if (sessionId === playSessionIdRef.current) {
@@ -239,12 +248,7 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
       const targetURI = activeLecture.sections[idx].speaker === 'Teacher' ? sysTeacherVoiceURI : sysStudentVoiceURI;
       const v = systemVoices.find(v => v.voiceURI === targetURI);
       if (v) utter.voice = v;
-      utter.onend = () => {
-          if (sessionId === playSessionIdRef.current) {
-              schedulingCursorRef.current++;
-              runSystemTts(sessionId);
-          }
-      };
+      utter.onend = () => { if (sessionId === playSessionIdRef.current) { schedulingCursorRef.current++; runSystemTts(sessionId); } };
       window.speechSynthesis.speak(utter);
   };
 
