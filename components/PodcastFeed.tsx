@@ -97,11 +97,14 @@ const MobileFeedCard = ({
     }, []);
 
     const stopAudio = useCallback(() => {
+        // Increment session to kill async loops
+        playbackSessionRef.current++;
         window.speechSynthesis.cancel();
         if (sourceRef.current) {
             try { sourceRef.current.stop(); } catch(e) {}
             sourceRef.current = null;
         }
+        setPlaybackState('idle');
     }, []);
 
     useEffect(() => {
@@ -111,7 +114,6 @@ const MobileFeedCard = ({
             setTrackIndex(-1);
             setStatusMessage("");
             
-            // Check context state before attempting auto-play
             const ctx = getGlobalAudioContext();
             if (ctx.state === 'suspended' || (ctx.state as any) === 'interrupted') {
                 setIsAutoplayBlocked(true);
@@ -119,14 +121,11 @@ const MobileFeedCard = ({
                 const timer = setTimeout(() => { attemptAutoPlay(); }, 600); 
                 return () => {
                     clearTimeout(timer);
-                    playbackSessionRef.current++;
                     stopAudio();
                 };
             }
         } else {
             stopAudio();
-            setPlaybackState('idle');
-            playbackSessionRef.current++;
             preloadedScriptRef.current = null;
             setIsAutoplayBlocked(false);
         }
@@ -141,11 +140,8 @@ const MobileFeedCard = ({
             return;
         }
 
-        // Use global stop to clear any other component's audio
         setGlobalStopPlayback(stopAudio);
-
-        const sessionId = ++playbackSessionRef.current;
-        runTrackSequence(-1, sessionId);
+        runTrackSequence(-1, playbackSessionRef.current);
     };
 
     const handleEnableAudio = async (e: React.MouseEvent) => {
@@ -154,12 +150,8 @@ const MobileFeedCard = ({
         try {
             await warmUpAudioContext(ctx);
             setIsAutoplayBlocked(false);
-            
-            // Use global stop to clear any other component's audio
             setGlobalStopPlayback(stopAudio);
-
-            const sessionId = ++playbackSessionRef.current;
-            runTrackSequence(-1, sessionId);
+            runTrackSequence(-1, playbackSessionRef.current);
         } catch(err) {
             console.error("Audio resume failed", err);
         }
@@ -168,8 +160,6 @@ const MobileFeedCard = ({
     const handleStop = (e: React.MouseEvent) => {
         e.stopPropagation();
         stopAudio();
-        playbackSessionRef.current++; 
-        setPlaybackState('idle');
         setStatusMessage("Stopped");
         setTrackIndex(-1);
     };
@@ -186,17 +176,12 @@ const MobileFeedCard = ({
 
         if (playbackState === 'playing' || playbackState === 'buffering') { 
             stopAudio(); 
-            playbackSessionRef.current++; 
-            setPlaybackState('idle'); 
             setStatusMessage("Paused"); 
             return; 
         }
         
-        // Use global stop to clear any other component's audio
         setGlobalStopPlayback(stopAudio);
-        
-        const sessionId = ++playbackSessionRef.current;
-        runTrackSequence(trackIndex >= totalLessons ? -1 : trackIndex, sessionId);
+        runTrackSequence(trackIndex >= totalLessons ? -1 : trackIndex, playbackSessionRef.current);
     };
 
     const toggleTtsMode = (e: React.MouseEvent) => {
@@ -210,9 +195,8 @@ const MobileFeedCard = ({
         
         if (playbackState === 'playing' || playbackState === 'buffering') {
             stopAudio();
-            playbackSessionRef.current++;
             setTimeout(() => { 
-                runTrackSequence(trackIndex === -1 ? -1 : trackIndex, ++playbackSessionRef.current); 
+                runTrackSequence(trackIndex === -1 ? -1 : trackIndex, playbackSessionRef.current); 
             }, 100);
         }
     };
@@ -232,7 +216,10 @@ const MobileFeedCard = ({
             source.buffer = buffer;
             source.connect(ctx.destination);
             sourceRef.current = source;
-            source.onended = () => { sourceRef.current = null; resolve(); };
+            source.onended = () => { 
+                if (sourceRef.current === source) sourceRef.current = null; 
+                resolve(); 
+            };
             source.start(0);
         });
     };
