@@ -7,11 +7,11 @@ import { CreatorProfileModal } from './CreatorProfileModal';
 import { followUser, unfollowUser } from '../services/firestoreService';
 import { generateLectureScript } from '../services/lectureGenerator';
 import { synthesizeSpeech } from '../services/tts';
-import { getCachedLectureScript, cacheLectureScript } from '../utils/db';
+import { getCachedLectureScript, cacheLectureScript, getUserChannels } from '../utils/db';
 import { GEMINI_API_KEY, OPENAI_API_KEY } from '../services/private_keys';
 import { SPOTLIGHT_DATA } from '../utils/spotlightContent';
 import { OFFLINE_CHANNEL_ID, OFFLINE_CURRICULUM, OFFLINE_LECTURES } from '../utils/offlineContent';
-import { warmUpAudioContext } from '../utils/audioUtils';
+import { warmUpAudioContext, getGlobalAudioContext } from '../utils/audioUtils';
 
 interface PodcastFeedProps {
   channels: Channel[];
@@ -32,18 +32,9 @@ interface PodcastFeedProps {
   filterMode?: 'foryou' | 'following' | 'mine';
 }
 
-// --- Singleton Audio Context & Global Controls ---
-let sharedAudioContext: AudioContext | null = null;
+// Global control to stop any other feed items from playing
 let globalStopPlayback: (() => void) | null = null;
 
-const getSharedAudioContext = () => {
-    if (!sharedAudioContext || sharedAudioContext.state === 'closed') {
-        sharedAudioContext = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
-    }
-    return sharedAudioContext;
-};
-
-// --- Sub-Component for Mobile Feed Card ---
 const MobileFeedCard = ({ 
     channel, 
     isActive, 
@@ -70,7 +61,6 @@ const MobileFeedCard = ({
         const hasGemini = !!(localStorage.getItem('gemini_api_key') || GEMINI_API_KEY || process.env.API_KEY);
         return hasGemini ? 'gemini' : 'system';
     });
-    const providerRef = useRef<'system' | 'gemini' | 'openai'>(provider); 
     
     const [trackIndex, setTrackIndex] = useState(-1); 
     const sourceRef = useRef<AudioBufferSourceNode | null>(null);
@@ -79,7 +69,6 @@ const MobileFeedCard = ({
     const isActiveRef = useRef(isActive); 
     const preloadedScriptRef = useRef<Promise<GeneratedLecture | null> | null>(null);
 
-    useEffect(() => { providerRef.current = provider; }, [provider]);
     useEffect(() => { isActiveRef.current = isActive; }, [isActive]);
 
     const flatCurriculum = useMemo(() => {
@@ -125,12 +114,18 @@ const MobileFeedCard = ({
             setTrackIndex(-1);
             setStatusMessage("");
             
-            const timer = setTimeout(() => { attemptAutoPlay(); }, 600); 
-            return () => {
-                clearTimeout(timer);
-                playbackSessionRef.current++;
-                stopAudio();
-            };
+            // Check context state before attempting auto-play
+            const ctx = getGlobalAudioContext();
+            if (ctx.state === 'suspended' || (ctx.state as any) === 'interrupted') {
+                setIsAutoplayBlocked(true);
+            } else {
+                const timer = setTimeout(() => { attemptAutoPlay(); }, 600); 
+                return () => {
+                    clearTimeout(timer);
+                    playbackSessionRef.current++;
+                    stopAudio();
+                };
+            }
         } else {
             stopAudio();
             setPlaybackState('idle');
@@ -142,11 +137,8 @@ const MobileFeedCard = ({
 
     const attemptAutoPlay = async () => {
         if (playbackState === 'playing' || playbackState === 'buffering') return;
+        const ctx = getGlobalAudioContext();
         
-        const ctx = getSharedAudioContext();
-        
-        // If non-system voice is used, check if the context is blocked
-        // Fix: Use 'as any' for 'interrupted' state check to avoid type overlap error in TypeScript
         if (provider !== 'system' && (ctx.state === 'suspended' || (ctx.state as any) === 'interrupted')) {
             setIsAutoplayBlocked(true);
             return;
@@ -160,15 +152,12 @@ const MobileFeedCard = ({
 
     const handleEnableAudio = async (e: React.MouseEvent) => {
         e.stopPropagation();
-        const ctx = getSharedAudioContext();
+        const ctx = getGlobalAudioContext();
         try {
-            // CRITICAL: Explicitly warm up context on user gesture
             await warmUpAudioContext(ctx);
             setIsAutoplayBlocked(false);
-            
             if (globalStopPlayback && globalStopPlayback !== stopAudio) globalStopPlayback();
             globalStopPlayback = stopAudio;
-            
             const sessionId = ++playbackSessionRef.current;
             runTrackSequence(-1, sessionId);
         } catch(err) {
@@ -187,9 +176,9 @@ const MobileFeedCard = ({
 
     const handleTogglePlay = async (e: React.MouseEvent) => {
         e.stopPropagation();
-        if (!isActive) { onChannelClick(channel.id); if (globalStopPlayback) globalStopPlayback(); return; }
+        if (!isActive) { onChannelClick(channel.id); return; }
         
-        const ctx = getSharedAudioContext();
+        const ctx = getGlobalAudioContext();
         if (ctx.state === 'suspended' || isAutoplayBlocked) {
             handleEnableAudio(e);
             return;
@@ -219,7 +208,6 @@ const MobileFeedCard = ({
         
         setProvider(newMode);
         
-        // Reset sequence with new provider
         if (playbackState === 'playing' || playbackState === 'buffering') {
             stopAudio();
             playbackSessionRef.current++;
@@ -232,7 +220,7 @@ const MobileFeedCard = ({
     const playAudioBuffer = (buffer: AudioBuffer, sessionId: number): Promise<void> => {
         return new Promise(async (resolve) => {
             if (!mountedRef.current || !isActiveRef.current || sessionId !== playbackSessionRef.current) { resolve(); return; }
-            const ctx = getSharedAudioContext();
+            const ctx = getGlobalAudioContext();
             
             if (ctx.state === 'suspended') {
                 setIsAutoplayBlocked(true);
@@ -275,10 +263,7 @@ const MobileFeedCard = ({
                 let hostVoice = channel.voiceName || 'Puck';
                 let studentVoice = 'Zephyr';
                 
-                if (providerRef.current === 'openai') { 
-                    hostVoice = 'Alloy'; 
-                    studentVoice = 'Echo'; 
-                }
+                if (provider === 'openai') { hostVoice = 'Alloy'; studentVoice = 'Echo'; }
 
                 if (currentIndex === -1) {
                     const introText = channel.welcomeMessage || channel.description || `Welcome to ${channel.title}.`;
@@ -329,15 +314,14 @@ const MobileFeedCard = ({
                     const part = textParts[i];
                     setTranscript({ speaker: part.speaker, text: part.text });
                     
-                    if (providerRef.current === 'system') {
+                    if (provider === 'system') {
                         await playSystemAudio(part.text, part.voice, sessionId);
                     } else {
-                        const audioResult = await synthesizeSpeech(part.text, part.voice, getSharedAudioContext());
+                        const audioResult = await synthesizeSpeech(part.text, part.voice, getGlobalAudioContext());
                         if (sessionId !== playbackSessionRef.current) return;
                         if (audioResult && audioResult.buffer) {
                             await playAudioBuffer(audioResult.buffer, sessionId);
                         } else {
-                            // High level fallback if neural synthesis fails unexpectedly
                             await playSystemAudio(part.text, part.voice, sessionId);
                         }
                     }
@@ -345,10 +329,7 @@ const MobileFeedCard = ({
                     await new Promise(r => setTimeout(r, 200));
                 }
                 currentIndex++;
-            } catch (e) { 
-                console.error("Sequence Error", e);
-                break; 
-            }
+            } catch (e) { break; }
         }
     };
 
@@ -358,7 +339,6 @@ const MobileFeedCard = ({
         
         const cacheKey = `lecture_${channel.id}_${meta.id}_en`;
         let data = await getCachedLectureScript(cacheKey);
-        
         if (!data) {
             const apiKey = localStorage.getItem('gemini_api_key') || GEMINI_API_KEY || process.env.API_KEY;
             if (apiKey) {
@@ -375,7 +355,6 @@ const MobileFeedCard = ({
                 <img src={channel.imageUrl} alt={channel.title} className="w-full h-full object-cover opacity-60" loading={isActive ? "eager" : "lazy"} />
                 <div className="absolute inset-0 bg-gradient-to-b from-black/30 via-transparent to-black/90"></div>
                 
-                {/* Autoplay Blocked Overlay - Neural Voice requires gesture */}
                 {isAutoplayBlocked && isActive && (
                     <div className="absolute inset-0 z-40 bg-black/50 backdrop-blur-md flex flex-col items-center justify-center animate-fade-in">
                         <button 
@@ -385,7 +364,6 @@ const MobileFeedCard = ({
                             <Play size={40} fill="currentColor" className="ml-1" />
                         </button>
                         <p className="text-white font-bold mt-4 tracking-wide uppercase text-sm">Tap to Start AI Audio</p>
-                        <p className="text-slate-400 text-xs mt-2">Browser blocked automatic playback.</p>
                     </div>
                 )}
 
@@ -454,7 +432,6 @@ export const PodcastFeed: React.FC<PodcastFeedProps> = ({
   channels, onChannelClick, onStartLiveSession, userProfile, globalVoice, onRefresh, onMessageCreator,
   t, currentUser, setChannelToEdit, setIsSettingsModalOpen, onCommentClick, handleVote, filterMode = 'foryou'
 }) => {
-  const [isRefreshing, setIsRefreshing] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const [activeChannelId, setActiveChannelId] = useState<string | null>(null);
   const [isDesktop, setIsDesktop] = useState(() => typeof window !== 'undefined' ? window.innerWidth >= 768 : true);
@@ -484,9 +461,9 @@ export const PodcastFeed: React.FC<PodcastFeedProps> = ({
       if (filterMode === 'following') return [...channels].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
       const scored = channels.map(ch => {
           let score = 0;
-          if (currentUser && ch.ownerId === currentUser.uid) { score += 100000; if (ch.createdAt) score += ch.createdAt / 1000000000000; }
-          if (userProfile?.interests?.length) { if (userProfile.interests.some(i => ch.tags.includes(i))) score += 20; if (userProfile.interests.some(i => ch.title.toLowerCase().includes(i.toLowerCase()))) score += 10; }
-          if (ch.createdAt) { const ageHours = (Date.now() - ch.createdAt) / (1000 * 60 * 60); if (ageHours < 1) score += 50; else if (ageHours < 24) score += 10; }
+          if (currentUser && ch.ownerId === currentUser.uid) score += 100000;
+          if (userProfile?.interests?.length) { if (userProfile.interests.some(i => ch.tags.includes(i))) score += 20; }
+          if (ch.createdAt) { const ageHours = (Date.now() - ch.createdAt) / (1000 * 60 * 60); if (ageHours < 1) score += 50; }
           score += (ch.likes / 100); 
           return { channel: ch, score };
       });
@@ -535,7 +512,6 @@ export const PodcastFeed: React.FC<PodcastFeedProps> = ({
   return (
     <>
     <div ref={containerRef} className="h-[calc(100vh-64px)] w-full bg-black overflow-y-scroll snap-y snap-mandatory scroll-smooth no-scrollbar relative">
-        {isRefreshing && <div className="w-full absolute top-16 left-0 flex justify-center pointer-events-none z-20"><div className="bg-black/50 backdrop-blur-md px-4 py-2 rounded-full text-white text-xs font-bold flex items-center gap-2 border border-white/10"><Loader2 size={14} className="animate-spin" /> Refreshing...</div></div>}
         {recommendedChannels.length === 0 ? (
              <div className="h-full w-full flex flex-col items-center justify-center p-8 text-center space-y-6"><div className="w-20 h-20 bg-slate-900 rounded-full flex items-center justify-center"><Heart size={32} className="text-slate-600" /></div><div><h3 className="text-xl font-bold text-white mb-2">No Podcasts Here Yet</h3><p className="text-slate-400 text-sm max-w-xs mx-auto">{filterMode === 'following' ? "Follow creators or like channels to build your personal feed." : filterMode === 'mine' ? "You haven't created any podcasts yet." : "We couldn't find any podcasts matching your criteria."}</p></div>{filterMode === 'following' && <button onClick={onRefresh} className="px-6 py-3 bg-slate-800 hover:bg-slate-700 text-white font-bold rounded-full transition-colors border border-slate-700">Discover Content</button>}</div>
         ) : (
