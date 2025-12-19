@@ -628,12 +628,17 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
         setDriveToken(token); 
         const rootId = await ensureCodeStudioFolder(token); 
         setDriveRootId(rootId); 
+        
+        // programmatically "click refresh" after connection using local constants
+        // to avoid async state lag
         const files = await listDriveFiles(token, rootId); 
-        // FIX: Use the local rootId constant instead of the state driveRootId which is updated asynchronously.
-        setDriveItems([
+        const initialDriveItems = [
             { id: rootId, name: 'CodeStudio', mimeType: 'application/vnd.google-apps.folder', isLoaded: true }, 
             ...files.map(f => ({ ...f, parentId: rootId, isLoaded: false }))
-        ]); 
+        ];
+        
+        setDriveItems(initialDriveItems); 
+        setActiveTab('drive'); // switch to tab automatically
         showToast("Google Drive Connected", "success"); 
     } catch(e: any) { showToast(e.message, "error"); } 
   };
