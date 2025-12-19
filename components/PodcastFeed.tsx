@@ -47,7 +47,6 @@ const MobileFeedCard = ({
     onChannelClick, 
     onChannelFinish 
 }: any) => {
-    // UNIQUE TOKEN FOR THIS SPECIFIC CARD INSTANCE
     const MY_TOKEN = useMemo(() => `MobileFeed:${channel.id}`, [channel.id]);
     
     const [playbackState, setPlaybackState] = useState<'idle' | 'buffering' | 'playing' | 'error'>('idle');
@@ -56,37 +55,39 @@ const MobileFeedCard = ({
     const [isAutoplayBlocked, setIsAutoplayBlocked] = useState(false);
     
     const [provider, setProvider] = useState<'system' | 'gemini' | 'openai'>(() => {
-        const hasOpenAI = !!(localStorage.getItem('openai_api_key') || OPENAI_API_KEY || process.env.OPENAI_API_KEY);
+        const hasOpenAI = !!(localStorage.getItem('openai_api_key') || process.env.OPENAI_API_KEY);
         if (hasOpenAI) return 'openai';
-        const hasGemini = !!(localStorage.getItem('gemini_api_key') || GEMINI_API_KEY || process.env.API_KEY);
+        const hasGemini = !!(localStorage.getItem('gemini_api_key') || process.env.API_KEY);
         return hasGemini ? 'gemini' : 'system';
     });
     
     const [trackIndex, setTrackIndex] = useState(-1); 
-    const sourceRef = useRef<AudioBufferSourceNode | null>(null);
     const mountedRef = useRef(true);
+    const isLoopingRef = useRef(false);
     const playbackSessionRef = useRef(0); 
     const isActiveRef = useRef(isActive); 
     const preloadedScriptRef = useRef<Promise<GeneratedLecture | null> | null>(null);
+    const activeSourcesRef = useRef<Set<AudioBufferSourceNode>>(new Set());
 
     useEffect(() => { isActiveRef.current = isActive; }, [isActive]);
 
     /**
-     * CLEAN LOCAL STOP
+     * LOCAL STOP
      */
     const stopAudio = useCallback(() => {
-        logAudioEvent(MY_TOKEN, 'STOP', `Session ${playbackSessionRef.current} ending`);
+        logAudioEvent(MY_TOKEN, 'STOP', `Session ${playbackSessionRef.current} stop`);
         playbackSessionRef.current++;
+        isLoopingRef.current = false;
+        
         if (typeof window !== 'undefined' && window.speechSynthesis) {
             window.speechSynthesis.cancel();
         }
-        if (sourceRef.current) {
-            try { 
-                sourceRef.current.stop(); 
-                sourceRef.current.disconnect(); 
-            } catch(e) {}
-            sourceRef.current = null;
-        }
+        
+        activeSourcesRef.current.forEach(source => {
+            try { source.stop(); source.disconnect(); } catch(e) {}
+        });
+        activeSourcesRef.current.clear();
+        
         setPlaybackState('idle');
         setStatusMessage("");
     }, [MY_TOKEN]);
@@ -131,7 +132,7 @@ const MobileFeedCard = ({
             } else {
                 const timer = setTimeout(() => { 
                     if (isActiveRef.current) attemptAutoPlay(); 
-                }, 600); 
+                }, 800); 
                 return () => {
                     clearTimeout(timer);
                     stopAudio();
@@ -145,7 +146,7 @@ const MobileFeedCard = ({
     }, [isActive, channel.id, stopAudio]);
 
     const attemptAutoPlay = async () => {
-        if (!isActiveRef.current || playbackState === 'playing' || playbackState === 'buffering') return;
+        if (!isActiveRef.current || isLoopingRef.current) return;
         
         const ctx = getGlobalAudioContext();
         if (provider !== 'system' && (ctx.state === 'suspended' || (ctx.state as any) === 'interrupted')) {
@@ -170,11 +171,6 @@ const MobileFeedCard = ({
         }
     };
 
-    const handleStop = (e: React.MouseEvent) => {
-        e.stopPropagation();
-        stopAudio();
-    };
-
     const handleTogglePlay = async (e: React.MouseEvent) => {
         e.stopPropagation();
         if (!isActive) { 
@@ -189,7 +185,7 @@ const MobileFeedCard = ({
             return;
         }
 
-        if (playbackState === 'playing' || playbackState === 'buffering') { 
+        if (isLoopingRef.current) { 
             stopAudio(); 
             return; 
         }
@@ -207,19 +203,17 @@ const MobileFeedCard = ({
         
         setProvider(newMode);
         
-        if (playbackState === 'playing' || playbackState === 'buffering') {
+        if (isLoopingRef.current) {
             stopAudio();
             setTimeout(() => { 
                 if (isActiveRef.current) runTrackSequence(trackIndex === -1 ? -1 : trackIndex, playbackSessionRef.current); 
-            }, 100);
+            }, 150);
         }
     };
 
     const playAudioBuffer = (buffer: AudioBuffer, sessionId: number): Promise<void> => {
         return new Promise(async (resolve) => {
-            // STALE CHECK
             if (!mountedRef.current || !isActiveRef.current || sessionId !== playbackSessionRef.current || !isAudioOwner(MY_TOKEN)) { 
-                logAudioEvent(MY_TOKEN, 'ABORT_STALE', "PlayBuffer request rejected");
                 resolve(); 
                 return; 
             }
@@ -234,9 +228,9 @@ const MobileFeedCard = ({
             const source = ctx.createBufferSource();
             source.buffer = buffer;
             source.connect(ctx.destination);
-            sourceRef.current = source;
+            activeSourcesRef.current.add(source);
             source.onended = () => { 
-                if (sourceRef.current === source) sourceRef.current = null; 
+                activeSourcesRef.current.delete(source);
                 resolve(); 
             };
             source.start(0);
@@ -260,7 +254,10 @@ const MobileFeedCard = ({
     };
 
     const runTrackSequence = async (startIndex: number, sessionId: number) => {
+        if (isLoopingRef.current && sessionId !== playbackSessionRef.current) return;
+        isLoopingRef.current = true;
         setPlaybackState('playing');
+        
         let currentIndex = startIndex;
         
         while (mountedRef.current && isActiveRef.current && sessionId === playbackSessionRef.current && isAudioOwner(MY_TOKEN)) {
@@ -281,6 +278,7 @@ const MobileFeedCard = ({
                 } else {
                     if (currentIndex >= totalLessons) { 
                         setPlaybackState('idle'); 
+                        isLoopingRef.current = false;
                         if (onChannelFinish) onChannelFinish(); 
                         break; 
                     }
@@ -298,11 +296,7 @@ const MobileFeedCard = ({
                         lecture = await fetchLectureData(lessonMeta); 
                     }
                     
-                    // RE-VERIFY LOCK after async task
-                    if (sessionId !== playbackSessionRef.current || !isAudioOwner(MY_TOKEN)) {
-                        logAudioEvent(MY_TOKEN, 'ABORT_STALE', "Task finished but component no longer owns lock");
-                        return;
-                    }
+                    if (sessionId !== playbackSessionRef.current || !isAudioOwner(MY_TOKEN)) return;
 
                     if (!lecture || !lecture.sections || lecture.sections.length === 0) { currentIndex++; continue; }
                     
@@ -321,7 +315,6 @@ const MobileFeedCard = ({
                 }
 
                 for (let i = 0; i < textParts.length; i++) {
-                    // Pre-check before each sentence
                     if (sessionId !== playbackSessionRef.current || !isAudioOwner(MY_TOKEN)) return;
                     
                     const part = textParts[i];
@@ -333,11 +326,7 @@ const MobileFeedCard = ({
                         setStatusMessage(`Preparing...`);
                         const audioResult = await synthesizeSpeech(part.text, part.voice, getGlobalAudioContext());
                         
-                        // RE-VERIFY LOCK after async TTS task
-                        if (sessionId !== playbackSessionRef.current || !isAudioOwner(MY_TOKEN)) {
-                            logAudioEvent(MY_TOKEN, 'ABORT_STALE', `TTS ready but lock lost for part ${i}`);
-                            return;
-                        }
+                        if (sessionId !== playbackSessionRef.current || !isAudioOwner(MY_TOKEN)) return;
 
                         if (audioResult && audioResult.buffer) {
                             setStatusMessage("Playing");
@@ -347,11 +336,12 @@ const MobileFeedCard = ({
                         }
                     }
                     if (sessionId !== playbackSessionRef.current || !isAudioOwner(MY_TOKEN)) return;
-                    await new Promise(r => setTimeout(r, 200));
+                    await new Promise(r => setTimeout(r, 250));
                 }
                 currentIndex++;
             } catch (e) { break; }
         }
+        isLoopingRef.current = false;
     };
 
     const fetchLectureData = async (meta: any) => {
@@ -361,7 +351,7 @@ const MobileFeedCard = ({
         const cacheKey = `lecture_${channel.id}_${meta.id}_en`;
         let data = await getCachedLectureScript(cacheKey);
         if (!data) {
-            const apiKey = localStorage.getItem('gemini_api_key') || GEMINI_API_KEY || process.env.API_KEY;
+            const apiKey = localStorage.getItem('gemini_api_key') || process.env.API_KEY;
             if (apiKey) {
                 data = await generateLectureScript(meta.title, `Podcast: ${channel.title}. ${channel.description}`, 'en');
                 if (data) await cacheLectureScript(cacheKey, data);
@@ -371,7 +361,6 @@ const MobileFeedCard = ({
     };
 
     const handleCardClick = (e: React.MouseEvent) => {
-        // SYNCHRONOUS KILL before navigation
         stopAudio();
         stopAllPlatformAudio(`Navigating:${channel.id}`);
         onChannelClick(channel.id);
@@ -439,7 +428,8 @@ const MobileFeedCard = ({
                         {statusMessage === "Preparing..." ? <Loader2 size={20} className="animate-spin" /> : playbackState === 'playing' ? <Pause size={20} fill="currentColor" /> : <Play size={20} fill="currentColor" className="ml-0.5" />}
                     </button>
                     {(playbackState === 'playing' || statusMessage === "Preparing...") && (
-                        <button onClick={handleStop} className="w-10 h-10 rounded-full flex items-center justify-center transition-all shadow-lg bg-slate-800 text-red-400 border border-slate-600 animate-fade-in"><Square size={16} fill="currentColor" /></button>
+                        /* Fix: Changed non-existent handleStop to stopAudio */
+                        <button onClick={stopAudio} className="w-10 h-10 rounded-full flex items-center justify-center transition-all shadow-lg bg-slate-800 text-red-400 border border-slate-600 animate-fade-in"><Square size={16} fill="currentColor" /></button>
                     )}
                     <div onClick={handleCardClick} className="cursor-pointer">
                         <div className="flex items-center gap-1.5 text-white font-bold text-lg drop-shadow-md hover:underline"><User size={14} className="text-indigo-400" /><span>@{channel.author}</span></div>

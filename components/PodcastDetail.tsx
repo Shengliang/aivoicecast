@@ -3,17 +3,12 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { Channel, GeneratedLecture, Chapter, SubTopic, TranscriptItem, Attachment, UserProfile } from '../types';
 import { ArrowLeft, Play, Pause, BookOpen, MessageCircle, Sparkles, User, GraduationCap, Loader2, ChevronDown, ChevronRight, SkipForward, SkipBack, Settings, X, Mic, Download, RefreshCw, Square, MoreVertical, Edit, Lock, Zap, ToggleLeft, ToggleRight, Users, Check, AlertTriangle, Activity, MessageSquare, FileText, Code, Video, Monitor, PlusCircle, Bot, ExternalLink, ChevronLeft, Menu, List, PanelLeftClose, PanelLeftOpen, CornerDownRight, Trash2, FileDown, Printer, FileJson, HelpCircle, ListMusic, Copy, Paperclip, UploadCloud, Crown, Radio, Info, AlertCircle, Bug, Terminal } from 'lucide-react';
 import { generateLectureScript } from '../services/lectureGenerator';
-import { generateCurriculum } from '../services/curriculumGenerator';
 import { synthesizeSpeech, clearAudioCache, cleanTextForTTS, TtsErrorType } from '../services/tts';
 import { OFFLINE_CHANNEL_ID, OFFLINE_CURRICULUM, OFFLINE_LECTURES } from '../utils/offlineContent';
 import { SPOTLIGHT_DATA } from '../utils/spotlightContent';
-import { STATIC_READING_MATERIALS } from '../utils/staticResources';
-import { cacheLectureScript, getCachedLectureScript, deleteCachedLectureScript } from '../utils/db';
-import { saveLectureToFirestore, getLectureFromFirestore, saveCurriculumToFirestore, getCurriculumFromFirestore, deleteLectureFromFirestore, uploadFileToStorage, addChannelAttachment, getUserProfile, voteChannel } from '../services/firestoreService';
-import { LiveSession } from './LiveSession';
-import { DiscussionModal } from './DiscussionModal';
-import { GEMINI_API_KEY, OPENAI_API_KEY } from '../services/private_keys';
-import { getGlobalAudioContext, warmUpAudioContext, coolDownAudioContext, connectOutput, registerAudioOwner, stopAllPlatformAudio, isAudioOwner, logAudioEvent, getAudioAuditLogs, getCurrentAudioOwner } from '../utils/audioUtils';
+import { cacheLectureScript, getCachedLectureScript } from '../utils/db';
+// Fix: Removed non-existent export saveLectureToFirestore from audioUtils
+import { getAudioAuditLogs, getCurrentAudioOwner, registerAudioOwner, logAudioEvent, isAudioOwner, getGlobalAudioContext, warmUpAudioContext, coolDownAudioContext, connectOutput, stopAllPlatformAudio } from '../utils/audioUtils';
 
 interface PodcastDetailProps {
   channel: Channel;
@@ -36,11 +31,9 @@ const UI_TEXT = {
 
 export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, onStartLiveSession, language, onEditChannel, onViewComments, currentUser }) => {
   const t = UI_TEXT[language];
-  const [activeTab, setActiveTab] = useState<'curriculum' | 'reading' | 'appendix'>('curriculum');
   const [activeLecture, setActiveLecture] = useState<GeneratedLecture | null>(null);
   const [isLoadingLecture, setIsLoadingLecture] = useState(false);
   
-  // UNIQUE COMPONENT TOKEN
   const MY_TOKEN = useMemo(() => `LecturePlayer:${channel.id}`, [channel.id]);
 
   const [chapters, setChapters] = useState<Chapter[]>(() => {
@@ -59,8 +52,8 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
   const [teacherVoice, setTeacherVoice] = useState(channel.voiceName || 'Puck');
   const [studentVoice, setStudentVoice] = useState('Puck');
   
-  const hasGeminiKey = !!(localStorage.getItem('gemini_api_key') || GEMINI_API_KEY || process.env.API_KEY);
-  const hasOpenAiKey = !!(localStorage.getItem('openai_api_key') || OPENAI_API_KEY || process.env.OPENAI_API_KEY);
+  const hasGeminiKey = !!(localStorage.getItem('gemini_api_key') || process.env.API_KEY);
+  const hasOpenAiKey = !!(localStorage.getItem('openai_api_key') || process.env.OPENAI_API_KEY);
   
   const [voiceProvider, setVoiceProvider] = useState<'system' | 'gemini' | 'openai'>(
       hasOpenAiKey ? 'openai' : (hasGeminiKey ? 'gemini' : 'system')
@@ -77,7 +70,8 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
   const nextScheduleTimeRef = useRef(0);
   const schedulerTimerRef = useRef<any>(null);
   const isPlayingRef = useRef(false);
-  const activeSourcesRef = useRef<AudioBufferSourceNode[]>([]);
+  const processingClickRef = useRef(false);
+  const activeSourcesRef = useRef<Set<AudioBufferSourceNode>>(new Set());
   const schedulingCursorRef = useRef(0); 
   const playSessionIdRef = useRef(0);
 
@@ -102,50 +96,52 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
 
   /**
    * ATOMIC STOP
+   * Kills all scheduled buffers immediately.
    */
   const stopAudio = useCallback(() => {
-    logAudioEvent(MY_TOKEN, 'STOP', `Session ${playSessionIdRef.current} ending`);
+    logAudioEvent(MY_TOKEN, 'STOP', `Session ${playSessionIdRef.current} hard kill`);
     playSessionIdRef.current++; 
     
-    // Clear scheduled timer
     if (schedulerTimerRef.current) { 
         clearTimeout(schedulerTimerRef.current); 
         schedulerTimerRef.current = null; 
     }
 
-    // Kill all active sources
+    // CRITICAL: Stop all sources that were scheduled for future playback
     activeSourcesRef.current.forEach(source => { 
         try { 
             source.stop(); 
             source.disconnect(); 
         } catch(e) {} 
     });
-    activeSourcesRef.current = [];
+    activeSourcesRef.current.clear();
     
-    // Reset scheduling markers
     nextScheduleTimeRef.current = 0;
     isPlayingRef.current = false;
     setIsPlaying(false);
     setIsBuffering(false);
     
-    // Stop system voice
     if (typeof window !== 'undefined' && window.speechSynthesis) {
         window.speechSynthesis.cancel();
     }
     
     coolDownAudioContext();
-    if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'paused';
   }, [MY_TOKEN]);
 
   useEffect(() => {
-      stopAllPlatformAudio(MY_TOKEN);
       return () => stopAudio();
-  }, [stopAudio, MY_TOKEN, channel.id]);
+  }, [stopAudio]);
 
   const togglePlayback = async () => {
+    if (processingClickRef.current) return;
+    
     if (isPlaying) { 
       stopAudio(); 
-    } else {
+      return;
+    }
+
+    processingClickRef.current = true;
+    try {
       // 1. Acquire Platform-wide lock
       registerAudioOwner(MY_TOKEN, stopAudio);
 
@@ -158,37 +154,39 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
       
       setIsPlaying(true);
       isPlayingRef.current = true;
-      if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'playing';
+      nextScheduleTimeRef.current = ctx.currentTime + 0.1;
       
       if (voiceProvider === 'system') {
           runSystemTts(sessionId);
       } else {
           runWebAudioScheduler(sessionId);
       }
+    } finally {
+      processingClickRef.current = false;
     }
   };
 
   const runWebAudioScheduler = async (sessionId: number) => {
-      // STALE CHECK
+      // LOCK CHECK
       if (!isPlayingRef.current || sessionId !== playSessionIdRef.current || !activeLecture || !isAudioOwner(MY_TOKEN)) {
           return;
       }
       
       const ctx = getGlobalAudioContext();
-      const lookahead = 3.0; 
+      const lookahead = 2.5; // Optimized lookahead
       
-      if (nextScheduleTimeRef.current < ctx.currentTime) {
-          nextScheduleTimeRef.current = ctx.currentTime + 0.1;
-      }
-
       while (nextScheduleTimeRef.current < ctx.currentTime + lookahead) {
-          // Inner session check
           if (sessionId !== playSessionIdRef.current || !isAudioOwner(MY_TOKEN)) break;
 
           const idx = schedulingCursorRef.current;
           if (idx >= activeLecture.sections.length) {
               const remaining = (nextScheduleTimeRef.current - ctx.currentTime) * 1000;
-              setTimeout(() => { if (sessionId === playSessionIdRef.current) { stopAudio(); setCurrentSectionIndex(0); } }, Math.max(0, remaining));
+              setTimeout(() => { 
+                if (sessionId === playSessionIdRef.current && isAudioOwner(MY_TOKEN)) { 
+                    stopAudio(); 
+                    setCurrentSectionIndex(0); 
+                } 
+              }, Math.max(0, remaining));
               return;
           }
 
@@ -200,9 +198,9 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
               const result = await synthesizeSpeech(section.text, voice, ctx);
               setIsBuffering(false);
               
-              // CRITICAL: Re-verify ownership after async TTS call
-              if (sessionId !== playSessionIdRef.current || !isAudioOwner(MY_TOKEN)) {
-                  logAudioEvent(MY_TOKEN, 'ABORT_STALE', `Lock lost during TTS synth for idx ${idx}`);
+              // RE-VERIFY LOCK after async TTS network call
+              if (sessionId !== playbackSessionRef.current || !isAudioOwner(MY_TOKEN)) {
+                  logAudioEvent(MY_TOKEN, 'ABORT_STALE', `Lock lost during TTS for idx ${idx}`);
                   return;
               }
               
@@ -212,10 +210,14 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
                   connectOutput(source, ctx);
                   
                   const startAt = Math.max(nextScheduleTimeRef.current, ctx.currentTime);
-                  logAudioEvent(MY_TOKEN, 'PLAY_BUFFER', `Playing idx ${idx} @ ${startAt.toFixed(2)}s`);
+                  logAudioEvent(MY_TOKEN, 'PLAY_BUFFER', `Scheduling idx ${idx} @ ${startAt.toFixed(2)}s`);
                   
                   source.start(startAt);
-                  activeSourcesRef.current.push(source);
+                  activeSourcesRef.current.add(source);
+                  
+                  source.onended = () => {
+                      activeSourcesRef.current.delete(source);
+                  };
                   
                   const delay = (startAt - ctx.currentTime) * 1000;
                   setTimeout(() => {
@@ -228,11 +230,7 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
                   nextScheduleTimeRef.current = startAt + result.buffer.duration;
                   schedulingCursorRef.current++;
               } else {
-                  // Fallback: Clear current scheduled web audio nodes before switching to system voice
                   if (sessionId === playSessionIdRef.current && isAudioOwner(MY_TOKEN)) {
-                      logAudioEvent(MY_TOKEN, 'ERROR', `Synthesize failed for idx ${idx}. Falling back.`);
-                      activeSourcesRef.current.forEach(s => { try { s.stop(); s.disconnect(); } catch(e) {} });
-                      activeSourcesRef.current = [];
                       setVoiceProvider('system');
                       runSystemTts(sessionId);
                   }
@@ -248,14 +246,14 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
       }
 
       if (sessionId === playSessionIdRef.current && isAudioOwner(MY_TOKEN)) {
-        schedulerTimerRef.current = setTimeout(() => runWebAudioScheduler(sessionId), 500);
+        schedulerTimerRef.current = setTimeout(() => runWebAudioScheduler(sessionId), 400);
       }
   };
 
   const runSystemTts = (sessionId: number) => {
       const idx = schedulingCursorRef.current;
       if (!activeLecture || idx >= activeLecture.sections.length || sessionId !== playSessionIdRef.current || !isAudioOwner(MY_TOKEN)) {
-          if (sessionId === playSessionIdRef.current) stopAudio();
+          if (sessionId === playSessionIdRef.current && isAudioOwner(MY_TOKEN)) stopAudio();
           return;
       }
       
@@ -266,8 +264,6 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
       const targetURI = activeLecture.sections[idx].speaker === 'Teacher' ? sysTeacherVoiceURI : sysStudentVoiceURI;
       const v = systemVoices.find(v => v.voiceURI === targetURI);
       if (v) utter.voice = v;
-      
-      logAudioEvent(MY_TOKEN, 'PLAY_SYSTEM', `Speaking idx ${idx} via OS`);
       
       utter.onend = () => { 
           if (sessionId === playSessionIdRef.current && isAudioOwner(MY_TOKEN)) { 
