@@ -1,5 +1,5 @@
 
-// [FORCE-SYNC-v3.78.0] Timestamp: 2025-12-16T10:00:00.000Z
+// [FORCE-SYNC-v3.78.1] Timestamp: 2025-12-16T11:00:00.000Z
 import { GoogleGenAI, Modality } from '@google/genai';
 import { base64ToBytes, decodeAudioData } from '../utils/audioUtils';
 import { getCachedAudioBuffer, cacheAudioBuffer } from '../utils/db';
@@ -111,9 +111,9 @@ async function synthesizeOpenAI(text: string, voice: string, apiKey: string): Pr
 async function synthesizeGemini(text: string, voice: string): Promise<ArrayBuffer> {
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     
-    // Create a timeout promise that rejects after 25 seconds
+    // Create a timeout promise that rejects after 28 seconds (Gemini API limit is usually 30s)
     const timeoutPromise = new Promise<never>((_, reject) => 
-        setTimeout(() => reject(new Error("Gemini TTS Timeout (25s)")), 25000)
+        setTimeout(() => reject(new Error("Gemini TTS Timeout")), 28000)
     );
 
     const apiCallPromise = ai.models.generateContent({
@@ -167,7 +167,7 @@ export async function synthesizeSpeech(
             audioBuffer = await audioContext.decodeAudioData(cachedArrayBuffer.slice(0));
         } else {
             // Gemini = PCM = Custom Manual Decode
-            audioBuffer = await decodeAudioData(new Uint8Array(cachedArrayBuffer), audioContext);
+            audioBuffer = await decodeAudioData(new Uint8Array(cachedArrayBuffer), audioContext, 24000);
         }
 
         memoryCache.set(cacheKey, audioBuffer);
@@ -205,7 +205,7 @@ export async function synthesizeSpeech(
           audioBuffer = await audioContext.decodeAudioData(rawBuffer.slice(0));
       } else {
           // Gemini returns Raw PCM -> Use manual decode
-          audioBuffer = await decodeAudioData(new Uint8Array(rawBuffer), audioContext);
+          audioBuffer = await decodeAudioData(new Uint8Array(rawBuffer), audioContext, 24000);
       }
       
       // Save to Memory Cache

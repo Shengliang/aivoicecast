@@ -11,6 +11,7 @@ import { getCachedLectureScript, cacheLectureScript } from '../utils/db';
 import { GEMINI_API_KEY, OPENAI_API_KEY } from '../services/private_keys';
 import { SPOTLIGHT_DATA } from '../utils/spotlightContent';
 import { OFFLINE_CHANNEL_ID, OFFLINE_CURRICULUM, OFFLINE_LECTURES } from '../utils/offlineContent';
+import { warmUpAudioContext } from '../utils/audioUtils';
 
 interface PodcastFeedProps {
   channels: Channel[];
@@ -37,7 +38,7 @@ let globalStopPlayback: (() => void) | null = null;
 
 const getSharedAudioContext = () => {
     if (!sharedAudioContext || sharedAudioContext.state === 'closed') {
-        sharedAudioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+        sharedAudioContext = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
     }
     return sharedAudioContext;
 };
@@ -123,6 +124,7 @@ const MobileFeedCard = ({
             setTranscript({ speaker: 'Host', text: introText });
             setTrackIndex(-1);
             setStatusMessage("");
+            
             const timer = setTimeout(() => { attemptAutoPlay(); }, 600); 
             return () => {
                 clearTimeout(timer);
@@ -134,15 +136,18 @@ const MobileFeedCard = ({
             setPlaybackState('idle');
             playbackSessionRef.current++;
             preloadedScriptRef.current = null;
+            setIsAutoplayBlocked(false);
         }
     }, [isActive, channel.id]);
 
     const attemptAutoPlay = async () => {
         if (playbackState === 'playing' || playbackState === 'buffering') return;
+        
         const ctx = getSharedAudioContext();
         
-        // DETECTION: Browser blocks autoplay if context is suspended and can't be resumed without gesture
-        if (ctx.state === 'suspended') {
+        // If non-system voice is used, check if the context is blocked
+        // Fix: Use 'as any' for 'interrupted' state check to avoid type overlap error in TypeScript
+        if (provider !== 'system' && (ctx.state === 'suspended' || (ctx.state as any) === 'interrupted')) {
             setIsAutoplayBlocked(true);
             return;
         }
@@ -153,16 +158,21 @@ const MobileFeedCard = ({
         runTrackSequence(-1, sessionId);
     };
 
-    const handleEnableAudio = async () => {
+    const handleEnableAudio = async (e: React.MouseEvent) => {
+        e.stopPropagation();
         const ctx = getSharedAudioContext();
         try {
-            await ctx.resume();
+            // CRITICAL: Explicitly warm up context on user gesture
+            await warmUpAudioContext(ctx);
             setIsAutoplayBlocked(false);
+            
             if (globalStopPlayback && globalStopPlayback !== stopAudio) globalStopPlayback();
             globalStopPlayback = stopAudio;
-            runTrackSequence(-1, ++playbackSessionRef.current);
-        } catch(e) {
-            console.error("Audio resume failed", e);
+            
+            const sessionId = ++playbackSessionRef.current;
+            runTrackSequence(-1, sessionId);
+        } catch(err) {
+            console.error("Audio resume failed", err);
         }
     };
 
@@ -180,14 +190,22 @@ const MobileFeedCard = ({
         if (!isActive) { onChannelClick(channel.id); if (globalStopPlayback) globalStopPlayback(); return; }
         
         const ctx = getSharedAudioContext();
-        if (ctx.state === 'suspended') {
-            handleEnableAudio();
+        if (ctx.state === 'suspended' || isAutoplayBlocked) {
+            handleEnableAudio(e);
             return;
         }
 
-        if (playbackState === 'playing' || playbackState === 'buffering') { stopAudio(); playbackSessionRef.current++; setPlaybackState('idle'); setStatusMessage("Paused"); return; }
+        if (playbackState === 'playing' || playbackState === 'buffering') { 
+            stopAudio(); 
+            playbackSessionRef.current++; 
+            setPlaybackState('idle'); 
+            setStatusMessage("Paused"); 
+            return; 
+        }
+        
         if (globalStopPlayback && globalStopPlayback !== stopAudio) globalStopPlayback();
         globalStopPlayback = stopAudio;
+        
         const sessionId = ++playbackSessionRef.current;
         runTrackSequence(trackIndex >= totalLessons ? -1 : trackIndex, sessionId);
     };
@@ -198,11 +216,16 @@ const MobileFeedCard = ({
         if (provider === 'gemini') newMode = 'openai';
         else if (provider === 'openai') newMode = 'system';
         else newMode = 'gemini';
+        
         setProvider(newMode);
+        
+        // Reset sequence with new provider
         if (playbackState === 'playing' || playbackState === 'buffering') {
             stopAudio();
             playbackSessionRef.current++;
-            setTimeout(() => { runTrackSequence(trackIndex === -1 ? -1 : trackIndex, ++playbackSessionRef.current); }, 100);
+            setTimeout(() => { 
+                runTrackSequence(trackIndex === -1 ? -1 : trackIndex, ++playbackSessionRef.current); 
+            }, 100);
         }
     };
 
@@ -211,7 +234,6 @@ const MobileFeedCard = ({
             if (!mountedRef.current || !isActiveRef.current || sessionId !== playbackSessionRef.current) { resolve(); return; }
             const ctx = getSharedAudioContext();
             
-            // Re-check context state just before playing
             if (ctx.state === 'suspended') {
                 setIsAutoplayBlocked(true);
                 resolve();
@@ -245,13 +267,18 @@ const MobileFeedCard = ({
     const runTrackSequence = async (startIndex: number, sessionId: number) => {
         setPlaybackState('playing');
         let currentIndex = startIndex;
+        
         while (mountedRef.current && isActiveRef.current && sessionId === playbackSessionRef.current) {
             try {
                 setTrackIndex(currentIndex); 
                 let textParts: {speaker: string, text: string, voice: string}[] = [];
                 let hostVoice = channel.voiceName || 'Puck';
                 let studentVoice = 'Zephyr';
-                if (providerRef.current === 'openai') { hostVoice = 'Alloy'; studentVoice = 'Echo'; }
+                
+                if (providerRef.current === 'openai') { 
+                    hostVoice = 'Alloy'; 
+                    studentVoice = 'Echo'; 
+                }
 
                 if (currentIndex === -1) {
                     const introText = channel.welcomeMessage || channel.description || `Welcome to ${channel.title}.`;
@@ -260,27 +287,48 @@ const MobileFeedCard = ({
                     textParts = [{ speaker: 'Host', text: introText, voice: hostVoice }];
                     if (flatCurriculum.length > 0) preloadedScriptRef.current = fetchLectureData(flatCurriculum[0]);
                 } else {
-                    if (currentIndex >= flatCurriculum.length) { setStatusMessage("Finished"); setPlaybackState('idle'); if (onChannelFinish) onChannelFinish(); break; }
+                    if (currentIndex >= flatCurriculum.length) { 
+                        setStatusMessage("Finished"); 
+                        setPlaybackState('idle'); 
+                        if (onChannelFinish) onChannelFinish(); 
+                        break; 
+                    }
+                    
                     const lessonMeta = flatCurriculum[currentIndex];
                     let lecture = null;
-                    if (preloadedScriptRef.current) { setStatusMessage(`Loading...`); lecture = await preloadedScriptRef.current; preloadedScriptRef.current = null; }
-                    else { setStatusMessage(`Generating...`); setPlaybackState('buffering'); lecture = await fetchLectureData(lessonMeta); }
+                    
+                    if (preloadedScriptRef.current) { 
+                        setStatusMessage(`Loading...`); 
+                        lecture = await preloadedScriptRef.current; 
+                        preloadedScriptRef.current = null; 
+                    } else { 
+                        setStatusMessage(`Generating...`); 
+                        setPlaybackState('buffering'); 
+                        lecture = await fetchLectureData(lessonMeta); 
+                    }
+                    
                     if (sessionId !== playbackSessionRef.current) return;
                     if (!lecture || !lecture.sections || lecture.sections.length === 0) { currentIndex++; continue; }
+                    
                     setPlaybackState('playing');
                     setStatusMessage("Playing");
+                    
                     textParts = lecture.sections.map((s: any) => ({
                         speaker: s.speaker === 'Teacher' ? lecture.professorName : lecture.studentName,
                         text: s.text,
                         voice: s.speaker === 'Teacher' ? hostVoice : studentVoice
                     }));
-                    if (currentIndex + 1 < flatCurriculum.length) preloadedScriptRef.current = fetchLectureData(flatCurriculum[currentIndex + 1]);
+                    
+                    if (currentIndex + 1 < flatCurriculum.length) {
+                        preloadedScriptRef.current = fetchLectureData(flatCurriculum[currentIndex + 1]);
+                    }
                 }
 
                 for (let i = 0; i < textParts.length; i++) {
                     if (sessionId !== playbackSessionRef.current) return;
                     const part = textParts[i];
                     setTranscript({ speaker: part.speaker, text: part.text });
+                    
                     if (providerRef.current === 'system') {
                         await playSystemAudio(part.text, part.voice, sessionId);
                     } else {
@@ -289,6 +337,7 @@ const MobileFeedCard = ({
                         if (audioResult && audioResult.buffer) {
                             await playAudioBuffer(audioResult.buffer, sessionId);
                         } else {
+                            // High level fallback if neural synthesis fails unexpectedly
                             await playSystemAudio(part.text, part.voice, sessionId);
                         }
                     }
@@ -296,15 +345,20 @@ const MobileFeedCard = ({
                     await new Promise(r => setTimeout(r, 200));
                 }
                 currentIndex++;
-            } catch (e) { break; }
+            } catch (e) { 
+                console.error("Sequence Error", e);
+                break; 
+            }
         }
     };
 
     const fetchLectureData = async (meta: any) => {
         if (OFFLINE_LECTURES[meta.title]) return OFFLINE_LECTURES[meta.title];
         if (SPOTLIGHT_DATA[channel.id]?.lectures?.[meta.title]) return SPOTLIGHT_DATA[channel.id].lectures[meta.title];
+        
         const cacheKey = `lecture_${channel.id}_${meta.id}_en`;
         let data = await getCachedLectureScript(cacheKey);
+        
         if (!data) {
             const apiKey = localStorage.getItem('gemini_api_key') || GEMINI_API_KEY || process.env.API_KEY;
             if (apiKey) {
@@ -321,9 +375,9 @@ const MobileFeedCard = ({
                 <img src={channel.imageUrl} alt={channel.title} className="w-full h-full object-cover opacity-60" loading={isActive ? "eager" : "lazy"} />
                 <div className="absolute inset-0 bg-gradient-to-b from-black/30 via-transparent to-black/90"></div>
                 
-                {/* Autoplay Blocked Overlay */}
+                {/* Autoplay Blocked Overlay - Neural Voice requires gesture */}
                 {isAutoplayBlocked && isActive && (
-                    <div className="absolute inset-0 z-40 bg-black/40 backdrop-blur-sm flex flex-col items-center justify-center animate-fade-in">
+                    <div className="absolute inset-0 z-40 bg-black/50 backdrop-blur-md flex flex-col items-center justify-center animate-fade-in">
                         <button 
                             onClick={handleEnableAudio}
                             className="w-20 h-20 bg-indigo-600 hover:bg-indigo-500 text-white rounded-full flex items-center justify-center shadow-2xl transition-transform active:scale-95"
@@ -331,6 +385,7 @@ const MobileFeedCard = ({
                             <Play size={40} fill="currentColor" className="ml-1" />
                         </button>
                         <p className="text-white font-bold mt-4 tracking-wide uppercase text-sm">Tap to Start AI Audio</p>
+                        <p className="text-slate-400 text-xs mt-2">Browser blocked automatic playback.</p>
                     </div>
                 )}
 

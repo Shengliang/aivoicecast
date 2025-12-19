@@ -39,6 +39,22 @@ export async function decodeAudioData(
   return buffer;
 }
 
+/**
+ * Plays a short silent sound to "unlock" the AudioContext on mobile browsers.
+ * Must be called inside a user gesture (click/touch).
+ */
+export async function warmUpAudioContext(ctx: AudioContext) {
+    if (ctx.state === 'suspended') {
+        await ctx.resume();
+    }
+    // Play a tiny silent buffer
+    const buffer = ctx.createBuffer(1, 1, 22050);
+    const source = ctx.createBufferSource();
+    source.buffer = buffer;
+    source.connect(ctx.destination);
+    source.start(0);
+}
+
 export function createPcmBlob(data: Float32Array): GeminiBlob {
   const l = data.length;
   const int16 = new Int16Array(l);

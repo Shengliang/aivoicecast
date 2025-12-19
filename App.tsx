@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useMemo } from 'react';
 import { Channel, ViewState, UserProfile, TranscriptItem, SubscriptionTier } from './types';
 import { 
@@ -55,8 +56,9 @@ import {
 import { getUserChannels, saveUserChannel, deleteUserChannel } from './utils/db';
 import { HANDCRAFTED_CHANNELS, CATEGORY_STYLES, TOPIC_CATEGORIES } from './utils/initialData';
 import { OFFLINE_CHANNEL_ID } from './utils/offlineContent';
+import { warmUpAudioContext } from './utils/audioUtils';
 
-const APP_VERSION = "v3.80.3"; 
+const APP_VERSION = "v3.80.4"; 
 
 const UI_TEXT = {
   en: {
@@ -212,10 +214,29 @@ const App: React.FC = () => {
     { id: 'docs', label: t.docs, icon: FileText, action: () => { setViewState('directory'); setActiveTab('docs'); }, color: 'text-gray-400' },
   ];
 
+  // Global Audio Unlock Listener for Mobile Autoplay
+  useEffect(() => {
+      const handleFirstInteraction = () => {
+          const audioCtx = (window as any).sharedAudioContext;
+          if (audioCtx) {
+              warmUpAudioContext(audioCtx);
+          }
+          // Remove listener after first successful interaction
+          window.removeEventListener('touchstart', handleFirstInteraction);
+          window.removeEventListener('click', handleFirstInteraction);
+      };
+
+      window.addEventListener('touchstart', handleFirstInteraction);
+      window.addEventListener('click', handleFirstInteraction);
+      
+      return () => {
+          window.removeEventListener('touchstart', handleFirstInteraction);
+          window.removeEventListener('click', handleFirstInteraction);
+      };
+  }, []);
+
   // URL Sync Effect: Mount (Read from URL)
   useEffect(() => {
-    // FIX: Removed manual API Key detection as it must be obtained exclusively from process.env.API_KEY.
-
     const params = new URLSearchParams(window.location.search);
     const session = params.get('session');
     const keyParam = params.get('key'); 
