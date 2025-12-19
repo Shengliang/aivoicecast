@@ -610,6 +610,8 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
       }
   };
 
+  const handleCloudToggle = async (node: TreeNode) => { const isExpanded = expandedFolders[node.id]; setExpandedFolders(prev => ({ ...prev, [node.id]: !isExpanded })); if (!isExpanded) { setLoadingFolders(prev => ({ ...prev, [node.id]: true })); try { await refreshCloudPath(node.id); } catch(e) { console.error(e); } finally { setLoadingFolders(prev => ({ ...prev, [node.id]: false })); } } };
+  
   const handleExplorerSelect = (node: TreeNode) => {
       setSelectedExplorerNode(node);
       if (node.type === 'file') {
@@ -617,11 +619,16 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
           else if (activeTab === 'drive') handleDriveSelect(node);
           else if (activeTab === 'github') handleWorkspaceSelect(node);
           else updateActiveFileAndSync(node.data);
+      } else {
+          // Fix: When clicking a folder name, toggle the folder expansion instead of just selecting it.
+          if (activeTab === 'cloud') handleCloudToggle(node);
+          else if (activeTab === 'drive') handleDriveToggle(node);
+          else if (activeTab === 'github' || activeTab === 'session') {
+              setExpandedFolders(prev => ({...prev, [node.id]: !expandedFolders[node.id]}));
+          }
       }
   };
 
-  const handleCloudToggle = async (node: TreeNode) => { const isExpanded = expandedFolders[node.id]; setExpandedFolders(prev => ({ ...prev, [node.id]: !isExpanded })); if (!isExpanded) { setLoadingFolders(prev => ({ ...prev, [node.id]: true })); try { await refreshCloudPath(node.id); } catch(e) { console.error(e); } finally { setLoadingFolders(prev => ({ ...prev, [node.id]: false })); } } };
-  
   const handleConnectDrive = async () => { 
     try { 
         const token = await connectGoogleDrive(); 
@@ -881,7 +888,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
                   )}
                   {activeTab === 'drive' && (
                       <div className="p-2">
-                          {!driveToken ? <div className="p-4 text-center"><button onClick={handleConnectDrive} className="px-4 py-2 bg-slate-800 text-white text-xs font-bold rounded-lg border border-slate-700 hover:bg-slate-700">Connect Drive</button></div> : driveTree.map(node => <FileTreeItem key={node.id} node={node} depth={0} activeId={selectedExplorerNode?.id} onSelect={handleDriveSelect} onToggle={handleDriveToggle} onDelete={handleDeleteItem} expandedIds={expandedFolders} loadingIds={loadingFolders} onDragStart={handleDragStart} onDrop={handleDrop}/>)}
+                          {!driveToken ? <div className="p-4 text-center"><button onClick={handleConnectDrive} className="px-4 py-2 bg-slate-800 text-white text-xs font-bold rounded-lg border border-slate-700 hover:bg-slate-700">Connect Drive</button></div> : driveTree.map(node => <FileTreeItem key={node.id} node={node} depth={0} activeId={selectedExplorerNode?.id} onSelect={handleExplorerSelect} onToggle={handleDriveToggle} onDelete={handleDeleteItem} expandedIds={expandedFolders} loadingIds={loadingFolders} onDragStart={handleDragStart} onDrop={handleDrop}/>)}
                       </div>
                   )}
                   {activeTab === 'github' && (
