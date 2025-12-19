@@ -9,11 +9,11 @@ import { OFFLINE_CHANNEL_ID, OFFLINE_CURRICULUM, OFFLINE_LECTURES } from '../uti
 import { SPOTLIGHT_DATA } from '../utils/spotlightContent';
 import { STATIC_READING_MATERIALS } from '../utils/staticResources';
 import { cacheLectureScript, getCachedLectureScript, deleteCachedLectureScript } from '../utils/db';
-import { saveLectureToFirestore, getLectureFromFirestore, saveCurriculumToFirestore, getCurriculumFromFirestore, deleteLectureFromFirestore, uploadFileToStorage, addChannelAttachment, getUserProfile } from '../services/firestoreService';
+import { saveLectureToFirestore, getLectureFromFirestore, saveCurriculumToFirestore, getCurriculumFromFirestore, deleteLectureFromFirestore, uploadFileToStorage, addChannelAttachment, getUserProfile, voteChannel } from '../services/firestoreService';
 import { LiveSession } from './LiveSession';
 import { DiscussionModal } from './DiscussionModal';
 import { GEMINI_API_KEY, OPENAI_API_KEY } from '../services/private_keys';
-import { getGlobalAudioContext, warmUpAudioContext, coolDownAudioContext, connectOutput, setGlobalStopPlayback, globalStopPlayback } from '../utils/audioUtils';
+import { getGlobalAudioContext, warmUpAudioContext, coolDownAudioContext, connectOutput, registerAudioOwner, stopAllPlatformAudio } from '../utils/audioUtils';
 
 interface PodcastDetailProps {
   channel: Channel;
@@ -71,22 +71,31 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
   const schedulingCursorRef = useRef(0); 
   const playSessionIdRef = useRef(0);
 
+  /**
+   * ATOMIC STOP
+   * Ensures everything related to this component is dead.
+   */
   const stopAudio = useCallback(() => {
-    // 1. Increment play session to kill any async while loops/timeouts instantly
+    // 1. Kill the loop immediately via session ID
     playSessionIdRef.current++; 
     
-    // 2. Kill browsers native synthesis
-    window.speechSynthesis.cancel();
+    // 2. Clear native synthesis
+    if (window.speechSynthesis) window.speechSynthesis.cancel();
     
-    // 3. Kill Web Audio Graph nodes
-    activeSourcesRef.current.forEach(source => { try { source.stop(); } catch(e) {} });
+    // 3. Clear Web Audio Nodes
+    activeSourcesRef.current.forEach(source => {
+        try { source.stop(); source.disconnect(); } catch(e) {}
+    });
     activeSourcesRef.current = [];
     
     // 4. Reset cursors
     nextScheduleTimeRef.current = 0;
-    if (schedulerTimerRef.current) { clearTimeout(schedulerTimerRef.current); schedulerTimerRef.current = null; }
+    if (schedulerTimerRef.current) {
+        clearTimeout(schedulerTimerRef.current);
+        schedulerTimerRef.current = null;
+    }
     
-    // 5. Update UI state
+    // 5. Update State
     isPlayingRef.current = false;
     setIsPlaying(false);
     setIsBuffering(false);
@@ -164,19 +173,12 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
     if (isPlaying) { 
       stopAudio(); 
     } else {
-      // 1. CLEAR GLOBAL AUDIO FIRST
-      setGlobalStopPlayback(stopAudio);
-
-      // 2. CLEAR LOCAL AUDIO AGAIN (Strictly)
-      stopAudio();
-
-      // 3. Clear scheduled speech
-      window.speechSynthesis.cancel();
+      // 1. REGISTER AS AUDIO OWNER (Kills everything else platform-wide)
+      registerAudioOwner(stopAudio);
 
       const ctx = getGlobalAudioContext();
       await warmUpAudioContext(ctx);
       
-      // 4. Start new session
       const sessionId = ++playSessionIdRef.current;
       const startIdx = currentSectionIndex && currentSectionIndex < (activeLecture?.sections.length || 0) ? currentSectionIndex : 0;
       schedulingCursorRef.current = startIdx;
@@ -291,7 +293,6 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
   };
 
   const handleTopicClick = async (topicTitle: string, subTopicId?: string) => {
-    // Kill everything immediately
     stopAudio();
 
     setActiveSubTopicId(subTopicId || null);

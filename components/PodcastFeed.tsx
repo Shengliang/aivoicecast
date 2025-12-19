@@ -11,7 +11,7 @@ import { getCachedLectureScript, cacheLectureScript, getUserChannels } from '../
 import { GEMINI_API_KEY, OPENAI_API_KEY } from '../services/private_keys';
 import { SPOTLIGHT_DATA } from '../utils/spotlightContent';
 import { OFFLINE_CHANNEL_ID, OFFLINE_CURRICULUM, OFFLINE_LECTURES } from '../utils/offlineContent';
-import { warmUpAudioContext, getGlobalAudioContext, setGlobalStopPlayback } from '../utils/audioUtils';
+import { warmUpAudioContext, getGlobalAudioContext, stopAllPlatformAudio, registerAudioOwner } from '../utils/audioUtils';
 
 interface PodcastFeedProps {
   channels: Channel[];
@@ -68,14 +68,18 @@ const MobileFeedCard = ({
 
     useEffect(() => { isActiveRef.current = isActive; }, [isActive]);
 
+    /**
+     * CLEAN LOCAL STOP
+     */
     const stopAudio = useCallback(() => {
         playbackSessionRef.current++;
-        window.speechSynthesis.cancel();
+        if (window.speechSynthesis) window.speechSynthesis.cancel();
         if (sourceRef.current) {
-            try { sourceRef.current.stop(); } catch(e) {}
+            try { sourceRef.current.stop(); sourceRef.current.disconnect(); } catch(e) {}
             sourceRef.current = null;
         }
         setPlaybackState('idle');
+        setStatusMessage("");
     }, []);
 
     const flatCurriculum = useMemo(() => {
@@ -106,12 +110,12 @@ const MobileFeedCard = ({
         };
     }, [stopAudio]);
 
+    // Handle Active/Inactive transitions carefully
     useEffect(() => {
         if (isActive) {
             const introText = channel.welcomeMessage || channel.description || `Welcome to ${channel.title}.`;
             setTranscript({ speaker: 'Host', text: introText });
             setTrackIndex(-1);
-            setStatusMessage("");
             
             const ctx = getGlobalAudioContext();
             if (ctx.state === 'suspended' || (ctx.state as any) === 'interrupted') {
@@ -124,6 +128,7 @@ const MobileFeedCard = ({
                 };
             }
         } else {
+            // THE MOST IMPORTANT LINE: kill audio the moment we scroll away
             stopAudio();
             preloadedScriptRef.current = null;
             setIsAutoplayBlocked(false);
@@ -131,15 +136,16 @@ const MobileFeedCard = ({
     }, [isActive, channel.id, stopAudio]);
 
     const attemptAutoPlay = async () => {
-        if (playbackState === 'playing' || playbackState === 'buffering') return;
-        const ctx = getGlobalAudioContext();
+        if (!isActiveRef.current || playbackState === 'playing' || playbackState === 'buffering') return;
         
+        const ctx = getGlobalAudioContext();
         if (provider !== 'system' && (ctx.state === 'suspended' || (ctx.state as any) === 'interrupted')) {
             setIsAutoplayBlocked(true);
             return;
         }
 
-        setGlobalStopPlayback(stopAudio);
+        // Use Mutex
+        registerAudioOwner(stopAudio);
         runTrackSequence(-1, playbackSessionRef.current);
     };
 
@@ -149,7 +155,7 @@ const MobileFeedCard = ({
         try {
             await warmUpAudioContext(ctx);
             setIsAutoplayBlocked(false);
-            setGlobalStopPlayback(stopAudio);
+            registerAudioOwner(stopAudio);
             runTrackSequence(-1, playbackSessionRef.current);
         } catch(err) {
             console.error("Audio resume failed", err);
@@ -159,8 +165,6 @@ const MobileFeedCard = ({
     const handleStop = (e: React.MouseEvent) => {
         e.stopPropagation();
         stopAudio();
-        setStatusMessage("Stopped");
-        setTrackIndex(-1);
     };
 
     const handleTogglePlay = async (e: React.MouseEvent) => {
@@ -175,11 +179,10 @@ const MobileFeedCard = ({
 
         if (playbackState === 'playing' || playbackState === 'buffering') { 
             stopAudio(); 
-            setStatusMessage("Paused"); 
             return; 
         }
         
-        setGlobalStopPlayback(stopAudio);
+        registerAudioOwner(stopAudio);
         runTrackSequence(trackIndex >= totalLessons ? -1 : trackIndex, playbackSessionRef.current);
     };
 
@@ -195,7 +198,7 @@ const MobileFeedCard = ({
         if (playbackState === 'playing' || playbackState === 'buffering') {
             stopAudio();
             setTimeout(() => { 
-                runTrackSequence(trackIndex === -1 ? -1 : trackIndex, playbackSessionRef.current); 
+                if (isActiveRef.current) runTrackSequence(trackIndex === -1 ? -1 : trackIndex, playbackSessionRef.current); 
             }, 100);
         }
     };
@@ -226,7 +229,8 @@ const MobileFeedCard = ({
     const playSystemAudio = (text: string, voiceName: string, sessionId: number): Promise<void> => {
         return new Promise((resolve) => {
             if (!mountedRef.current || !isActiveRef.current || sessionId !== playbackSessionRef.current) { resolve(); return; }
-            window.speechSynthesis.cancel();
+            if (window.speechSynthesis) window.speechSynthesis.cancel();
+            
             const utterance = new SpeechSynthesisUtterance(text);
             const voices = window.speechSynthesis.getVoices();
             const v = voices.find(v => v.name.includes(voiceName)) || voices.find(v => v.lang.startsWith('en'));
@@ -258,8 +262,7 @@ const MobileFeedCard = ({
                     textParts = [{ speaker: 'Host', text: introText, voice: hostVoice }];
                     if (flatCurriculum.length > 0) preloadedScriptRef.current = fetchLectureData(flatCurriculum[0]);
                 } else {
-                    if (currentIndex >= flatCurriculum.length) { 
-                        setStatusMessage("Finished"); 
+                    if (currentIndex >= totalLessons) { 
                         setPlaybackState('idle'); 
                         if (onChannelFinish) onChannelFinish(); 
                         break; 
@@ -290,7 +293,7 @@ const MobileFeedCard = ({
                         voice: s.speaker === 'Teacher' ? hostVoice : studentVoice
                     }));
                     
-                    if (currentIndex + 1 < flatCurriculum.length) {
+                    if (currentIndex + 1 < totalLessons) {
                         preloadedScriptRef.current = fetchLectureData(flatCurriculum[currentIndex + 1]);
                     }
                 }

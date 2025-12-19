@@ -2,27 +2,47 @@
 import { Blob as GeminiBlob } from '@google/genai';
 
 let mainAudioContext: AudioContext | null = null;
-let silentLoopElement: HTMLAudioElement | null = null;
-let audioBridgeElement: HTMLAudioElement | null = null;
 let mediaStreamDest: MediaStreamAudioDestinationNode | null = null;
-let keepAliveOscillator: OscillatorNode | null = null;
+let audioBridgeElement: HTMLAudioElement | null = null;
+let silentLoopElement: HTMLAudioElement | null = null;
 
 /**
- * GLOBAL AUDIO REGISTRY
- * Used to ensure only one component (Feed or Detail) is playing at a time.
+ * GLOBAL AUDIO MUTEX
+ * Tracks the current active component's stop function.
  */
-export let globalStopPlayback: (() => void) | null = null;
+let currentStopFn: (() => void) | null = null;
 
-export function setGlobalStopPlayback(stopFn: (() => void) | null) {
-    // If there is already something playing, stop it first
-    if (globalStopPlayback) {
+/**
+ * Stops all platform audio sources immediately.
+ * Call this before starting any new audio sequence.
+ */
+export function stopAllPlatformAudio() {
+    // 1. Call the registered component stop function
+    if (currentStopFn) {
         try {
-            globalStopPlayback();
+            currentStopFn();
         } catch (e) {
-            console.warn("Error stopping previous playback", e);
+            console.warn("Component stop failed", e);
         }
+        currentStopFn = null;
     }
-    globalStopPlayback = stopFn;
+
+    // 2. Kill Browser Native Speech Synthesis
+    if (typeof window !== 'undefined' && window.speechSynthesis) {
+        window.speechSynthesis.cancel();
+    }
+
+    // 3. Close/Reset Web Audio contexts if they are in a bad state
+    // We don't close the main context to avoid re-init lag, but we ensure
+    // components stop their specific source nodes.
+}
+
+/**
+ * Register a component's stop function and kill existing audio.
+ */
+export function registerAudioOwner(stopFn: () => void) {
+    stopAllPlatformAudio();
+    currentStopFn = stopFn;
 }
 
 export function getGlobalAudioContext(sampleRate: number = 24000): AudioContext {
@@ -102,18 +122,6 @@ export async function warmUpAudioContext(ctx: AudioContext) {
         await ctx.resume();
     }
     
-    if (!keepAliveOscillator) {
-        const gain = ctx.createGain();
-        gain.gain.value = 0.001; 
-        
-        keepAliveOscillator = ctx.createOscillator();
-        keepAliveOscillator.type = 'sine';
-        keepAliveOscillator.frequency.value = 20; 
-        keepAliveOscillator.connect(gain);
-        connectOutput(gain, ctx);
-        keepAliveOscillator.start(0);
-    }
-
     if (!silentLoopElement) {
         silentLoopElement = new Audio();
         silentLoopElement.src = 'data:audio/wav;base64,UklGRigAAABXQVZFRm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQQAAAAAAAAA';
@@ -126,17 +134,13 @@ export async function warmUpAudioContext(ctx: AudioContext) {
         await silentLoopElement.play();
         if (audioBridgeElement) await audioBridgeElement.play();
     } catch(e) {
-        console.warn("Background Audio failed to prime. User interaction may be required.", e);
+        console.warn("Background Audio failed to prime.", e);
     }
 }
 
 export function coolDownAudioContext() {
     if (silentLoopElement) silentLoopElement.pause();
     if (audioBridgeElement) audioBridgeElement.pause();
-    if (keepAliveOscillator) {
-        try { keepAliveOscillator.stop(); } catch(e) {}
-        keepAliveOscillator = null;
-    }
 }
 
 export function createPcmBlob(data: Float32Array): GeminiBlob {
