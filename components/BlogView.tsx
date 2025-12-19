@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useMemo } from 'react';
 import { Blog, BlogPost, Comment } from '../types';
 import { ensureUserBlog, getCommunityPosts, getUserPosts, createBlogPost, updateBlogPost, deleteBlogPost, updateBlogSettings, addPostComment, getBlogPost } from '../services/firestoreService';
@@ -5,7 +6,7 @@ import { auth } from '../services/firebaseConfig';
 import { Edit3, Plus, Trash2, Globe, User, MessageSquare, Loader2, ArrowLeft, Save, Image as ImageIcon, Search, LayoutList, PenTool, Rss, X, Pin, AlertCircle, RefreshCw } from 'lucide-react';
 import { MarkdownView } from './MarkdownView';
 import { CommentsModal } from './CommentsModal';
-import { ARCHITECTURE_BLOG_POST } from '../utils/blogContent';
+import { SYSTEM_BLOG_POSTS } from '../utils/blogContent';
 
 interface BlogViewProps {
   currentUser: any;
@@ -50,21 +51,19 @@ export const BlogView: React.FC<BlogViewProps> = ({ currentUser, onBack }) => {
     try {
       const data = await getCommunityPosts();
       
-      const dbHasStatic = data.some(p => p.id === ARCHITECTURE_BLOG_POST.id);
+      // Filter out any database copies of system posts to avoid duplicates
+      const systemIds = SYSTEM_BLOG_POSTS.map(p => p.id);
+      const filteredDbPosts = data.filter(p => !systemIds.includes(p.id));
       
-      let finalPosts: BlogPost[] = [];
-      if (!dbHasStatic) {
-          finalPosts = [ARCHITECTURE_BLOG_POST, ...data.filter(p => p.id !== ARCHITECTURE_BLOG_POST.id)];
-      } else {
-          finalPosts = data;
-      }
+      // Merge static system posts with community posts
+      const finalPosts = [...SYSTEM_BLOG_POSTS, ...filteredDbPosts];
       
       setPosts(finalPosts.sort((a, b) => b.createdAt - a.createdAt));
       
     } catch (e: any) {
       console.error("Feed load error:", e);
-      setErrorMsg("Failed to load community feed. Please try refreshing.");
-      setPosts([ARCHITECTURE_BLOG_POST]);
+      setErrorMsg("Failed to load community feed. Falling back to system posts.");
+      setPosts(SYSTEM_BLOG_POSTS);
     } finally {
       setLoading(false);
     }
@@ -84,7 +83,7 @@ export const BlogView: React.FC<BlogViewProps> = ({ currentUser, onBack }) => {
       setMyPosts(userPosts);
     } catch (e: any) {
       console.error("My blog load error:", e);
-      setErrorMsg("Database error loading your posts. This usually happens if you're offline or a network error occurred.");
+      setErrorMsg("Database error loading your posts.");
     } finally {
       setLoading(false);
     }
@@ -188,7 +187,8 @@ export const BlogView: React.FC<BlogViewProps> = ({ currentUser, onBack }) => {
       };
       
       try {
-          if (activePost.id === ARCHITECTURE_BLOG_POST.id) {
+          const isSystemPost = SYSTEM_BLOG_POSTS.some(p => p.id === activePost.id);
+          if (isSystemPost) {
               const updatedPost = { 
                   ...activePost, 
                   comments: [...(activePost.comments || []), newComment],
@@ -214,7 +214,7 @@ export const BlogView: React.FC<BlogViewProps> = ({ currentUser, onBack }) => {
   };
 
   const renderPostCard = (post: BlogPost, isOwner = false) => {
-      const isPinned = post.id === 'arch-deep-dive-v1';
+      const isPinned = SYSTEM_BLOG_POSTS.some(p => p.id === post.id);
       
       return (
       <div key={post.id} className={`bg-slate-900 border ${isPinned ? 'border-indigo-500 shadow-lg shadow-indigo-500/10' : 'border-slate-800'} rounded-xl p-5 hover:border-indigo-500/30 transition-all flex flex-col gap-3 group relative`}>
