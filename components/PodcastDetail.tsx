@@ -94,20 +94,27 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
   }, []);
 
   /**
-   * ATOMIC STOP
+   * ATOMIC KILL
    */
   const stopAudio = useCallback(() => {
-    logAudioEvent(MY_TOKEN, 'STOP', `Session ${playSessionIdRef.current} hard shutdown`);
-    
-    // 1. Invalidate current session ID immediately
+    // 1. Immediately invalidate the session ID
+    const oldSession = playSessionIdRef.current;
     playSessionIdRef.current++; 
-    
+    logAudioEvent(MY_TOKEN, 'STOP', `Session ${oldSession} kill. Next: ${playSessionIdRef.current}`);
+
+    // 2. Kill Recursive Scheduler
     if (schedulerTimerRef.current) { 
         clearTimeout(schedulerTimerRef.current); 
         schedulerTimerRef.current = null; 
     }
 
-    // 2. Kill all Web Audio sources
+    // 3. Clear the timeline
+    nextScheduleTimeRef.current = 0;
+    isPlayingRef.current = false;
+    setIsPlaying(false);
+    setIsBuffering(false);
+
+    // 4. Force kill all scheduled buffers
     activeSourcesRef.current.forEach(source => { 
         try { 
             source.stop(0); 
@@ -116,37 +123,25 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
     });
     activeSourcesRef.current.clear();
     
-    nextScheduleTimeRef.current = 0;
-    isPlayingRef.current = false;
-    setIsPlaying(false);
-    setIsBuffering(false);
-    
-    // 3. Kill System Speech
+    // 5. Kill System TTS
     if (typeof window !== 'undefined' && window.speechSynthesis) {
         window.speechSynthesis.cancel();
         if (lastUtteranceRef.current) {
             lastUtteranceRef.current.onend = null;
             lastUtteranceRef.current.onerror = null;
         }
-        // Force flush internal browser queue
-        try {
-            const dummy = new SpeechSynthesisUtterance("");
-            dummy.volume = 0;
-            window.speechSynthesis.speak(dummy);
-            window.speechSynthesis.cancel();
-        } catch (e) {}
     }
     
+    // 6. Bridge Purge
     coolDownAudioContext();
   }, [MY_TOKEN]);
 
   useEffect(() => {
-      // Ensure we clean up when navigating away
       return () => stopAudio();
   }, [stopAudio]);
 
   /**
-   * STRICT MANUAL START
+   * ATOMIC TOGGLE
    */
   const togglePlayback = async () => {
     if (isPlaying) { 
@@ -154,17 +149,19 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
       return;
     }
 
-    // 1. Kill everything else on platform
+    // 1. Kill other components' audio
     stopAllPlatformAudio(`PodcastDetail:${channel.id}`);
     
-    // 2. Claim lock
+    // 2. Clear our own stale state and start new session
+    stopAudio();
+    const sessionId = playSessionIdRef.current; // Already incremented by stopAudio above
+
+    // 3. Re-acquire Lock
     registerAudioOwner(MY_TOKEN, stopAudio);
 
     const ctx = getGlobalAudioContext();
     await warmUpAudioContext(ctx);
     
-    // 3. New Session ID
-    const sessionId = ++playSessionIdRef.current;
     const startIdx = currentSectionIndex !== null && currentSectionIndex < (activeLecture?.sections.length || 0) ? currentSectionIndex : 0;
     schedulingCursorRef.current = startIdx;
     
@@ -180,7 +177,7 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
   };
 
   const runWebAudioScheduler = async (sessionId: number) => {
-      // GUARD 1: Entrance check
+      // ATOMIC GUARD: Check if session still alive
       if (!isPlayingRef.current || sessionId !== playSessionIdRef.current || !activeLecture || !isAudioOwner(MY_TOKEN)) {
           return;
       }
@@ -189,7 +186,7 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
       const lookahead = 2.0; 
       
       while (nextScheduleTimeRef.current < ctx.currentTime + lookahead) {
-          // GUARD 2: Loop check
+          // SYNC CHECK inside loop
           if (sessionId !== playSessionIdRef.current || !isAudioOwner(MY_TOKEN)) break;
 
           const idx = schedulingCursorRef.current;
@@ -212,27 +209,27 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
               const result = await synthesizeSpeech(section.text, voice, ctx);
               setIsBuffering(false);
               
-              // GUARD 3: Post-Await check
+              // ZOMBIE CHECK 1: Did session change during TTS network fetch?
               if (sessionId !== playSessionIdRef.current || !isAudioOwner(MY_TOKEN)) {
-                  logAudioEvent(MY_TOKEN, 'ABORT_STALE', `Aborting stale audio from session ${sessionId}`);
+                  logAudioEvent(MY_TOKEN, 'ABORT_STALE', `Session ${sessionId} aborted after TTS fetch`);
                   return;
               }
               
               if (result.buffer) {
                   const source = ctx.createBufferSource();
                   source.buffer = result.buffer;
-                  connectOutput(source, ctx);
                   
                   const startAt = Math.max(nextScheduleTimeRef.current, ctx.currentTime);
                   
-                  // GUARD 4: Final Start check
+                  // ZOMBIE CHECK 2: Absolute final check before touching destination
                   if (sessionId !== playSessionIdRef.current || !isAudioOwner(MY_TOKEN)) {
                       source.disconnect();
                       return;
                   }
 
-                  logAudioEvent(MY_TOKEN, 'PLAY_BUFFER', `Scheduling idx ${idx} @ ${startAt.toFixed(2)}s`);
+                  logAudioEvent(MY_TOKEN, 'PLAY_BUFFER', `Session ${sessionId}: Idx ${idx} @ ${startAt.toFixed(2)}s`);
                   
+                  connectOutput(source, ctx);
                   source.start(startAt);
                   activeSourcesRef.current.add(source);
                   
@@ -251,7 +248,6 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
                   nextScheduleTimeRef.current = startAt + result.buffer.duration;
                   schedulingCursorRef.current++;
               } else {
-                  // Fallback to system on single segment failure
                   if (sessionId === playSessionIdRef.current && isAudioOwner(MY_TOKEN)) {
                       setVoiceProvider('system');
                       runSystemTts(sessionId);
@@ -308,8 +304,7 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
   };
 
   const handleTopicClick = async (topicTitle: string, subTopicId?: string) => {
-    // Kill existing session BEFORE starting a new load to prevent race
-    stopAudio();
+    stopAudio(); // Clear any existing sequence immediately
     
     setActiveSubTopicId(subTopicId || null);
     setCurrentSectionIndex(0);

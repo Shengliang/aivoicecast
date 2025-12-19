@@ -41,10 +41,9 @@ export function getCurrentAudioOwner() {
 export function stopAllPlatformAudio(sourceCaller: string = "Global") {
     logAudioEvent(sourceCaller, 'STOP', `Clearing lock. Current owner: ${currentOwnerToken}`);
     
-    // 1. Aggressively kill system voice
+    // 1. Purge System Voice
     if (typeof window !== 'undefined' && window.speechSynthesis) {
         window.speechSynthesis.cancel();
-        // Nuclear Flush: Chrome/Safari sometimes hang in speech queue
         try {
             const dummy = new SpeechSynthesisUtterance("");
             dummy.volume = 0;
@@ -53,7 +52,13 @@ export function stopAllPlatformAudio(sourceCaller: string = "Global") {
         } catch (e) {}
     }
 
-    // 2. Call the registered stop function of the current owner
+    // 2. Kill the Media Bridge physically
+    if (audioBridgeElement) {
+        audioBridgeElement.pause();
+        audioBridgeElement.srcObject = null;
+    }
+
+    // 3. Trigger the specific stop logic of the registered owner
     if (currentStopFn) {
         const fn = currentStopFn;
         currentStopFn = null; 
@@ -67,9 +72,8 @@ export function stopAllPlatformAudio(sourceCaller: string = "Global") {
  * Register a unique ownership token.
  */
 export function registerAudioOwner(uniqueToken: string, stopFn: () => void) {
-    // Terminate previous session even if it's the same component re-initializing
     if (currentOwnerToken) {
-        stopAllPlatformAudio(`Reset for ${uniqueToken}`);
+        stopAllPlatformAudio(`Auto-reset for ${uniqueToken}`);
     }
     
     currentOwnerToken = uniqueToken;
@@ -89,26 +93,36 @@ export function getGlobalAudioContext(sampleRate: number = 24000): AudioContext 
     });
     
     mediaStreamDest = mainAudioContext.createMediaStreamDestination();
-    
-    if (!audioBridgeElement) {
-        audioBridgeElement = new Audio();
-        audioBridgeElement.id = 'web-audio-bg-bridge';
-        audioBridgeElement.muted = false;
-        audioBridgeElement.volume = 1.0;
-        audioBridgeElement.srcObject = mediaStreamDest.stream;
-        audioBridgeElement.setAttribute('playsinline', 'true');
-        audioBridgeElement.setAttribute('autoplay', 'true');
-        document.body.appendChild(audioBridgeElement);
-    }
   }
+  
+  // Always ensure bridge is attached when context is requested
+  if (!audioBridgeElement) {
+      audioBridgeElement = new Audio();
+      audioBridgeElement.id = 'web-audio-bg-bridge';
+      audioBridgeElement.muted = false;
+      audioBridgeElement.volume = 1.0;
+      audioBridgeElement.setAttribute('playsinline', 'true');
+      audioBridgeElement.setAttribute('autoplay', 'true');
+      document.body.appendChild(audioBridgeElement);
+  }
+
+  if (mediaStreamDest && audioBridgeElement.srcObject !== mediaStreamDest.stream) {
+      audioBridgeElement.srcObject = mediaStreamDest.stream;
+  }
+
   return mainAudioContext;
 }
 
 export function connectOutput(source: AudioNode, ctx: AudioContext) {
+    // 1. Connect to standard destination
     source.connect(ctx.destination);
+    
+    // 2. Connect to the media bridge for background play
     if (mediaStreamDest) {
         source.connect(mediaStreamDest);
     }
+    
+    // 3. Ensure bridge is actually playing
     if (audioBridgeElement && audioBridgeElement.paused) {
         audioBridgeElement.play().catch(() => {});
     }
@@ -162,12 +176,16 @@ export async function warmUpAudioContext(ctx: AudioContext) {
         silentLoopElement.src = 'data:audio/wav;base64,UklGRigAAABXQVZFRm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQQAAAAAAAAA';
         silentLoopElement.loop = true;
         silentLoopElement.setAttribute('playsinline', 'true');
-        (window as any)._persistentSilence = silentLoopElement;
     }
     
     try {
         await silentLoopElement.play();
-        if (audioBridgeElement) await audioBridgeElement.play();
+        if (audioBridgeElement) {
+            if (mediaStreamDest && audioBridgeElement.srcObject !== mediaStreamDest.stream) {
+                audioBridgeElement.srcObject = mediaStreamDest.stream;
+            }
+            await audioBridgeElement.play();
+        }
     } catch(e) {
         console.warn("Background Audio failed to prime.", e);
     }
@@ -175,7 +193,10 @@ export async function warmUpAudioContext(ctx: AudioContext) {
 
 export function coolDownAudioContext() {
     if (silentLoopElement) silentLoopElement.pause();
-    if (audioBridgeElement) audioBridgeElement.pause();
+    if (audioBridgeElement) {
+        audioBridgeElement.pause();
+        audioBridgeElement.srcObject = null;
+    }
 }
 
 export function createPcmBlob(data: Float32Array): GeminiBlob {
@@ -223,7 +244,7 @@ export function pcmToWavBlobUrl(pcmData: Uint8Array, sampleRate: number = 24000)
     view.setUint32(24, sampleRate, true);
     view.setUint32(28, byteRate, true);
     view.setUint16(32, blockAlign, true);
-    view.setUint16(34, bitsPerSample, true);
+    view.setUint32(34, bitsPerSample, true);
     writeString(36, 'data');
     view.setUint32(40, dataSize, true);
 
