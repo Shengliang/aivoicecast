@@ -1,8 +1,8 @@
-
 import React, { useState, useEffect } from 'react';
-import { CommunityDiscussion } from '../types';
-import { getUserDesignDocs, deleteDiscussion } from '../services/firestoreService';
-import { FileText, ArrowRight, Loader2, MessageSquare, Plus, Edit, ShieldCheck, Trash2, Info, FileCode, Sparkles, Wand2 } from 'lucide-react';
+import { CommunityDiscussion, UserProfile } from '../types';
+import { getUserDesignDocs, deleteDiscussion, getPublicDesignDocs, getGroupDesignDocs, getUserProfile } from '../services/firestoreService';
+// FIX: Added 'User' to the lucide-react import list to resolve the "Cannot find name 'User'" error on line 231.
+import { FileText, ArrowRight, Loader2, MessageSquare, Plus, Edit, ShieldCheck, Trash2, Info, FileCode, Sparkles, Wand2, Globe, Users, Lock, User } from 'lucide-react';
 import { auth } from '../services/firebaseConfig';
 import { DiscussionModal } from './DiscussionModal';
 import { APP_COMPARISON_DOC } from '../utils/docContent';
@@ -24,16 +24,26 @@ export const DocumentList: React.FC<DocumentListProps> = ({ onBack }) => {
     if (!currentUser) return;
     setLoading(true);
     try {
-      const data = await getUserDesignDocs(currentUser.uid);
+      // 1. Fetch My Docs
+      const myDocs = await getUserDesignDocs(currentUser.uid);
+      
+      // 2. Fetch Public Docs
+      const publicDocs = await getPublicDesignDocs();
+      
+      // 3. Fetch Group Docs
+      const profile = await getUserProfile(currentUser.uid);
+      const groupDocs = profile?.groups ? await getGroupDesignDocs(profile.groups) : [];
+      
+      // Combine and filter unique by ID
+      const all = [...myDocs, ...publicDocs, ...groupDocs];
+      const unique = Array.from(new Map(all.map(item => [item.id, item])).values());
       
       const isSystemDocHidden = localStorage.getItem('hide_system_doc_v1') === 'true';
-      const userDocs = data.filter(d => d.id !== APP_COMPARISON_DOC.id);
+      const userDocs = unique.filter(d => d.id !== APP_COMPARISON_DOC.id);
       
-      if (isSystemDocHidden) {
-          setDocs(userDocs);
-      } else {
-          setDocs([APP_COMPARISON_DOC, ...userDocs]);
-      }
+      const final = isSystemDocHidden ? userDocs : [APP_COMPARISON_DOC, ...userDocs];
+      setDocs(final.sort((a, b) => b.createdAt - a.createdAt));
+
     } catch (e) {
       console.error(e);
       setDocs([APP_COMPARISON_DOC]);
@@ -74,7 +84,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ onBack }) => {
   };
 
   const handleCleanupUntitled = async () => {
-      const untitledDocs = docs.filter(d => (!d.title || d.title === 'Untitled Document') && d.id !== APP_COMPARISON_DOC.id && d.id !== 'new');
+      const untitledDocs = docs.filter(d => d.userId === currentUser?.uid && (!d.title || d.title === 'Untitled Document') && d.id !== APP_COMPARISON_DOC.id && d.id !== 'new');
       
       if (untitledDocs.length === 0) {
           alert("No untitled documents found to clean up.");
@@ -158,6 +168,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ onBack }) => {
             const isSystem = doc.id === APP_COMPARISON_DOC.id;
             const hasSynthesis = !!doc.designDoc;
             const isCodeDoc = doc.title?.endsWith('.hpp') || doc.title?.endsWith('.cpp') || doc.title?.endsWith('.py');
+            const isMyDoc = doc.userId === currentUser.uid;
 
             return (
               <div 
@@ -166,19 +177,33 @@ export const DocumentList: React.FC<DocumentListProps> = ({ onBack }) => {
                 className={`bg-slate-900 border ${isSystem ? 'border-indigo-500/50 bg-indigo-900/10' : hasSynthesis ? 'border-slate-800' : 'border-emerald-500/30 bg-emerald-900/5'} rounded-xl p-5 hover:border-emerald-500/50 hover:bg-slate-800/50 transition-all cursor-pointer group flex flex-col justify-between relative shadow-sm`}
               >
                 {/* Delete Button */}
-                <button 
-                   onClick={(e) => handleDelete(e, doc.id)}
-                   disabled={isDeleting === doc.id}
-                   className="absolute top-4 right-4 p-2 text-slate-600 hover:text-red-400 opacity-40 group-hover:opacity-100 transition-opacity z-10 bg-slate-950/50 rounded-lg hover:bg-red-900/20"
-                   title={isSystem ? "Hide Example" : "Delete Document"}
-                >
-                   {isDeleting === doc.id ? <Loader2 size={16} className="animate-spin"/> : <Trash2 size={16} />}
-                </button>
+                {isMyDoc && (
+                    <button 
+                    onClick={(e) => handleDelete(e, doc.id)}
+                    disabled={isDeleting === doc.id}
+                    className="absolute top-4 right-4 p-2 text-slate-600 hover:text-red-400 opacity-40 group-hover:opacity-100 transition-opacity z-10 bg-slate-950/50 rounded-lg hover:bg-red-900/20"
+                    title={isSystem ? "Hide Example" : "Delete Document"}
+                    >
+                    {isDeleting === doc.id ? <Loader2 size={16} className="animate-spin"/> : <Trash2 size={16} />}
+                    </button>
+                )}
 
                 <div>
                   <div className="flex items-start justify-between mb-3">
-                     <div className={`p-2 rounded-lg ${isSystem ? 'bg-indigo-900/30 text-indigo-400' : isCodeDoc ? 'bg-amber-900/20 text-amber-400' : 'bg-emerald-900/20 text-emerald-400'}`}>
-                        {isSystem ? <ShieldCheck size={20}/> : isCodeDoc ? <FileCode size={20}/> : <FileText size={20} />}
+                     <div className="flex items-center gap-2">
+                        <div className={`p-2 rounded-lg ${isSystem ? 'bg-indigo-900/30 text-indigo-400' : isCodeDoc ? 'bg-amber-900/20 text-amber-400' : 'bg-emerald-900/20 text-emerald-400'}`}>
+                            {isSystem ? <ShieldCheck size={20}/> : isCodeDoc ? <FileCode size={20}/> : <FileText size={20} />}
+                        </div>
+                        <div className="flex items-center gap-1.5 px-2 py-1 rounded bg-slate-950/50 border border-slate-800">
+                           {doc.visibility === 'public' ? (
+                               <Globe size={12} className="text-emerald-400" title="Public"/>
+                           ) : doc.visibility === 'group' ? (
+                               <Users size={12} className="text-purple-400" title="Shared with Group"/>
+                           ) : (
+                               <Lock size={12} className="text-slate-500" title="Private"/>
+                           )}
+                           <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">{doc.visibility || 'Private'}</span>
+                        </div>
                      </div>
                      <div className="flex flex-col items-end gap-1">
                         <span className="text-[10px] text-slate-500 font-mono bg-slate-950 px-2 py-1 rounded">
@@ -202,6 +227,12 @@ export const DocumentList: React.FC<DocumentListProps> = ({ onBack }) => {
 
                 <div className="flex items-center justify-between border-t border-slate-800/50 pt-3 mt-2">
                    <div className="flex items-center gap-2 text-xs text-slate-500">
+                      <div className="flex items-center gap-1">
+                          {/* FIX: Using the newly imported User icon for better clarity on a per-member document view. */}
+                          <User size={12} />
+                          <span className="truncate max-w-[100px]">{isMyDoc ? 'Me' : doc.userName}</span>
+                      </div>
+                      <span className="text-slate-700">•</span>
                       {isSystem ? (
                           <span className="text-indigo-400 font-bold uppercase tracking-widest text-[9px]">Platform Spec</span>
                       ) : doc.transcript && doc.transcript.length > 0 ? (
@@ -244,7 +275,8 @@ export const DocumentList: React.FC<DocumentListProps> = ({ onBack }) => {
               createdAt: Date.now(),
               designDoc: "# New Specification\n\nStart writing...",
               isManual: true,
-              title: "[Manual] New Specification"
+              title: "[Manual] New Specification",
+              visibility: 'private'
            } : (selectedDocId === APP_COMPARISON_DOC.id ? APP_COMPARISON_DOC : undefined)}
         />
       )}

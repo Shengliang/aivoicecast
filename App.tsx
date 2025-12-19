@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo } from 'react';
 import { Channel, ViewState, UserProfile, TranscriptItem, SubscriptionTier } from './types';
 import { 
@@ -13,7 +12,6 @@ import { ChannelCard } from './components/ChannelCard';
 import { UserAuth } from './components/UserAuth';
 import { CreateChannelModal } from './components/CreateChannelModal';
 import { VoiceCreateModal } from './components/VoiceCreateModal';
-import { ApiKeyModal } from './components/ApiKeyModal';
 import { DataSyncModal } from './components/DataSyncModal';
 import { FirebaseConfigModal } from './components/FirebaseConfigModal';
 import { DebugView } from './components/DebugView';
@@ -57,7 +55,6 @@ import {
 import { getUserChannels, saveUserChannel, deleteUserChannel } from './utils/db';
 import { HANDCRAFTED_CHANNELS, CATEGORY_STYLES, TOPIC_CATEGORIES } from './utils/initialData';
 import { OFFLINE_CHANNEL_ID } from './utils/offlineContent';
-import { GEMINI_API_KEY } from './services/private_keys';
 
 const APP_VERSION = "v3.80.3"; 
 
@@ -163,13 +160,11 @@ const App: React.FC = () => {
   const [createModalDate, setCreateModalDate] = useState<Date | null>(null);
   
   const [isVoiceCreateOpen, setIsVoiceCreateOpen] = useState(false);
-  const [isApiKeyModalOpen, setIsApiKeyModalOpen] = useState(false);
   const [isSyncModalOpen, setIsSyncModalOpen] = useState(false);
   const [isFirebaseModalOpen, setIsFirebaseModalOpen] = useState(false);
   const [isAccountSettingsOpen, setIsAccountSettingsOpen] = useState(false); 
   const [isPricingOpen, setIsPricingOpen] = useState(false); 
   
-  const [hasApiKey, setHasApiKey] = useState(false);
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
   const [channelToEdit, setChannelToEdit] = useState<Channel | null>(null);
   const [isCommentsModalOpen, setIsCommentsModalOpen] = useState(false);
@@ -219,8 +214,7 @@ const App: React.FC = () => {
 
   // URL Sync Effect: Mount (Read from URL)
   useEffect(() => {
-    const key = localStorage.getItem('gemini_api_key') || GEMINI_API_KEY || process.env.API_KEY;
-    setHasApiKey(!!key);
+    // FIX: Removed manual API Key detection as it must be obtained exclusively from process.env.API_KEY.
 
     const params = new URLSearchParams(window.location.search);
     const session = params.get('session');
@@ -513,7 +507,10 @@ const App: React.FC = () => {
               await saveUserChannel(updatedChannel);
               setUserChannels(prev => prev.map(c => c.id === updatedChannel.id ? updatedChannel : c));
           }
-          setChannels(prev => prev.map(c => c.id === updatedChannel.id ? updatedChannel : c));
+          setChannels(prev => prev.map(c => {
+              if (c.id === updatedChannel.id) return updatedChannel;
+              return c;
+          }));
       } catch (error: any) {
           console.error("Failed to update channel:", error);
           alert(`Failed to update podcast: ${error.message}`);
@@ -1196,10 +1193,8 @@ const App: React.FC = () => {
            currentUser={currentUser}
            globalVoice={globalVoice}
            setGlobalVoice={setGlobalVoice}
-           hasApiKey={hasApiKey}
            setIsCreateModalOpen={setIsCreateModalOpen}
            setIsVoiceCreateOpen={setIsVoiceCreateOpen}
-           setIsApiKeyModalOpen={setIsApiKeyModalOpen}
            setIsSyncModalOpen={setIsSyncModalOpen}
            setIsSettingsModalOpen={setIsAccountSettingsOpen}
            onOpenUserGuide={() => setViewState('user_guide')}
@@ -1214,7 +1209,7 @@ const App: React.FC = () => {
 
       <CreateChannelModal isOpen={isCreateModalOpen} onClose={() => { setIsCreateModalOpen(false); setCreateModalDate(null); }} onCreate={handleCreateChannel} initialDate={createModalDate} />
       <VoiceCreateModal isOpen={isVoiceCreateOpen} onClose={() => setIsVoiceCreateOpen(false)} onCreate={handleCreateChannel} />
-      <ApiKeyModal isOpen={isApiKeyModalOpen} onClose={() => setIsApiKeyModalOpen(false)} onKeyUpdate={setHasApiKey} />
+      {/* FIX: Removed manual ApiKeyModal UI. */}
       <DataSyncModal isOpen={isSyncModalOpen} onClose={() => setIsSyncModalOpen(false)} />
       <FirebaseConfigModal isOpen={isFirebaseModalOpen} onClose={() => setIsFirebaseModalOpen(false)} onConfigUpdate={(valid) => { if(valid) window.location.reload(); }} />
 

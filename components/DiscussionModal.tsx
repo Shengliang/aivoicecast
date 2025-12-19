@@ -1,8 +1,8 @@
 
 import React, { useState, useEffect } from 'react';
-import { X, MessageCircle, FileText, Loader2, CornerDownRight, Edit2, Save, Sparkles, ExternalLink, Cloud, Trash2, RefreshCw, Info } from 'lucide-react';
-import { CommunityDiscussion } from '../types';
-import { getDiscussionById, saveDiscussionDesignDoc, saveDiscussion, deleteDiscussion } from '../services/firestoreService';
+import { X, MessageCircle, FileText, Loader2, CornerDownRight, Edit2, Save, Sparkles, ExternalLink, Cloud, Trash2, RefreshCw, Info, Lock, Globe, Users, ChevronDown, Check } from 'lucide-react';
+import { CommunityDiscussion, Group, ChannelVisibility } from '../types';
+import { getDiscussionById, saveDiscussionDesignDoc, saveDiscussion, deleteDiscussion, updateDiscussionVisibility, getUserGroups } from '../services/firestoreService';
 import { generateDesignDocFromTranscript } from '../services/lectureGenerator';
 import { MarkdownView } from './MarkdownView';
 import { connectGoogleDrive } from '../services/authService';
@@ -26,6 +26,11 @@ export const DiscussionModal: React.FC<DiscussionModalProps> = ({
   const [loading, setLoading] = useState(false);
   const [viewMode, setViewMode] = useState<'transcript' | 'doc'>('transcript');
   
+  // Visibility State
+  const [showVisibilityMenu, setShowVisibilityMenu] = useState(false);
+  const [userGroups, setUserGroups] = useState<Group[]>([]);
+  const [loadingGroups, setLoadingGroups] = useState(false);
+
   // Doc Editing State
   const [isEditingDoc, setIsEditingDoc] = useState(false);
   const [editedDocContent, setEditedDocContent] = useState('');
@@ -71,8 +76,16 @@ export const DiscussionModal: React.FC<DiscussionModalProps> = ({
             if (initialDiscussion.id === 'new' || !initialDiscussion.designDoc) setIsEditingDoc(true);
         }
       }
+
+      if (currentUser) {
+          setLoadingGroups(true);
+          getUserGroups(currentUser.uid).then(groups => {
+              setUserGroups(groups);
+              setLoadingGroups(false);
+          });
+      }
     }
-  }, [isOpen, discussionId, initialDiscussion]);
+  }, [isOpen, discussionId, initialDiscussion, currentUser]);
 
   if (!isOpen) return null;
 
@@ -119,7 +132,8 @@ export const DiscussionModal: React.FC<DiscussionModalProps> = ({
           const docToSave = {
               ...activeDiscussion,
               title: docTitle || 'Untitled Document',
-              designDoc: editedDocContent
+              designDoc: editedDocContent,
+              visibility: activeDiscussion.visibility || 'private'
           };
           // Remove the 'new' ID so firestore generates a real one
           // @ts-ignore
@@ -142,6 +156,51 @@ export const DiscussionModal: React.FC<DiscussionModalProps> = ({
       setIsSavingDoc(false);
     }
   };
+
+  const handleUpdateVisibility = async (v: ChannelVisibility, gId?: string) => {
+      if (!activeDiscussion || activeDiscussion.id === 'new') {
+          // Update locally for new draft
+          setActiveDiscussion(prev => prev ? ({ 
+              ...prev, 
+              visibility: v, 
+              groupIds: gId ? (prev.groupIds?.includes(gId) ? prev.groupIds : [...(prev.groupIds || []), gId]) : prev.groupIds 
+          }) : null);
+          return;
+      }
+      
+      try {
+          const nextGroupIds = [...(activeDiscussion.groupIds || [])];
+          if (v === 'group' && gId && !nextGroupIds.includes(gId)) {
+              nextGroupIds.push(gId);
+          } else if (v !== 'group') {
+              // Reset groups if switching away? Or keep them? Let's reset for clarity.
+          }
+
+          await updateDiscussionVisibility(activeDiscussion.id, v, nextGroupIds);
+          setActiveDiscussion({ ...activeDiscussion, visibility: v, groupIds: nextGroupIds });
+          showToast(`Visibility updated to ${v}`, 'success');
+      } catch (e) {
+          alert("Failed to update visibility.");
+      }
+  };
+
+  const handleRemoveGroup = async (gId: string) => {
+      if (!activeDiscussion) return;
+      const nextGroups = (activeDiscussion.groupIds || []).filter(id => id !== gId);
+      const nextVisibility: ChannelVisibility = nextGroups.length === 0 && activeDiscussion.visibility === 'group' ? 'private' : activeDiscussion.visibility;
+      
+      if (activeDiscussion.id === 'new') {
+          setActiveDiscussion({ ...activeDiscussion, visibility: nextVisibility, groupIds: nextGroups });
+          return;
+      }
+
+      try {
+          await updateDiscussionVisibility(activeDiscussion.id, nextVisibility, nextGroups);
+          setActiveDiscussion({ ...activeDiscussion, visibility: nextVisibility, groupIds: nextGroups });
+      } catch(e) {}
+  };
+
+  const showToast = (msg: string, type: string) => console.log(msg); // Simplified for this component
 
   const handleDelete = async () => {
       if (!activeDiscussion || activeDiscussion.id === 'new' || activeDiscussion.id === 'system-doc-001') return;
@@ -197,6 +256,39 @@ export const DiscussionModal: React.FC<DiscussionModalProps> = ({
                       />
                   </div>
                   <div className="flex items-center gap-2">
+                      {isOwner && (
+                          <div className="relative">
+                              <button 
+                                onClick={() => setShowVisibilityMenu(!showVisibilityMenu)}
+                                className="flex items-center gap-2 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-xs font-bold transition-all border border-slate-700"
+                              >
+                                {activeDiscussion?.visibility === 'public' ? <Globe size={14} className="text-emerald-400"/> : activeDiscussion?.visibility === 'group' ? <Users size={14} className="text-purple-400"/> : <Lock size={14} className="text-slate-500"/>}
+                                <span className="capitalize">{activeDiscussion?.visibility || 'Private'}</span>
+                                <ChevronDown size={12}/>
+                              </button>
+                              
+                              {showVisibilityMenu && (
+                                  <>
+                                    <div className="fixed inset-0 z-40" onClick={() => setShowVisibilityMenu(false)}></div>
+                                    <div className="absolute top-full right-0 mt-1 w-56 bg-slate-800 border border-slate-700 rounded-xl shadow-2xl z-50 overflow-hidden py-1 animate-fade-in-up">
+                                        <button onClick={() => { handleUpdateVisibility('private'); setShowVisibilityMenu(false); }} className="w-full text-left px-4 py-2 hover:bg-slate-700 text-xs text-slate-300 flex items-center gap-2"><Lock size={12}/> Private (Just Me)</button>
+                                        <button onClick={() => { handleUpdateVisibility('public'); setShowVisibilityMenu(false); }} className="w-full text-left px-4 py-2 hover:bg-slate-700 text-xs text-emerald-400 flex items-center gap-2"><Globe size={12}/> Public (All Members)</button>
+                                        <div className="h-px bg-slate-700 my-1"></div>
+                                        <div className="px-4 py-1 text-[10px] font-bold text-slate-500 uppercase">Share with Group</div>
+                                        {loadingGroups ? <div className="px-4 py-2 text-[10px] text-slate-500 italic">Loading groups...</div> : userGroups.length === 0 ? <div className="px-4 py-2 text-[10px] text-slate-500 italic">No groups found</div> : (
+                                            userGroups.map(g => (
+                                                <button key={g.id} onClick={() => { handleUpdateVisibility('group', g.id); setShowVisibilityMenu(false); }} className="w-full text-left px-4 py-2 hover:bg-slate-700 text-xs text-slate-300 flex items-center justify-between">
+                                                    <div className="flex items-center gap-2"><Users size={12}/> <span className="truncate">{g.name}</span></div>
+                                                    {activeDiscussion?.groupIds?.includes(g.id) && <Check size={12} className="text-indigo-400"/>}
+                                                </button>
+                                            ))
+                                        )}
+                                    </div>
+                                  </>
+                              )}
+                          </div>
+                      )}
+
                       {activeDiscussion?.designDoc && !isEditingDoc && (
                           <button 
                             onClick={handleExportToGoogleDocs}
@@ -212,6 +304,21 @@ export const DiscussionModal: React.FC<DiscussionModalProps> = ({
                   </div>
               </div>
               
+              {/* Group Indicators */}
+              {isOwner && activeDiscussion?.visibility === 'group' && activeDiscussion.groupIds && activeDiscussion.groupIds.length > 0 && (
+                  <div className="flex flex-wrap gap-1 mb-4 px-1 animate-fade-in">
+                      {activeDiscussion.groupIds.map(id => {
+                          const g = userGroups.find(group => group.id === id);
+                          return (
+                            <span key={id} className="inline-flex items-center gap-1.5 px-2 py-0.5 bg-purple-900/30 border border-purple-500/30 rounded-full text-[10px] font-bold text-purple-300">
+                                <Users size={10}/> {g?.name || 'Shared Group'}
+                                <button onClick={() => handleRemoveGroup(id)} className="hover:text-white"><X size={10}/></button>
+                            </span>
+                          );
+                      })}
+                  </div>
+              )}
+
               {/* Tabs */}
               {(activeDiscussion?.transcript && activeDiscussion.transcript.length > 0 && activeDiscussion.id !== 'new') && (
                   <div className="flex space-x-2">
@@ -312,7 +419,7 @@ export const DiscussionModal: React.FC<DiscussionModalProps> = ({
                                                     </button>
                                                 </>
                                             ) : (
-                                                <button onClick={() => setIsEditingDoc(true)} className="px-4 py-1.5 text-xs text-white bg-indigo-600 hover:bg-indigo-500 rounded-lg flex items-center gap-2 font-bold shadow-lg shadow-indigo-500/20">
+                                                <button onClick={() => setIsEditingDoc(true)} className="px-4 py-1.5 text-xs text-white bg-indigo-600 hover:bg-indigo-500 rounded-lg flex items-center gap-2 font-bold shadow-lg shadow-emerald-500/20">
                                                     <Edit2 size={14}/> Edit Content
                                                 </button>
                                             )

@@ -14,7 +14,8 @@ import {
   GlobalStats,
   SubscriptionTier,
   Chapter,
-  TranscriptItem
+  TranscriptItem,
+  ChannelVisibility
 } from '../types';
 import { HANDCRAFTED_CHANNELS } from '../utils/initialData';
 
@@ -314,6 +315,24 @@ export async function deleteDiscussion(id: string) {
 export async function getUserDesignDocs(uid: string): Promise<CommunityDiscussion[]> {
     const snap = await db.collection(DISCUSSIONS_COLLECTION).where('userId', '==', uid).get();
     return snap.docs.map(d => ({ ...d.data(), id: d.id } as CommunityDiscussion));
+}
+
+export async function getPublicDesignDocs(): Promise<CommunityDiscussion[]> {
+    const snap = await db.collection(DISCUSSIONS_COLLECTION).where('visibility', '==', 'public').get();
+    return snap.docs.map(d => ({ ...d.data(), id: d.id } as CommunityDiscussion));
+}
+
+export async function getGroupDesignDocs(groupIds: string[]): Promise<CommunityDiscussion[]> {
+    if (!groupIds || groupIds.length === 0) return [];
+    const snap = await db.collection(DISCUSSIONS_COLLECTION).where('visibility', '==', 'group').where('groupIds', 'array-contains-any', groupIds).get();
+    return snap.docs.map(d => ({ ...d.data(), id: d.id } as CommunityDiscussion));
+}
+
+export async function updateDiscussionVisibility(id: string, visibility: ChannelVisibility, groupIds?: string[]) {
+    await db.collection(DISCUSSIONS_COLLECTION).doc(id).update({
+        visibility,
+        groupIds: groupIds || []
+    });
 }
 
 export async function linkDiscussionToLectureSegment(channelId: string, lectureId: string, index: number, discussionId: string) {

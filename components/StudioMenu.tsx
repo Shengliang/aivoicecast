@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { UserProfile, SubscriptionTier, GlobalStats, Channel } from '../types';
 import { getUserProfile, getGlobalStats } from '../services/firestoreService';
@@ -14,10 +13,8 @@ interface StudioMenuProps {
   currentUser: any;
   globalVoice: string;
   setGlobalVoice: (v: string) => void;
-  hasApiKey: boolean;
   setIsCreateModalOpen: (open: boolean) => void;
   setIsVoiceCreateOpen: (open: boolean) => void;
-  setIsApiKeyModalOpen: (open: boolean) => void;
   setIsSyncModalOpen: (open: boolean) => void;
   setIsSettingsModalOpen: (open: boolean) => void;
   onOpenUserGuide: () => void;
@@ -29,8 +26,8 @@ interface StudioMenuProps {
 
 export const StudioMenu: React.FC<StudioMenuProps> = ({
   isUserMenuOpen, setIsUserMenuOpen, userProfile, setUserProfile, currentUser,
-  globalVoice, setGlobalVoice, hasApiKey, 
-  setIsCreateModalOpen, setIsVoiceCreateOpen, setIsApiKeyModalOpen, setIsSyncModalOpen, setIsSettingsModalOpen, onOpenUserGuide, onNavigate, t,
+  globalVoice, setGlobalVoice, 
+  setIsCreateModalOpen, setIsVoiceCreateOpen, setIsSyncModalOpen, setIsSettingsModalOpen, onOpenUserGuide, onNavigate, t,
   className, channels = []
 }) => {
   const [isPricingOpen, setIsPricingOpen] = useState(false);
@@ -207,13 +204,7 @@ export const StudioMenu: React.FC<StudioMenuProps> = ({
 
             <div className="h-px bg-slate-800 my-2 mx-2" />
 
-            <button 
-               onClick={() => { setIsApiKeyModalOpen(true); setIsUserMenuOpen(false); }}
-               className={`w-full flex items-center space-x-3 px-3 py-2 text-sm rounded-lg transition-colors ${!hasApiKey ? 'text-red-400 hover:bg-red-900/20' : 'text-slate-300 hover:text-white hover:bg-slate-800'}`}
-            >
-               <Key size={16} />
-               <span>{hasApiKey ? "Change API Key" : "Set API Key (Required)"}</span>
-            </button>
+            {/* FIX: Removed the API Key management button to comply with Gemini API guidelines. The key is now handled exclusively via process.env.API_KEY. */}
             <button 
                onClick={() => { setIsSyncModalOpen(true); setIsUserMenuOpen(false); }}
                className="w-full flex items-center space-x-3 px-3 py-2 text-sm text-slate-300 hover:text-white hover:bg-slate-800 rounded-lg transition-colors"

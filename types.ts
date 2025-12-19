@@ -125,6 +125,8 @@ export interface CommunityDiscussion {
   updatedAt?: number;
   title?: string;
   isManual?: boolean;
+  visibility?: ChannelVisibility;
+  groupIds?: string[];
 }
 
 export type ViewState = 
