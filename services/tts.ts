@@ -13,9 +13,34 @@ export interface TtsResult {
   provider?: 'gemini' | 'openai';
 }
 
-const OPENAI_VOICES = ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'];
+const OPENAI_VOICES = ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer', 'Software Interview Voice', 'Linux Kernel Voice', 'Default Gem'];
 const memoryCache = new Map<string, AudioBuffer>();
 const pendingRequests = new Map<string, Promise<TtsResult>>();
+
+/**
+ * Maps complex UI/Client IDs to valid provider voice names
+ */
+function getValidVoiceName(voiceName: string, provider: 'gemini' | 'openai'): string {
+    // Handling specific IDs provided by user
+    const isInterview = voiceName.includes('0648937375') || voiceName.includes('Software Interview');
+    const isLinux = voiceName.includes('0375218270') || voiceName.includes('Linux Kernel');
+    const isGem = voiceName === 'Default Gem';
+
+    if (provider === 'openai') {
+        if (isInterview) return 'Onyx';
+        if (isLinux) return 'Alloy';
+        if (isGem) return 'Nova';
+        // Fallback for standard OpenAI names
+        return ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'].includes(voiceName.toLowerCase()) ? voiceName : 'Alloy';
+    } else {
+        // Gemini Mapping
+        if (isInterview) return 'Fenrir';
+        if (isLinux) return 'Puck';
+        if (isGem) return 'Zephyr';
+        // Default Gemini voices
+        return ['Puck', 'Charon', 'Kore', 'Fenrir', 'Zephyr'].includes(voiceName) ? voiceName : 'Puck';
+    }
+}
 
 export function cleanTextForTTS(text: string): string {
   return text.replace(/`/g, '');
@@ -27,28 +52,26 @@ export function clearMemoryCache() {
 }
 export const clearAudioCache = clearMemoryCache;
 
-function isOpenAIVoice(voiceName: string): boolean {
-    return OPENAI_VOICES.includes(voiceName.toLowerCase());
-}
-
 async function synthesizeOpenAI(text: string, voice: string, apiKey: string): Promise<ArrayBuffer> {
+  const targetVoice = getValidVoiceName(voice, 'openai');
   const response = await fetch("https://api.openai.com/v1/audio/speech", {
     method: "POST",
     headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ model: "tts-1", input: text, voice: voice.toLowerCase() }),
+    body: JSON.stringify({ model: "tts-1", input: text, voice: targetVoice.toLowerCase() }),
   });
   if (!response.ok) throw new Error("OpenAI Error");
   return await response.arrayBuffer();
 }
 
 async function synthesizeGemini(text: string, voice: string): Promise<ArrayBuffer> {
+    const targetVoice = getValidVoiceName(voice, 'gemini');
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     const response = await ai.models.generateContent({
         model: 'gemini-2.5-flash-preview-tts',
         contents: [{ parts: [{ text }] }],
         config: {
           responseModalities: [Modality.AUDIO], 
-          speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: voice } } },
+          speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: targetVoice } } },
         },
     });
     const base64 = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
@@ -71,7 +94,10 @@ export async function synthesizeSpeech(
     try {
       const cached = await getCachedAudioBuffer(cacheKey);
       if (cached) {
-        const audioBuffer = isOpenAIVoice(voiceName) 
+        // Detect if cached buffer is compressed (OpenAI) or raw PCM (Gemini)
+        // Simple heuristic: if voiceName matches known OpenAI names or was stored as such
+        const isOp = OPENAI_VOICES.some(v => voiceName.includes(v));
+        const audioBuffer = isOp 
             ? await audioContext.decodeAudioData(cached.slice(0)) 
             : await decodeRawPcm(new Uint8Array(cached), audioContext, 24000);
         memoryCache.set(cacheKey, audioBuffer);
@@ -81,11 +107,12 @@ export async function synthesizeSpeech(
       let rawBuffer: ArrayBuffer;
       let usedProvider: 'gemini' | 'openai' = 'gemini';
 
-      if (isOpenAIVoice(voiceName)) {
-          const key = localStorage.getItem('openai_api_key') || OPENAI_API_KEY || process.env.OPENAI_API_KEY || '';
-          if (!key) return { buffer: null, errorType: 'auth' };
+      const openAiKey = localStorage.getItem('openai_api_key') || OPENAI_API_KEY || process.env.OPENAI_API_KEY || '';
+      const isForcedOpenAi = OPENAI_VOICES.some(v => voiceName.includes(v));
+
+      if (isForcedOpenAi && openAiKey) {
           usedProvider = 'openai';
-          rawBuffer = await synthesizeOpenAI(cleanText, voiceName, key);
+          rawBuffer = await synthesizeOpenAI(cleanText, voiceName, openAiKey);
       } else {
           usedProvider = 'gemini';
           rawBuffer = await synthesizeGemini(cleanText, voiceName);
@@ -93,7 +120,6 @@ export async function synthesizeSpeech(
 
       await cacheAudioBuffer(cacheKey, rawBuffer);
       
-      // OpenAI returns standard compressed audio (MP3/AAC), Gemini returns raw PCM
       const audioBuffer = usedProvider === 'openai' 
           ? await audioContext.decodeAudioData(rawBuffer.slice(0)) 
           : await decodeRawPcm(new Uint8Array(rawBuffer), audioContext, 24000);
@@ -101,7 +127,6 @@ export async function synthesizeSpeech(
       memoryCache.set(cacheKey, audioBuffer);
       return { buffer: audioBuffer, errorType: 'none', provider: usedProvider };
     } catch (error: any) {
-      // CRITICAL: If we fall back to system, make sure the global synthesis engine is purged
       if (typeof window !== 'undefined' && window.speechSynthesis) {
           window.speechSynthesis.cancel();
       }
