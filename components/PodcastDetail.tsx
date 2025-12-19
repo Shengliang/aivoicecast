@@ -127,6 +127,10 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
             lastUtteranceRef.current.onend = null;
             lastUtteranceRef.current.onerror = null;
         }
+        // Force a driver reset with a silent dummy utterance
+        const dummy = new SpeechSynthesisUtterance("");
+        dummy.volume = 0;
+        window.speechSynthesis.speak(dummy);
     }
     
     coolDownAudioContext();
@@ -171,15 +175,16 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
   };
 
   const runWebAudioScheduler = async (sessionId: number) => {
-      // LOCK CHECK
+      // 1. Initial Session Check
       if (!isPlayingRef.current || sessionId !== playSessionIdRef.current || !activeLecture || !isAudioOwner(MY_TOKEN)) {
           return;
       }
       
       const ctx = getGlobalAudioContext();
-      const lookahead = 2.5; // Optimized lookahead
+      const lookahead = 2.5; 
       
       while (nextScheduleTimeRef.current < ctx.currentTime + lookahead) {
+          // 2. Loop-level session check
           if (sessionId !== playSessionIdRef.current || !isAudioOwner(MY_TOKEN)) break;
 
           const idx = schedulingCursorRef.current;
@@ -195,7 +200,9 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
           }
 
           const section = activeLecture.sections[idx];
-          // VOICE MAPPING
+          
+          // --- VOICE MAPPING FIX ---
+          // Ensure we don't send Gemini voice names (Puck) to OpenAI (Alloy)
           let voice = section.speaker === 'Teacher' ? teacherVoice : studentVoice;
           if (voiceProvider === 'openai') {
               voice = section.speaker === 'Teacher' ? 'Alloy' : 'Echo';
@@ -206,10 +213,9 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
               const result = await synthesizeSpeech(section.text, voice, ctx);
               setIsBuffering(false);
               
-              // RE-VERIFY LOCK after async TTS network call
-              // Fix: Corrected playbackSessionRef reference to playSessionIdRef
+              // 3. Post-await Session Check (The most common leak point)
               if (sessionId !== playSessionIdRef.current || !isAudioOwner(MY_TOKEN)) {
-                  logAudioEvent(MY_TOKEN, 'ABORT_STALE', `Lock lost during TTS for idx ${idx}`);
+                  logAudioEvent(MY_TOKEN, 'ABORT_STALE', `Session ${sessionId} superseded by ${playSessionIdRef.current} during synthesis`);
                   return;
               }
               
@@ -219,6 +225,13 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
                   connectOutput(source, ctx);
                   
                   const startAt = Math.max(nextScheduleTimeRef.current, ctx.currentTime);
+                  
+                  // 4. Pre-start Final Verification
+                  if (sessionId !== playSessionIdRef.current || !isAudioOwner(MY_TOKEN)) {
+                      source.disconnect();
+                      return;
+                  }
+
                   logAudioEvent(MY_TOKEN, 'PLAY_BUFFER', `Scheduling idx ${idx} @ ${startAt.toFixed(2)}s`);
                   
                   source.start(startAt);
@@ -239,6 +252,7 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
                   nextScheduleTimeRef.current = startAt + result.buffer.duration;
                   schedulingCursorRef.current++;
               } else {
+                  // If synthesis returns null (e.g. key missing/quota), fallback only for current session
                   if (sessionId === playSessionIdRef.current && isAudioOwner(MY_TOKEN)) {
                       setVoiceProvider('system');
                       runSystemTts(sessionId);
