@@ -195,7 +195,7 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
           }
 
           const section = activeLecture.sections[idx];
-          // VOICE MAPPING: Map Gemini voices to OpenAI voices if in OpenAI mode
+          // VOICE MAPPING
           let voice = section.speaker === 'Teacher' ? teacherVoice : studentVoice;
           if (voiceProvider === 'openai') {
               voice = section.speaker === 'Teacher' ? 'Alloy' : 'Echo';
@@ -207,7 +207,7 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
               setIsBuffering(false);
               
               // RE-VERIFY LOCK after async TTS network call
-              // Fix: Corrected playSessionIdRef.current reference
+              // Fix: Corrected playbackSessionRef reference to playSessionIdRef
               if (sessionId !== playSessionIdRef.current || !isAudioOwner(MY_TOKEN)) {
                   logAudioEvent(MY_TOKEN, 'ABORT_STALE', `Lock lost during TTS for idx ${idx}`);
                   return;

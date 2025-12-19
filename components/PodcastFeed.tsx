@@ -155,7 +155,8 @@ const MobileFeedCard = ({
         }
 
         registerAudioOwner(MY_TOKEN, stopAudio);
-        runTrackSequence(-1, playbackSessionRef.current);
+        const newSessionId = ++playbackSessionRef.current;
+        runTrackSequence(-1, newSessionId);
     };
 
     const handleEnableAudio = async (e: React.MouseEvent) => {
@@ -165,7 +166,8 @@ const MobileFeedCard = ({
             await warmUpAudioContext(ctx);
             setIsAutoplayBlocked(false);
             registerAudioOwner(MY_TOKEN, stopAudio);
-            runTrackSequence(-1, playbackSessionRef.current);
+            const newSessionId = ++playbackSessionRef.current;
+            runTrackSequence(-1, newSessionId);
         } catch(err) {
             console.error("Audio resume failed", err);
         }
@@ -191,7 +193,8 @@ const MobileFeedCard = ({
         }
         
         registerAudioOwner(MY_TOKEN, stopAudio);
-        runTrackSequence(trackIndex >= totalLessons ? -1 : trackIndex, playbackSessionRef.current);
+        const newSessionId = ++playbackSessionRef.current;
+        runTrackSequence(trackIndex >= totalLessons ? -1 : trackIndex, newSessionId);
     };
 
     const toggleTtsMode = (e: React.MouseEvent) => {
@@ -206,7 +209,10 @@ const MobileFeedCard = ({
         if (isLoopingRef.current) {
             stopAudio();
             setTimeout(() => { 
-                if (isActiveRef.current) runTrackSequence(trackIndex === -1 ? -1 : trackIndex, playbackSessionRef.current); 
+                if (isActiveRef.current) {
+                    const newSessionId = ++playbackSessionRef.current;
+                    runTrackSequence(trackIndex === -1 ? -1 : trackIndex, newSessionId); 
+                }
             }, 150);
         }
     };
@@ -254,7 +260,7 @@ const MobileFeedCard = ({
     };
 
     const runTrackSequence = async (startIndex: number, sessionId: number) => {
-        if (isLoopingRef.current && sessionId !== playbackSessionRef.current) return;
+        if (sessionId !== playbackSessionRef.current) return;
         isLoopingRef.current = true;
         setPlaybackState('playing');
         
@@ -428,7 +434,6 @@ const MobileFeedCard = ({
                         {statusMessage === "Preparing..." ? <Loader2 size={20} className="animate-spin" /> : playbackState === 'playing' ? <Pause size={20} fill="currentColor" /> : <Play size={20} fill="currentColor" className="ml-0.5" />}
                     </button>
                     {(playbackState === 'playing' || statusMessage === "Preparing...") && (
-                        /* Fix: Changed non-existent handleStop to stopAudio */
                         <button onClick={stopAudio} className="w-10 h-10 rounded-full flex items-center justify-center transition-all shadow-lg bg-slate-800 text-red-400 border border-slate-600 animate-fade-in"><Square size={16} fill="currentColor" /></button>
                     )}
                     <div onClick={handleCardClick} className="cursor-pointer">
