@@ -1,6 +1,6 @@
 
 import { GoogleGenAI, LiveServerMessage, Modality } from '@google/genai';
-import { base64ToBytes, decodeAudioData, createPcmBlob, getGlobalAudioContext, warmUpAudioContext } from '../utils/audioUtils';
+import { base64ToBytes, decodeRawPcm, createPcmBlob, getGlobalAudioContext, warmUpAudioContext } from '../utils/audioUtils';
 
 export interface LiveConnectionCallbacks {
   onOpen: () => void;
@@ -113,7 +113,7 @@ export class GeminiLiveService {
 
                 this.nextStartTime = Math.max(this.nextStartTime, this.outputAudioContext.currentTime);
                 
-                const audioBuffer = await decodeAudioData(
+                const audioBuffer = await decodeRawPcm(
                   bytes,
                   this.outputAudioContext,
                   24000,

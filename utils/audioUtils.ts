@@ -30,7 +30,10 @@ export function bytesToBase64(bytes: Uint8Array): string {
   return btoa(binary);
 }
 
-export async function decodeAudioData(
+/**
+ * Decodes raw 16-bit PCM data into an AudioBuffer.
+ */
+export async function decodeRawPcm(
   data: Uint8Array,
   ctx: AudioContext,
   sampleRate: number = 24000,
@@ -51,7 +54,7 @@ export async function decodeAudioData(
 
 /**
  * Aggressively unlocks the AudioContext on iOS.
- * Plays a silent sound to "unlock" the speaker hardware.
+ * Plays a silent sound via both Web Audio and a temporary HTML5 Audio element.
  * Must be called inside a user gesture (click/touch).
  */
 export async function warmUpAudioContext(ctx: AudioContext) {
@@ -59,12 +62,21 @@ export async function warmUpAudioContext(ctx: AudioContext) {
         await ctx.resume();
     }
     
-    // Create and play a tiny silent buffer to bridge the "autoplay" hardware gap
+    // 1. Web Audio Prime
     const buffer = ctx.createBuffer(1, 1, 22050);
     const source = ctx.createBufferSource();
     source.buffer = buffer;
     source.connect(ctx.destination);
     source.start(0);
+
+    // 2. HTML5 Audio Prime (Crucial for some iOS versions to switch from "Ringer" to "Media" volume)
+    const silentAudio = new Audio();
+    silentAudio.src = 'data:audio/wav;base64,UklGRigAAABXQVZFRm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQQAAAAAAAAA'; // Tiny silent wav
+    try {
+        await silentAudio.play();
+    } catch(e) {
+        console.warn("Silent audio prime failed", e);
+    }
     
     console.log("AudioContext warmed up. State:", ctx.state);
 }

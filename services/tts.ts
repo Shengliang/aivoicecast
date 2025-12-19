@@ -1,6 +1,6 @@
 
 import { GoogleGenAI, Modality } from '@google/genai';
-import { base64ToBytes, decodeAudioData, getGlobalAudioContext } from '../utils/audioUtils';
+import { base64ToBytes, decodeRawPcm, getGlobalAudioContext } from '../utils/audioUtils';
 import { getCachedAudioBuffer, cacheAudioBuffer } from '../utils/db';
 import { GEMINI_API_KEY, OPENAI_API_KEY } from './private_keys';
 
@@ -73,7 +73,7 @@ export async function synthesizeSpeech(
       if (cached) {
         const audioBuffer = isOpenAIVoice(voiceName) 
             ? await audioContext.decodeAudioData(cached.slice(0)) 
-            : await decodeAudioData(new Uint8Array(cached), audioContext, 24000);
+            : await decodeRawPcm(new Uint8Array(cached), audioContext, 24000);
         memoryCache.set(cacheKey, audioBuffer);
         return { buffer: audioBuffer, errorType: 'none' };
       }
@@ -92,9 +92,11 @@ export async function synthesizeSpeech(
       }
 
       await cacheAudioBuffer(cacheKey, rawBuffer);
+      
+      // OpenAI returns standard compressed audio (MP3/AAC), Gemini returns raw PCM
       const audioBuffer = usedProvider === 'openai' 
           ? await audioContext.decodeAudioData(rawBuffer.slice(0)) 
-          : await decodeAudioData(new Uint8Array(rawBuffer), audioContext, 24000);
+          : await decodeRawPcm(new Uint8Array(rawBuffer), audioContext, 24000);
       
       memoryCache.set(cacheKey, audioBuffer);
       return { buffer: audioBuffer, errorType: 'none', provider: usedProvider };

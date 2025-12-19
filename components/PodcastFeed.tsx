@@ -283,11 +283,11 @@ const MobileFeedCard = ({
                     let lecture = null;
                     
                     if (preloadedScriptRef.current) { 
-                        setStatusMessage(`Loading...`); 
+                        setStatusMessage(`Preparing...`); 
                         lecture = await preloadedScriptRef.current; 
                         preloadedScriptRef.current = null; 
                     } else { 
-                        setStatusMessage(`Generating...`); 
+                        setStatusMessage(`Preparing...`); 
                         setPlaybackState('buffering'); 
                         lecture = await fetchLectureData(lessonMeta); 
                     }
@@ -317,9 +317,11 @@ const MobileFeedCard = ({
                     if (provider === 'system') {
                         await playSystemAudio(part.text, part.voice, sessionId);
                     } else {
+                        setStatusMessage(`Preparing...`);
                         const audioResult = await synthesizeSpeech(part.text, part.voice, getGlobalAudioContext());
                         if (sessionId !== playbackSessionRef.current) return;
                         if (audioResult && audioResult.buffer) {
+                            setStatusMessage("Playing");
                             await playAudioBuffer(audioResult.buffer, sessionId);
                         } else {
                             await playSystemAudio(part.text, part.voice, sessionId);
@@ -374,7 +376,7 @@ const MobileFeedCard = ({
                     </button>
                     {(playbackState === 'buffering' || statusMessage) && (
                         <div className={`backdrop-blur-md px-3 py-1.5 rounded-full flex items-center gap-2 border shadow-lg bg-black/60 border-white/10`}>
-                            {playbackState === 'buffering' ? <Loader2 size={12} className="animate-spin text-indigo-400" /> : <Music size={12} className="text-slate-400" />}
+                            {statusMessage === "Preparing..." ? <Loader2 size={12} className="animate-spin text-indigo-400" /> : <Music size={12} className="text-slate-400" />}
                             <span className="text-[10px] font-bold text-white uppercase tracking-wider">{statusMessage || "Active"}</span>
                         </div>
                     )}
@@ -408,9 +410,9 @@ const MobileFeedCard = ({
                 </div>
                 <div className="flex items-center gap-3 mb-2">
                     <button onClick={handleTogglePlay} className={`w-10 h-10 rounded-full flex items-center justify-center transition-all shadow-lg ${playbackState === 'playing' ? 'bg-slate-800 text-indigo-400 border border-slate-600' : 'bg-white text-black'}`}>
-                        {playbackState === 'buffering' ? <Loader2 size={20} className="animate-spin" /> : playbackState === 'playing' ? <Pause size={20} fill="currentColor" /> : <Play size={20} fill="currentColor" className="ml-0.5" />}
+                        {statusMessage === "Preparing..." ? <Loader2 size={20} className="animate-spin" /> : playbackState === 'playing' ? <Pause size={20} fill="currentColor" /> : <Play size={20} fill="currentColor" className="ml-0.5" />}
                     </button>
-                    {(playbackState === 'playing' || playbackState === 'buffering') && (
+                    {(playbackState === 'playing' || statusMessage === "Preparing...") && (
                         <button onClick={handleStop} className="w-10 h-10 rounded-full flex items-center justify-center transition-all shadow-lg bg-slate-800 text-red-400 border border-slate-600 animate-fade-in"><Square size={16} fill="currentColor" /></button>
                     )}
                     <div onClick={(e) => { e.stopPropagation(); onChannelClick(channel.id); }}>
