@@ -1162,8 +1162,13 @@ export const LiveSession: React.FC<LiveSessionProps> = ({
                    </div>
                )}
                {transcript.map((item, index) => {
-                   // Fix for technical IDs and aliases appearing in transcript roles
-                   const isAIVoice = item.role === 'ai' || item.role.includes('gen-lang-client') || item.role.toLowerCase().includes('gem');
+                   // Robust mapping for technical gen-lang-client roles and specific IDs
+                   const isAIVoice = item.role === 'ai' || 
+                                     item.role.includes('gen-lang-client') || 
+                                     item.role.toLowerCase().includes('gem') ||
+                                     item.role === 'Software Interview Voice' ||
+                                     item.role === 'Linux Kernel Voice';
+                                     
                    const roleLabel = isAIVoice ? channel.voiceName : t.you;
                    const colorClass = isAIVoice ? 'text-emerald-400' : 'text-indigo-400';
 
