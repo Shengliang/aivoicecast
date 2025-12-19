@@ -734,6 +734,7 @@ export async function listCloudDirectory(path: string): Promise<CloudItem[]> {
 }
 
 export async function saveProjectToCloud(parentPath: string, name: string, content: string) {
+    if (!auth.currentUser) return;
     const fullPath = `${parentPath}/${name}`;
     const fileRef = storage.ref(fullPath);
     await fileRef.putString(content);
@@ -743,18 +744,21 @@ export async function saveProjectToCloud(parentPath: string, name: string, conte
         fullPath,
         parentPath,
         isFolder: false,
+        ownerId: auth.currentUser.uid,
         url: await fileRef.getDownloadURL(),
         timeCreated: new Date().toISOString()
     });
 }
 
 export async function createCloudFolder(parentPath: string, name: string) {
+    if (!auth.currentUser) return;
     const fullPath = `${parentPath}/${name}`;
     await db.collection('cloud_files').doc(fullPath.replace(/\//g, '_')).set({
         name,
         fullPath,
         parentPath,
         isFolder: true,
+        ownerId: auth.currentUser.uid,
         timeCreated: new Date().toISOString()
     });
 }

@@ -1,3 +1,4 @@
+
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -154,7 +155,11 @@ service cloud.firestore {
     
     // Metadata for files stored in the "Private Cloud"
     match /cloud_files/{fileId} {
-       allow read, write: if isAuthenticated();
+       allow read, write: if isAuthenticated() && (
+         resource == null || 
+         resource.data.ownerId == request.auth.uid || 
+         isAdmin()
+       );
     }
 
     match /whiteboards/{boardId} {

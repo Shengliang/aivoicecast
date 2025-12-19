@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { CodeProject, CodeFile, UserProfile, Channel, CursorPosition, CloudItem } from '../types';
 import { ArrowLeft, Save, Plus, Github, Cloud, HardDrive, Code, X, ChevronRight, ChevronDown, File, Folder, DownloadCloud, Loader2, CheckCircle, AlertTriangle, Info, FolderPlus, FileCode, RefreshCw, LogIn, CloudUpload, Trash2, ArrowUp, Edit2, FolderOpen, MoreVertical, Send, MessageSquare, Bot, Mic, Sparkles, SidebarClose, SidebarOpen, Users, Eye, FileText as FileTextIcon, Image as ImageIcon, StopCircle, Minus, Maximize2, Minimize2, Lock, Unlock, Share2, Terminal, Copy, WifiOff, PanelRightClose, PanelRightOpen, Monitor, Laptop, PenTool, Edit3, ShieldAlert } from 'lucide-react';
@@ -275,14 +276,19 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
   };
 
   // Sync active file with Firestore
-  const updateActiveFileAndSync = (file: CodeFile) => {
+  const updateActiveFileAndSync = (file: CodeFile | null) => {
       setActiveFile(file);
-      const filePath = file.path || file.name;
-      // Add debug log with full path as requested
-      addDebugLog(`Switched active file: ${filePath}`);
-      
-      if (isSharedSession && sessionId) {
-          updateProjectActiveFile(sessionId, filePath);
+      if (file) {
+          const filePath = file.path || file.name;
+          addDebugLog(`Switched active file: ${filePath}`);
+          if (isSharedSession && sessionId) {
+              updateProjectActiveFile(sessionId, filePath);
+          }
+      } else {
+          addDebugLog(`Closed current file`);
+          if (isSharedSession && sessionId) {
+              updateProjectActiveFile(sessionId, '');
+          }
       }
   };
 
@@ -450,11 +456,11 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
           targetId = newId;
           onSessionStart(newId);
           
-          const newProjectState = { ...project, id: newId, ownerId: currentUser?.uid };
+          const newProjectState = { ...project, id: targetId, ownerId: currentUser?.uid };
           setProject(newProjectState);
           
           // Create the document immediately so subsequent updates work
-          addDebugLog(`Creating new session doc: ${newId}`);
+          addDebugLog(`Creating new session doc: ${targetId}`);
           try {
               await saveCodeProject(newProjectState);
               addDebugLog("Session doc created successfully.");
@@ -633,7 +639,16 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
   const handleDriveToggle = async (node: TreeNode) => { const driveFile = node.data as DriveFile; const isExpanded = expandedFolders[node.id]; setExpandedFolders(prev => ({ ...prev, [node.id]: !isExpanded })); if (!isExpanded && driveToken && (!node.children || node.children.length === 0)) { setLoadingFolders(prev => ({ ...prev, [node.id]: true })); try { const files = await listDriveFiles(driveToken, driveFile.id); setDriveItems(prev => { const newItems = files.map(f => ({ ...f, parentId: node.id, isLoaded: false })); return Array.from(new Map([...prev, ...newItems].map(item => [item.id, item])).values()); }); } catch(e) { console.error(e); } finally { setLoadingFolders(prev => ({ ...prev, [node.id]: false })); } } };
   const handleDriveSelect = async (node: TreeNode) => { const driveFile = node.data as DriveFile; if (!driveToken) return; setLoadingFolders(prev => ({ ...prev, [node.id]: true })); try { const text = await readDriveFile(driveToken, driveFile.id); const newFile: CodeFile = { name: driveFile.name, path: `drive://${driveFile.id}`, content: text, language: getLanguageFromExt(driveFile.name), loaded: true, isDirectory: false, isModified: false }; if (isSharedSession && sessionId) { await updateCodeFile(sessionId, newFile); } updateActiveFileAndSync(newFile); } catch (e: any) { showToast("Failed to read Drive file", "error"); } finally { setLoadingFolders(prev => ({ ...prev, [node.id]: false })); } };
   const handleDragStart = (e: React.DragEvent, node: TreeNode) => { setDraggedNode(node); e.dataTransfer.effectAllowed = 'move'; };
-  const handleDrop = async (e: React.DragEvent, targetNode: TreeNode) => { e.preventDefault(); if (!draggedNode) return; if (draggedNode.id === targetNode.id) return; if (targetNode.type !== 'folder') return; try { if (activeTab === 'cloud') { const item = draggedNode.data as CloudItem; const targetPath = (targetNode.data as CloudItem).fullPath; const newFullPath = targetPath.replace(/\/+$/, '') + '/' + item.name; await moveCloudFile(item.fullPath, newFullPath); setCloudItems(prev => prev.filter(i => i.fullPath !== item.fullPath)); await refreshCloudPath(targetPath); showToast("File moved", "success"); } } catch (err: any) { showToast("Move failed", "error"); } setDraggedNode(null); };
+  const handleDrop = async (e: React.DragEvent, targetNode: TreeNode) => { e.preventDefault(); if (!draggedNode) return; if (draggedNode.id === targetNode.id) return; if (targetNode.type !== 'folder') return; try { if (activeTab === 'cloud') { const item = draggedNode.data as CloudItem; const targetPath = (targetNode.data as CloudItem).fullPath; const newFullPath = targetPath.replace(/\/+$/, '') + '/' + item.name; await moveCloudFile(item.fullPath, newFullPath);
+                
+                // If the moved file is the active one, update its internal path state
+                // This ensures "Save" uses the new path in derived calculations
+                if (activeFile && (activeFile.path === item.fullPath)) {
+                    setActiveFile(prev => prev ? ({ ...prev, path: newFullPath }) : null);
+                    addDebugLog(`Active file moved. Updated path: ${newFullPath}`);
+                }
+                
+                setCloudItems(prev => prev.filter(i => i.fullPath !== item.fullPath)); await refreshCloudPath(targetPath); showToast("File moved", "success"); } } catch (err: any) { showToast("Move failed", "error"); } setDraggedNode(null); };
   const handleCreateFolder = async () => { const name = prompt("Folder Name:"); if (!name) return; try { if (activeTab === 'cloud' && currentUser) { await createCloudFolder(`projects/${currentUser.uid}`, name); showToast("Folder created", "success"); await refreshCloudPath(`projects/${currentUser.uid}`); } } catch(e: any) { showToast(e.message, "error"); } };
   const handleCreateFile = async () => { const name = prompt("File Name:"); if (!name) return; await createFileInActiveContext(name, "// New File"); };
   const handleCreateWhiteboard = async () => { const name = prompt("Whiteboard Name:"); if (!name) return; await createFileInActiveContext(name.endsWith('.wb')?name:name+'.wb', "[]"); };
@@ -862,6 +877,13 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
                             <FileIcon filename={activeFile.name} />
                             <span className="text-sm font-bold text-white">{activeFile.name}</span>
                             {activeFile.isModified && <span className="w-2 h-2 bg-amber-400 rounded-full"></span>}
+                            <button 
+                                onClick={() => updateActiveFileAndSync(null)} 
+                                className="p-1 hover:bg-slate-800 rounded text-slate-500 hover:text-white transition-colors ml-1"
+                                title="Close file"
+                            >
+                                <X size={14} />
+                            </button>
                             {/* Preview Toggle */}
                             {(activeFile.name.endsWith('.md') || activeFile.name.endsWith('.markdown') || activeFile.name.endsWith('.puml') || activeFile.name.endsWith('.plantuml')) && (
                                 <div className="flex bg-slate-800 rounded-lg p-0.5 border border-slate-700 ml-4">
