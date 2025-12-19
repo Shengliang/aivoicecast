@@ -72,12 +72,21 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
   const playSessionIdRef = useRef(0);
 
   const stopAudio = useCallback(() => {
-    playSessionIdRef.current++; // Kill async loop
+    // 1. Increment play session to kill any async while loops/timeouts instantly
+    playSessionIdRef.current++; 
+    
+    // 2. Kill browsers native synthesis
     window.speechSynthesis.cancel();
+    
+    // 3. Kill Web Audio Graph nodes
     activeSourcesRef.current.forEach(source => { try { source.stop(); } catch(e) {} });
     activeSourcesRef.current = [];
+    
+    // 4. Reset cursors
     nextScheduleTimeRef.current = 0;
     if (schedulerTimerRef.current) { clearTimeout(schedulerTimerRef.current); schedulerTimerRef.current = null; }
+    
+    // 5. Update UI state
     isPlayingRef.current = false;
     setIsPlaying(false);
     setIsBuffering(false);
@@ -85,7 +94,7 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
     if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'paused';
   }, []);
 
-  // Cleanup on unmount
+  // Cleanup on unmount - VERY IMPORTANT to stop global overlap
   useEffect(() => {
       return () => {
           stopAudio();
@@ -156,12 +165,17 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
     if (isPlaying) { 
       stopAudio(); 
     } else {
+      // CLEAR ANY PREVIOUS PLATFORM AUDIO (prevent dual-voice)
       setGlobalStopPlayback(stopAudio);
+
       const ctx = getGlobalAudioContext();
       await warmUpAudioContext(ctx);
+      
+      // Local session check
       const sessionId = ++playSessionIdRef.current;
       const startIdx = currentSectionIndex && currentSectionIndex < (activeLecture?.sections.length || 0) ? currentSectionIndex : 0;
       schedulingCursorRef.current = startIdx;
+      
       setIsPlaying(true);
       isPlayingRef.current = true;
       if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'playing';
@@ -175,6 +189,7 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
   };
 
   const runWebAudioScheduler = async (sessionId: number) => {
+      // Check session ID before starting the scheduler loop
       if (!isPlayingRef.current || sessionId !== playSessionIdRef.current || !activeLecture) {
           schedulerTimerRef.current = null;
           return;
@@ -188,6 +203,9 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
       }
 
       while (nextScheduleTimeRef.current < ctx.currentTime + lookahead) {
+          // Double check session inside while loop
+          if (sessionId !== playSessionIdRef.current) return;
+
           const idx = schedulingCursorRef.current;
           if (idx >= activeLecture.sections.length) {
               const remaining = (nextScheduleTimeRef.current - ctx.currentTime) * 1000;
@@ -204,6 +222,7 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
               const result = await synthesizeSpeech(section.text, voice, ctx);
               setIsBuffering(false);
               
+              // CRITICAL SESSION CHECK after await
               if (sessionId !== playSessionIdRef.current) return;
               
               if (result.buffer) {
@@ -231,36 +250,51 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
                   return;
               }
           } catch(e) {
-              setVoiceProvider('system');
-              runSystemTts(sessionId);
+              if (sessionId === playSessionIdRef.current) {
+                setVoiceProvider('system');
+                runSystemTts(sessionId);
+              }
               return;
           }
       }
 
-      schedulerTimerRef.current = setTimeout(() => runWebAudioScheduler(sessionId), 500);
+      // Chain next scheduler call with session check
+      if (sessionId === playSessionIdRef.current) {
+        schedulerTimerRef.current = setTimeout(() => runWebAudioScheduler(sessionId), 500);
+      }
   };
 
   const runSystemTts = (sessionId: number) => {
       const idx = schedulingCursorRef.current;
       if (!activeLecture || idx >= activeLecture.sections.length || sessionId !== playSessionIdRef.current) {
-          stopAudio();
+          if (sessionId === playSessionIdRef.current) stopAudio();
           return;
       }
+      
       setCurrentSectionIndex(idx);
       sectionRefs.current[idx]?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      
       const utter = new SpeechSynthesisUtterance(cleanTextForTTS(activeLecture.sections[idx].text));
       const targetURI = activeLecture.sections[idx].speaker === 'Teacher' ? sysTeacherVoiceURI : sysStudentVoiceURI;
       const v = systemVoices.find(v => v.voiceURI === targetURI);
       if (v) utter.voice = v;
-      utter.onend = () => { if (sessionId === playSessionIdRef.current) { schedulingCursorRef.current++; runSystemTts(sessionId); } };
+      
+      utter.onend = () => { 
+          if (sessionId === playSessionIdRef.current) { 
+              schedulingCursorRef.current++; 
+              runSystemTts(sessionId); 
+          } 
+      };
+      
       window.speechSynthesis.speak(utter);
   };
 
   const handleTopicClick = async (topicTitle: string, subTopicId?: string) => {
-    // Crucial: Stop previous before loading new
+    // 1. Immediately kill any existing audio session
     setGlobalStopPlayback(stopAudio); 
     stopAudio();
 
+    // 2. Clear old data and show generating UI
     setActiveSubTopicId(subTopicId || null);
     setCurrentSectionIndex(0);
     schedulingCursorRef.current = 0;
@@ -272,12 +306,18 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
         const cacheKey = `lecture_${channel.id}_${subTopicId}_${language}`;
         const cached = await getCachedLectureScript(cacheKey);
         if (cached) { setActiveLecture(cached); return; }
+        
+        // Only call LLM if absolutely necessary
         const script = await generateLectureScript(topicTitle, channel.description, language);
         if (script) {
           setActiveLecture(script);
           await cacheLectureScript(cacheKey, script);
         }
-    } catch (e: any) { console.error(e); } finally { setIsLoadingLecture(false); }
+    } catch (e: any) { 
+        console.error(e); 
+    } finally { 
+        setIsLoadingLecture(false); 
+    }
   };
 
   const handlePrevLesson = () => { if (currentLectureIndex > 0) { const prev = flatCurriculum[currentLectureIndex - 1]; handleTopicClick(prev.title, prev.id); } };
@@ -322,7 +362,13 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
             </div>
         </div>
         <div className="col-span-12 lg:col-span-8">
-          {activeLecture ? (
+          {isLoadingLecture ? (
+             <div className="h-full flex flex-col items-center justify-center p-12 text-center animate-pulse">
+                <Loader2 size={48} className="text-indigo-500 animate-spin mb-4" />
+                <h3 className="text-xl font-bold text-white">{t.generating}</h3>
+                <p className="text-slate-400 mt-2">{t.genDesc}</p>
+             </div>
+          ) : activeLecture ? (
             <div className="space-y-8">
                 <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl sticky top-8 z-20 backdrop-blur-md bg-slate-900/90">
                     <div className="flex items-center justify-between mb-4">
