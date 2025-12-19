@@ -1,9 +1,9 @@
 
 import React, { useState, useEffect } from 'react';
-import { createGroup, getUserGroups, sendInvitation, getGroupMembers, removeMemberFromGroup } from '../services/firestoreService';
+import { createGroup, getUserGroups, sendInvitation, getGroupMembers, removeMemberFromGroup, deleteGroup, renameGroup } from '../services/firestoreService';
 import { Group, UserProfile } from '../types';
 import { auth } from '../services/firebaseConfig';
-import { Users, Plus, RefreshCw, Mail, Send, Trash2, ChevronDown, ChevronUp, User } from 'lucide-react';
+import { Users, Plus, RefreshCw, Mail, Send, Trash2, ChevronDown, ChevronUp, User, Edit2, Check, X } from 'lucide-react';
 
 export const GroupManager: React.FC = () => {
   const [groups, setGroups] = useState<Group[]>([]);
@@ -11,6 +11,10 @@ export const GroupManager: React.FC = () => {
   const [newGroupName, setNewGroupName] = useState('');
   const [error, setError] = useState<string | null>(null);
   
+  // Edit State
+  const [editingGroupId, setEditingGroupId] = useState<string | null>(null);
+  const [editingName, setEditingName] = useState('');
+
   // Invite State
   const [inviteEmails, setInviteEmails] = useState<Record<string, string>>({});
   const [inviteStatus, setInviteStatus] = useState<Record<string, string>>({});
@@ -117,6 +121,38 @@ export const GroupManager: React.FC = () => {
       }
   };
 
+  const handleDeleteGroup = async (groupId: string) => {
+    if (!confirm("Are you sure you want to delete this group? All memberships will be revoked and this action cannot be undone.")) return;
+    setLoading(true);
+    try {
+      await deleteGroup(groupId);
+      setGroups(prev => prev.filter(g => g.id !== groupId));
+    } catch (e: any) {
+      alert("Failed to delete group: " + e.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const startRenaming = (group: Group) => {
+    setEditingGroupId(group.id);
+    setEditingName(group.name);
+  };
+
+  const handleRenameGroup = async () => {
+    if (!editingGroupId || !editingName.trim()) return;
+    setLoading(true);
+    try {
+      await renameGroup(editingGroupId, editingName);
+      setGroups(prev => prev.map(g => g.id === editingGroupId ? { ...g, name: editingName } : g));
+      setEditingGroupId(null);
+    } catch (e: any) {
+      alert("Failed to rename group: " + e.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 shadow-xl space-y-8 animate-fade-in-up">
       
@@ -167,9 +203,32 @@ export const GroupManager: React.FC = () => {
               <div key={g.id} className="bg-slate-800/50 border border-slate-700 rounded-lg overflow-hidden group">
                 <div className="p-5 flex flex-col md:flex-row justify-between gap-4">
                     <div className="flex-1">
-                        <div className="flex items-center space-x-2">
-                            <p className="text-white font-bold text-lg">{g.name}</p>
-                            {g.ownerId === auth.currentUser?.uid && <span className="bg-indigo-900/50 text-indigo-400 text-[10px] px-2 py-0.5 rounded uppercase font-bold">Owner</span>}
+                        <div className="flex items-center space-x-3">
+                            {editingGroupId === g.id ? (
+                              <div className="flex items-center gap-2 flex-1">
+                                <input 
+                                  autoFocus
+                                  type="text"
+                                  className="bg-slate-900 border border-indigo-500 rounded px-3 py-1 text-white text-lg font-bold outline-none w-full"
+                                  value={editingName}
+                                  onChange={e => setEditingName(e.target.value)}
+                                  onKeyDown={e => e.key === 'Enter' && handleRenameGroup()}
+                                />
+                                <button onClick={handleRenameGroup} className="p-1.5 text-emerald-400 hover:bg-emerald-400/10 rounded"><Check size={20}/></button>
+                                <button onClick={() => setEditingGroupId(null)} className="p-1.5 text-slate-400 hover:bg-slate-400/10 rounded"><X size={20}/></button>
+                              </div>
+                            ) : (
+                              <>
+                                <p className="text-white font-bold text-lg">{g.name}</p>
+                                {g.ownerId === auth.currentUser?.uid && (
+                                  <div className="flex items-center gap-2">
+                                    <span className="bg-indigo-900/50 text-indigo-400 text-[10px] px-2 py-0.5 rounded uppercase font-bold">Owner</span>
+                                    <button onClick={() => startRenaming(g)} className="p-1 text-slate-500 hover:text-white transition-colors"><Edit2 size={14}/></button>
+                                    <button onClick={() => handleDeleteGroup(g.id)} className="p-1 text-slate-500 hover:text-red-400 transition-colors"><Trash2 size={14}/></button>
+                                  </div>
+                                )}
+                              </>
+                            )}
                         </div>
                         
                         <div className="flex items-center space-x-4 mt-2">

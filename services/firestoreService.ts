@@ -690,37 +690,45 @@ export async function forceUpgradeDebug(uid: string): Promise<void> {
 // --- Groups & Members ---
 
 export async function getUserGroups(uid: string): Promise<Group[]> {
-    const snap = await db.collection(GROUPS_COLLECTION).where('memberIds', 'array-contains', uid).get();
-    return snap.docs.map(d => ({ ...d.data(), id: d.id } as Group));
+  const snap = await db.collection(GROUPS_COLLECTION).where('memberIds', 'array-contains', uid).get();
+  return snap.docs.map(d => ({ ...d.data(), id: d.id } as Group));
 }
 
 export async function createGroup(name: string): Promise<string> {
-    const group: any = {
-        name,
-        ownerId: auth.currentUser?.uid,
-        memberIds: [auth.currentUser?.uid],
-        createdAt: Date.now()
-    };
-    const ref = await db.collection(GROUPS_COLLECTION).add(group);
-    return ref.id;
+  const group: any = {
+    name,
+    ownerId: auth.currentUser?.uid,
+    memberIds: [auth.currentUser?.uid],
+    createdAt: Date.now()
+  };
+  const ref = await db.collection(GROUPS_COLLECTION).add(group);
+  return ref.id;
+}
+
+export async function deleteGroup(groupId: string): Promise<void> {
+  await db.collection(GROUPS_COLLECTION).doc(groupId).delete();
+}
+
+export async function renameGroup(groupId: string, newName: string): Promise<void> {
+  await db.collection(GROUPS_COLLECTION).doc(groupId).update({ name: newName });
 }
 
 export async function getGroupMembers(uids: string[]): Promise<UserProfile[]> {
-    if (!uids || uids.length === 0) return [];
-    const snap = await db.collection(USERS_COLLECTION).where('uid', 'in', uids.slice(0, 10)).get();
-    return snap.docs.map(d => d.data() as UserProfile);
+  if (!uids || uids.length === 0) return [];
+  const snap = await db.collection(USERS_COLLECTION).where('uid', 'in', uids.slice(0, 10)).get();
+  return snap.docs.map(d => d.data() as UserProfile);
 }
 
 export async function removeMemberFromGroup(groupId: string, memberId: string) {
-    await db.collection(GROUPS_COLLECTION).doc(groupId).update({
-        memberIds: firebase.firestore.FieldValue.arrayRemove(memberId)
-    });
+  await db.collection(GROUPS_COLLECTION).doc(groupId).update({
+    memberIds: firebase.firestore.FieldValue.arrayRemove(memberId)
+  });
 }
 
 export async function getUniqueGroupMembers(groupId: string): Promise<UserProfile[]> {
-    const group = await db.collection(GROUPS_COLLECTION).doc(groupId).get();
-    if (!group.exists) return [];
-    return getGroupMembers(group.data()?.memberIds || []);
+  const group = await db.collection(GROUPS_COLLECTION).doc(groupId).get();
+  if (!group.exists) return [];
+  return getGroupMembers(group.data()?.memberIds || []);
 }
 
 // --- Direct Messages ---
