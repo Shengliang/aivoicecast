@@ -58,7 +58,7 @@ import { HANDCRAFTED_CHANNELS, CATEGORY_STYLES, TOPIC_CATEGORIES } from './utils
 import { OFFLINE_CHANNEL_ID } from './utils/offlineContent';
 import { warmUpAudioContext } from './utils/audioUtils';
 
-const APP_VERSION = "v3.80.4"; 
+const APP_VERSION = "v3.83.0"; 
 
 const UI_TEXT = {
   en: {

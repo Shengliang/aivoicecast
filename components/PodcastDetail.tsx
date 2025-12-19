@@ -151,18 +151,49 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
     stopAudio(); setCurrentSectionIndex(0); schedulingCursorRef.current = 0; 
     setActiveLecture(null); setGuestError(null); setIsLoadingLecture(true);
     setFallbackReason('none');
+    
     try {
-        if (OFFLINE_LECTURES[topicTitle]) { setActiveLecture(OFFLINE_LECTURES[topicTitle]); return; }
+        // Hierarchy 1: Check Offline/Static Content
+        if (OFFLINE_LECTURES[topicTitle]) { 
+            setActiveLecture(OFFLINE_LECTURES[topicTitle]); 
+            return; 
+        }
+        if (channel.id && SPOTLIGHT_DATA[channel.id]?.lectures?.[topicTitle]) {
+            setActiveLecture(SPOTLIGHT_DATA[channel.id].lectures[topicTitle]);
+            return;
+        }
+
+        // Hierarchy 2: Check Local IndexedDB Cache
         const cacheKey = `lecture_${channel.id}_${subTopicId}_${language}`;
         const cached = await getCachedLectureScript(cacheKey);
-        if (cached) { setActiveLecture(cached); return; }
+        if (cached) { 
+            setActiveLecture(cached); 
+            setIsLoadedFromCache(true);
+            return; 
+        }
+
+        // Hierarchy 3: Check Cloud Registry (Firestore) - Prevents regeneration on version updates
+        if (subTopicId) {
+            const cloudData = await getLectureFromFirestore(channel.id, subTopicId);
+            if (cloudData) {
+                setActiveLecture(cloudData);
+                await cacheLectureScript(cacheKey, cloudData); // Cache locally for next time
+                return;
+            }
+        }
+
+        // Hierarchy 4: Generate with AI if not found anywhere else
         const script = await generateLectureScript(topicTitle, channel.description, language);
         if (script) {
           setActiveLecture(script);
           await cacheLectureScript(cacheKey, script);
           if (currentUser && subTopicId) await saveLectureToFirestore(channel.id, subTopicId, script);
         }
-    } catch (e: any) { console.error(e); } finally { setIsLoadingLecture(false); }
+    } catch (e: any) { 
+        console.error(e); 
+    } finally { 
+        setIsLoadingLecture(false); 
+    }
   };
 
   const togglePlayback = async () => {
