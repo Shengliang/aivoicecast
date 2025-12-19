@@ -26,10 +26,19 @@ export class GeminiLiveService {
   private isPlayingResponse: boolean = false;
   private speakingTimer: any = null;
 
-  constructor() {}
+  constructor() {
+      // Auto-resume audio when application becomes visible again (e.g., screen unlock)
+      if (typeof window !== 'undefined') {
+          window.addEventListener('visibilitychange', () => {
+              if (document.visibilityState === 'visible') {
+                  this.outputAudioContext?.resume().catch(e => console.warn("Failed to resume output context", e));
+                  this.inputAudioContext?.resume().catch(e => console.warn("Failed to resume input context", e));
+              }
+          });
+      }
+  }
 
   public initializeAudio() {
-    // Use standard 16k for input and 24k for output as per singleton pattern
     this.inputAudioContext = getGlobalAudioContext(16000);
     this.outputAudioContext = getGlobalAudioContext(24000);
     

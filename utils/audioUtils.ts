@@ -54,10 +54,7 @@ export async function decodeRawPcm(
 }
 
 /**
- * Aggressively unlocks the AudioContext on iOS.
- * Plays a silent sound via both Web Audio and a persistent HTML5 Audio element.
- * This trick forces iOS to switch from "Ambient" to "Playback" mode, 
- * bypassing the physical silent switch and routing to speakers.
+ * Aggressively unlocks the AudioContext on iOS and keeps it alive in background.
  */
 export async function warmUpAudioContext(ctx: AudioContext) {
     if (ctx.state === 'suspended' || (ctx.state as any) === 'interrupted') {
@@ -72,18 +69,21 @@ export async function warmUpAudioContext(ctx: AudioContext) {
     source.start(0);
 
     // 2. HTML5 Audio Prime: Use a tiny silent WAV. 
-    // This is the critical part that tells iOS to use the SPEAKER and ignore the mute switch.
+    // This is the critical part that tells iOS to use the SPEAKER and ignore the mute switch / lock.
     if (!silentLoopElement) {
         silentLoopElement = new Audio();
         // A 0.1s silent wav
         silentLoopElement.src = 'data:audio/wav;base64,UklGRigAAABXQVZFRm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQQAAAAAAAAA';
         silentLoopElement.loop = true;
+        silentLoopElement.setAttribute('playsinline', 'true');
+        // Ensure it doesn't get cleaned up by garbage collection
+        (window as any)._persistentSilence = silentLoopElement;
     }
     
     try {
         await silentLoopElement.play();
     } catch(e) {
-        console.warn("Silent audio prime failed", e);
+        console.warn("Silent audio prime failed. User interaction might be required.", e);
     }
     
     console.log("AudioContext and Speaker Hardware warmed up. State:", ctx.state);

@@ -95,6 +95,25 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
 
   useEffect(() => { if (currentUser) getUserProfile(currentUser.uid).then(setUserProfile); }, [currentUser]);
 
+  // Media Session API Setup: Prevent audio from stopping in background
+  useEffect(() => {
+    if ('mediaSession' in navigator && activeLecture) {
+        navigator.mediaSession.metadata = new MediaMetadata({
+            title: activeLecture.topic,
+            artist: channel.title,
+            album: activeTab === 'curriculum' ? 'Podcast Lesson' : 'Learning Path',
+            artwork: [
+                { src: channel.imageUrl, sizes: '512x512', type: 'image/jpeg' }
+            ]
+        });
+
+        navigator.mediaSession.setActionHandler('play', () => { if (!isPlaying) togglePlayback(); });
+        navigator.mediaSession.setActionHandler('pause', () => { if (isPlaying) stopAudio(); });
+        navigator.mediaSession.setActionHandler('previoustrack', handlePrevLesson);
+        navigator.mediaSession.setActionHandler('nexttrack', handleNextLesson);
+    }
+  }, [activeLecture, isPlaying]);
+
   const flatCurriculum = useMemo(() => {
       if(!chapters) return [];
       return chapters.flatMap(ch => (ch.subTopics || []).map(sub => ({ ...sub, chapterTitle: ch.title })));
@@ -107,9 +126,21 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
 
   useEffect(() => {
       const handleResize = () => { stopAudio(); clearAudioCache(); };
+      const handleVisibilityChange = () => {
+          if (document.visibilityState === 'visible' && isPlaying) {
+              const ctx = getGlobalAudioContext();
+              if (ctx.state === 'suspended') ctx.resume();
+          }
+      };
       window.addEventListener('resize', handleResize);
-      return () => { window.removeEventListener('resize', handleResize); stopAudio(); clearAudioCache(); };
-  }, []);
+      window.addEventListener('visibilitychange', handleVisibilityChange);
+      return () => { 
+          window.removeEventListener('resize', handleResize); 
+          window.removeEventListener('visibilitychange', handleVisibilityChange);
+          stopAudio(); 
+          clearAudioCache(); 
+      };
+  }, [isPlaying]);
 
   const loadVoices = useCallback(() => {
     const voices = window.speechSynthesis.getVoices();
@@ -142,6 +173,7 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
     setIsPlaying(false);
     setIsBuffering(false);
     playSessionIdRef.current++;
+    if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'paused';
   }, []);
 
   const handleTopicClick = async (topicTitle: string, subTopicId?: string) => {
@@ -153,59 +185,37 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
     setFallbackReason('none');
     
     try {
-        // Hierarchy 1: Check Offline/Static Content
-        if (OFFLINE_LECTURES[topicTitle]) { 
-            setActiveLecture(OFFLINE_LECTURES[topicTitle]); 
-            return; 
-        }
-        if (channel.id && SPOTLIGHT_DATA[channel.id]?.lectures?.[topicTitle]) {
-            setActiveLecture(SPOTLIGHT_DATA[channel.id].lectures[topicTitle]);
-            return;
-        }
+        if (OFFLINE_LECTURES[topicTitle]) { setActiveLecture(OFFLINE_LECTURES[topicTitle]); return; }
+        if (channel.id && SPOTLIGHT_DATA[channel.id]?.lectures?.[topicTitle]) { setActiveLecture(SPOTLIGHT_DATA[channel.id].lectures[topicTitle]); return; }
 
-        // Hierarchy 2: Check Local IndexedDB Cache
         const cacheKey = `lecture_${channel.id}_${subTopicId}_${language}`;
         const cached = await getCachedLectureScript(cacheKey);
-        if (cached) { 
-            setActiveLecture(cached); 
-            setIsLoadedFromCache(true);
-            return; 
-        }
+        if (cached) { setActiveLecture(cached); setIsLoadedFromCache(true); return; }
 
-        // Hierarchy 3: Check Cloud Registry (Firestore) - Prevents regeneration on version updates
         if (subTopicId) {
             const cloudData = await getLectureFromFirestore(channel.id, subTopicId);
-            if (cloudData) {
-                setActiveLecture(cloudData);
-                await cacheLectureScript(cacheKey, cloudData); // Cache locally for next time
-                return;
-            }
+            if (cloudData) { setActiveLecture(cloudData); await cacheLectureScript(cacheKey, cloudData); return; }
         }
 
-        // Hierarchy 4: Generate with AI if not found anywhere else
         const script = await generateLectureScript(topicTitle, channel.description, language);
         if (script) {
           setActiveLecture(script);
           await cacheLectureScript(cacheKey, script);
           if (currentUser && subTopicId) await saveLectureToFirestore(channel.id, subTopicId, script);
         }
-    } catch (e: any) { 
-        console.error(e); 
-    } finally { 
-        setIsLoadingLecture(false); 
-    }
+    } catch (e: any) { console.error(e); } finally { setIsLoadingLecture(false); }
   };
 
   const togglePlayback = async () => {
     if (isPlaying) { stopAudio(); } else {
       stopAudio(); 
       const ctx = getGlobalAudioContext();
-      // Aggressive Hardware prime for iOS Speaker routing
       await warmUpAudioContext(ctx);
       playSessionIdRef.current++; 
       const startIdx = currentSectionIndex && currentSectionIndex < (activeLecture?.sections.length || 0) ? currentSectionIndex : 0;
       schedulingCursorRef.current = startIdx;
       setIsPlaying(true);
+      if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'playing';
     }
   };
 
