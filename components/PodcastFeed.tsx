@@ -30,7 +30,7 @@ interface PodcastFeedProps {
   handleVote?: (id: string, type: 'like' | 'dislike', e: React.MouseEvent) => void;
   
   filterMode?: 'foryou' | 'following' | 'mine';
-  isFeedActive?: boolean; // New flag to disable logic when not in view
+  isFeedActive?: boolean; // Controls whether logic/playback is enabled
 }
 
 const MobileFeedCard = ({ 
@@ -476,7 +476,7 @@ const MobileFeedCard = ({
 export const PodcastFeed: React.FC<PodcastFeedProps> = ({ 
   channels, onChannelClick, onStartLiveSession, userProfile, globalVoice, onRefresh, onMessageCreator,
   t, currentUser, setChannelToEdit, setIsSettingsModalOpen, onCommentClick, handleVote, filterMode = 'foryou',
-  isFeedActive = true // Explicit control flag
+  isFeedActive = true 
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const [activeChannelId, setActiveChannelId] = useState<string | null>(null);
@@ -503,6 +503,7 @@ export const PodcastFeed: React.FC<PodcastFeedProps> = ({
   }, [userProfile, channels]);
 
   const recommendedChannels = useMemo(() => {
+      if (!isFeedActive) return []; // DISABLE logic path if feed is not active
       if (filterMode === 'mine') return channels.filter(c => currentUser && c.ownerId === currentUser.uid).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
       if (filterMode === 'following') return [...channels].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
       const scored = channels.map(ch => {
@@ -515,20 +516,23 @@ export const PodcastFeed: React.FC<PodcastFeedProps> = ({
       });
       scored.sort((a, b) => b.score - a.score);
       return scored.map(s => s.channel);
-  }, [channels, userProfile, filterMode, currentUser]);
+  }, [channels, userProfile, filterMode, currentUser, isFeedActive]);
 
-  useEffect(() => { if (!isDesktop && recommendedChannels.length > 0 && !activeChannelId) setActiveChannelId(recommendedChannels[0].id); }, [recommendedChannels, isDesktop, activeChannelId]);
+  useEffect(() => { 
+      if (!isFeedActive) return; // SKIP effect path
+      if (!isDesktop && recommendedChannels.length > 0 && !activeChannelId) setActiveChannelId(recommendedChannels[0].id); 
+  }, [recommendedChannels, isDesktop, activeChannelId, isFeedActive]);
 
   useEffect(() => {
       const container = containerRef.current;
-      if (!container || isDesktop) return;
+      if (!container || isDesktop || !isFeedActive) return;
       const observer = new IntersectionObserver((entries) => {
           entries.forEach(entry => { if (entry.isIntersecting) { const id = entry.target.getAttribute('data-id'); if (id) setActiveChannelId(id); } });
       }, { root: container, threshold: 0.5 });
       const cards = container.querySelectorAll('.feed-card');
       cards.forEach(c => observer.observe(c));
       return () => observer.disconnect();
-  }, [recommendedChannels, isDesktop]);
+  }, [recommendedChannels, isDesktop, isFeedActive]);
 
   const toggleLike = (e: React.MouseEvent, channelId: string) => { e.stopPropagation(); if (!currentUser) return alert("Please sign in."); const newSet = new Set(likedChannels); if (newSet.has(channelId)) { newSet.delete(channelId); handleVote?.(channelId, 'dislike', e); } else { newSet.add(channelId); handleVote?.(channelId, 'like', e); } setLikedChannels(newSet); };
   const toggleBookmark = (e: React.MouseEvent, channelId: string) => { e.stopPropagation(); const newSet = new Set(bookmarkedChannels); if (newSet.has(channelId)) newSet.delete(channelId); else newSet.add(channelId); setBookmarkedChannels(newSet); };
@@ -536,6 +540,9 @@ export const PodcastFeed: React.FC<PodcastFeedProps> = ({
   const handleShare = async (e: React.MouseEvent, channel: Channel) => { e.stopPropagation(); if (navigator.share) { try { await navigator.share({ title: channel.title, text: channel.description, url: window.location.href }); } catch (err) {} } else { alert("Link copied!"); } };
   const handleComment = (e: React.MouseEvent, channel: Channel) => { e.stopPropagation(); if(onCommentClick) onCommentClick(channel); };
   const handleScrollToNext = (currentChannelId: string) => { const idx = recommendedChannels.findIndex(c => c.id === currentChannelId); if (idx !== -1 && idx < recommendedChannels.length - 1) { const nextId = recommendedChannels[idx + 1].id; const nextEl = document.querySelector(`[data-id="${nextId}"]`); if (nextEl) nextEl.scrollIntoView({ behavior: 'smooth' }); } };
+
+  // RETURN NULL if Feed is completely backgrounded
+  if (!isFeedActive) return null;
 
   if (isDesktop) {
       return (
@@ -565,7 +572,7 @@ export const PodcastFeed: React.FC<PodcastFeedProps> = ({
                 <div key={channel.id} data-id={channel.id} className="feed-card h-full w-full snap-start">
                     <MobileFeedCard 
                         channel={channel} 
-                        isActive={activeChannelId === channel.id && isFeedActive} // Check global feed active flag
+                        isActive={activeChannelId === channel.id && isFeedActive} 
                         isLiked={likedChannels.has(channel.id)} 
                         isBookmarked={bookmarkedChannels.has(channel.id)} 
                         isFollowed={followedChannels.has(channel.id) || (userProfile?.following?.includes(channel.ownerId || ''))} 
