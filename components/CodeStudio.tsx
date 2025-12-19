@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { CodeProject, CodeFile, UserProfile, Channel, CursorPosition, CloudItem } from '../types';
 import { ArrowLeft, Save, Plus, Github, Cloud, HardDrive, Code, X, ChevronRight, ChevronDown, File, Folder, DownloadCloud, Loader2, CheckCircle, AlertTriangle, Info, FolderPlus, FileCode, RefreshCw, LogIn, CloudUpload, Trash2, ArrowUp, Edit2, FolderOpen, MoreVertical, Send, MessageSquare, Bot, Mic, Sparkles, SidebarClose, SidebarOpen, Users, Eye, FileText as FileTextIcon, Image as ImageIcon, StopCircle, Minus, Maximize2, Minimize2, Lock, Unlock, Share2, Terminal, Copy, WifiOff, PanelRightClose, PanelRightOpen, Monitor, Laptop, PenTool, Edit3, ShieldAlert } from 'lucide-react';
@@ -137,12 +138,39 @@ const FileTreeItem = ({ node, depth, activeId, onSelect, onToggle, onDelete, onR
 };
 
 const RichCodeEditor = ({ code, onChange, onCursorMove, language, isShared, remoteCursors, localCursor, readOnly }: any) => {
+    const textareaRef = useRef<HTMLTextAreaElement>(null);
+    const lineNumbersRef = useRef<HTMLDivElement>(null);
+
+    const lineCount = (code || '').split('\n').length;
+    
+    const handleScroll = () => {
+        if (textareaRef.current && lineNumbersRef.current) {
+            lineNumbersRef.current.scrollTop = textareaRef.current.scrollTop;
+        }
+    };
+
     return (
-        <div className="w-full h-full relative font-mono text-sm">
+        <div className="w-full h-full flex bg-slate-950 font-mono text-sm overflow-hidden relative">
+            {/* Line Numbers Gutter */}
+            <div 
+                ref={lineNumbersRef}
+                className="w-12 flex-shrink-0 bg-slate-900 text-slate-600 py-4 text-right pr-3 select-none overflow-hidden border-r border-slate-800"
+                style={{ lineHeight: '1.6rem' }}
+            >
+                {Array.from({ length: lineCount }).map((_, i) => (
+                    <div key={i} className="h-[1.6rem]">{i + 1}</div>
+                ))}
+            </div>
+
+            {/* Main Textarea */}
             <textarea
-                className="w-full h-full bg-slate-950 text-slate-300 p-4 resize-none outline-none leading-relaxed"
+                ref={textareaRef}
+                className="flex-1 bg-transparent text-slate-300 p-4 resize-none outline-none leading-relaxed overflow-auto whitespace-pre"
+                style={{ lineHeight: '1.6rem' }}
                 value={code || ''}
+                wrap="off"
                 onChange={(e) => onChange(e.target.value)}
+                onScroll={handleScroll}
                 onSelect={(e) => {
                     const target = e.target as HTMLTextAreaElement;
                     const val = target.value.substr(0, target.selectionStart);
@@ -248,7 +276,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
   const [saveStatus, setSaveStatus] = useState<'saved' | 'modified' | 'saving'>('saved');
   const [isSharedSession, setIsSharedSession] = useState(!!sessionId);
   const clientId = useRef(crypto.randomUUID()).current;
-  const [localCursor, setLocalCursor] = useState<{line: number, col: number} | null>(null);
+  const [localCursor, setLocalCursor] = useState<{line: number, col: number} | null>({ line: 1, col: 0 });
   
   const [showDebug, setShowDebug] = useState(false);
   const [debugLogs, setDebugLogs] = useState<string[]>([]);
@@ -620,7 +648,6 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
           else if (activeTab === 'github') handleWorkspaceSelect(node);
           else updateActiveFileAndSync(node.data);
       } else {
-          // Fix: When clicking a folder name, toggle the folder expansion instead of just selecting it.
           if (activeTab === 'cloud') handleCloudToggle(node);
           else if (activeTab === 'drive') handleDriveToggle(node);
           else if (activeTab === 'github' || activeTab === 'session') {
@@ -636,8 +663,6 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
         const rootId = await ensureCodeStudioFolder(token); 
         setDriveRootId(rootId); 
         
-        // programmatically "click refresh" after connection using local constants
-        // to avoid async state lag
         const files = await listDriveFiles(token, rootId); 
         const initialDriveItems = [
             { id: rootId, name: 'CodeStudio', mimeType: 'application/vnd.google-apps.folder', isLoaded: true }, 
@@ -645,7 +670,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
         ];
         
         setDriveItems(initialDriveItems); 
-        setActiveTab('drive'); // switch to tab automatically
+        setActiveTab('drive'); 
         showToast("Google Drive Connected", "success"); 
     } catch(e: any) { showToast(e.message, "error"); } 
   };
@@ -681,7 +706,6 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
                   await deleteCloudItem(node.data as CloudItem); 
                   setCloudItems(prev => prev.filter(i => i.fullPath !== node.id)); 
               }
-              // If active file was inside deleted path
               if (activeFile && (activeFile.path?.startsWith(node.id))) setActiveFile(null);
           } else if (activeTab === 'session') { 
               if (isFolder) {
@@ -721,7 +745,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
       } 
   };
 
-  const handleRenameItem = async (node: TreeNode) => { /* Simplified for brevity, use existing logic */ };
+  const handleRenameItem = async (node: TreeNode) => { /* ... */ };
   const handleShareItem = (node: TreeNode) => { const link = (node.data as CloudItem).url || ""; if (link) { navigator.clipboard.writeText(link); showToast("Link copied!", "success"); } };
   const handleWorkspaceSelect = async (node: TreeNode) => { const file = node.data as CodeFile; if (!file.loaded && project.github) { try { const content = await fetchFileContent(githubToken, project.github.owner, project.github.repo, file.path || file.name, project.github.branch); const updatedFile = { ...file, content, loaded: true }; setProject(prev => ({ ...prev, files: prev.files.map(f => (f.path || f.name) === (file.path || file.name) ? updatedFile : f) })); if (isSharedSession && sessionId) { await updateCodeFile(sessionId, updatedFile); } updateActiveFileAndSync(updatedFile); } catch(e) { showToast("Load failed", "error"); } } else { updateActiveFileAndSync(file); } };
 
@@ -888,7 +912,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
                   )}
                   {activeTab === 'drive' && (
                       <div className="p-2">
-                          {!driveToken ? <div className="p-4 text-center"><button onClick={handleConnectDrive} className="px-4 py-2 bg-slate-800 text-white text-xs font-bold rounded-lg border border-slate-700 hover:bg-slate-700">Connect Drive</button></div> : driveTree.map(node => <FileTreeItem key={node.id} node={node} depth={0} activeId={selectedExplorerNode?.id} onSelect={handleExplorerSelect} onToggle={handleDriveToggle} onDelete={handleDeleteItem} expandedIds={expandedFolders} loadingIds={loadingFolders} onDragStart={handleDragStart} onDrop={handleDrop}/>)}
+                          {!driveToken ? <div className="p-4 text-center"><button onClick={handleConnectDrive} className="px-4 py-2 bg-slate-800 text-white text-xs font-bold rounded-lg border border-slate-700 hover:bg-slate-700">Connect Drive</button></div> : driveTree.map(node => <FileTreeItem key={node.id} node={node} depth={0} activeId={selectedExplorerNode?.id} onSelect={handleDriveSelect} onToggle={handleDriveToggle} onDelete={handleDeleteItem} expandedIds={expandedFolders} loadingIds={loadingFolders} onDragStart={handleDragStart} onDrop={handleDrop}/>)}
                       </div>
                   )}
                   {activeTab === 'github' && (
@@ -990,9 +1014,12 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
               ) : <div className="flex-1 flex flex-col items-center justify-center text-slate-600"><Code size={48} className="mb-4 opacity-20" /><p className="text-sm">Select a file from the explorer.</p></div>}
               
               {showDebug && (
-                  <div ref={debugRef} className="absolute bottom-4 right-4 w-96 max-h-64 bg-black/80 backdrop-blur-sm border border-green-900 rounded-lg p-3 font-mono text-[10px] text-green-400 overflow-hidden flex flex-col shadow-2xl z-50 pointer-events-auto select-text cursor-text">
+                  <div ref={debugRef} className="absolute bottom-4 right-4 w-96 max-h-80 bg-black/80 backdrop-blur-sm border border-green-900 rounded-lg p-3 font-mono text-[10px] text-green-400 overflow-hidden flex flex-col shadow-2xl z-50 pointer-events-auto select-text cursor-text">
                       <div className="flex justify-between items-center border-b border-green-900/50 pb-1 mb-1">
-                          <span className="font-bold flex items-center gap-2"><Terminal size={12}/> SESSION DEBUG</span>
+                          <div className="flex flex-col">
+                            <span className="font-bold flex items-center gap-2"><Terminal size={12}/> SESSION DEBUG</span>
+                            <span className="text-indigo-400 font-bold mt-1">Cursor: L:{localCursor?.line || 1} C:{localCursor?.col || 0}</span>
+                          </div>
                           <div className="flex items-center gap-2">
                               <button onClick={handleCopyDebug} className="bg-green-900/50 hover:bg-green-800 text-green-200 px-2 rounded border border-green-700/50 text-[9px] flex items-center gap-1 transition-colors">
                                   <Copy size={10} /> Copy
