@@ -8,7 +8,6 @@ let silentLoopElement: HTMLAudioElement | null = null;
 
 /**
  * GLOBAL AUDIO AUDIT
- * Tracks exactly who is playing and when.
  */
 export interface AudioEvent {
     timestamp: number;
@@ -18,7 +17,7 @@ export interface AudioEvent {
 }
 
 let audioAuditLogs: AudioEvent[] = [];
-let currentOwner: string | null = null;
+let currentOwnerToken: string | null = null;
 let currentStopFn: (() => void) | null = null;
 
 export function getAudioAuditLogs() {
@@ -27,29 +26,23 @@ export function getAudioAuditLogs() {
 
 export function logAudioEvent(source: string, action: AudioEvent['action'], details?: string) {
     const event = { timestamp: Date.now(), source, action, details };
-    audioAuditLogs = [event, ...audioAuditLogs].slice(0, 50); // Keep last 50
+    audioAuditLogs = [event, ...audioAuditLogs].slice(0, 50);
     console.log(`[AUDIO_DEBUG] ${source}: ${action} ${details || ''}`);
-    
-    // Dispatch a custom event so UIs can update debug windows
     window.dispatchEvent(new CustomEvent('audio-audit-updated', { detail: event }));
 }
 
 export function getCurrentAudioOwner() {
-    return currentOwner;
+    return currentOwnerToken;
 }
 
 /**
- * Stops all platform audio sources immediately.
+ * Hard kill for all platform audio.
  */
 export function stopAllPlatformAudio(sourceCaller: string = "Global") {
-    logAudioEvent(sourceCaller, 'STOP', `Killing current owner: ${currentOwner}`);
+    logAudioEvent(sourceCaller, 'STOP', `Clearing lock. Previous owner: ${currentOwnerToken}`);
     
     if (currentStopFn) {
-        try {
-            currentStopFn();
-        } catch (e) {
-            console.warn("Component stop failed", e);
-        }
+        try { currentStopFn(); } catch (e) {}
         currentStopFn = null;
     }
 
@@ -57,25 +50,32 @@ export function stopAllPlatformAudio(sourceCaller: string = "Global") {
         window.speechSynthesis.cancel();
     }
     
-    currentOwner = null;
+    currentOwnerToken = null;
 }
 
 /**
- * Register a component's stop function and kill existing audio.
+ * Register a unique ownership token.
+ * Prevents multiple instances of the same component type from overlapping.
  */
-export function registerAudioOwner(sourceName: string, stopFn: () => void) {
-    stopAllPlatformAudio(`Registering ${sourceName}`);
-    currentOwner = sourceName;
+export function registerAudioOwner(uniqueToken: string, stopFn: () => void) {
+    // 1. Kill existing
+    stopAllPlatformAudio(`Handover to ${uniqueToken}`);
+    
+    // 2. Assign new
+    currentOwnerToken = uniqueToken;
     currentStopFn = stopFn;
-    logAudioEvent(sourceName, 'REGISTER', "Acquired Mutex Lock");
+    logAudioEvent(uniqueToken, 'REGISTER', "Acquired Exclusive Lock");
 }
 
 /**
- * Check if a component is still the valid owner of the audio platform.
- * Use this after every 'await' to ensure the component hasn't been preempted.
+ * Checks if the provided token is still the legitimate owner.
  */
-export function isAudioOwner(sourceName: string): boolean {
-    return currentOwner === sourceName;
+export function isAudioOwner(token: string): boolean {
+    const valid = currentOwnerToken === token;
+    if (!valid && token) {
+        // Optional: log why it failed
+    }
+    return valid;
 }
 
 export function getGlobalAudioContext(sampleRate: number = 24000): AudioContext {
@@ -106,7 +106,6 @@ export function connectOutput(source: AudioNode, ctx: AudioContext) {
     if (mediaStreamDest) {
         source.connect(mediaStreamDest);
     }
-    
     if (audioBridgeElement && audioBridgeElement.paused) {
         audioBridgeElement.play().catch(() => {});
     }

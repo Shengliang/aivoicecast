@@ -34,15 +34,15 @@ const UI_TEXT = {
   }
 };
 
-const COMPONENT_ID = "LecturePlayer";
-
 export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, onStartLiveSession, language, onEditChannel, onViewComments, currentUser }) => {
   const t = UI_TEXT[language];
   const [activeTab, setActiveTab] = useState<'curriculum' | 'reading' | 'appendix'>('curriculum');
   const [activeLecture, setActiveLecture] = useState<GeneratedLecture | null>(null);
   const [isLoadingLecture, setIsLoadingLecture] = useState(false);
   
-  // Fixed: Enhanced initial chapters state with fallback logic for offline and spotlight content
+  // UNIQUE COMPONENT TOKEN
+  const MY_TOKEN = useMemo(() => `LecturePlayer:${channel.id}`, [channel.id]);
+
   const [chapters, setChapters] = useState<Chapter[]>(() => {
     if (channel.chapters && channel.chapters.length > 0) return channel.chapters;
     if (channel.id === OFFLINE_CHANNEL_ID) return OFFLINE_CURRICULUM;
@@ -81,7 +81,6 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
   const schedulingCursorRef = useRef(0); 
   const playSessionIdRef = useRef(0);
 
-  // Fixed: Added flatCurriculum memo for easy indexing of lessons across chapters
   const flatCurriculum = useMemo(() => {
     return chapters.flatMap((ch) => 
         (ch.subTopics || []).map((sub) => ({
@@ -91,12 +90,10 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
     );
   }, [chapters]);
 
-  // Fixed: Added currentLectureIndex memo to resolve "Cannot find name" errors in navigation handlers
   const currentLectureIndex = useMemo(() => {
     return flatCurriculum.findIndex(t => t.id === activeSubTopicId);
   }, [flatCurriculum, activeSubTopicId]);
 
-  // Sync debugger logs
   useEffect(() => {
       const handleAudit = () => setAuditLogs(getAudioAuditLogs());
       window.addEventListener('audio-audit-updated', handleAudit);
@@ -107,7 +104,7 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
    * ATOMIC STOP
    */
   const stopAudio = useCallback(() => {
-    logAudioEvent(COMPONENT_ID, 'STOP', `Session ${playSessionIdRef.current} ending`);
+    logAudioEvent(MY_TOKEN, 'STOP', `Session ${playSessionIdRef.current} ending`);
     playSessionIdRef.current++; 
     if (typeof window !== 'undefined' && window.speechSynthesis) window.speechSynthesis.cancel();
     activeSourcesRef.current.forEach(source => { try { source.stop(); source.disconnect(); } catch(e) {} });
@@ -119,19 +116,19 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
     setIsBuffering(false);
     coolDownAudioContext();
     if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'paused';
-  }, []);
+  }, [MY_TOKEN]);
 
   useEffect(() => {
-      stopAllPlatformAudio(COMPONENT_ID); // Hard kill on mount
+      stopAllPlatformAudio(MY_TOKEN);
       return () => stopAudio();
-  }, [stopAudio]);
+  }, [stopAudio, MY_TOKEN]);
 
   const togglePlayback = async () => {
     if (isPlaying) { 
       stopAudio(); 
     } else {
-      // 1. Acuire Platform-wide lock
-      registerAudioOwner(COMPONENT_ID, stopAudio);
+      // 1. Acquire Platform-wide lock
+      registerAudioOwner(MY_TOKEN, stopAudio);
 
       const ctx = getGlobalAudioContext();
       await warmUpAudioContext(ctx);
@@ -156,8 +153,8 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
       if (!isPlayingRef.current || sessionId !== playSessionIdRef.current || !activeLecture) return;
       
       // Mutex Check: Did someone else take over while we were sleeping?
-      if (!isAudioOwner(COMPONENT_ID)) {
-          logAudioEvent(COMPONENT_ID, 'ABORT_STALE', "Lost Mutex lock during scheduler loop");
+      if (!isAudioOwner(MY_TOKEN)) {
+          logAudioEvent(MY_TOKEN, 'ABORT_STALE', "Lost lock during scheduler iteration");
           stopAudio();
           return;
       }
@@ -188,8 +185,8 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
               setIsBuffering(false);
               
               // CRITICAL: Re-verify ownership after async TTS call
-              if (sessionId !== playSessionIdRef.current || !isAudioOwner(COMPONENT_ID)) {
-                  logAudioEvent(COMPONENT_ID, 'ABORT_STALE', `Ownership lost during TTS synthesis for index ${idx}`);
+              if (sessionId !== playSessionIdRef.current || !isAudioOwner(MY_TOKEN)) {
+                  logAudioEvent(MY_TOKEN, 'ABORT_STALE', `Lock lost during TTS synth for idx ${idx}`);
                   return;
               }
               
@@ -199,7 +196,7 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
                   connectOutput(source, ctx);
                   
                   const startAt = Math.max(nextScheduleTimeRef.current, ctx.currentTime);
-                  logAudioEvent(COMPONENT_ID, 'PLAY_BUFFER', `Section ${idx} starting at ${startAt.toFixed(2)}s`);
+                  logAudioEvent(MY_TOKEN, 'PLAY_BUFFER', `Playing idx ${idx}`);
                   
                   source.start(startAt);
                   activeSourcesRef.current.push(source);
@@ -237,7 +234,7 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
 
   const runSystemTts = (sessionId: number) => {
       const idx = schedulingCursorRef.current;
-      if (!activeLecture || idx >= activeLecture.sections.length || sessionId !== playSessionIdRef.current || !isAudioOwner(COMPONENT_ID)) {
+      if (!activeLecture || idx >= activeLecture.sections.length || sessionId !== playSessionIdRef.current || !isAudioOwner(MY_TOKEN)) {
           if (sessionId === playSessionIdRef.current) stopAudio();
           return;
       }
@@ -250,10 +247,10 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
       const v = systemVoices.find(v => v.voiceURI === targetURI);
       if (v) utter.voice = v;
       
-      logAudioEvent(COMPONENT_ID, 'PLAY_SYSTEM', `Speaking section ${idx} via OS`);
+      logAudioEvent(MY_TOKEN, 'PLAY_SYSTEM', `Speaking idx ${idx} via OS`);
       
       utter.onend = () => { 
-          if (sessionId === playSessionIdRef.current && isAudioOwner(COMPONENT_ID)) { 
+          if (sessionId === playSessionIdRef.current && isAudioOwner(MY_TOKEN)) { 
               schedulingCursorRef.current++; 
               runSystemTts(sessionId); 
           } 
@@ -263,7 +260,7 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
   };
 
   const handleTopicClick = async (topicTitle: string, subTopicId?: string) => {
-    stopAllPlatformAudio(COMPONENT_ID);
+    stopAllPlatformAudio(MY_TOKEN);
     stopAudio();
 
     setActiveSubTopicId(subTopicId || null);
@@ -359,7 +356,7 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
                                 {auditLogs.map((log, i) => (
                                     <div key={i} className="flex gap-2">
                                         <span className="text-slate-600">[{new Date(log.timestamp).toLocaleTimeString()}]</span>
-                                        <span className={`font-bold ${log.source === COMPONENT_ID ? 'text-indigo-400' : 'text-pink-400'}`}>{log.source}</span>
+                                        <span className={`font-bold ${log.source.includes('LecturePlayer') ? 'text-indigo-400' : 'text-pink-400'}`}>{log.source}</span>
                                         <span className="text-slate-300 font-bold">{log.action}</span>
                                         <span className="text-slate-500 italic">{log.details}</span>
                                     </div>

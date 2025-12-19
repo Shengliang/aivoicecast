@@ -32,8 +32,6 @@ interface PodcastFeedProps {
   filterMode?: 'foryou' | 'following' | 'mine';
 }
 
-const COMPONENT_ID = "MobileFeed";
-
 const MobileFeedCard = ({ 
     channel, 
     isActive, 
@@ -49,6 +47,9 @@ const MobileFeedCard = ({
     onChannelClick, 
     onChannelFinish 
 }: any) => {
+    // UNIQUE TOKEN FOR THIS SPECIFIC CARD INSTANCE
+    const MY_TOKEN = useMemo(() => `MobileFeed:${channel.id}`, [channel.id]);
+    
     const [playbackState, setPlaybackState] = useState<'idle' | 'buffering' | 'playing' | 'error'>('idle');
     const [statusMessage, setStatusMessage] = useState('');
     const [transcript, setTranscript] = useState<{speaker: string, text: string} | null>(null);
@@ -74,7 +75,7 @@ const MobileFeedCard = ({
      * CLEAN LOCAL STOP
      */
     const stopAudio = useCallback(() => {
-        logAudioEvent(`${COMPONENT_ID}:${channel.id.substring(0,6)}`, 'STOP', "Local session ended");
+        logAudioEvent(MY_TOKEN, 'STOP', `Session ${playbackSessionRef.current} ending`);
         playbackSessionRef.current++;
         if (typeof window !== 'undefined' && window.speechSynthesis) {
             window.speechSynthesis.cancel();
@@ -88,7 +89,7 @@ const MobileFeedCard = ({
         }
         setPlaybackState('idle');
         setStatusMessage("");
-    }, [channel.id]);
+    }, [MY_TOKEN]);
 
     const flatCurriculum = useMemo(() => {
         let chapters = channel.chapters;
@@ -152,7 +153,7 @@ const MobileFeedCard = ({
             return;
         }
 
-        registerAudioOwner(COMPONENT_ID, stopAudio);
+        registerAudioOwner(MY_TOKEN, stopAudio);
         runTrackSequence(-1, playbackSessionRef.current);
     };
 
@@ -162,7 +163,7 @@ const MobileFeedCard = ({
         try {
             await warmUpAudioContext(ctx);
             setIsAutoplayBlocked(false);
-            registerAudioOwner(COMPONENT_ID, stopAudio);
+            registerAudioOwner(MY_TOKEN, stopAudio);
             runTrackSequence(-1, playbackSessionRef.current);
         } catch(err) {
             console.error("Audio resume failed", err);
@@ -177,7 +178,7 @@ const MobileFeedCard = ({
     const handleTogglePlay = async (e: React.MouseEvent) => {
         e.stopPropagation();
         if (!isActive) { 
-            stopAllPlatformAudio(COMPONENT_ID);
+            stopAllPlatformAudio(`Navigation:${channel.id}`);
             onChannelClick(channel.id); 
             return; 
         }
@@ -193,7 +194,7 @@ const MobileFeedCard = ({
             return; 
         }
         
-        registerAudioOwner(COMPONENT_ID, stopAudio);
+        registerAudioOwner(MY_TOKEN, stopAudio);
         runTrackSequence(trackIndex >= totalLessons ? -1 : trackIndex, playbackSessionRef.current);
     };
 
@@ -216,8 +217,9 @@ const MobileFeedCard = ({
 
     const playAudioBuffer = (buffer: AudioBuffer, sessionId: number): Promise<void> => {
         return new Promise(async (resolve) => {
-            if (!mountedRef.current || !isActiveRef.current || sessionId !== playbackSessionRef.current || !isAudioOwner(COMPONENT_ID)) { 
-                logAudioEvent(COMPONENT_ID, 'ABORT_STALE', "PlayBuffer request blocked - owner mismatch");
+            // STALE CHECK: Session ID or Lock Token mismatch
+            if (!mountedRef.current || !isActiveRef.current || sessionId !== playbackSessionRef.current || !isAudioOwner(MY_TOKEN)) { 
+                logAudioEvent(MY_TOKEN, 'ABORT_STALE', "PlayBuffer request rejected");
                 resolve(); 
                 return; 
             }
@@ -243,7 +245,7 @@ const MobileFeedCard = ({
 
     const playSystemAudio = (text: string, voiceName: string, sessionId: number): Promise<void> => {
         return new Promise((resolve) => {
-            if (!mountedRef.current || !isActiveRef.current || sessionId !== playbackSessionRef.current || !isAudioOwner(COMPONENT_ID)) { resolve(); return; }
+            if (!mountedRef.current || !isActiveRef.current || sessionId !== playbackSessionRef.current || !isAudioOwner(MY_TOKEN)) { resolve(); return; }
             if (window.speechSynthesis) window.speechSynthesis.cancel();
             
             const utterance = new SpeechSynthesisUtterance(text);
@@ -261,7 +263,7 @@ const MobileFeedCard = ({
         setPlaybackState('playing');
         let currentIndex = startIndex;
         
-        while (mountedRef.current && isActiveRef.current && sessionId === playbackSessionRef.current && isAudioOwner(COMPONENT_ID)) {
+        while (mountedRef.current && isActiveRef.current && sessionId === playbackSessionRef.current && isAudioOwner(MY_TOKEN)) {
             try {
                 setTrackIndex(currentIndex); 
                 let textParts: {speaker: string, text: string, voice: string}[] = [];
@@ -296,7 +298,12 @@ const MobileFeedCard = ({
                         lecture = await fetchLectureData(lessonMeta); 
                     }
                     
-                    if (sessionId !== playbackSessionRef.current || !isAudioOwner(COMPONENT_ID)) return;
+                    // CRITICAL: Verification after async network/llm task
+                    if (sessionId !== playbackSessionRef.current || !isAudioOwner(MY_TOKEN)) {
+                        logAudioEvent(MY_TOKEN, 'ABORT_STALE', "Task finished but component no longer owns lock");
+                        return;
+                    }
+
                     if (!lecture || !lecture.sections || lecture.sections.length === 0) { currentIndex++; continue; }
                     
                     setPlaybackState('playing');
@@ -314,7 +321,7 @@ const MobileFeedCard = ({
                 }
 
                 for (let i = 0; i < textParts.length; i++) {
-                    if (sessionId !== playbackSessionRef.current || !isAudioOwner(COMPONENT_ID)) return;
+                    if (sessionId !== playbackSessionRef.current || !isAudioOwner(MY_TOKEN)) return;
                     const part = textParts[i];
                     setTranscript({ speaker: part.speaker, text: part.text });
                     
@@ -323,7 +330,13 @@ const MobileFeedCard = ({
                     } else {
                         setStatusMessage(`Preparing...`);
                         const audioResult = await synthesizeSpeech(part.text, part.voice, getGlobalAudioContext());
-                        if (sessionId !== playbackSessionRef.current || !isAudioOwner(COMPONENT_ID)) return;
+                        
+                        // CRITICAL: Verification after async TTS task
+                        if (sessionId !== playbackSessionRef.current || !isAudioOwner(MY_TOKEN)) {
+                            logAudioEvent(MY_TOKEN, 'ABORT_STALE', `TTS ready but lock lost for part ${i}`);
+                            return;
+                        }
+
                         if (audioResult && audioResult.buffer) {
                             setStatusMessage("Playing");
                             await playAudioBuffer(audioResult.buffer, sessionId);
@@ -331,7 +344,7 @@ const MobileFeedCard = ({
                             await playSystemAudio(part.text, part.voice, sessionId);
                         }
                     }
-                    if (sessionId !== playbackSessionRef.current || !isAudioOwner(COMPONENT_ID)) return;
+                    if (sessionId !== playbackSessionRef.current || !isAudioOwner(MY_TOKEN)) return;
                     await new Promise(r => setTimeout(r, 200));
                 }
                 currentIndex++;
@@ -356,7 +369,8 @@ const MobileFeedCard = ({
     };
 
     const handleCardClick = (e: React.MouseEvent) => {
-        stopAllPlatformAudio(COMPONENT_ID);
+        // SYNCHRONOUS KILL
+        stopAllPlatformAudio(`Navigating:${channel.id}`);
         onChannelClick(channel.id);
     };
 
