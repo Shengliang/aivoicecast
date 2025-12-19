@@ -1103,6 +1103,7 @@ const App: React.FC = () => {
                        handleVote={handleVote}
                        onMessageCreator={handleMessageCreator}
                        filterMode={mobileFeedTab}
+                       isFeedActive={viewState === 'directory'}
                    />
                )}
 

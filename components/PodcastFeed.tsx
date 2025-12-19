@@ -30,6 +30,7 @@ interface PodcastFeedProps {
   handleVote?: (id: string, type: 'like' | 'dislike', e: React.MouseEvent) => void;
   
   filterMode?: 'foryou' | 'following' | 'mine';
+  isFeedActive?: boolean; // New flag to disable logic when not in view
 }
 
 const MobileFeedCard = ({ 
@@ -474,7 +475,8 @@ const MobileFeedCard = ({
 
 export const PodcastFeed: React.FC<PodcastFeedProps> = ({ 
   channels, onChannelClick, onStartLiveSession, userProfile, globalVoice, onRefresh, onMessageCreator,
-  t, currentUser, setChannelToEdit, setIsSettingsModalOpen, onCommentClick, handleVote, filterMode = 'foryou'
+  t, currentUser, setChannelToEdit, setIsSettingsModalOpen, onCommentClick, handleVote, filterMode = 'foryou',
+  isFeedActive = true // Explicit control flag
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const [activeChannelId, setActiveChannelId] = useState<string | null>(null);
@@ -561,7 +563,21 @@ export const PodcastFeed: React.FC<PodcastFeedProps> = ({
         ) : (
             recommendedChannels.map((channel) => (
                 <div key={channel.id} data-id={channel.id} className="feed-card h-full w-full snap-start">
-                    <MobileFeedCard channel={channel} isActive={activeChannelId === channel.id} isLiked={likedChannels.has(channel.id)} isBookmarked={bookmarkedChannels.has(channel.id)} isFollowed={followedChannels.has(channel.id) || (userProfile?.following?.includes(channel.ownerId || ''))} onToggleLike={toggleLike} onToggleBookmark={toggleBookmark} onToggleFollow={toggleFollow} onShare={handleShare} onComment={handleComment} onProfileClick={(e: any, ch: any) => { e.stopPropagation(); setViewingCreator(ch); }} onChannelClick={onChannelClick} onChannelFinish={() => handleScrollToNext(channel.id)} />
+                    <MobileFeedCard 
+                        channel={channel} 
+                        isActive={activeChannelId === channel.id && isFeedActive} // Check global feed active flag
+                        isLiked={likedChannels.has(channel.id)} 
+                        isBookmarked={bookmarkedChannels.has(channel.id)} 
+                        isFollowed={followedChannels.has(channel.id) || (userProfile?.following?.includes(channel.ownerId || ''))} 
+                        onToggleLike={toggleLike} 
+                        onToggleBookmark={toggleBookmark} 
+                        onToggleFollow={toggleFollow} 
+                        onShare={handleShare} 
+                        onComment={handleComment} 
+                        onProfileClick={(e: any, ch: any) => { e.stopPropagation(); setViewingCreator(ch); }} 
+                        onChannelClick={onChannelClick} 
+                        onChannelFinish={() => handleScrollToNext(channel.id)} 
+                    />
                 </div>
             ))
         )}
