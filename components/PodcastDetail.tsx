@@ -7,7 +7,6 @@ import { synthesizeSpeech, clearAudioCache, cleanTextForTTS, TtsErrorType } from
 import { OFFLINE_CHANNEL_ID, OFFLINE_CURRICULUM, OFFLINE_LECTURES } from '../utils/offlineContent';
 import { SPOTLIGHT_DATA } from '../utils/spotlightContent';
 import { cacheLectureScript, getCachedLectureScript } from '../utils/db';
-// Fix: Removed non-existent export saveLectureToFirestore from audioUtils
 import { getAudioAuditLogs, getCurrentAudioOwner, registerAudioOwner, logAudioEvent, isAudioOwner, getGlobalAudioContext, warmUpAudioContext, coolDownAudioContext, connectOutput, stopAllPlatformAudio } from '../utils/audioUtils';
 
 interface PodcastDetailProps {
@@ -74,6 +73,7 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
   const activeSourcesRef = useRef<Set<AudioBufferSourceNode>>(new Set());
   const schedulingCursorRef = useRef(0); 
   const playSessionIdRef = useRef(0);
+  const lastUtteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
 
   const flatCurriculum = useMemo(() => {
     return chapters.flatMap((ch) => 
@@ -123,6 +123,10 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
     
     if (typeof window !== 'undefined' && window.speechSynthesis) {
         window.speechSynthesis.cancel();
+        if (lastUtteranceRef.current) {
+            lastUtteranceRef.current.onend = null;
+            lastUtteranceRef.current.onerror = null;
+        }
     }
     
     coolDownAudioContext();
@@ -191,7 +195,11 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
           }
 
           const section = activeLecture.sections[idx];
-          const voice = section.speaker === 'Teacher' ? teacherVoice : studentVoice;
+          // VOICE MAPPING: Map Gemini voices to OpenAI voices if in OpenAI mode
+          let voice = section.speaker === 'Teacher' ? teacherVoice : studentVoice;
+          if (voiceProvider === 'openai') {
+              voice = section.speaker === 'Teacher' ? 'Alloy' : 'Echo';
+          }
           
           try {
               setIsBuffering(true);
@@ -199,7 +207,8 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
               setIsBuffering(false);
               
               // RE-VERIFY LOCK after async TTS network call
-              if (sessionId !== playbackSessionRef.current || !isAudioOwner(MY_TOKEN)) {
+              // Fix: Corrected playSessionIdRef.current reference
+              if (sessionId !== playSessionIdRef.current || !isAudioOwner(MY_TOKEN)) {
                   logAudioEvent(MY_TOKEN, 'ABORT_STALE', `Lock lost during TTS for idx ${idx}`);
                   return;
               }
@@ -261,6 +270,8 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
       sectionRefs.current[idx]?.scrollIntoView({ behavior: 'smooth', block: 'center' });
       
       const utter = new SpeechSynthesisUtterance(cleanTextForTTS(activeLecture.sections[idx].text));
+      lastUtteranceRef.current = utter;
+
       const targetURI = activeLecture.sections[idx].speaker === 'Teacher' ? sysTeacherVoiceURI : sysStudentVoiceURI;
       const v = systemVoices.find(v => v.voiceURI === targetURI);
       if (v) utter.voice = v;
@@ -272,6 +283,12 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
           } 
       };
       
+      utter.onerror = () => {
+          if (sessionId === playSessionIdRef.current && isAudioOwner(MY_TOKEN)) {
+              stopAudio();
+          }
+      };
+
       window.speechSynthesis.speak(utter);
   };
 
