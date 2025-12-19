@@ -13,7 +13,7 @@ import { saveLectureToFirestore, getLectureFromFirestore, saveCurriculumToFirest
 import { LiveSession } from './LiveSession';
 import { DiscussionModal } from './DiscussionModal';
 import { GEMINI_API_KEY, OPENAI_API_KEY } from '../services/private_keys';
-import { getGlobalAudioContext, warmUpAudioContext } from '../utils/audioUtils';
+import { getGlobalAudioContext, warmUpAudioContext, coolDownAudioContext } from '../utils/audioUtils';
 
 interface PodcastDetailProps {
   channel: Channel;
@@ -95,24 +95,35 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
 
   useEffect(() => { if (currentUser) getUserProfile(currentUser.uid).then(setUserProfile); }, [currentUser]);
 
-  // Media Session API Setup: Prevent audio from stopping in background
+  // Handle Playback State specifically for MediaSession
+  const handleTogglePlayMedia = useCallback(() => {
+    if (isPlayingRef.current) {
+        stopAudio();
+    } else {
+        togglePlayback();
+    }
+  }, []);
+
+  // Media Session API Setup: Robust background playback support
   useEffect(() => {
     if ('mediaSession' in navigator && activeLecture) {
         navigator.mediaSession.metadata = new MediaMetadata({
             title: activeLecture.topic,
             artist: channel.title,
-            album: activeTab === 'curriculum' ? 'Podcast Lesson' : 'Learning Path',
+            album: 'AIVoiceCast Lecture',
             artwork: [
                 { src: channel.imageUrl, sizes: '512x512', type: 'image/jpeg' }
             ]
         });
 
-        navigator.mediaSession.setActionHandler('play', () => { if (!isPlaying) togglePlayback(); });
-        navigator.mediaSession.setActionHandler('pause', () => { if (isPlaying) stopAudio(); });
+        navigator.mediaSession.setActionHandler('play', handleTogglePlayMedia);
+        navigator.mediaSession.setActionHandler('pause', handleTogglePlayMedia);
         navigator.mediaSession.setActionHandler('previoustrack', handlePrevLesson);
         navigator.mediaSession.setActionHandler('nexttrack', handleNextLesson);
+        
+        navigator.mediaSession.playbackState = isPlaying ? 'playing' : 'paused';
     }
-  }, [activeLecture, isPlaying]);
+  }, [activeLecture, isPlaying, handleTogglePlayMedia]);
 
   const flatCurriculum = useMemo(() => {
       if(!chapters) return [];
@@ -126,21 +137,29 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
 
   useEffect(() => {
       const handleResize = () => { stopAudio(); clearAudioCache(); };
-      const handleVisibilityChange = () => {
-          if (document.visibilityState === 'visible' && isPlaying) {
+      
+      const resumeAudioOnWake = () => {
+          if (document.visibilityState === 'visible') {
               const ctx = getGlobalAudioContext();
-              if (ctx.state === 'suspended') ctx.resume();
+              if (ctx.state === 'suspended' || (ctx.state as any) === 'interrupted') {
+                  console.log("Wake-up detected. Force resuming AudioContext.");
+                  ctx.resume().catch(e => console.warn("Background auto-resume failed", e));
+              }
           }
       };
+      
       window.addEventListener('resize', handleResize);
-      window.addEventListener('visibilitychange', handleVisibilityChange);
+      window.addEventListener('visibilitychange', resumeAudioOnWake);
+      window.addEventListener('pageshow', resumeAudioOnWake);
+
       return () => { 
           window.removeEventListener('resize', handleResize); 
-          window.removeEventListener('visibilitychange', handleVisibilityChange);
+          window.removeEventListener('visibilitychange', resumeAudioOnWake);
+          window.removeEventListener('pageshow', resumeAudioOnWake);
           stopAudio(); 
           clearAudioCache(); 
       };
-  }, [isPlaying]);
+  }, []);
 
   const loadVoices = useCallback(() => {
     const voices = window.speechSynthesis.getVoices();
@@ -173,6 +192,7 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
     setIsPlaying(false);
     setIsBuffering(false);
     playSessionIdRef.current++;
+    coolDownAudioContext();
     if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'paused';
   }, []);
 
@@ -207,7 +227,9 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
   };
 
   const togglePlayback = async () => {
-    if (isPlaying) { stopAudio(); } else {
+    if (isPlaying) { 
+        stopAudio(); 
+    } else {
       stopAudio(); 
       const ctx = getGlobalAudioContext();
       await warmUpAudioContext(ctx);
@@ -215,6 +237,7 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
       const startIdx = currentSectionIndex && currentSectionIndex < (activeLecture?.sections.length || 0) ? currentSectionIndex : 0;
       schedulingCursorRef.current = startIdx;
       setIsPlaying(true);
+      isPlayingRef.current = true;
       if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'playing';
     }
   };
@@ -227,6 +250,11 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
           if (!isPlayingRef.current || sessionId !== playSessionIdRef.current) return;
           const ctx = getGlobalAudioContext();
           
+          // Force resume if suspended (common on mobile unlock)
+          if (ctx.state === 'suspended' || (ctx.state as any) === 'interrupted') {
+              try { await ctx.resume(); } catch(e) {}
+          }
+
           const lookahead = 0.5; 
           if (nextScheduleTimeRef.current < ctx.currentTime) nextScheduleTimeRef.current = ctx.currentTime + 0.1; 
           
@@ -234,7 +262,12 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
              const scheduleIdx = schedulingCursorRef.current; 
              if (playSessionIdRef.current !== sessionId) return; 
              if (scheduleIdx >= activeLecture.sections.length) {
-                setTimeout(() => { if (isPlayingRef.current && playSessionIdRef.current === sessionId) { stopAudio(); setCurrentSectionIndex(0); } }, (nextScheduleTimeRef.current - ctx.currentTime) * 1000);
+                setTimeout(() => { 
+                    if (isPlayingRef.current && playSessionIdRef.current === sessionId) { 
+                        stopAudio(); 
+                        setCurrentSectionIndex(0); 
+                    } 
+                }, (nextScheduleTimeRef.current - ctx.currentTime) * 1000);
                 return;
              }
              const section = activeLecture.sections[scheduleIdx];

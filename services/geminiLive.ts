@@ -1,6 +1,6 @@
 
 import { GoogleGenAI, LiveServerMessage, Modality } from '@google/genai';
-import { base64ToBytes, decodeRawPcm, createPcmBlob, getGlobalAudioContext, warmUpAudioContext } from '../utils/audioUtils';
+import { base64ToBytes, decodeRawPcm, createPcmBlob, getGlobalAudioContext, warmUpAudioContext, coolDownAudioContext } from '../utils/audioUtils';
 
 export interface LiveConnectionCallbacks {
   onOpen: () => void;
@@ -27,14 +27,18 @@ export class GeminiLiveService {
   private speakingTimer: any = null;
 
   constructor() {
-      // Auto-resume audio when application becomes visible again (e.g., screen unlock)
       if (typeof window !== 'undefined') {
+          const resumeAudio = () => {
+              console.log("Visibility/Page event detected. Resuming AudioContexts...");
+              this.outputAudioContext?.resume().catch(e => console.warn("Failed to resume output context", e));
+              this.inputAudioContext?.resume().catch(e => console.warn("Failed to resume input context", e));
+          };
+          
           window.addEventListener('visibilitychange', () => {
-              if (document.visibilityState === 'visible') {
-                  this.outputAudioContext?.resume().catch(e => console.warn("Failed to resume output context", e));
-                  this.inputAudioContext?.resume().catch(e => console.warn("Failed to resume input context", e));
-              }
+              if (document.visibilityState === 'visible') resumeAudio();
           });
+          // pageshow handles back-forward cache and some iOS unlock scenarios visibilitychange misses
+          window.addEventListener('pageshow', resumeAudio);
       }
   }
 
@@ -79,6 +83,7 @@ export class GeminiLiveService {
 
       if (!this.inputAudioContext) this.initializeAudio();
 
+      // Maintain microphone stream to prevent OS from suspending the communication process
       this.stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const validVoice = voiceName || 'Puck';
 
@@ -273,6 +278,7 @@ export class GeminiLiveService {
   private cleanup() {
     this.stopAllSources();
     this.isPlayingResponse = false;
+    coolDownAudioContext();
     if (this.speakingTimer) clearTimeout(this.speakingTimer);
     
     if (this.processor) {

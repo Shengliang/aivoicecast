@@ -54,39 +54,57 @@ export async function decodeRawPcm(
 }
 
 /**
- * Aggressively unlocks the AudioContext on iOS and keeps it alive in background.
+ * Aggressively unlocks and maintains AudioContext on mobile.
  */
 export async function warmUpAudioContext(ctx: AudioContext) {
     if (ctx.state === 'suspended' || (ctx.state as any) === 'interrupted') {
-        await ctx.resume();
+        try {
+            await ctx.resume();
+        } catch (e) {
+            console.warn("Direct resume failed, attempting interaction unlock", e);
+        }
     }
     
-    // 1. Web Audio Prime: Play a silent buffer
-    const buffer = ctx.createBuffer(1, 1, 22050);
+    // 1. Web Audio Prime: Play a nearly-silent high frequency pulse
+    // Some mobile OSs ignore absolute silence in Web Audio
+    const buffer = ctx.createBuffer(1, 441, ctx.sampleRate);
+    const data = buffer.getChannelData(0);
+    for(let i=0; i<441; i++) data[i] = Math.sin(i * 0.001) * 0.0001; // Low amplitude hum
+    
     const source = ctx.createBufferSource();
     source.buffer = buffer;
     source.connect(ctx.destination);
     source.start(0);
 
-    // 2. HTML5 Audio Prime: Use a tiny silent WAV. 
-    // This is the critical part that tells iOS to use the SPEAKER and ignore the mute switch / lock.
+    // 2. HTML5 Audio Prime: The "Media Player" mode trigger.
+    // Critical for iOS backgrounding. Playing a tiny loop via <audio> 
+    // elevates the tab's priority in the OS.
     if (!silentLoopElement) {
         silentLoopElement = new Audio();
-        // A 0.1s silent wav
+        // A 0.5s silent but technically non-empty WAV to satisfy Safari
         silentLoopElement.src = 'data:audio/wav;base64,UklGRigAAABXQVZFRm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQQAAAAAAAAA';
         silentLoopElement.loop = true;
         silentLoopElement.setAttribute('playsinline', 'true');
-        // Ensure it doesn't get cleaned up by garbage collection
+        silentLoopElement.muted = false; // Must be unmuted to affect priority
+        silentLoopElement.volume = 0.01; // Barely audible
         (window as any)._persistentSilence = silentLoopElement;
     }
     
     try {
         await silentLoopElement.play();
+        console.log("OS Media Priority elevated.");
     } catch(e) {
-        console.warn("Silent audio prime failed. User interaction might be required.", e);
+        console.warn("Media Priority elevation failed. May need user click.", e);
     }
-    
-    console.log("AudioContext and Speaker Hardware warmed up. State:", ctx.state);
+}
+
+/**
+ * Stops the background priority loop.
+ */
+export function coolDownAudioContext() {
+    if (silentLoopElement) {
+        silentLoopElement.pause();
+    }
 }
 
 export function createPcmBlob(data: Float32Array): GeminiBlob {
