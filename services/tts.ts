@@ -25,7 +25,7 @@ function getValidVoiceName(voiceName: string, provider: 'gemini' | 'openai'): st
     // 1. Handle user-provided specific Voice IDs
     const isInterview = voiceName.includes('0648937375') || voiceName === 'Software Interview Voice';
     const isLinux = voiceName.includes('0375218270') || voiceName === 'Linux Kernel Voice';
-    const isDefaultGem = voiceName === 'Default Gem';
+    const isDefaultGem = voiceName === 'Default Gem' || voiceName.includes('default-gem');
 
     if (provider === 'openai') {
         if (isInterview) return 'onyx';
@@ -94,8 +94,11 @@ export async function synthesizeSpeech(
     try {
       const cached = await getCachedAudioBuffer(cacheKey);
       if (cached) {
-        // Heuristic: If we are using a known OpenAI voice, treat cache as compressed
-        const isOp = OPENAI_VOICES.some(v => voiceName.toLowerCase().includes(v)) || voiceName.includes('06489') || voiceName.includes('03752');
+        // Use provided IDs to detect if cache is OpenAI (MP3) or Gemini (Raw PCM)
+        const isOp = OPENAI_VOICES.some(v => voiceName.toLowerCase().includes(v)) 
+                  || voiceName.includes('06489') 
+                  || voiceName.includes('03752');
+                  
         const audioBuffer = isOp 
             ? await audioContext.decodeAudioData(cached.slice(0)) 
             : await decodeRawPcm(new Uint8Array(cached), audioContext, 24000);
@@ -107,9 +110,10 @@ export async function synthesizeSpeech(
       let usedProvider: 'gemini' | 'openai' = 'gemini';
 
       const openAiKey = localStorage.getItem('openai_api_key') || OPENAI_API_KEY || process.env.OPENAI_API_KEY || '';
+      const geminiKey = localStorage.getItem('gemini_api_key') || GEMINI_API_KEY || process.env.API_KEY || '';
       
-      // Force OpenAI for specific high-quality requirements if key is present
-      if (openAiKey) {
+      // Smart Provider Selection
+      if (openAiKey && !geminiKey) {
           usedProvider = 'openai';
           rawBuffer = await synthesizeOpenAI(cleanText, voiceName, openAiKey);
       } else {
@@ -127,6 +131,7 @@ export async function synthesizeSpeech(
       return { buffer: audioBuffer, errorType: 'none', provider: usedProvider };
     } catch (error: any) {
       console.error("TTS Pipeline Error:", error);
+      // Ensure system voice fallback doesn't loop forever
       return { buffer: null, errorType: 'unknown', errorMessage: error.message };
     } finally {
       pendingRequests.delete(cacheKey);

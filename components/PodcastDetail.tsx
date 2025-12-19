@@ -98,7 +98,7 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
    * ATOMIC STOP
    */
   const stopAudio = useCallback(() => {
-    logAudioEvent(MY_TOKEN, 'STOP', `Session ${playSessionIdRef.current} shutdown`);
+    logAudioEvent(MY_TOKEN, 'STOP', `Session ${playSessionIdRef.current} hard shutdown`);
     
     // Increment Session ID BEFORE doing anything to invalidate all async callbacks
     playSessionIdRef.current++; 
@@ -139,9 +139,11 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
     coolDownAudioContext();
   }, [MY_TOKEN]);
 
+  // CRITICAL: Stop everything when entering OR leaving the detail page
   useEffect(() => {
+      stopAllPlatformAudio(`PodcastDetail:Mount:${channel.id}`);
       return () => stopAudio();
-  }, [stopAudio]);
+  }, [stopAudio, channel.id]);
 
   /**
    * STRICT MANUAL START
@@ -305,7 +307,7 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
   };
 
   const handleTopicClick = async (topicTitle: string, subTopicId?: string) => {
-    // Kill existing audio immediately
+    // Kill existing audio immediately on selection
     stopAudio();
     
     setActiveSubTopicId(subTopicId || null);
