@@ -13,7 +13,6 @@ import {
   Notebook, AgentMemory,
   GlobalStats,
   SubscriptionTier,
-  // Added missing imports to fix compilation errors
   Chapter,
   TranscriptItem
 } from '../types';
@@ -126,7 +125,6 @@ export async function setUserSubscriptionTier(uid: string, tier: 'free' | 'pro')
 }
 
 // --- API Usage ---
-// FIX: Exported incrementApiUsage to resolve errors in lecture and curriculum generators.
 export async function incrementApiUsage(uid: string) {
     const ref = db.collection(USERS_COLLECTION).doc(uid);
     await ref.update({
@@ -167,15 +165,10 @@ export async function deleteChannelFromFirestore(channelId: string) {
 }
 
 export async function voteChannel(channel: Channel, type: 'like' | 'dislike') {
-  // Update main doc (legacy support)
-  const ref = db.collection(CHANNELS_COLLECTION).doc(channel.id);
+  const statsRef = db.collection(CHANNEL_STATS_COLLECTION).doc(channel.id);
   const update = type === 'like' 
     ? { likes: firebase.firestore.FieldValue.increment(1) }
     : { dislikes: firebase.firestore.FieldValue.increment(1) };
-  ref.update(update).catch(() => {}); // Ignore error if doc missing
-
-  // Update stats collection
-  const statsRef = db.collection(CHANNEL_STATS_COLLECTION).doc(channel.id);
   await statsRef.set(update, { merge: true });
 }
 
@@ -248,7 +241,6 @@ export async function getGroupChannels(groupIds: string[]): Promise<Channel[]> {
     return snap.docs.map(d => ({ ...d.data(), id: d.id } as Channel));
 }
 
-// FIX: Finished implementation of claimSystemChannels and added return value to resolve error.
 export async function claimSystemChannels(ownerEmail: string): Promise<number> {
     const user = await getUserProfileByEmail(ownerEmail);
     if (!user) throw new Error("User not found");
@@ -281,12 +273,10 @@ export async function deleteLectureFromFirestore(channelId: string, subTopicId: 
     await db.collection(CHANNELS_COLLECTION).doc(channelId).collection('lectures').doc(subTopicId).delete();
 }
 
-// FIX: Added missing import for Chapter to resolve compilation errors
 export async function saveCurriculumToFirestore(channelId: string, chapters: Chapter[]) {
     await db.collection(CHANNELS_COLLECTION).doc(channelId).update({ chapters: sanitizeData(chapters) });
 }
 
-// FIX: Added missing import for Chapter to resolve compilation errors
 export async function getCurriculumFromFirestore(channelId: string): Promise<Chapter[] | null> {
     const doc = await db.collection(CHANNELS_COLLECTION).doc(channelId).get();
     return doc.exists ? (doc.data()?.chapters as Chapter[]) : null;
@@ -299,7 +289,6 @@ export async function saveDiscussion(discussion: CommunityDiscussion): Promise<s
     return ref.id;
 }
 
-// FIX: Added missing import for TranscriptItem to resolve compilation error
 export async function updateDiscussion(id: string, transcript: TranscriptItem[]) {
     await db.collection(DISCUSSIONS_COLLECTION).doc(id).update({
         transcript: sanitizeData(transcript),
@@ -420,7 +409,6 @@ export async function getUserRecordings(uid: string): Promise<RecordingSession[]
 
 export async function deleteRecordingReference(id: string, mediaUrl: string, transcriptUrl: string) {
     await db.collection(RECORDINGS_COLLECTION).doc(id).delete();
-    // In production, also delete from Storage. Here we just clear the reference.
 }
 
 export async function deleteBookingRecording(id: string, mediaUrl?: string, transcriptUrl?: string) {
@@ -465,8 +453,28 @@ export async function saveProjectToCloud(path: string, name: string, content: st
     await ref.putString(content);
 }
 
-export async function deleteCloudItem(item: CloudItem) {
-    await storage.ref(item.fullPath).delete();
+export async function deleteCloudItem(itemOrPath: CloudItem | string) {
+    const path = typeof itemOrPath === 'string' ? itemOrPath : itemOrPath.fullPath;
+    await storage.ref(path).delete();
+}
+
+/**
+ * Recursively deletes a folder in Firebase Storage by listing all items and subfolders.
+ */
+export async function deleteCloudFolderRecursive(path: string, onProgress?: (msg: string) => void) {
+    const ref = storage.ref(path);
+    const res = await ref.listAll();
+    
+    // Delete files in this level
+    for (const item of res.items) {
+        if (onProgress) onProgress(`Deleting file: ${item.fullPath}`);
+        await item.delete();
+    }
+    
+    // Recurse into subfolders
+    for (const prefix of res.prefixes) {
+        await deleteCloudFolderRecursive(prefix.fullPath, onProgress);
+    }
 }
 
 export async function createCloudFolder(path: string, name: string) {
@@ -649,12 +657,10 @@ export async function getBillingHistory(uid: string): Promise<any[]> {
 }
 
 export async function createStripePortalSession(uid: string): Promise<string> {
-    // This is handled by a Stripe Firebase Extension trigger
     return "https://billing.stripe.com/p/session/test_123";
 }
 
 export async function createStripeCheckoutSession(uid: string): Promise<string> {
-    // Mock URL for dev bypass
     return "https://checkout.stripe.com/c/pay/test_123";
 }
 
@@ -772,7 +778,6 @@ export async function getAllCareerApplications(): Promise<CareerApplication[]> {
 // --- Notebooks ---
 
 export async function getCreatorNotebooks(ownerId: string): Promise<Notebook[]> {
-    // Return mock for system, else fetch from collection
     return db.collection('notebooks').where('author', '==', ownerId).get().then(snap => snap.docs.map(d => d.data() as Notebook));
 }
 

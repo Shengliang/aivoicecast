@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { CodeProject, CodeFile, UserProfile, Channel, CursorPosition, CloudItem } from '../types';
 import { ArrowLeft, Save, Plus, Github, Cloud, HardDrive, Code, X, ChevronRight, ChevronDown, File, Folder, DownloadCloud, Loader2, CheckCircle, AlertTriangle, Info, FolderPlus, FileCode, RefreshCw, LogIn, CloudUpload, Trash2, ArrowUp, Edit2, FolderOpen, MoreVertical, Send, MessageSquare, Bot, Mic, Sparkles, SidebarClose, SidebarOpen, Users, Eye, FileText as FileTextIcon, Image as ImageIcon, StopCircle, Minus, Maximize2, Minimize2, Lock, Unlock, Share2, Terminal, Copy, WifiOff, PanelRightClose, PanelRightOpen, Monitor, Laptop, PenTool, Edit3, ShieldAlert } from 'lucide-react';
-import { listCloudDirectory, saveProjectToCloud, deleteCloudItem, createCloudFolder, subscribeToCodeProject, saveCodeProject, updateCodeFile, updateCursor, claimCodeProjectLock, updateProjectActiveFile, deleteCodeFile, moveCloudFile, updateProjectAccess, sendShareNotification } from '../services/firestoreService';
+import { listCloudDirectory, saveProjectToCloud, deleteCloudItem, createCloudFolder, subscribeToCodeProject, saveCodeProject, updateCodeFile, updateCursor, claimCodeProjectLock, updateProjectActiveFile, deleteCodeFile, moveCloudFile, updateProjectAccess, sendShareNotification, deleteCloudFolderRecursive } from '../services/firestoreService';
 import { ensureCodeStudioFolder, listDriveFiles, readDriveFile, saveToDrive, deleteDriveFile, createDriveFolder, DriveFile, moveDriveFile } from '../services/googleDriveService';
 import { connectGoogleDrive, signInWithGitHub } from '../services/authService';
 import { fetchRepoInfo, fetchRepoContents, fetchFileContent, updateRepoFile, deleteRepoFile, renameRepoFile } from '../services/githubService';
@@ -270,7 +270,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
   const addDebugLog = (msg: string) => {
       setDebugLogs(prev => {
           const newLogs = [...prev, `[${new Date().toLocaleTimeString()}] ${msg}`];
-          return newLogs.slice(-20);
+          return newLogs.slice(-40); // Increased buffer
       });
   };
 
@@ -349,7 +349,6 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
       const contextType = isWhiteboard ? "Whiteboard / System Design" : "Code Editor";
       
       try {
-          // FIX: Always use const ai = new GoogleGenAI({apiKey: process.env.API_KEY}); exclusively from process.env.API_KEY.
           const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
           if (isWhiteboard && activeFile) {
@@ -452,12 +451,11 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
       if (onSessionStart && !targetId) {
           const newId = project.id === 'init' ? crypto.randomUUID() : project.id;
           targetId = newId;
-          onSessionStart(newId);
+          onSessionStart(targetId);
           
           const newProjectState = { ...project, id: targetId, ownerId: currentUser?.uid };
           setProject(newProjectState);
           
-          // Create the document immediately so subsequent updates work
           addDebugLog(`Creating new session doc: ${targetId}`);
           try {
               await saveCodeProject(newProjectState);
@@ -465,7 +463,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
           } catch (e: any) {
               addDebugLog(`Failed to create session doc: ${e.message}`);
               showToast("Failed to initialize session", "error");
-              return; // Don't open modal if creation failed
+              return; 
           }
       }
       setIsShareModalOpen(true);
@@ -481,9 +479,6 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
       addDebugLog(`Updating access for ${targetId}. Public: ${isPublic}, Users: ${selectedUids.join(', ')}`);
       
       try {
-          // 1. Update Project Access
-          // We use saveCodeProject to ensure we don't get "No such document" if the init save was slow/failed
-          // Updating local state first
           const updatedProject = {
               ...project,
               id: targetId,
@@ -495,7 +490,6 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
           await saveCodeProject(updatedProject);
           addDebugLog("Access updated in Firestore.");
           
-          // 2. Send Invites
           if (currentUser) {
               const sessionLink = window.location.href;
               const type = activeFile && getLanguageFromExt(activeFile.name) === 'whiteboard' ? 'Whiteboard' : 'Code';
@@ -539,7 +533,6 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
 
   const generateAICommitMessage = async (filename: string, code: string): Promise<string> => {
       try {
-          // FIX: Always use const ai = new GoogleGenAI({apiKey: process.env.API_KEY}); exclusively from process.env.API_KEY.
           const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
           const prompt = `Write a concise commit message for ${filename}:\n${code.substring(0, 500)}`;
           const resp = await ai.models.generateContent({ model: 'gemini-3-flash-preview', contents: prompt });
@@ -601,20 +594,17 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
                   isModified: false 
               };
               
-              // 1. Update Local State
               setProject(prev => { 
                   const exists = prev.files.some(f => f.path === newFile.path); 
                   if (!exists) return { ...prev, files: [...prev.files, newFile] }; 
                   return prev; 
               });
               
-              // 2. Sync to Session (Firestore) if active
               if (isSharedSession && sessionId) {
                   addDebugLog(`Syncing file to session: ${newFile.name}`);
                   await updateCodeFile(sessionId, newFile);
               }
 
-              // 3. Set Active (Syncs path to Firestore)
               updateActiveFileAndSync(newFile);
               
           } catch(e) { showToast("Failed to load file", "error"); }
@@ -638,8 +628,6 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
   const handleDragStart = (e: React.DragEvent, node: TreeNode) => { setDraggedNode(node); e.dataTransfer.effectAllowed = 'move'; };
   const handleDrop = async (e: React.DragEvent, targetNode: TreeNode) => { e.preventDefault(); if (!draggedNode) return; if (draggedNode.id === targetNode.id) return; if (targetNode.type !== 'folder') return; try { if (activeTab === 'cloud') { const item = draggedNode.data as CloudItem; const targetPath = (targetNode.data as CloudItem).fullPath; const newFullPath = targetPath.replace(/\/+$/, '') + '/' + item.name; await moveCloudFile(item.fullPath, newFullPath);
                 
-                // If the moved file is the active one, update its internal path state
-                // This ensures "Save" uses the new path in derived calculations
                 if (activeFile && (activeFile.path === item.fullPath)) {
                     setActiveFile(prev => prev ? ({ ...prev, path: newFullPath }) : null);
                     addDebugLog(`Active file moved. Updated path: ${newFullPath}`);
@@ -650,7 +638,62 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
   const handleCreateFile = async () => { const name = prompt("File Name:"); if (!name) return; await createFileInActiveContext(name, "// New File"); };
   const handleCreateWhiteboard = async () => { const name = prompt("Whiteboard Name:"); if (!name) return; await createFileInActiveContext(name.endsWith('.wb')?name:name+'.wb', "[]"); };
   const createFileInActiveContext = async (name: string, content: string) => { try { if (activeTab === 'cloud' && currentUser) { await saveProjectToCloud(`projects/${currentUser.uid}`, name, content); await refreshCloudPath(`projects/${currentUser.uid}`); const newFile: CodeFile = { name, path: `projects/${currentUser.uid}/${name}`, language: getLanguageFromExt(name), content, loaded: true, isDirectory: false, isModified: false }; setProject(prev => ({ ...prev, files: [...prev.files, newFile] })); if (isSharedSession && sessionId) { await updateCodeFile(sessionId, newFile); } updateActiveFileAndSync(newFile); } else if (activeTab === 'session') { const newFile: CodeFile = { name, path: name, language: getLanguageFromExt(name), content, loaded: true, isDirectory: false, isModified: true }; setProject(prev => ({ ...prev, files: [...prev.files, newFile] })); if (isSharedSession && sessionId) await updateCodeFile(sessionId, newFile); updateActiveFileAndSync(newFile); } } catch(e: any) { showToast(e.message, "error"); } };
-  const handleDeleteItem = async (node: TreeNode) => { if (!confirm(`Delete ${node.name}?`)) return; try { if (activeTab === 'cloud') { await deleteCloudItem(node.data as CloudItem); setCloudItems(prev => prev.filter(i => i.fullPath !== node.id)); } else if (activeTab === 'session') { setProject(prev => ({ ...prev, files: prev.files.filter(f => (f.path || f.name) !== node.id) })); if (activeFile && (activeFile.path || activeFile.name) === node.id) setActiveFile(null); if (isSharedSession && sessionId) await deleteCodeFile(sessionId, node.name); } showToast("Deleted", "success"); } catch(e: any) { showToast(e.message, "error"); } };
+  
+  const handleDeleteItem = async (node: TreeNode) => { 
+      const isFolder = node.type === 'folder';
+      if (!confirm(`Delete ${node.name}${isFolder ? ' AND all its contents (rm -rf)' : ''}?`)) return; 
+      
+      try { 
+          if (activeTab === 'cloud') { 
+              if (isFolder) {
+                  addDebugLog(`RM -RF: Deleting cloud folder: ${node.id}`);
+                  await deleteCloudFolderRecursive(node.id, (msg) => addDebugLog(`[Cloud FS] ${msg}`));
+                  setCloudItems(prev => prev.filter(i => !i.fullPath.startsWith(node.id)));
+              } else {
+                  addDebugLog(`RM: Deleting cloud file: ${node.id}`);
+                  await deleteCloudItem(node.data as CloudItem); 
+                  setCloudItems(prev => prev.filter(i => i.fullPath !== node.id)); 
+              }
+              // If active file was inside deleted path
+              if (activeFile && (activeFile.path?.startsWith(node.id))) setActiveFile(null);
+          } else if (activeTab === 'session') { 
+              if (isFolder) {
+                  addDebugLog(`RM -RF: Deleting session folder: session://${node.id}`);
+                  const filesToDelete = project.files.filter(f => (f.path || f.name).startsWith(node.id));
+                  for (const f of filesToDelete) {
+                      addDebugLog(`Deleting session file: session://${f.path || f.name}`);
+                      if (isSharedSession && sessionId) await deleteCodeFile(sessionId, f.name);
+                  }
+                  setProject(prev => ({ ...prev, files: prev.files.filter(f => !(f.path || f.name).startsWith(node.id)) }));
+              } else {
+                  addDebugLog(`RM: Deleting session file: session://${node.id}`);
+                  setProject(prev => ({ ...prev, files: prev.files.filter(f => (f.path || f.name) !== node.id) })); 
+                  if (activeFile && (activeFile.path || activeFile.name) === node.id) setActiveFile(null); 
+                  if (isSharedSession && sessionId) await deleteCodeFile(sessionId, node.name); 
+              }
+          } else if (activeTab === 'drive') {
+              if (driveToken) {
+                  addDebugLog(`RM: Deleting drive file: drive://${node.id}`);
+                  await deleteDriveFile(driveToken, node.id);
+                  setDriveItems(prev => prev.filter(i => i.id !== node.id));
+                  if (activeFile && activeFile.path === `drive://${node.id}`) setActiveFile(null);
+              }
+          } else if (activeTab === 'github' && project.github) {
+              const token = await getOrRequestGithubToken();
+              if (token) {
+                  addDebugLog(`RM: Deleting github file: github://${project.github.owner}/${project.github.repo}/${node.id}`);
+                  await deleteRepoFile(token, project.github.owner, project.github.repo, node.id, node.data.sha, `Delete ${node.name}`, project.github.branch);
+                  setProject(prev => ({ ...prev, files: prev.files.filter(f => (f.path || f.name) !== node.id) }));
+                  if (activeFile && (activeFile.path || activeFile.name) === node.id) setActiveFile(null);
+              }
+          }
+          showToast("Deleted", "success"); 
+      } catch(e: any) { 
+          addDebugLog(`ERROR: Delete failed for ${node.id}: ${e.message}`);
+          showToast(e.message, "error"); 
+      } 
+  };
+
   const handleRenameItem = async (node: TreeNode) => { /* Simplified for brevity, use existing logic */ };
   const handleShareItem = (node: TreeNode) => { const link = (node.data as CloudItem).url || ""; if (link) { navigator.clipboard.writeText(link); showToast("Link copied!", "success"); } };
   const handleWorkspaceSelect = async (node: TreeNode) => { const file = node.data as CodeFile; if (!file.loaded && project.github) { try { const content = await fetchFileContent(githubToken, project.github.owner, project.github.repo, file.path || file.name, project.github.branch); const updatedFile = { ...file, content, loaded: true }; setProject(prev => ({ ...prev, files: prev.files.map(f => (f.path || f.name) === (file.path || file.name) ? updatedFile : f) })); if (isSharedSession && sessionId) { await updateCodeFile(sessionId, updatedFile); } updateActiveFileAndSync(updatedFile); } catch(e) { showToast("Load failed", "error"); } } else { updateActiveFileAndSync(file); } };
@@ -666,7 +709,6 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
               const safeFiles = Array.isArray(remoteProject?.files) ? remoteProject.files : [];
               setProject({ ...remoteProject, files: safeFiles });
               
-              // Sync active file from remote project if available
               if (remoteProject.activeFilePath) {
                   const targetFile = safeFiles.find(f => (f.path || f.name) === remoteProject.activeFilePath);
                   if (targetFile) {
@@ -677,7 +719,6 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
                               addDebugLog(`Remote requested switch to: ${newPath}`);
                               return targetFile;
                           }
-                          // Even if path is same, check if content changed to force refresh
                           if (prev && prev.content !== targetFile.content) {
                               return targetFile;
                           }
@@ -796,7 +837,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
                   <button onClick={() => setActiveTab('session')} className={`flex-1 py-3 flex justify-center border-b-2 transition-colors ${activeTab === 'session' ? 'border-indigo-500 text-white' : 'border-transparent text-slate-500 hover:text-slate-300'}`} title="Live Session"><Laptop size={16}/></button>
               </div>
 
-              {/* ACTION TOOLBAR - Improved Visibility */}
+              {/* ACTION TOOLBAR */}
               <div className="p-3 border-b border-slate-800 flex flex-wrap gap-2 bg-slate-900 justify-center">
                   <button onClick={handleCreateFile} className="flex-1 flex items-center justify-center gap-1 bg-indigo-600 hover:bg-indigo-500 text-white py-1.5 px-2 rounded text-xs font-bold shadow-md transition-colors whitespace-nowrap" title="Create New Code File">
                       <FileCode size={14}/> <span>New File</span>
@@ -820,7 +861,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
                   )}
                   {activeTab === 'drive' && (
                       <div className="p-2">
-                          {!driveToken ? <div className="p-4 text-center"><button onClick={handleConnectDrive} className="px-4 py-2 bg-slate-800 text-white text-xs font-bold rounded-lg border border-slate-700 hover:bg-slate-700">Connect Drive</button></div> : driveTree.map(node => <FileTreeItem key={node.id} node={node} depth={0} activeId={selectedExplorerNode?.id} onSelect={handleDriveSelect} onToggle={handleDriveToggle} expandedIds={expandedFolders} loadingIds={loadingFolders} onDragStart={handleDragStart} onDrop={handleDrop}/>)}
+                          {!driveToken ? <div className="p-4 text-center"><button onClick={handleConnectDrive} className="px-4 py-2 bg-slate-800 text-white text-xs font-bold rounded-lg border border-slate-700 hover:bg-slate-700">Connect Drive</button></div> : driveTree.map(node => <FileTreeItem key={node.id} node={node} depth={0} activeId={selectedExplorerNode?.id} onSelect={handleDriveSelect} onToggle={handleDriveToggle} onDelete={handleDeleteItem} expandedIds={expandedFolders} loadingIds={loadingFolders} onDragStart={handleDragStart} onDrop={handleDrop}/>)}
                       </div>
                   )}
                   {activeTab === 'github' && (
@@ -881,7 +922,6 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
                             >
                                 <X size={14} />
                             </button>
-                            {/* Preview Toggle */}
                             {(activeFile.name.endsWith('.md') || activeFile.name.endsWith('.markdown') || activeFile.name.endsWith('.puml') || activeFile.name.endsWith('.plantuml')) && (
                                 <div className="flex bg-slate-800 rounded-lg p-0.5 border border-slate-700 ml-4">
                                     <button onClick={() => setEditorMode('code')} className={`px-3 py-1 text-xs font-bold rounded-md ${editorMode === 'code' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'}`}>Code</button>
@@ -901,7 +941,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
                                 initialData={activeFile.content}
                                 onDataChange={handleCodeChange}
                                 isReadOnly={isLockedByOther}
-                                disableAI={true} // Disable internal AI, handled by parent
+                                disableAI={true} 
                             />
                         ) : editorMode === 'preview' ? (
                             <div className="w-full h-full overflow-y-auto bg-slate-950 p-8">
@@ -944,7 +984,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
           {/* RIGHT PANE: AI / PREVIEW */}
           <div className={`${isZenMode ? 'hidden' : (isRightOpen ? 'w-80' : 'w-0')} bg-slate-950 flex flex-col transition-all duration-300 overflow-hidden shrink-0`}>
               <AIChatPanel 
-                  isOpen={true} // Always render content, hide by width 
+                  isOpen={true} 
                   onClose={() => setIsRightOpen(false)} 
                   messages={chatMessages} 
                   onSendMessage={handleSendMessage} 
