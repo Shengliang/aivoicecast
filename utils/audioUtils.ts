@@ -58,15 +58,17 @@ export function stopAllPlatformAudio(sourceCaller: string = "Global") {
 
 /**
  * Register a unique ownership token.
- * Prevents multiple instances of the same component type from overlapping.
+ * Prevents multiple instances of different components from overlapping.
+ * Also terminates previous session of the same component if it re-registers.
  */
 export function registerAudioOwner(uniqueToken: string, stopFn: () => void) {
-    // 1. Kill existing owner
-    if (currentOwnerToken !== uniqueToken) {
-        stopAllPlatformAudio(`Handover to ${uniqueToken}`);
+    // CRITICAL: Always stop the previous owner, even if it's the same token.
+    // This handles the case where a component restarts its playback session.
+    if (currentOwnerToken) {
+        stopAllPlatformAudio(`Reset for ${uniqueToken}`);
     }
     
-    // 2. Assign new
+    // Assign new
     currentOwnerToken = uniqueToken;
     currentStopFn = stopFn;
     logAudioEvent(uniqueToken, 'REGISTER', "Acquired Exclusive Lock");
@@ -196,6 +198,9 @@ export async function hashString(str: string): Promise<string> {
   return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
+/**
+ * Completing pcmToWavBlobUrl implementation to resolve return value error.
+ */
 export function pcmToWavBlobUrl(pcmData: Uint8Array, sampleRate: number = 24000): string {
     const numChannels = 1;
     const bitsPerSample = 16;
@@ -224,8 +229,11 @@ export function pcmToWavBlobUrl(pcmData: Uint8Array, sampleRate: number = 24000)
     view.setUint16(34, bitsPerSample, true);
     writeString(36, 'data');
     view.setUint32(40, dataSize, true);
-    const pcmBytes = new Uint8Array(buffer, 44);
-    pcmBytes.set(pcmData);
+
+    // Copy pcmData into the buffer starting after the 44-byte header
+    const pcmDest = new Uint8Array(buffer, 44);
+    pcmDest.set(pcmData);
+
     const blob = new Blob([buffer], { type: 'audio/wav' });
     return URL.createObjectURL(blob);
 }
