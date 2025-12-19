@@ -13,7 +13,7 @@ import { saveLectureToFirestore, getLectureFromFirestore, saveCurriculumToFirest
 import { LiveSession } from './LiveSession';
 import { DiscussionModal } from './DiscussionModal';
 import { GEMINI_API_KEY, OPENAI_API_KEY } from '../services/private_keys';
-import { getGlobalAudioContext, warmUpAudioContext, coolDownAudioContext, connectOutput, setGlobalStopPlayback } from '../utils/audioUtils';
+import { getGlobalAudioContext, warmUpAudioContext, coolDownAudioContext, connectOutput, setGlobalStopPlayback, globalStopPlayback } from '../utils/audioUtils';
 
 interface PodcastDetailProps {
   channel: Channel;
@@ -94,7 +94,6 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
     if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'paused';
   }, []);
 
-  // Cleanup on unmount - VERY IMPORTANT to stop global overlap
   useEffect(() => {
       return () => {
           stopAudio();
@@ -165,13 +164,19 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
     if (isPlaying) { 
       stopAudio(); 
     } else {
-      // CLEAR ANY PREVIOUS PLATFORM AUDIO (prevent dual-voice)
+      // 1. CLEAR GLOBAL AUDIO FIRST
       setGlobalStopPlayback(stopAudio);
+
+      // 2. CLEAR LOCAL AUDIO AGAIN (Strictly)
+      stopAudio();
+
+      // 3. Clear scheduled speech
+      window.speechSynthesis.cancel();
 
       const ctx = getGlobalAudioContext();
       await warmUpAudioContext(ctx);
       
-      // Local session check
+      // 4. Start new session
       const sessionId = ++playSessionIdRef.current;
       const startIdx = currentSectionIndex && currentSectionIndex < (activeLecture?.sections.length || 0) ? currentSectionIndex : 0;
       schedulingCursorRef.current = startIdx;
@@ -189,7 +194,6 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
   };
 
   const runWebAudioScheduler = async (sessionId: number) => {
-      // Check session ID before starting the scheduler loop
       if (!isPlayingRef.current || sessionId !== playSessionIdRef.current || !activeLecture) {
           schedulerTimerRef.current = null;
           return;
@@ -203,7 +207,6 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
       }
 
       while (nextScheduleTimeRef.current < ctx.currentTime + lookahead) {
-          // Double check session inside while loop
           if (sessionId !== playSessionIdRef.current) return;
 
           const idx = schedulingCursorRef.current;
@@ -222,7 +225,6 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
               const result = await synthesizeSpeech(section.text, voice, ctx);
               setIsBuffering(false);
               
-              // CRITICAL SESSION CHECK after await
               if (sessionId !== playSessionIdRef.current) return;
               
               if (result.buffer) {
@@ -258,7 +260,6 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
           }
       }
 
-      // Chain next scheduler call with session check
       if (sessionId === playSessionIdRef.current) {
         schedulerTimerRef.current = setTimeout(() => runWebAudioScheduler(sessionId), 500);
       }
@@ -290,11 +291,9 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
   };
 
   const handleTopicClick = async (topicTitle: string, subTopicId?: string) => {
-    // 1. Immediately kill any existing audio session
-    setGlobalStopPlayback(stopAudio); 
+    // Kill everything immediately
     stopAudio();
 
-    // 2. Clear old data and show generating UI
     setActiveSubTopicId(subTopicId || null);
     setCurrentSectionIndex(0);
     schedulingCursorRef.current = 0;
@@ -307,7 +306,6 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
         const cached = await getCachedLectureScript(cacheKey);
         if (cached) { setActiveLecture(cached); return; }
         
-        // Only call LLM if absolutely necessary
         const script = await generateLectureScript(topicTitle, channel.description, language);
         if (script) {
           setActiveLecture(script);

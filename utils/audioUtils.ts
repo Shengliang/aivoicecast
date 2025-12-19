@@ -14,7 +14,8 @@ let keepAliveOscillator: OscillatorNode | null = null;
 export let globalStopPlayback: (() => void) | null = null;
 
 export function setGlobalStopPlayback(stopFn: (() => void) | null) {
-    if (globalStopPlayback && globalStopPlayback !== stopFn) {
+    // If there is already something playing, stop it first
+    if (globalStopPlayback) {
         try {
             globalStopPlayback();
         } catch (e) {
@@ -28,11 +29,9 @@ export function getGlobalAudioContext(sampleRate: number = 24000): AudioContext 
   if (!mainAudioContext || mainAudioContext.state === 'closed') {
     mainAudioContext = new (window.AudioContext || (window as any).webkitAudioContext)({ 
         sampleRate,
-        // High latency hint tells the OS this is a playback app, not a game
         latencyHint: 'playback' 
     });
     
-    // THE BRIDGE: Capture all Web Audio output into a MediaStream
     mediaStreamDest = mainAudioContext.createMediaStreamDestination();
     
     if (!audioBridgeElement) {
@@ -40,7 +39,6 @@ export function getGlobalAudioContext(sampleRate: number = 24000): AudioContext 
         audioBridgeElement.id = 'web-audio-bg-bridge';
         audioBridgeElement.muted = false;
         audioBridgeElement.volume = 1.0;
-        // This connects the JavaScript Audio Graph to a standard HTML5 Audio element
         audioBridgeElement.srcObject = mediaStreamDest.stream;
         audioBridgeElement.setAttribute('playsinline', 'true');
         audioBridgeElement.setAttribute('autoplay', 'true');
@@ -50,16 +48,12 @@ export function getGlobalAudioContext(sampleRate: number = 24000): AudioContext 
   return mainAudioContext;
 }
 
-/**
- * Connects an audio node to both hardware and the background bridge.
- */
 export function connectOutput(source: AudioNode, ctx: AudioContext) {
     source.connect(ctx.destination);
     if (mediaStreamDest) {
         source.connect(mediaStreamDest);
     }
     
-    // Force the bridge to stay in 'playing' state
     if (audioBridgeElement && audioBridgeElement.paused) {
         audioBridgeElement.play().catch(() => {});
     }
@@ -103,20 +97,14 @@ export async function decodeRawPcm(
   return buffer;
 }
 
-/**
- * Aggressively unlocks audio hardware.
- */
 export async function warmUpAudioContext(ctx: AudioContext) {
     if (ctx.state === 'suspended' || (ctx.state as any) === 'interrupted') {
         await ctx.resume();
     }
     
-    // 1. INFRASONIC KEEP-ALIVE
-    // We play a 20Hz tone (bottom of human hearing). 
-    // Absolute silence is often optimized out by iOS. A 20Hz hum keeps the hardware 'hot'.
     if (!keepAliveOscillator) {
         const gain = ctx.createGain();
-        gain.gain.value = 0.001; // Extremely quiet
+        gain.gain.value = 0.001; 
         
         keepAliveOscillator = ctx.createOscillator();
         keepAliveOscillator.type = 'sine';
@@ -126,11 +114,8 @@ export async function warmUpAudioContext(ctx: AudioContext) {
         keepAliveOscillator.start(0);
     }
 
-    // 2. HTML5 MEDIA ELEMENT
-    // Playing a 'real' file via <audio> tag is the only way to get background priority.
     if (!silentLoopElement) {
         silentLoopElement = new Audio();
-        // 1 second of near-silence white noise
         silentLoopElement.src = 'data:audio/wav;base64,UklGRigAAABXQVZFRm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQQAAAAAAAAA';
         silentLoopElement.loop = true;
         silentLoopElement.setAttribute('playsinline', 'true');

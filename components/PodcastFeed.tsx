@@ -68,6 +68,16 @@ const MobileFeedCard = ({
 
     useEffect(() => { isActiveRef.current = isActive; }, [isActive]);
 
+    const stopAudio = useCallback(() => {
+        playbackSessionRef.current++;
+        window.speechSynthesis.cancel();
+        if (sourceRef.current) {
+            try { sourceRef.current.stop(); } catch(e) {}
+            sourceRef.current = null;
+        }
+        setPlaybackState('idle');
+    }, []);
+
     const flatCurriculum = useMemo(() => {
         let chapters = channel.chapters;
         if (!chapters || chapters.length === 0) {
@@ -94,18 +104,7 @@ const MobileFeedCard = ({
             mountedRef.current = false;
             stopAudio();
         };
-    }, []);
-
-    const stopAudio = useCallback(() => {
-        // Increment session to kill async loops
-        playbackSessionRef.current++;
-        window.speechSynthesis.cancel();
-        if (sourceRef.current) {
-            try { sourceRef.current.stop(); } catch(e) {}
-            sourceRef.current = null;
-        }
-        setPlaybackState('idle');
-    }, []);
+    }, [stopAudio]);
 
     useEffect(() => {
         if (isActive) {
@@ -129,7 +128,7 @@ const MobileFeedCard = ({
             preloadedScriptRef.current = null;
             setIsAutoplayBlocked(false);
         }
-    }, [isActive, channel.id]);
+    }, [isActive, channel.id, stopAudio]);
 
     const attemptAutoPlay = async () => {
         if (playbackState === 'playing' || playbackState === 'buffering') return;
@@ -460,7 +459,7 @@ export const PodcastFeed: React.FC<PodcastFeedProps> = ({
       return scored.map(s => s.channel);
   }, [channels, userProfile, filterMode, currentUser]);
 
-  useEffect(() => { if (!isDesktop && recommendedChannels.length > 0 && !activeChannelId) setActiveChannelId(recommendedChannels[0].id); }, [recommendedChannels, isDesktop]);
+  useEffect(() => { if (!isDesktop && recommendedChannels.length > 0 && !activeChannelId) setActiveChannelId(recommendedChannels[0].id); }, [recommendedChannels, isDesktop, activeChannelId]);
 
   useEffect(() => {
       const container = containerRef.current;
