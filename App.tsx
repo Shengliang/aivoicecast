@@ -58,7 +58,7 @@ import { HANDCRAFTED_CHANNELS, CATEGORY_STYLES, TOPIC_CATEGORIES } from './utils
 import { OFFLINE_CHANNEL_ID } from './utils/offlineContent';
 import { warmUpAudioContext, stopAllPlatformAudio } from './utils/audioUtils';
 
-const APP_VERSION = "v3.83.1"; 
+const APP_VERSION = "v3.83.2"; 
 
 const UI_TEXT = {
   en: {
@@ -219,9 +219,8 @@ const App: React.FC = () => {
    * Kills all audio when switching views to prevent dual-voice.
    */
   const handleSetViewState = (newState: ExtendedViewState) => {
-    if (newState !== viewState) {
-        stopAllPlatformAudio();
-    }
+    // ATOMIC KILL SWITCH: Kill all audio BEFORE state transition
+    stopAllPlatformAudio();
     setViewState(newState);
   };
 
@@ -289,7 +288,7 @@ const App: React.FC = () => {
         setActiveTab('mentorship');
     } else if (view === 'group') {
         handleSetViewState('directory');
-        setActiveTab('groups');
+        setActiveTab('group');
     } else if (view === 'recording') {
         handleSetViewState('directory');
         setActiveTab('recordings');
@@ -751,7 +750,7 @@ const App: React.FC = () => {
   }
 
   if (!currentUser) {
-      return <LoginPage onPrivacyClick={() => setIsPrivacyOpen(true)} />;
+      return <LoginPage onPrivacyClick={() => setIsPrivacyOpen(false)} />;
   }
 
   const MobileBottomNav = () => {

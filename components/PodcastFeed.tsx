@@ -72,10 +72,16 @@ const MobileFeedCard = ({
      * CLEAN LOCAL STOP
      */
     const stopAudio = useCallback(() => {
+        // Increment session ID to immediately kill any async loops
         playbackSessionRef.current++;
-        if (window.speechSynthesis) window.speechSynthesis.cancel();
+        if (typeof window !== 'undefined' && window.speechSynthesis) {
+            window.speechSynthesis.cancel();
+        }
         if (sourceRef.current) {
-            try { sourceRef.current.stop(); sourceRef.current.disconnect(); } catch(e) {}
+            try { 
+                sourceRef.current.stop(); 
+                sourceRef.current.disconnect(); 
+            } catch(e) {}
             sourceRef.current = null;
         }
         setPlaybackState('idle');
@@ -106,6 +112,7 @@ const MobileFeedCard = ({
         mountedRef.current = true;
         return () => { 
             mountedRef.current = false;
+            // HARD STOP ON UNMOUNT
             stopAudio();
         };
     }, [stopAudio]);
@@ -121,14 +128,16 @@ const MobileFeedCard = ({
             if (ctx.state === 'suspended' || (ctx.state as any) === 'interrupted') {
                 setIsAutoplayBlocked(true);
             } else {
-                const timer = setTimeout(() => { attemptAutoPlay(); }, 600); 
+                const timer = setTimeout(() => { 
+                    if (isActiveRef.current) attemptAutoPlay(); 
+                }, 600); 
                 return () => {
                     clearTimeout(timer);
                     stopAudio();
                 };
             }
         } else {
-            // THE MOST IMPORTANT LINE: kill audio the moment we scroll away
+            // THE MOST IMPORTANT LINE: kill audio the moment we scroll away OR navigate away
             stopAudio();
             preloadedScriptRef.current = null;
             setIsAutoplayBlocked(false);
@@ -144,7 +153,7 @@ const MobileFeedCard = ({
             return;
         }
 
-        // Use Mutex
+        // REGISTER AS AUDIO OWNER - kills existing detail/live audio
         registerAudioOwner(stopAudio);
         runTrackSequence(-1, playbackSessionRef.current);
     };
@@ -169,7 +178,12 @@ const MobileFeedCard = ({
 
     const handleTogglePlay = async (e: React.MouseEvent) => {
         e.stopPropagation();
-        if (!isActive) { onChannelClick(channel.id); return; }
+        if (!isActive) { 
+            // Navigation event - stop everything first
+            stopAllPlatformAudio();
+            onChannelClick(channel.id); 
+            return; 
+        }
         
         const ctx = getGlobalAudioContext();
         if (ctx.state === 'suspended' || isAutoplayBlocked) {
@@ -340,6 +354,12 @@ const MobileFeedCard = ({
         return data;
     };
 
+    const handleCardClick = (e: React.MouseEvent) => {
+        // Navigation: Kill audio baseline FIRST
+        stopAllPlatformAudio();
+        onChannelClick(channel.id);
+    };
+
     return (
         <div className="h-full w-full snap-start relative flex flex-col justify-center bg-slate-900 border-b border-slate-800">
             <div className="absolute inset-0">
@@ -393,7 +413,7 @@ const MobileFeedCard = ({
                 <button onClick={(e) => onShare(e, channel)} className="flex flex-col items-center gap-1"><Share2 size={32} fill="rgba(255,255,255,0.9)" className="text-white" /><span className="text-white text-xs font-bold shadow-black drop-shadow-md">Share</span></button>
             </div>
             <div className="absolute left-0 bottom-0 w-full p-4 pb-6 bg-gradient-to-t from-black via-black/80 to-transparent z-30 pr-20">
-                <div onClick={(e) => { e.stopPropagation(); onChannelClick(channel.id); }} className="inline-flex items-center gap-2 mb-3 bg-slate-800/80 backdrop-blur-md px-3 py-1.5 rounded-lg border border-slate-700 cursor-pointer active:scale-95 transition-transform">
+                <div onClick={handleCardClick} className="inline-flex items-center gap-2 mb-3 bg-slate-800/80 backdrop-blur-md px-3 py-1.5 rounded-lg border border-slate-700 cursor-pointer active:scale-95 transition-transform">
                     <span className="text-[10px] font-bold text-indigo-400 uppercase flex items-center gap-1"><GraduationCap size={10} /> {trackIndex === -1 ? 'Introduction' : `Lesson ${trackIndex + 1}/${totalLessons}`}</span>
                     <ChevronRight size={12} className="text-slate-500" />
                 </div>
@@ -404,8 +424,8 @@ const MobileFeedCard = ({
                     {(playbackState === 'playing' || statusMessage === "Preparing...") && (
                         <button onClick={handleStop} className="w-10 h-10 rounded-full flex items-center justify-center transition-all shadow-lg bg-slate-800 text-red-400 border border-slate-600 animate-fade-in"><Square size={16} fill="currentColor" /></button>
                     )}
-                    <div onClick={(e) => { e.stopPropagation(); onChannelClick(channel.id); }}>
-                        <div className="flex items-center gap-1.5 text-white font-bold text-lg drop-shadow-md cursor-pointer hover:underline"><User size={14} className="text-indigo-400" /><span>@{channel.author}</span></div>
+                    <div onClick={handleCardClick} className="cursor-pointer">
+                        <div className="flex items-center gap-1.5 text-white font-bold text-lg drop-shadow-md hover:underline"><User size={14} className="text-indigo-400" /><span>@{channel.author}</span></div>
                         <p className="text-[10px] text-slate-400 uppercase tracking-wider font-bold">Host</p>
                     </div>
                 </div>
