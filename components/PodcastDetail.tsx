@@ -169,7 +169,7 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
     if (isPlaying) { stopAudio(); } else {
       stopAudio(); 
       const ctx = getGlobalAudioContext();
-      // Hardware prime for iOS
+      // Aggressive Hardware prime for iOS Speaker routing
       await warmUpAudioContext(ctx);
       playSessionIdRef.current++; 
       const startIdx = currentSectionIndex && currentSectionIndex < (activeLecture?.sections.length || 0) ? currentSectionIndex : 0;

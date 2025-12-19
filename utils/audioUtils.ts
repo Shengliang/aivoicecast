@@ -3,6 +3,7 @@ import { Blob as GeminiBlob } from '@google/genai';
 
 // Singleton AudioContexts to prevent resource exhaustion on mobile
 let mainAudioContext: AudioContext | null = null;
+let silentLoopElement: HTMLAudioElement | null = null;
 
 export function getGlobalAudioContext(sampleRate: number = 24000): AudioContext {
   if (!mainAudioContext || mainAudioContext.state === 'closed') {
@@ -54,31 +55,38 @@ export async function decodeRawPcm(
 
 /**
  * Aggressively unlocks the AudioContext on iOS.
- * Plays a silent sound via both Web Audio and a temporary HTML5 Audio element.
- * Must be called inside a user gesture (click/touch).
+ * Plays a silent sound via both Web Audio and a persistent HTML5 Audio element.
+ * This trick forces iOS to switch from "Ambient" to "Playback" mode, 
+ * bypassing the physical silent switch and routing to speakers.
  */
 export async function warmUpAudioContext(ctx: AudioContext) {
     if (ctx.state === 'suspended' || (ctx.state as any) === 'interrupted') {
         await ctx.resume();
     }
     
-    // 1. Web Audio Prime
+    // 1. Web Audio Prime: Play a silent buffer
     const buffer = ctx.createBuffer(1, 1, 22050);
     const source = ctx.createBufferSource();
     source.buffer = buffer;
     source.connect(ctx.destination);
     source.start(0);
 
-    // 2. HTML5 Audio Prime (Crucial for some iOS versions to switch from "Ringer" to "Media" volume)
-    const silentAudio = new Audio();
-    silentAudio.src = 'data:audio/wav;base64,UklGRigAAABXQVZFRm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQQAAAAAAAAA'; // Tiny silent wav
+    // 2. HTML5 Audio Prime: Use a tiny silent WAV. 
+    // This is the critical part that tells iOS to use the SPEAKER and ignore the mute switch.
+    if (!silentLoopElement) {
+        silentLoopElement = new Audio();
+        // A 0.1s silent wav
+        silentLoopElement.src = 'data:audio/wav;base64,UklGRigAAABXQVZFRm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQQAAAAAAAAA';
+        silentLoopElement.loop = true;
+    }
+    
     try {
-        await silentAudio.play();
+        await silentLoopElement.play();
     } catch(e) {
         console.warn("Silent audio prime failed", e);
     }
     
-    console.log("AudioContext warmed up. State:", ctx.state);
+    console.log("AudioContext and Speaker Hardware warmed up. State:", ctx.state);
 }
 
 export function createPcmBlob(data: Float32Array): GeminiBlob {
