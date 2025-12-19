@@ -197,19 +197,19 @@ const App: React.FC = () => {
   const [chatTargetId, setChatTargetId] = useState<string | null>(null);
 
   const allApps = [
-    { label: t.podcasts, icon: Podcast, action: () => { setViewState('directory'); setActiveTab('categories'); }, color: 'text-indigo-400' },
-    { label: t.code, icon: Code, action: () => setViewState('code_studio'), color: 'text-blue-400' },
-    { label: t.notebooks, icon: Book, action: () => setViewState('notebook_viewer'), color: 'text-orange-300' },
-    { label: t.whiteboard, icon: PenTool, action: () => setViewState('whiteboard'), color: 'text-pink-400' },
-    { label: t.chat, icon: MessageSquare, action: () => setViewState('chat'), color: 'text-indigo-400' },
-    { label: t.calendar, icon: Calendar, action: () => { setViewState('directory'); setActiveTab('calendar'); }, color: 'text-emerald-400' },
-    { label: t.careers, icon: Briefcase, action: () => setViewState('careers'), color: 'text-yellow-400' },
-    { label: t.blog, icon: Rss, action: () => setViewState('blog'), color: 'text-orange-400' },
-    { label: t.cards, icon: Gift, action: () => setViewState('card_workshop'), color: 'text-red-400' },
-    { label: t.mentorship, icon: Users, action: () => { setViewState('directory'); setActiveTab('mentorship'); }, color: 'text-purple-400' },
-    { label: t.groups, icon: Users, action: () => { setViewState('directory'); setActiveTab('groups'); }, color: 'text-cyan-400' },
-    { label: t.recordings, icon: Disc, action: () => { setViewState('directory'); setActiveTab('recordings'); }, color: 'text-red-400' },
-    { label: t.docs, icon: FileText, action: () => { setViewState('directory'); setActiveTab('docs'); }, color: 'text-gray-400' },
+    { id: 'podcasts', label: t.podcasts, icon: Podcast, action: () => { setViewState('directory'); setActiveTab('categories'); }, color: 'text-indigo-400' },
+    { id: 'code_studio', label: t.code, icon: Code, action: () => setViewState('code_studio'), color: 'text-blue-400' },
+    { id: 'notebook_viewer', label: t.notebooks, icon: Book, action: () => setViewState('notebook_viewer'), color: 'text-orange-300' },
+    { id: 'whiteboard', label: t.whiteboard, icon: PenTool, action: () => setViewState('whiteboard'), color: 'text-pink-400' },
+    { id: 'chat', label: t.chat, icon: MessageSquare, action: () => setViewState('chat'), color: 'text-indigo-400' },
+    { id: 'calendar', label: t.calendar, icon: Calendar, action: () => { setViewState('directory'); setActiveTab('calendar'); }, color: 'text-emerald-400' },
+    { id: 'careers', label: t.careers, icon: Briefcase, action: () => setViewState('careers'), color: 'text-yellow-400' },
+    { id: 'blog', label: t.blog, icon: Rss, action: () => setViewState('blog'), color: 'text-orange-400' },
+    { id: 'card_workshop', label: t.cards, icon: Gift, action: () => setViewState('card_workshop'), color: 'text-red-400' },
+    { id: 'mentorship', label: t.mentorship, icon: Users, action: () => { setViewState('directory'); setActiveTab('mentorship'); }, color: 'text-purple-400' },
+    { id: 'groups', label: t.groups, icon: Users, action: () => { setViewState('directory'); setActiveTab('groups'); }, color: 'text-cyan-400' },
+    { id: 'recordings', label: t.recordings, icon: Disc, action: () => { setViewState('directory'); setActiveTab('recordings'); }, color: 'text-red-400' },
+    { id: 'docs', label: t.docs, icon: FileText, action: () => { setViewState('directory'); setActiveTab('docs'); }, color: 'text-gray-400' },
   ];
 
   // URL Sync Effect: Mount (Read from URL)
@@ -573,7 +573,7 @@ const App: React.FC = () => {
       setActiveChannelId(channel.id);
       setLiveConfig({
           context,
-          bookingId,
+          bookingId: bookingId,
           recording: recordingEnabled,
           video: videoEnabled,
           camera: cameraEnabled
@@ -591,8 +591,8 @@ const App: React.FC = () => {
           visibility: 'private',
           voiceName: globalVoice === 'Auto' ? 'Puck' : globalVoice,
           systemInstruction: 'You are a helpful AI assistant. Answer questions and help with tasks.',
-          likes: 0,
-          dislikes: 0,
+          likes: 0, 
+          dislikes: 0, 
           comments: [],
           tags: [],
           imageUrl: 'https://images.unsplash.com/photo-1624969862644-791f3dc98927?w=600&q=80',
@@ -729,7 +729,11 @@ const App: React.FC = () => {
       return <LoginPage onPrivacyClick={() => setIsPrivacyOpen(true)} />;
   }
 
-  const MobileBottomNav = () => (
+  const MobileBottomNav = () => {
+    const quickAppId = userProfile?.preferredMobileQuickApp || 'code_studio';
+    const quickApp = allApps.find(a => a.id === quickAppId) || allApps[1]; // Default to Code Studio
+    
+    return (
       <div className="md:hidden fixed bottom-0 left-0 w-full bg-slate-950/90 backdrop-blur-md border-t border-slate-800 z-50 px-6 py-2 flex justify-between items-center safe-area-bottom">
           <button 
               onClick={() => { setViewState('directory'); setActiveTab('categories'); setIsAppsMenuOpen(false); setIsUserMenuOpen(false); }}
@@ -740,11 +744,11 @@ const App: React.FC = () => {
           </button>
           
           <button 
-              onClick={() => { setViewState('directory'); setActiveTab('groups'); setIsAppsMenuOpen(false); setIsUserMenuOpen(false); }}
-              className={`flex flex-col items-center gap-1 ${activeTab === 'groups' && !isAppsMenuOpen && !isUserMenuOpen ? 'text-white' : 'text-slate-500'}`}
+              onClick={() => { quickApp.action(); setIsAppsMenuOpen(false); setIsUserMenuOpen(false); }}
+              className={`flex flex-col items-center gap-1 ${viewState === quickAppId ? 'text-white' : 'text-slate-500'}`}
           >
-              <Users size={24} fill={activeTab === 'groups' && !isAppsMenuOpen && !isUserMenuOpen ? "currentColor" : "none"} />
-              <span className="text-[10px]">Friends</span>
+              <quickApp.icon size={24} fill={viewState === quickAppId ? "currentColor" : "none"} />
+              <span className="text-[10px]">{quickApp.label}</span>
           </button>
 
           <button 
@@ -774,15 +778,25 @@ const App: React.FC = () => {
               <span className="text-[10px]">Profile</span>
           </button>
       </div>
-  );
+    );
+  };
 
   const MobileTopNav = () => {
       if (viewState !== 'directory' || activeTab !== 'categories') return null;
       return (
           <div className="md:hidden fixed top-0 left-0 w-full z-40 bg-gradient-to-b from-black/80 to-transparent p-4 flex items-center justify-between pointer-events-none">
-              <button onClick={handleMobileQuickStart} className="pointer-events-auto text-white/80 hover:text-white">
-                  <VideoIcon size={24} />
-              </button>
+              <div className="flex items-center gap-3 pointer-events-auto">
+                  <button onClick={handleMobileQuickStart} className="text-white/80 hover:text-white">
+                      <VideoIcon size={24} />
+                  </button>
+                  <button 
+                      onClick={() => setLanguage(prev => prev === 'en' ? 'zh' : 'en')}
+                      className="w-8 h-8 rounded-full bg-black/40 border border-white/20 flex items-center justify-center text-[10px] font-bold text-white transition-all active:scale-95"
+                      title="Switch Language"
+                  >
+                      {language === 'en' ? '中' : 'EN'}
+                  </button>
+              </div>
               
               <div className="flex gap-4 font-bold text-base pointer-events-auto">
                   <button 
@@ -1202,6 +1216,9 @@ const App: React.FC = () => {
            t={t}
            className="fixed bottom-24 right-4 md:bottom-auto md:top-16 md:right-4 z-[100] shadow-2xl border-slate-700"
            channels={channels}
+           language={language}
+           setLanguage={setLanguage}
+           allApps={allApps}
         />
       )}
 

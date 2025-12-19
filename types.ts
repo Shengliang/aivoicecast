@@ -182,6 +182,7 @@ export interface UserProfile {
   following?: string[];
   likedChannelIds?: string[];
   preferredAiProvider?: 'gemini' | 'openai';
+  preferredMobileQuickApp?: string;
 }
 
 export interface RecordingSession {

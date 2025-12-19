@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { UserProfile, SubscriptionTier, GlobalStats, Channel } from '../types';
-import { getUserProfile, getGlobalStats } from '../services/firestoreService';
-import { Sparkles, BarChart2, Plus, Wand2, Key, Database, Crown, Settings, Book, Users, LogIn, Terminal, Cloud, Globe, Mic, LayoutGrid, HardDrive, AlertCircle, Loader2, Gift, CreditCard, ExternalLink } from 'lucide-react';
+import { getUserProfile, getGlobalStats, updateUserProfile } from '../services/firestoreService';
+import { Sparkles, BarChart2, Plus, Wand2, Key, Database, Crown, Settings, Book, Users, LogIn, Terminal, Cloud, Globe, Mic, LayoutGrid, HardDrive, AlertCircle, Loader2, Gift, CreditCard, ExternalLink, Languages, MousePointer2 } from 'lucide-react';
 import { VOICES } from '../utils/initialData';
 import { PricingModal } from './PricingModal';
 
@@ -22,13 +22,18 @@ interface StudioMenuProps {
   t: any;
   className?: string;
   channels: Channel[];
+  language: 'en' | 'zh';
+  setLanguage: (lang: 'en' | 'zh') => void;
+  allApps?: any[];
 }
 
 export const StudioMenu: React.FC<StudioMenuProps> = ({
   isUserMenuOpen, setIsUserMenuOpen, userProfile, setUserProfile, currentUser,
   globalVoice, setGlobalVoice, 
   setIsCreateModalOpen, setIsVoiceCreateOpen, setIsSyncModalOpen, setIsSettingsModalOpen, onOpenUserGuide, onNavigate, t,
-  className, channels = []
+  className, channels = [],
+  language, setLanguage,
+  allApps = []
 }) => {
   const [isPricingOpen, setIsPricingOpen] = useState(false);
   const [globalStats, setGlobalStats] = useState<GlobalStats>({ totalLogins: 0, uniqueUsers: 0 });
@@ -81,6 +86,17 @@ export const StudioMenu: React.FC<StudioMenuProps> = ({
       }
   };
 
+  const handleSetQuickApp = async (appId: string) => {
+      if (!userProfile) return;
+      const updated = { ...userProfile, preferredMobileQuickApp: appId };
+      setUserProfile(updated);
+      try {
+          await updateUserProfile(currentUser.uid, { preferredMobileQuickApp: appId });
+      } catch(e) {
+          console.error("Failed to save quick app preference", e);
+      }
+  };
+
   const getTierLabel = () => {
       const tier = userProfile?.subscriptionTier || 'free';
       if (tier === 'pro') return { label: 'PRO MEMBER', color: 'text-amber-400 bg-amber-900/50 border border-amber-500/20' };
@@ -110,6 +126,8 @@ export const StudioMenu: React.FC<StudioMenuProps> = ({
           <span className="text-sm font-bold text-white">{value}</span>
       </div>
   );
+
+  const quickNavApps = allApps.filter(a => a.id !== 'podcasts');
 
   return (
     <>
@@ -183,10 +201,61 @@ export const StudioMenu: React.FC<StudioMenuProps> = ({
             </button>
             
             <div className="h-px bg-slate-800 my-2 mx-2" />
+
+            {/* Language Selection Section */}
+            <div className="px-3 py-2">
+               <div className="flex items-center justify-between mb-2">
+                  <label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-1">
+                      <Languages size={12}/> App Language
+                  </label>
+                  <span className="text-xs text-indigo-400 font-bold">{language === 'en' ? 'English' : '中文'}</span>
+                </div>
+               <div className="flex bg-slate-900 p-1 rounded-lg border border-slate-700">
+                  <button 
+                      onClick={() => setLanguage('en')}
+                      className={`flex-1 text-[10px] py-1.5 rounded transition-all font-bold ${language === 'en' ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:text-slate-300'}`}
+                  >
+                      ENGLISH
+                  </button>
+                  <button 
+                      onClick={() => setLanguage('zh')}
+                      className={`flex-1 text-[10px] py-1.5 rounded transition-all font-bold ${language === 'zh' ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:text-slate-300'}`}
+                  >
+                      中文 (ZH)
+                  </button>
+                </div>
+            </div>
+
+            {/* Quick Nav Shortcut Selection */}
+            <div className="px-3 py-2">
+               <div className="flex items-center justify-between mb-2">
+                  <label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-1">
+                      <MousePointer2 size={12}/> Quick Nav Link
+                  </label>
+                  <span className="text-xs text-indigo-400 font-bold">
+                    {quickNavApps.find(a => a.id === (userProfile?.preferredMobileQuickApp || 'code_studio'))?.label}
+                  </span>
+                </div>
+               <div className="grid grid-cols-3 gap-1">
+                  {quickNavApps.map(app => (
+                     <button 
+                        key={app.id}
+                        onClick={() => handleSetQuickApp(app.id)}
+                        className={`text-[10px] py-1 px-1 rounded border transition-all truncate ${userProfile?.preferredMobileQuickApp === app.id || (!userProfile?.preferredMobileQuickApp && app.id === 'code_studio') ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-white'}`}
+                        title={app.label}
+                     >
+                        {app.label}
+                     </button>
+                  ))}
+                </div>
+                <p className="text-[9px] text-slate-600 mt-1 italic">Changes the 2nd icon on mobile bar.</p>
+            </div>
             
             <div className="px-3 py-2">
                <div className="flex items-center justify-between mb-2">
-                  <label className="text-xs font-bold text-slate-500 uppercase">Live Host Voice</label>
+                  <label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-1">
+                      <Mic size={12}/> Live Host Voice
+                  </label>
                   <span className="text-xs text-indigo-400">{globalVoice}</span>
                 </div>
                <div className="grid grid-cols-3 gap-1">
@@ -204,7 +273,6 @@ export const StudioMenu: React.FC<StudioMenuProps> = ({
 
             <div className="h-px bg-slate-800 my-2 mx-2" />
 
-            {/* FIX: Removed the API Key management button to comply with Gemini API guidelines. The key is now handled exclusively via process.env.API_KEY. */}
             <button 
                onClick={() => { setIsSyncModalOpen(true); setIsUserMenuOpen(false); }}
                className="w-full flex items-center space-x-3 px-3 py-2 text-sm text-slate-300 hover:text-white hover:bg-slate-800 rounded-lg transition-colors"
