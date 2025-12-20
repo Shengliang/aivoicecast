@@ -58,7 +58,9 @@ export function stopAllPlatformAudio(sourceCaller: string = "Global") {
     if (currentStopFn) {
         const fn = currentStopFn;
         currentStopFn = null; 
-        try { fn(); } catch (e) {}
+        try { fn(); } catch (e) {
+            console.warn("Error during audio owner cleanup", e);
+        }
     }
     
     currentOwnerToken = null;
@@ -185,10 +187,14 @@ export async function warmUpAudioContext(ctx: AudioContext) {
 }
 
 export function coolDownAudioContext() {
-    if (silentLoopElement) silentLoopElement.pause();
+    if (silentLoopElement) {
+        try { silentLoopElement.pause(); } catch(e) {}
+    }
     if (audioBridgeElement) {
-        audioBridgeElement.pause();
-        audioBridgeElement.srcObject = null;
+        try {
+            audioBridgeElement.pause();
+            audioBridgeElement.srcObject = null;
+        } catch(e) {}
     }
 }
 
