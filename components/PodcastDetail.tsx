@@ -125,7 +125,8 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
     
     // 5. Hard kill system TTS
     if (typeof window !== 'undefined' && window.speechSynthesis) {
-        // Aggressively clear callbacks to prevent overlap on the next session
+        // CRITICAL: Aggressively clear callbacks to prevent overlap on the next session
+        // Some browsers fire 'onend' even after cancel() which can trigger the next line
         if (lastUtteranceRef.current) {
             lastUtteranceRef.current.onend = null;
             lastUtteranceRef.current.onerror = null;
@@ -153,30 +154,29 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
    */
   const togglePlayback = async () => {
     if (isToggleInProgressRef.current) return;
+    isToggleInProgressRef.current = true;
     
     if (isPlaying) { 
       stopAudio(); 
-      isToggleInProgressRef.current = false; // Release lock after stop
+      isToggleInProgressRef.current = false;
       return;
     }
 
-    isToggleInProgressRef.current = true;
-    
-    // 1. Force kill everything else on the platform before starting
-    stopAllPlatformAudio("PreToggleStart");
-    
-    // 2. Register this component as the exclusive audio owner
-    const targetGlobalGen = registerAudioOwner(MY_TOKEN, stopAudio);
-    const localSessionId = ++localSessionIdRef.current;
-
     try {
+        // 1. Force kill everything else on the platform before starting
+        stopAllPlatformAudio("PreToggleStart");
+        
+        // 2. Register this component as the exclusive audio owner
+        const targetGlobalGen = registerAudioOwner(MY_TOKEN, stopAudio);
+        const localSessionId = ++localSessionIdRef.current;
+
         const ctx = getGlobalAudioContext();
         await warmUpAudioContext(ctx);
         
-        // ZOMBIE CHECK: Did the user click stop while we were warming up?
+        // ZOMBIE CHECK: Did the user click stop while we were warming up or registering?
         if (localSessionId !== localSessionIdRef.current || targetGlobalGen !== getGlobalAudioGeneration() || !isAudioOwner(MY_TOKEN)) {
+            logAudioEvent(MY_TOKEN, 'ABORT_STALE', `Toggle aborted due to session mismatch.`);
             setIsPlaying(false);
-            isToggleInProgressRef.current = false;
             return;
         }
 
@@ -316,6 +316,7 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
       if (v) utter.voice = v;
       
       utter.onend = () => { 
+          // CRITICAL: Double check session IDs before triggering recursion
           if (localSessionId === localSessionIdRef.current && targetGlobalGen === getGlobalAudioGeneration() && isAudioOwner(MY_TOKEN)) { 
               schedulingCursorRef.current++; 
               runSystemTts(localSessionId, targetGlobalGen); 
@@ -327,6 +328,7 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
       };
 
       if (localSessionId === localSessionIdRef.current && targetGlobalGen === getGlobalAudioGeneration() && isAudioOwner(MY_TOKEN)) {
+        logAudioEvent(MY_TOKEN, 'PLAY_SYSTEM', `Section ${idx} @ Gen ${targetGlobalGen}`);
         window.speechSynthesis.speak(utter);
       }
   };
