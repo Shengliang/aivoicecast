@@ -58,7 +58,6 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
       hasOpenAiKey ? 'openai' : (hasGeminiKey ? 'gemini' : 'system')
   );
   
-  const [systemVoices, setSystemVoices] = useState<SpeechSynthesisVoice[]>([]);
   const [sysTeacherVoiceURI, setSysTeacherVoiceURI] = useState('');
   const [sysStudentVoiceURI, setSysStudentVoiceURI] = useState('');
   const [expandedChapterId, setExpandedChapterId] = useState<string | null>(null);
@@ -98,9 +97,9 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
    * ATOMIC KILL
    */
   const stopAudio = useCallback(() => {
-    // 1. Immediately invalidate local session to stop current loops
+    // 1. Immediately invalidate local session
     localSessionIdRef.current++; 
-    logAudioEvent(MY_TOKEN, 'STOP', `Local session reset to ${localSessionIdRef.current}`);
+    logAudioEvent(MY_TOKEN, 'STOP', `Session invalidated to ID: ${localSessionIdRef.current}`);
 
     // 2. Kill Recursive Scheduler
     if (schedulerTimerRef.current) { 
@@ -137,22 +136,20 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
   }, [MY_TOKEN]);
 
   useEffect(() => {
-      // NOTE: We keep channel.id out of dependencies to avoid audio stopping 
-      // on like/comment updates if the detail view stays active.
       return () => {
           stopAudio();
           stopAllPlatformAudio(`PodcastDetailUnmount:${channel.id}`);
       };
-  }, [stopAudio]);
+  }, [stopAudio, channel.id]);
 
   /**
    * ATOMIC TOGGLE
    */
   const togglePlayback = async () => {
-    // Prevent re-entry while async warmup is happening
+    // 1. Re-entry check
     if (isToggleInProgressRef.current) return;
 
-    // CRITICAL: If currently playing, STOP it.
+    // 2. Stop Logic
     if (isPlaying) { 
       stopAudio(); 
       return;
@@ -160,24 +157,26 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
 
     isToggleInProgressRef.current = true;
     
-    // --- START LOGIC ---
-    // 1. REGISTRATION MUST BE FIRST
-    // registerAudioOwner internally calls stopAllPlatformAudio which increments Global Gen
-    const localSessionId = ++localSessionIdRef.current;
+    // 3. START LOGIC
+    // Force stop everything globally before taking the lock
+    stopAllPlatformAudio("PreToggleStart");
+    
+    // Acquisition must come AFTER stopAll so we get a clean slate
     const targetGlobalGen = registerAudioOwner(MY_TOKEN, stopAudio);
+    const localSessionId = ++localSessionIdRef.current;
 
     try {
         const ctx = getGlobalAudioContext();
         await warmUpAudioContext(ctx);
         
-        // 2. ZOMBIE CHECK after async warmup
+        // ZOMBIE CHECK after async warmup
         if (localSessionId !== localSessionIdRef.current || targetGlobalGen !== getGlobalAudioGeneration()) {
-            logAudioEvent(MY_TOKEN, 'ABORT_STALE', "Aborted after warmup delay");
+            logAudioEvent(MY_TOKEN, 'ABORT_STALE', "Session superseded during warmup");
             setIsPlaying(false);
             return;
         }
 
-        // Resume from current index if paused, or start over if finished
+        // Resume from current index if valid
         const startIdx = (currentSectionIndex !== null && activeLecture && currentSectionIndex < activeLecture.sections.length) 
             ? currentSectionIndex 
             : 0;
@@ -193,22 +192,25 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
         } else {
             runWebAudioScheduler(localSessionId, targetGlobalGen);
         }
+    } catch (e) {
+        console.error("Playback start error", e);
+        stopAudio();
     } finally {
         isToggleInProgressRef.current = false;
     }
   };
 
   const runWebAudioScheduler = async (localSessionId: number, targetGlobalGen: number) => {
-      // 1. ATOMIC GUARD
-      if (!isPlayingRef.current || localSessionId !== localSessionIdRef.current || targetGlobalGen !== getGlobalAudioGeneration() || !activeLecture || !isAudioOwner(MY_TOKEN)) {
+      // ATOMIC GUARD
+      if (!isPlayingRef.current || localSessionId !== localSessionIdRef.current || targetGlobalGen !== getGlobalAudioGeneration() || !isAudioOwner(MY_TOKEN) || !activeLecture) {
           return;
       }
       
       const ctx = getGlobalAudioContext();
-      const lookahead = 2.0; 
+      const lookahead = 1.5; // reduced lookahead to minimize "stuck" segments
       
       while (nextScheduleTimeRef.current < ctx.currentTime + lookahead) {
-          // SYNC CHECK inside loop before any work
+          // SYNC CHECK inside loop
           if (!isPlayingRef.current || localSessionId !== localSessionIdRef.current || targetGlobalGen !== getGlobalAudioGeneration() || !isAudioOwner(MY_TOKEN)) break;
 
           const idx = schedulingCursorRef.current;
@@ -231,9 +233,9 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
               const result = await synthesizeSpeech(section.text, voice, ctx);
               setIsBuffering(false);
               
-              // 2. CRITICAL ZOMBIE CHECK after TTS await
+              // CRITICAL ZOMBIE CHECK after TTS await
               if (!isPlayingRef.current || localSessionId !== localSessionIdRef.current || targetGlobalGen !== getGlobalAudioGeneration() || !isAudioOwner(MY_TOKEN)) {
-                  logAudioEvent(MY_TOKEN, 'ABORT_STALE', `Zombie buffer discarded (Gen mismatch)`);
+                  logAudioEvent(MY_TOKEN, 'ABORT_STALE', `Buffer discarded (Session mismatch)`);
                   return;
               }
               
@@ -243,13 +245,13 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
                   
                   const startAt = Math.max(nextScheduleTimeRef.current, ctx.currentTime);
                   
-                  // 3. FINAL ZOMBIE CHECK before source.start()
+                  // FINAL GUARD before actual start
                   if (localSessionId !== localSessionIdRef.current || targetGlobalGen !== getGlobalAudioGeneration() || !isAudioOwner(MY_TOKEN)) {
                       source.disconnect();
                       return;
                   }
 
-                  logAudioEvent(MY_TOKEN, 'PLAY_BUFFER', `Playing idx ${idx} (Gen: ${targetGlobalGen})`);
+                  logAudioEvent(MY_TOKEN, 'PLAY_BUFFER', `Section ${idx} (Gen: ${targetGlobalGen})`);
                   
                   connectOutput(source, ctx);
                   source.start(startAt);
@@ -270,18 +272,14 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
                   nextScheduleTimeRef.current = startAt + result.buffer.duration;
                   schedulingCursorRef.current++;
               } else {
-                  // Fallback to system on synthesize error
-                  if (localSessionId === localSessionIdRef.current && targetGlobalGen === getGlobalAudioGeneration() && isAudioOwner(MY_TOKEN)) {
-                      setVoiceProvider('system');
-                      runSystemTts(localSessionId, targetGlobalGen);
-                  }
+                  // Fallback
+                  setVoiceProvider('system');
+                  runSystemTts(localSessionId, targetGlobalGen);
                   return;
               }
           } catch(e) {
-              if (localSessionId === localSessionIdRef.current && targetGlobalGen === getGlobalAudioGeneration() && isAudioOwner(MY_TOKEN)) {
-                setVoiceProvider('system');
-                runSystemTts(localSessionId, targetGlobalGen);
-              }
+              setVoiceProvider('system');
+              runSystemTts(localSessionId, targetGlobalGen);
               return;
           }
       }
@@ -366,7 +364,7 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
         <div className="absolute bottom-0 left-0 w-full p-6 md:p-8 max-w-7xl mx-auto">
            <div className="flex items-end justify-between">
              <div><h1 className="text-4xl md:text-5xl font-bold text-white mb-2">{channel.title}</h1><p className="text-lg text-slate-300 max-w-2xl line-clamp-2">{channel.description}</p></div>
-             <div className="hidden md:flex items-center space-x-3"><button onClick={() => onStartLiveSession()} className="flex items-center space-x-2 bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-3 rounded-full font-bold shadow-lg"><Play size={20} fill="currentColor" /><span>{t.startLive}</span></button></div>
+             <div className="hidden md:flex items-center space-x-3"><button onClick={() => { stopAudio(); onStartLiveSession(); }} className="flex items-center space-x-2 bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-3 rounded-full font-bold shadow-lg"><Play size={20} fill="currentColor" /><span>{t.startLive}</span></button></div>
            </div>
         </div>
       </div>
@@ -448,7 +446,7 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
                     <div className="flex justify-between items-center mt-6 pt-6 border-t border-slate-800">
                         <button onClick={handlePrevLesson} disabled={currentLectureIndex <= 0} className="text-slate-400 disabled:opacity-30 flex items-center space-x-2 text-sm font-bold"><SkipBack size={20} /></button>
                         <div className="flex flex-col items-center gap-2">
-                            <button onClick={togglePlayback} className={`w-16 h-16 rounded-full flex items-center justify-center transition-all shadow-2xl active:scale-95 ${isPlaying ? 'bg-slate-800 text-red-400' : 'bg-emerald-600 hover:bg-emerald-500 text-white'}`}>
+                            <button onClick={togglePlayback} className={`w-16 h-16 rounded-full flex items-center justify-center transition-all shadow-2xl active:scale-95 ${isPlaying ? 'bg-slate-800 text-red-400 border border-red-500/20' : 'bg-emerald-600 hover:bg-emerald-500 text-white'}`}>
                                 {isBuffering ? <Loader2 className="animate-spin" /> : isPlaying ? <Pause fill="currentColor" size={28} /> : <Play fill="currentColor" size={28} className="ml-1" />}
                             </button>
                             {isBuffering && <span className="text-xs text-slate-500">{t.loadingAudio}</span>}

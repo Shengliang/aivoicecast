@@ -45,29 +45,16 @@ export function getCurrentAudioOwner() {
  * Resets the global lock and increments the Atomic Generation.
  */
 export function stopAllPlatformAudio(sourceCaller: string = "Global") {
-    // 1. Increment Generation - This invalidates all pending async blocks
+    // 1. Increment Generation - This invalidates all pending async blocks globally
     globalAudioGeneration++;
     logAudioEvent(sourceCaller, 'STOP', `Gen INC to ${globalAudioGeneration}. Current owner: ${currentOwnerToken}`);
     
     // 2. Purge System Voice Aggressively
     if (typeof window !== 'undefined' && window.speechSynthesis) {
         window.speechSynthesis.cancel();
-        try {
-            // Aggressive dummy-speak trick to force-clear browser internal queues
-            const dummy = new SpeechSynthesisUtterance("");
-            dummy.volume = 0;
-            window.speechSynthesis.speak(dummy);
-            window.speechSynthesis.cancel();
-        } catch (e) {}
     }
 
-    // 3. Kill the Media Bridge (stops background playback)
-    if (audioBridgeElement) {
-        audioBridgeElement.pause();
-        audioBridgeElement.srcObject = null;
-    }
-
-    // 4. Trigger the specific stop logic of the registered owner
+    // 3. Trigger the specific stop logic of the registered owner
     if (currentStopFn) {
         const fn = currentStopFn;
         currentStopFn = null; 
@@ -82,7 +69,7 @@ export function stopAllPlatformAudio(sourceCaller: string = "Global") {
  * Kills everyone else and returns the current valid generation.
  */
 export function registerAudioOwner(uniqueToken: string, stopFn: () => void): number {
-    // 1. Clear everything (Increments generation)
+    // 1. Clear everything (Increments globalAudioGeneration)
     stopAllPlatformAudio(`Reg:${uniqueToken}`);
     
     // 2. Set new owner
