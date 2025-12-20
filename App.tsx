@@ -5,7 +5,7 @@ import {
   Podcast, Mic, Layout, Search, Sparkles, LogOut, 
   Settings, Menu, X, Plus, Github, Database, Cloud, Globe, 
   Calendar, Briefcase, Users, Disc, FileText, AlertTriangle, List, BookOpen, ChevronDown, Table as TableIcon, LayoutGrid, Rocket, Code, Wand2, PenTool, Rss, Loader2, MessageSquare,
-  Home, Video as VideoIcon, Inbox, User, PlusSquare, ArrowLeft, Play, Book, Gift, Square
+  Home, Video as VideoIcon, Inbox, User, PlusSquare, ArrowLeft, Play, Book, Gift, Square, Shield
 } from 'lucide-react';
 import { LiveSession } from './components/LiveSession';
 import { PodcastDetail } from './components/PodcastDetail';
@@ -80,7 +80,7 @@ const UI_TEXT = {
     docs: "Documents",
     lectures: "Lectures",
     podcasts: "Podcasts",
-    mission: "Mission",
+    mission: "Mission & Manifesto",
     code: "Code Studio",
     whiteboard: "Whiteboard",
     blog: "Community Blog",
@@ -108,7 +108,7 @@ const UI_TEXT = {
     docs: "文档",
     lectures: "课程",
     podcasts: "播客",
-    mission: "使命",
+    mission: "使命与宣言",
     code: "代码工作室",
     whiteboard: "白板",
     blog: "社区博客",
@@ -203,6 +203,7 @@ const App: React.FC = () => {
 
   const allApps = [
     { id: 'podcasts', label: t.podcasts, icon: Podcast, action: () => { handleSetViewState('directory'); setActiveTab('categories'); }, color: 'text-indigo-400' },
+    { id: 'mission', label: t.mission, icon: Rocket, action: () => handleSetViewState('mission'), color: 'text-orange-500' },
     { id: 'code_studio', label: t.code, icon: Code, action: () => handleSetViewState('code_studio'), color: 'text-blue-400' },
     { id: 'notebook_viewer', label: t.notebooks, icon: Book, action: () => handleSetViewState('notebook_viewer'), color: 'text-orange-300' },
     { id: 'whiteboard', label: t.whiteboard, icon: PenTool, action: () => handleSetViewState('whiteboard'), color: 'text-pink-400' },
@@ -217,24 +218,17 @@ const App: React.FC = () => {
     { id: 'docs', label: t.docs, icon: FileText, action: () => { handleSetViewState('directory'); setActiveTab('docs'); }, color: 'text-gray-400' },
   ];
 
-  /**
-   * GLOBAL NAVIGATION INTERCEPTOR
-   * Kills all audio when switching views to prevent dual-voice.
-   */
   const handleSetViewState = (newState: ExtendedViewState) => {
-    // ATOMIC KILL SWITCH: Kill all audio BEFORE state transition
     stopAllPlatformAudio(`Navigation:${viewState}->${newState}`);
     setViewState(newState);
   };
 
-  // Audio Audit Listener for Global UI button
   useEffect(() => {
     const updateAudioState = () => setAudioIsPlaying(isAnyAudioPlaying());
     window.addEventListener('audio-audit-updated', updateAudioState);
     return () => window.removeEventListener('audio-audit-updated', updateAudioState);
   }, []);
 
-  // Browser Navigation Fix: Stop audio when back/forward button is pressed
   useEffect(() => {
       const handlePopState = () => {
           stopAllPlatformAudio("BrowserNavigation");
@@ -243,7 +237,6 @@ const App: React.FC = () => {
       return () => window.removeEventListener('popstate', handlePopState);
   }, []);
 
-  // Global Audio Unlock Listener for Mobile Autoplay
   useEffect(() => {
       const handleFirstInteraction = () => {
           const audioCtx = (window as any).sharedAudioContext;
@@ -263,7 +256,6 @@ const App: React.FC = () => {
       };
   }, []);
 
-  // URL Sync Effect: Mount (Read from URL)
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const session = params.get('session');
@@ -362,7 +354,6 @@ const App: React.FC = () => {
     return () => unsubscribeAuth();
   }, []);
 
-  // URL Sync Effect: Persistence (Update URL on state change)
   useEffect(() => {
       if (!currentUser) return;
 
@@ -769,7 +760,7 @@ const App: React.FC = () => {
   }
 
   if (!currentUser) {
-      return <LoginPage onPrivacyClick={() => setIsPrivacyOpen(false)} />;
+      return <LoginPage onPrivacyClick={() => setIsPrivacyOpen(true)} />;
   }
 
   const MobileBottomNav = () => {
@@ -1265,6 +1256,7 @@ const App: React.FC = () => {
            setIsSettingsModalOpen={setIsAccountSettingsOpen}
            onOpenUserGuide={() => handleSetViewState('user_guide')}
            onNavigate={(view: any) => handleSetViewState(view)}
+           onOpenPrivacy={() => setIsPrivacyOpen(true)}
            t={t}
            className="fixed bottom-24 right-4 md:bottom-auto md:top-16 md:right-4 z-[100] shadow-2xl border-slate-700"
            channels={channels}

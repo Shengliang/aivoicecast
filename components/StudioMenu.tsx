@@ -1,7 +1,8 @@
+
 import React, { useState, useEffect } from 'react';
 import { UserProfile, SubscriptionTier, GlobalStats, Channel } from '../types';
 import { getUserProfile, getGlobalStats, updateUserProfile } from '../services/firestoreService';
-import { Sparkles, BarChart2, Plus, Wand2, Key, Database, Crown, Settings, Book, Users, LogIn, Terminal, Cloud, Globe, Mic, LayoutGrid, HardDrive, AlertCircle, Loader2, Gift, CreditCard, ExternalLink, Languages, MousePointer2 } from 'lucide-react';
+import { Sparkles, BarChart2, Plus, Wand2, Key, Database, Crown, Settings, Book, Users, LogIn, Terminal, Cloud, Globe, Mic, LayoutGrid, HardDrive, AlertCircle, Loader2, Gift, CreditCard, ExternalLink, Languages, MousePointer2, Rocket, Shield } from 'lucide-react';
 import { VOICES } from '../utils/initialData';
 import { PricingModal } from './PricingModal';
 
@@ -19,6 +20,7 @@ interface StudioMenuProps {
   setIsSettingsModalOpen: (open: boolean) => void;
   onOpenUserGuide: () => void;
   onNavigate: (view: string) => void;
+  onOpenPrivacy: () => void;
   t: any;
   className?: string;
   channels: Channel[];
@@ -30,7 +32,7 @@ interface StudioMenuProps {
 export const StudioMenu: React.FC<StudioMenuProps> = ({
   isUserMenuOpen, setIsUserMenuOpen, userProfile, setUserProfile, currentUser,
   globalVoice, setGlobalVoice, 
-  setIsCreateModalOpen, setIsVoiceCreateOpen, setIsSyncModalOpen, setIsSettingsModalOpen, onOpenUserGuide, onNavigate, t,
+  setIsCreateModalOpen, setIsVoiceCreateOpen, setIsSyncModalOpen, setIsSettingsModalOpen, onOpenUserGuide, onNavigate, onOpenPrivacy, t,
   className, channels = [],
   language, setLanguage,
   allApps = []
@@ -186,6 +188,14 @@ export const StudioMenu: React.FC<StudioMenuProps> = ({
             <div className="h-px bg-slate-800 my-2 mx-2" />
             
             <button 
+               onClick={() => { onNavigate('mission'); setIsUserMenuOpen(false); }}
+               className="w-full flex items-center space-x-3 px-3 py-2 text-sm text-white hover:bg-slate-800 rounded-lg transition-colors"
+            >
+               <div className="p-1.5 bg-orange-900/50 text-orange-400 rounded-md"><Rocket size={16}/></div>
+               <span className="font-medium">Mission & Manifesto</span>
+            </button>
+
+            <button 
                onClick={() => { onNavigate('card_workshop'); setIsUserMenuOpen(false); }}
                className="w-full flex items-center space-x-3 px-3 py-2 text-sm text-white hover:bg-slate-800 rounded-lg transition-colors"
             >
@@ -281,13 +291,20 @@ export const StudioMenu: React.FC<StudioMenuProps> = ({
                <span>Data Sync & Backup</span>
             </button>
             
-            {/* User Guide Button */}
             <button 
                onClick={() => { onOpenUserGuide(); setIsUserMenuOpen(false); }}
                className="w-full flex items-center space-x-3 px-3 py-2 text-sm text-slate-300 hover:text-white hover:bg-slate-800 rounded-lg transition-colors"
             >
                <Book size={16} />
                <span>User Guide / Manual</span>
+            </button>
+
+            <button 
+               onClick={() => { onOpenPrivacy(); setIsUserMenuOpen(false); }}
+               className="w-full flex items-center space-x-3 px-3 py-2 text-sm text-slate-300 hover:text-white hover:bg-slate-800 rounded-lg transition-colors"
+            >
+               <Shield size={16} />
+               <span>Privacy Policy</span>
             </button>
             
             {/* Settings Button */}
