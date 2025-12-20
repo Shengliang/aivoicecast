@@ -1,6 +1,7 @@
+
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { CodeProject, CodeFile, UserProfile, Channel, CursorPosition, CloudItem } from '../types';
-import { ArrowLeft, Save, Plus, Github, Cloud, HardDrive, Code, X, ChevronRight, ChevronDown, File, Folder, DownloadCloud, Loader2, CheckCircle, AlertTriangle, Info, FolderPlus, FileCode, RefreshCw, LogIn, CloudUpload, Trash2, ArrowUp, Edit2, FolderOpen, MoreVertical, Send, MessageSquare, Bot, Mic, Sparkles, SidebarClose, SidebarOpen, Users, Eye, FileText as FileTextIcon, Image as ImageIcon, StopCircle, Minus, Maximize2, Minimize2, Lock, Unlock, Share2, Terminal, Copy, WifiOff, PanelRightClose, PanelRightOpen, PanelLeftClose, PanelLeftOpen, Monitor, Laptop, PenTool, Edit3, ShieldAlert, ZoomIn, ZoomOut, Columns, Rows, Grid2X2, Square as SquareIcon, GripVertical, GripHorizontal, FileSearch, Indent, Wand2 } from 'lucide-react';
+import { ArrowLeft, Save, Plus, Github, Cloud, HardDrive, Code, X, ChevronRight, ChevronDown, File, Folder, DownloadCloud, Loader2, CheckCircle, AlertTriangle, Info, FolderPlus, FileCode, RefreshCw, LogIn, CloudUpload, Trash2, ArrowUp, Edit2, FolderOpen, MoreVertical, Send, MessageSquare, Bot, Mic, Sparkles, SidebarClose, SidebarOpen, Users, Eye, FileText as FileTextIcon, Image as ImageIcon, StopCircle, Minus, Maximize2, Minimize2, Lock, Unlock, Share2, Terminal, Copy, WifiOff, PanelRightClose, PanelRightOpen, PanelLeftClose, PanelLeftOpen, Monitor, Laptop, PenTool, Edit3, ShieldAlert, ZoomIn, ZoomOut, Columns, Rows, Grid2X2, Square as SquareIcon, GripVertical, GripHorizontal, FileSearch, Indent, Wand2, Check } from 'lucide-react';
 import { listCloudDirectory, saveProjectToCloud, deleteCloudItem, createCloudFolder, subscribeToCodeProject, saveCodeProject, updateCodeFile, updateCursor, claimCodeProjectLock, updateProjectActiveFile, deleteCodeFile, moveCloudFile, updateProjectAccess, sendShareNotification, deleteCloudFolderRecursive } from '../services/firestoreService';
 import { ensureCodeStudioFolder, listDriveFiles, readDriveFile, saveToDrive, deleteDriveFile, createDriveFolder, DriveFile, moveDriveFile } from '../services/googleDriveService';
 import { connectGoogleDrive, signInWithGitHub } from '../services/authService';
@@ -8,7 +9,7 @@ import { fetchRepoInfo, fetchRepoContents, fetchFileContent, updateRepoFile, del
 import { MarkdownView } from './MarkdownView';
 import { encodePlantUML } from '../utils/plantuml';
 import { Whiteboard } from './Whiteboard';
-import { GoogleGenAI } from '@google/genai';
+import { GoogleGenAI, FunctionDeclaration, Type } from '@google/genai';
 import { ShareModal } from './ShareModal';
 
 // --- Interfaces & Constants ---
@@ -207,8 +208,8 @@ const AIChatPanel = ({ isOpen, onClose, messages, onSendMessage, isThinking }: a
             <div className="flex-1 overflow-y-auto p-4 space-y-4">
                 {messages.map((m: any, i: number) => (
                     <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                        <div className={`max-w-[90%] rounded-lg p-3 text-xs leading-relaxed ${m.role === 'user' ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-300'}`}>
-                            {m.text}
+                        <div className={`max-w-[95%] rounded-lg p-3 text-sm leading-relaxed ${m.role === 'user' ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-300'}`}>
+                            {m.role === 'ai' ? <MarkdownView content={m.text} /> : <p className="whitespace-pre-wrap">{m.text}</p>}
                         </div>
                     </div>
                 ))}
@@ -216,7 +217,7 @@ const AIChatPanel = ({ isOpen, onClose, messages, onSendMessage, isThinking }: a
             </div>
             <div className="p-3 border-t border-slate-800 bg-slate-950">
                 <div className="flex gap-2">
-                    <input type="text" value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => { if(e.key === 'Enter') { onSendMessage(input); setInput(''); } }} className="flex-1 bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-300 focus:outline-none focus:border-indigo-500 placeholder-slate-600" placeholder="Ask AI..." />
+                    <input type="text" value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => { if(e.key === 'Enter') { onSendMessage(input); setInput(''); } }} className="flex-1 bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-300 focus:outline-none focus:border-indigo-500 placeholder-slate-600" placeholder="Ask AI to edit code..." />
                     <button onClick={() => { onSendMessage(input); setInput(''); }} className="p-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg transition-colors"><Send size={16}/></button>
                 </div>
             </div>
@@ -248,7 +249,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
   const [activeTab, setActiveTab] = useState<'cloud' | 'drive' | 'github' | 'session'>('cloud');
   const [isLeftOpen, setIsLeftOpen] = useState(true);
   const [isRightOpen, setIsRightOpen] = useState(true);
-  const [chatMessages, setChatMessages] = useState<Array<{role: 'user' | 'ai', text: string}>>([{ role: 'ai', text: "Hello! I'm your coding assistant. Open a code file or whiteboard to begin." }]);
+  const [chatMessages, setChatMessages] = useState<Array<{role: 'user' | 'ai', text: string}>>([{ role: 'ai', text: "Hello! I'm your coding assistant. Open a code file or whiteboard to begin. You can ask me to **edit the active file directly**." }]);
   const [isChatThinking, setIsChatThinking] = useState(false);
   const [isFormattingSlots, setIsFormattingSlots] = useState<Record<number, boolean>>({});
   
@@ -273,6 +274,26 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
   const centerContainerRef = useRef<HTMLDivElement>(null);
 
   const activeFile = activeSlots[focusedSlot];
+
+  // Tool for In-Place Editing
+  const updateFileTool: FunctionDeclaration = {
+    name: "update_active_file",
+    description: "Updates the content of the currently focused file in the editor. Use this whenever the user asks for code modifications, refactoring, or additions to the file they are working on.",
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        new_content: {
+          type: Type.STRING,
+          description: "The complete new content of the file. Ensure you maintain proper indentation (spaces/tabs) and formatting. Do not truncate the file unless requested."
+        },
+        summary: {
+          type: Type.STRING,
+          description: "A brief summary of what you changed."
+        }
+      },
+      required: ["new_content"]
+    }
+  };
 
   const handleSetLayout = (mode: LayoutMode) => {
       setLayoutMode(mode);
@@ -307,7 +328,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
       setIsFormattingSlots(prev => ({ ...prev, [slotIdx]: true }));
       try {
           const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-          const prompt = `You are an expert code formatter. Reformat the following ${file.language} code to follow standard industry best practices (e.g., PEP 8 for Python, standard C++ styling). 
+          const prompt = `You are an expert code formatter. Reformat the following ${file.language} code to follow standard industry best practices. 
           Maintain all logic, comments, and structure. 
           Respond ONLY with the reformatted code. No markdown formatting, no backticks.
           
@@ -471,10 +492,49 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
       setIsChatThinking(true);
       try {
           const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-          const contextFiles = activeSlots.filter(f => f !== null).map(f => `File: ${f?.name}\nContent: ${f?.content.substring(0, 1000)}`).join('\n\n');
-          const prompt = `You are a Senior Software Engineer... Current Context:\n${contextFiles}\n\nUser Request: "${input}"`;
-          const resp = await ai.models.generateContent({ model: 'gemini-3-flash-preview', contents: prompt });
-          setChatMessages(prev => [...prev, { role: 'ai', text: resp.text || "I couldn't generate a response." }]);
+          const activeFile = activeSlots[focusedSlot];
+          const contextFiles = activeSlots.filter(f => f !== null).map(f => `File: ${f?.name}\nLanguage: ${f?.language}\nContent:\n${f?.content}`).join('\n\n---\n\n');
+          
+          const prompt = `You are a Senior Software Engineer helping a user in Code Studio.
+          Current Focused File: ${activeFile?.name || "None"}
+          Workspace Context:\n${contextFiles}\n\n
+          User Request: "${input}"
+          
+          If the user asks for code changes, use the 'update_active_file' tool to apply them directly. 
+          When providing code in your conversational response, ensure you use proper Markdown code blocks.`;
+
+          const resp = await ai.models.generateContent({ 
+              model: 'gemini-3-flash-preview', 
+              contents: prompt,
+              config: {
+                  tools: [{ functionDeclarations: [updateFileTool] }]
+              }
+          });
+
+          // Handle Tool Calls
+          if (resp.functionCalls) {
+              for (const fc of resp.functionCalls) {
+                  if (fc.name === 'update_active_file') {
+                      const { new_content, summary } = fc.args;
+                      if (activeFile) {
+                          handleCodeChangeInSlot(new_content, focusedSlot);
+                          setChatMessages(prev => [...prev, { role: 'ai', text: `✨ **In-place Edit Applied to ${activeFile.name}**\n\n${summary || "Code updated successfully."}` }]);
+                      } else {
+                          setChatMessages(prev => [...prev, { role: 'ai', text: "⚠️ No file is currently focused to apply edits to." }]);
+                      }
+                      
+                      // Report back to AI
+                      await ai.models.generateContent({
+                          model: 'gemini-3-flash-preview',
+                          contents: `Tool update_active_file completed successfully.`,
+                          config: { tools: [{ functionDeclarations: [updateFileTool] }] }
+                      });
+                  }
+              }
+          } else {
+              setChatMessages(prev => [...prev, { role: 'ai', text: resp.text || "I couldn't generate a response." }]);
+          }
+
       } catch (e: any) { setChatMessages(prev => [...prev, { role: 'ai', text: `Error: ${e.message}` }]); } finally { setIsChatThinking(false); }
   };
 
