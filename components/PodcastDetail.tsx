@@ -1,14 +1,17 @@
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Channel, GeneratedLecture, Chapter, SubTopic, Attachment } from '../types';
-import { ArrowLeft, BookOpen, FileText, Download, Loader2, ChevronDown, ChevronRight, ChevronLeft, Check, Printer, FileDown, Info, Sparkles, Book, CloudDownload } from 'lucide-react';
+import { ArrowLeft, BookOpen, FileText, Download, Loader2, ChevronDown, ChevronRight, ChevronLeft, Check, Printer, FileDown, Info, Sparkles, Book, CloudDownload, Music, Package, FileAudio } from 'lucide-react';
 import { generateLectureScript } from '../services/lectureGenerator';
+import { synthesizeSpeech } from '../services/tts';
 import { OFFLINE_CHANNEL_ID, OFFLINE_CURRICULUM, OFFLINE_LECTURES } from '../utils/offlineContent';
 import { SPOTLIGHT_DATA } from '../utils/spotlightContent';
 import { cacheLectureScript, getCachedLectureScript } from '../utils/db';
 import { uploadFileToStorage, publishChannelToFirestore } from '../services/firestoreService';
+import { getGlobalAudioContext, audioBufferToWavBlob, concatAudioBuffers } from '../utils/audioUtils';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
+import JSZip from 'jszip';
 
 interface PodcastDetailProps {
   channel: Channel;
@@ -30,6 +33,7 @@ const UI_TEXT = {
     lectureTitle: "Lecture Script",
     downloadPdf: "Download PDF",
     downloadBook: "Synthesize Book",
+    downloadAudioBook: "Synthesize + Audio",
     downloadExisting: "Download Cloud Copy",
     exporting: "Drafting PDF...",
     preparingBook: "Assembling Course Book...",
@@ -39,7 +43,8 @@ const UI_TEXT = {
     prev: "Prev Lesson",
     next: "Next Lesson",
     noLesson: "No Lesson Selected",
-    chooseChapter: "Choose a chapter and lesson from the menu."
+    chooseChapter: "Choose a chapter and lesson from the menu.",
+    synthesizingAudio: "Synthesizing Audio..."
   },
   zh: {
     back: "返回",
@@ -50,6 +55,7 @@ const UI_TEXT = {
     lectureTitle: "讲座文稿",
     downloadPdf: "下载 PDF",
     downloadBook: "全书合成",
+    downloadAudioBook: "合成 + 音频",
     downloadExisting: "下载云端备份",
     exporting: "正在生成 PDF...",
     preparingBook: "正在汇编课程书籍...",
@@ -59,7 +65,8 @@ const UI_TEXT = {
     prev: "上一节",
     next: "下一节",
     noLesson: "未选择课程",
-    chooseChapter: "请从菜单中选择章节和课程。"
+    chooseChapter: "请从菜单中选择章节和课程。",
+    synthesizingAudio: "正在合成音频..."
   }
 };
 
@@ -69,10 +76,12 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, l
   const [isLoadingLecture, setIsLoadingLecture] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [isExportingBook, setIsExportingBook] = useState(false);
+  const [isExportingAudioPackage, setIsExportingAudioPackage] = useState(false);
   const [bookLectures, setBookLectures] = useState<GeneratedLecture[]>([]);
   const [exportProgress, setExportProgress] = useState('');
   
   // Real-time channel state to reflect new bookUrl
+  // FIX: Changed currentChannel || channel to just channel to fix "used before its declaration" error.
   const [currentChannel, setCurrentChannel] = useState<Channel>(channel);
 
   const [chapters, setChapters] = useState<Chapter[]>(() => {
@@ -165,18 +174,22 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, l
       }
   };
 
-  const handleDownloadFullBook = async () => {
+  const handleDownloadFullBook = async (withAudio = false) => {
       if (flatCurriculum.length === 0) return;
-      setIsExportingBook(true);
+      
+      const setLoader = withAudio ? setIsExportingAudioPackage : setIsExportingBook;
+      setLoader(true);
       setBookLectures([]);
       setExportProgress(t.preparingBook);
 
       try {
           const allLectures: GeneratedLecture[] = [];
+          const zip = withAudio ? new JSZip() : null;
+          const audioCtx = withAudio ? getGlobalAudioContext() : null;
           
           for (let i = 0; i < flatCurriculum.length; i++) {
               const item = flatCurriculum[i];
-              setExportProgress(`${t.preparingBook} (${i + 1}/${flatCurriculum.length})`);
+              setExportProgress(`${withAudio ? t.synthesizingAudio : t.preparingBook} (${i + 1}/${flatCurriculum.length})`);
               
               let lecture: GeneratedLecture | null = null;
               if (OFFLINE_LECTURES[item.title]) {
@@ -191,10 +204,30 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, l
                       if (lecture) await cacheLectureScript(cacheKey, lecture);
                   }
               }
-              if (lecture) allLectures.push(lecture);
+
+              if (lecture) {
+                  allLectures.push(lecture);
+                  
+                  // Generate Audio for this lecture if requested
+                  if (withAudio && zip && audioCtx) {
+                      const audioBuffers: AudioBuffer[] = [];
+                      for (const section of lecture.sections) {
+                          const res = await synthesizeSpeech(section.text, section.speaker === 'Teacher' ? channel.voiceName : 'Zephyr', audioCtx);
+                          if (res.buffer) audioBuffers.push(res.buffer);
+                      }
+                      
+                      const fullAudioBuffer = concatAudioBuffers(audioBuffers, audioCtx);
+                      if (fullAudioBuffer) {
+                          const wavBlob = audioBufferToWavBlob(fullAudioBuffer);
+                          const safeTopicName = lecture.topic.replace(/[^a-z0-9]/gi, '_');
+                          zip.file(`audio/Lesson_${i + 1}_${safeTopicName}.wav`, wavBlob);
+                      }
+                  }
+              }
           }
 
           setBookLectures(allLectures);
+          // Wait for DOM to render the off-screen hidden elements for PDF generation
           await new Promise(r => setTimeout(r, 2000));
           setExportProgress(t.typesetting);
 
@@ -206,7 +239,7 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, l
               const el = document.getElementById(elementId);
               if (!el) return;
               const canvas = await html2canvas(el, { scale: 2, useCORS: true, backgroundColor: '#ffffff' });
-              const imgData = canvas.toDataURL('image/jpeg', 0.95);
+              const imgData = canvas.toDataURL('image/jpeg', 0.9);
               pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, pdfHeight);
           };
 
@@ -220,36 +253,34 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, l
               await addPageToPdf(`book-lecture-${i}`);
           }
 
-          // Generate filename
           const safeTitle = channel.title.replace(/\s+/g, '_');
-          const fileName = `${safeTitle}_AIVoiceCast_Book.pdf`;
-          
-          // PDF to Blob for storage
           const pdfBlob = pdf.output('blob');
-          
-          // Download locally for immediate feedback
-          pdf.save(fileName);
 
-          // Upload to Cloud Storage if logged in
-          if (currentUser) {
+          if (withAudio && zip) {
+              zip.file(`${safeTitle}_AIVoiceCast_Book.pdf`, pdfBlob);
+              setExportProgress("Finalizing Package...");
+              const zipContent = await zip.generateAsync({ type: "blob" });
+              const zipUrl = URL.createObjectURL(zipContent);
+              const a = document.createElement('a'); a.href = zipUrl; a.download = `${safeTitle}_Media_Package.zip`; a.click();
+              URL.revokeObjectURL(zipUrl);
+          } else {
+              pdf.save(`${safeTitle}_AIVoiceCast_Book.pdf`);
+          }
+
+          // Upload to Cloud Storage if logged in (for regular sync)
+          if (currentUser && !withAudio) {
               setExportProgress(t.syncing);
               const storagePath = `books/${channel.id}/${language}_book.pdf`;
               const downloadUrl = await uploadFileToStorage(storagePath, pdfBlob, { contentType: 'application/pdf' });
-              
-              // Update Channel Metadata in Firestore
-              const updatedChannel = { 
-                  ...currentChannel, 
-                  bookUrl: downloadUrl, 
-                  bookGeneratedAt: Date.now() 
-              };
+              const updatedChannel = { ...currentChannel, bookUrl: downloadUrl, bookGeneratedAt: Date.now() };
               await publishChannelToFirestore(updatedChannel);
               setCurrentChannel(updatedChannel);
           }
       } catch (e) {
-          console.error("Full book export failed", e);
-          alert("Failed to assemble the full course book.");
+          console.error("Export failed", e);
+          alert("Failed to assemble the full course book package.");
       } finally {
-          setIsExportingBook(false);
+          setLoader(false);
           setBookLectures([]);
           setExportProgress('');
       }
@@ -297,32 +328,42 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, l
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 py-8 grid grid-cols-12 gap-8">
         <div className="col-span-12 lg:col-span-4">
             <div className="bg-slate-900 border border-slate-800 rounded-xl shadow-xl overflow-hidden flex flex-col">
-                <div className="p-4 border-b border-slate-800 bg-indigo-900/10 flex items-center justify-between">
-                    <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                <div className="p-4 border-b border-slate-800 bg-indigo-900/10 flex items-center justify-between gap-2">
+                    <h3 className="text-sm font-bold text-white flex items-center gap-2 whitespace-nowrap">
                         <BookOpen size={16} className="text-indigo-400" />
                         {t.curriculum}
                     </h3>
                     
-                    <div className="flex gap-2">
+                    <div className="flex gap-1 overflow-x-auto no-scrollbar">
                         {currentChannel.bookUrl && (
                             <button 
                                 onClick={handleDownloadCloudCopy}
-                                className="text-[10px] font-bold text-emerald-100 hover:text-white flex items-center gap-1.5 transition-all px-3 py-1.5 bg-emerald-600 rounded-lg shadow-lg shadow-emerald-500/20 active:scale-95"
-                                title="Download the existing cloud backup of this book"
+                                className="text-[10px] font-bold text-emerald-100 hover:text-white flex items-center gap-1.5 transition-all px-2.5 py-1.5 bg-emerald-600 rounded-lg shadow-lg shadow-emerald-500/20 active:scale-95"
+                                title="Download the existing cloud backup"
                             >
                                 <CloudDownload size={12}/>
-                                <span className="hidden sm:inline">Cloud Copy</span>
+                                <span className="hidden sm:inline">Cloud</span>
                             </button>
                         )}
                         
                         <button 
-                            onClick={handleDownloadFullBook}
-                            disabled={isExportingBook}
-                            className={`text-[10px] font-bold text-indigo-100 hover:text-white flex items-center gap-1.5 transition-all px-3 py-1.5 bg-indigo-600 rounded-lg shadow-lg shadow-indigo-500/20 active:scale-95 ${currentChannel.bookUrl ? 'opacity-70 hover:opacity-100' : ''}`}
-                            title={currentChannel.bookUrl ? "Re-synthesize the book from scratch" : "AI Book Synthesis: Draft and assemble all lessons into one PDF"}
+                            onClick={() => handleDownloadFullBook(false)}
+                            disabled={isExportingBook || isExportingAudioPackage}
+                            className={`text-[10px] font-bold text-indigo-100 hover:text-white flex items-center gap-1.5 transition-all px-2.5 py-1.5 bg-indigo-600 rounded-lg shadow-lg shadow-indigo-500/20 active:scale-95 ${isExportingBook ? 'opacity-50' : ''}`}
+                            title="Synthesize Book (PDF)"
                         >
-                            {isExportingBook ? <Loader2 size={12} className="animate-spin"/> : <Book size={12} fill="currentColor"/>}
-                            {isExportingBook ? t.exporting : currentChannel.bookUrl ? "Re-Synthesize" : t.downloadBook}
+                            {isExportingBook ? <Loader2 size={12} className="animate-spin"/> : <FileText size={12}/>}
+                            <span>Book</span>
+                        </button>
+
+                        <button 
+                            onClick={() => handleDownloadFullBook(true)}
+                            disabled={isExportingBook || isExportingAudioPackage}
+                            className={`text-[10px] font-bold text-pink-100 hover:text-white flex items-center gap-1.5 transition-all px-2.5 py-1.5 bg-pink-600 rounded-lg shadow-lg shadow-pink-500/20 active:scale-95 ${isExportingAudioPackage ? 'opacity-50' : ''}`}
+                            title="Synthesize Book + Audio (ZIP)"
+                        >
+                            {isExportingAudioPackage ? <Loader2 size={12} className="animate-spin"/> : <Package size={12}/>}
+                            <span>Book+Audio</span>
                         </button>
                     </div>
                 </div>
@@ -435,14 +476,14 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, l
         </div>
       </main>
 
-      {isExportingBook && exportProgress && (
+      {(isExportingBook || isExportingAudioPackage) && exportProgress && (
           <div className="fixed bottom-10 left-1/2 -translate-x-1/2 bg-slate-900 border border-indigo-500/50 p-4 rounded-xl shadow-2xl flex items-center gap-3 z-[100] animate-fade-in-up">
               <Loader2 className="text-indigo-400 animate-spin" size={20}/>
               <span className="text-sm font-bold text-indigo-100">{exportProgress}</span>
           </div>
       )}
 
-      {isExportingBook && bookLectures.length > 0 && (
+      {(isExportingBook || isExportingAudioPackage) && bookLectures.length > 0 && (
           <div style={{ position: 'absolute', left: '-9999px', top: '-9999px', width: '595px' }}>
               <div className="bg-slate-950 relative overflow-hidden flex flex-col items-center justify-center text-center" id="book-lecture-cover" style={{ width: '595px', height: '842px' }}>
                   <div className="absolute inset-0">
@@ -533,6 +574,13 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, l
                       <div className="mt-12 pt-8 border-t border-slate-100 flex justify-between items-center">
                           <span className="text-[8px] font-bold text-slate-400 uppercase">Page {lIdx + 3}</span>
                           <span className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">{channel.title}</span>
+                          
+                          {/* Audio Indicator if package generated with audio */}
+                          {isExportingAudioPackage && (
+                              <div className="flex items-center gap-1 text-[8px] font-bold text-indigo-600">
+                                  <FileAudio size={8}/> Audio Embedded in Package
+                              </div>
+                          )}
                       </div>
                   </div>
               ))}

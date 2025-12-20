@@ -225,6 +225,11 @@ export async function hashString(str: string): Promise<string> {
 }
 
 export function pcmToWavBlobUrl(pcmData: Uint8Array, sampleRate: number = 24000): string {
+    const blob = pcmToWavBlob(pcmData, sampleRate);
+    return URL.createObjectURL(blob);
+}
+
+export function pcmToWavBlob(pcmData: Uint8Array, sampleRate: number = 24000): Blob {
     const numChannels = 1;
     const bitsPerSample = 16;
     const byteRate = (sampleRate * numChannels * bitsPerSample) / 8;
@@ -256,6 +261,77 @@ export function pcmToWavBlobUrl(pcmData: Uint8Array, sampleRate: number = 24000)
     const pcmDest = new Uint8Array(buffer, 44);
     pcmDest.set(pcmData);
 
-    const blob = new Blob([buffer], { type: 'audio/wav' });
-    return URL.createObjectURL(blob);
+    return new Blob([buffer], { type: 'audio/wav' });
+}
+
+export function audioBufferToWavBlob(buffer: AudioBuffer): Blob {
+    const numChannels = buffer.numberOfChannels;
+    const sampleRate = buffer.sampleRate;
+    const format = 1; // PCM
+    const bitDepth = 16;
+    
+    const bytesPerSample = bitDepth / 8;
+    const blockAlign = numChannels * bytesPerSample;
+    
+    const bufferLength = buffer.length;
+    const dataSize = bufferLength * blockAlign;
+    const headerSize = 44;
+    const totalSize = headerSize + dataSize;
+    
+    const arrayBuffer = new ArrayBuffer(totalSize);
+    const view = new DataView(arrayBuffer);
+    
+    const writeString = (offset: number, string: string) => {
+        for (let i = 0; i < string.length; i++) {
+            view.setUint8(offset + i, string.charCodeAt(i));
+        }
+    };
+    
+    writeString(0, 'RIFF');
+    view.setUint32(4, 36 + dataSize, true);
+    writeString(8, 'WAVE');
+    writeString(12, 'fmt ');
+    view.setUint32(16, 16, true);
+    view.setUint16(20, format, true);
+    view.setUint16(22, numChannels, true);
+    view.setUint32(24, sampleRate, true);
+    view.setUint32(28, sampleRate * blockAlign, true);
+    view.setUint16(32, blockAlign, true);
+    view.setUint16(34, bitDepth, true);
+    writeString(36, 'data');
+    view.setUint32(40, dataSize, true);
+    
+    const offset = 44;
+    for (let i = 0; i < bufferLength; i++) {
+        for (let channel = 0; channel < numChannels; channel++) {
+            const sample = buffer.getChannelData(channel)[i];
+            const clamped = Math.max(-1, Math.min(1, sample));
+            const intValue = clamped < 0 ? clamped * 0x8000 : clamped * 0x7FFF;
+            view.setInt16(offset + (i * blockAlign) + (channel * bytesPerSample), intValue, true);
+        }
+    }
+    
+    return new Blob([arrayBuffer], { type: 'audio/wav' });
+}
+
+export function concatAudioBuffers(buffers: AudioBuffer[], ctx: AudioContext): AudioBuffer | null {
+    if (buffers.length === 0) return null;
+    if (buffers.length === 1) return buffers[0];
+    
+    const totalLength = buffers.reduce((acc, buf) => acc + buf.length, 0);
+    const result = ctx.createBuffer(
+        buffers[0].numberOfChannels,
+        totalLength,
+        buffers[0].sampleRate
+    );
+    
+    for (let channel = 0; channel < buffers[0].numberOfChannels; channel++) {
+        let offset = 0;
+        for (const buffer of buffers) {
+            result.copyToChannel(buffer.getChannelData(channel), channel, offset);
+            offset += buffer.length;
+        }
+    }
+    
+    return result;
 }
