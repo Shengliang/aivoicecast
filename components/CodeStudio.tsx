@@ -294,6 +294,45 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
   const [isAccessDenied, setIsAccessDenied] = useState(false);
 
+  // --- RESIZE LOGIC ---
+  const [leftWidth, setLeftWidth] = useState(256); // w-64
+  const [rightWidth, setRightWidth] = useState(320); // w-80
+  const [isDraggingLeft, setIsDraggingLeft] = useState(false);
+  const [isDraggingRight, setIsDraggingRight] = useState(false);
+
+  const startResizingLeft = useCallback((e: React.MouseEvent) => { e.preventDefault(); setIsDraggingLeft(true); }, []);
+  const startResizingRight = useCallback((e: React.MouseEvent) => { e.preventDefault(); setIsDraggingRight(true); }, []);
+
+  const stopResizing = useCallback(() => {
+    setIsDraggingLeft(false);
+    setIsDraggingRight(false);
+  }, []);
+
+  const resize = useCallback((e: MouseEvent) => {
+    if (isDraggingLeft) {
+        const newWidth = e.clientX;
+        if (newWidth > 160 && newWidth < 500) setLeftWidth(newWidth);
+    }
+    if (isDraggingRight) {
+        const newWidth = window.innerWidth - e.clientX;
+        if (newWidth > 160 && newWidth < 500) setRightWidth(newWidth);
+    }
+  }, [isDraggingLeft, isDraggingRight]);
+
+  useEffect(() => {
+      if (isDraggingLeft || isDraggingRight) {
+          window.addEventListener('mousemove', resize);
+          window.addEventListener('mouseup', stopResizing);
+      } else {
+          window.removeEventListener('mousemove', resize);
+          window.removeEventListener('mouseup', stopResizing);
+      }
+      return () => {
+          window.removeEventListener('mousemove', resize);
+          window.removeEventListener('mouseup', stopResizing);
+      };
+  }, [isDraggingLeft, isDraggingRight, resize, stopResizing]);
+
   const addDebugLog = (msg: string) => {
       setDebugLogs(prev => {
           const newLogs = [...prev, `[${new Date().toLocaleTimeString()}] ${msg}`];
@@ -879,7 +918,10 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
       <div className="flex-1 flex overflow-hidden relative">
           
           {/* LEFT PANE: EXPLORER */}
-          <div className={`${isZenMode ? 'hidden' : (isLeftOpen ? 'w-64' : 'w-0')} bg-slate-900 border-r border-slate-800 flex flex-col transition-all duration-300 overflow-hidden shrink-0`}>
+          <div 
+            className={`${isZenMode ? 'hidden' : (isLeftOpen ? '' : 'hidden')} bg-slate-900 border-r border-slate-800 flex flex-col shrink-0`}
+            style={{ width: `${leftWidth}px` }}
+          >
               {/* BACKEND TABS */}
               <div className="flex border-b border-slate-800 bg-slate-900">
                   <button onClick={() => setActiveTab('cloud')} className={`flex-1 py-3 flex justify-center border-b-2 transition-colors ${activeTab === 'cloud' ? 'border-indigo-500 text-white' : 'border-transparent text-slate-500 hover:text-slate-300'}`} title="Private Cloud"><Cloud size={16}/></button>
@@ -957,8 +999,16 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
               </div>
           </div>
 
+          {/* LEFT RESIZER */}
+          {!isZenMode && isLeftOpen && (
+              <div 
+                  onMouseDown={startResizingLeft}
+                  className={`w-1 cursor-col-resize hover:bg-indigo-500/50 transition-colors z-30 shrink-0 ${isDraggingLeft ? 'bg-indigo-500' : ''}`}
+              />
+          )}
+
           {/* CENTER PANE: EDITOR */}
-          <div className="flex-1 bg-slate-950 flex flex-col min-w-0 relative border-r border-slate-800">
+          <div className="flex-1 bg-slate-950 flex flex-col min-w-0 relative">
               {activeFile ? (
                   <>
                     <div className="bg-slate-950 border-b border-slate-800 px-4 py-2 flex items-center justify-between shrink-0">
@@ -1035,8 +1085,19 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
               )}
           </div>
 
+          {/* RIGHT RESIZER */}
+          {!isZenMode && isRightOpen && (
+              <div 
+                  onMouseDown={startResizingRight}
+                  className={`w-1 cursor-col-resize hover:bg-indigo-500/50 transition-colors z-30 shrink-0 ${isDraggingRight ? 'bg-indigo-50' : ''}`}
+              />
+          )}
+
           {/* RIGHT PANE: AI / PREVIEW */}
-          <div className={`${isZenMode ? 'hidden' : (isRightOpen ? 'w-80' : 'w-0')} bg-slate-950 flex flex-col transition-all duration-300 overflow-hidden shrink-0`}>
+          <div 
+            className={`${isZenMode ? 'hidden' : (isRightOpen ? '' : 'hidden')} bg-slate-950 flex flex-col shrink-0`}
+            style={{ width: `${rightWidth}px` }}
+          >
               <AIChatPanel 
                   isOpen={true} 
                   onClose={() => setIsRightOpen(false)} 
