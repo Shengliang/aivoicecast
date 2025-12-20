@@ -1,14 +1,15 @@
 
 import React, { useState } from 'react';
-import { Podcast, ArrowRight, ShieldCheck, Loader2, AlertCircle } from 'lucide-react';
+import { Podcast, ArrowRight, ShieldCheck, Loader2, AlertCircle, Rocket, Shield } from 'lucide-react';
 import { signInWithGoogle } from '../services/authService';
 import { logUserActivity } from '../services/firestoreService';
 
 interface LoginPageProps {
   onPrivacyClick?: () => void;
+  onMissionClick?: () => void;
 }
 
-export const LoginPage: React.FC<LoginPageProps> = ({ onPrivacyClick }) => {
+export const LoginPage: React.FC<LoginPageProps> = ({ onPrivacyClick, onMissionClick }) => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -105,14 +106,27 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onPrivacyClick }) => {
               )}
             </button>
             
-            {onPrivacyClick && (
-                <button 
-                    onClick={onPrivacyClick}
-                    className="text-xs text-slate-500 hover:text-slate-300 underline transition-colors"
-                >
-                    Privacy Policy
-                </button>
-            )}
+            <div className="flex items-center justify-center gap-4 mt-6">
+                {onMissionClick && (
+                    <button 
+                        onClick={onMissionClick}
+                        className="text-xs text-slate-500 hover:text-orange-400 flex items-center gap-1.5 transition-colors group"
+                    >
+                        <Rocket size={12} className="group-hover:scale-110 transition-transform" />
+                        <span>Mission & Manifesto</span>
+                    </button>
+                )}
+                <div className="w-1 h-1 bg-slate-800 rounded-full"></div>
+                {onPrivacyClick && (
+                    <button 
+                        onClick={onPrivacyClick}
+                        className="text-xs text-slate-500 hover:text-emerald-400 flex items-center gap-1.5 transition-colors group"
+                    >
+                        <Shield size={12} className="group-hover:scale-110 transition-transform" />
+                        <span>Privacy Policy</span>
+                    </button>
+                )}
+            </div>
           </div>
         </div>
         

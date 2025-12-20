@@ -755,12 +755,19 @@ const App: React.FC = () => {
       return <PrivacyPolicy onBack={() => setIsPrivacyOpen(false)} />;
   }
 
+  if (viewState === 'mission') {
+      return <MissionManifesto onBack={() => handleSetViewState('directory')} />;
+  }
+
   if (viewState === 'card_viewer') {
       return <CardWorkshop onBack={() => { handleSetViewState('directory'); setViewCardId(undefined); }} cardId={viewCardId} isViewer={true} />;
   }
 
   if (!currentUser) {
-      return <LoginPage onPrivacyClick={() => setIsPrivacyOpen(true)} />;
+      return <LoginPage 
+        onPrivacyClick={() => setIsPrivacyOpen(true)} 
+        onMissionClick={() => handleSetViewState('mission')} 
+      />;
   }
 
   const MobileBottomNav = () => {
