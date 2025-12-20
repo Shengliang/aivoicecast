@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Channel, GeneratedLecture, Chapter, SubTopic, Attachment } from '../types';
-import { ArrowLeft, BookOpen, FileText, Download, Loader2, ChevronDown, ChevronRight, ChevronLeft, Check, Printer, FileDown, Info } from 'lucide-react';
+import { ArrowLeft, BookOpen, FileText, Download, Loader2, ChevronDown, ChevronRight, ChevronLeft, Check, Printer, FileDown, Info, Sparkles, Book } from 'lucide-react';
 import { generateLectureScript } from '../services/lectureGenerator';
 import { OFFLINE_CHANNEL_ID, OFFLINE_CURRICULUM, OFFLINE_LECTURES } from '../utils/offlineContent';
 import { SPOTLIGHT_DATA } from '../utils/spotlightContent';
@@ -28,9 +28,11 @@ const UI_TEXT = {
     genDesc: "Our AI is drafting the lecture script.",
     lectureTitle: "Lecture Script",
     downloadPdf: "Download PDF",
-    downloadBook: "Download Book",
-    exporting: "Generating PDF...",
+    downloadBook: "Synthesize Book",
+    exporting: "Drafting PDF...",
     preparingBook: "Assembling Course Book...",
+    typesetting: "Typesetting Pages...",
+    toc: "Table of Contents",
     prev: "Prev Lesson",
     next: "Next Lesson",
     noLesson: "No Lesson Selected",
@@ -44,9 +46,11 @@ const UI_TEXT = {
     genDesc: "AI 正在编写讲座脚本。",
     lectureTitle: "讲座文稿",
     downloadPdf: "下载 PDF",
-    downloadBook: "下载整本课程",
+    downloadBook: "全书合成",
     exporting: "正在生成 PDF...",
     preparingBook: "正在汇编课程书籍...",
+    typesetting: "正在排版页面...",
+    toc: "目录",
     prev: "上一节",
     next: "下一节",
     noLesson: "未选择课程",
@@ -61,6 +65,7 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, l
   const [isExporting, setIsExporting] = useState(false);
   const [isExportingBook, setIsExportingBook] = useState(false);
   const [bookLectures, setBookLectures] = useState<GeneratedLecture[]>([]);
+  const [exportProgress, setExportProgress] = useState('');
   
   const [chapters, setChapters] = useState<Chapter[]>(() => {
     if (channel.chapters && channel.chapters.length > 0) return channel.chapters;
@@ -79,7 +84,8 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, l
     return chapters.flatMap((ch) => 
         (ch.subTopics || []).map((sub) => ({
             id: sub.id,
-            title: sub.title
+            title: sub.title,
+            chapterTitle: ch.title
         }))
     );
   }, [chapters]);
@@ -135,12 +141,7 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, l
           });
           
           const imgData = canvas.toDataURL('image/jpeg', 1.0);
-          const pdf = new jsPDF({
-              orientation: 'portrait',
-              unit: 'px',
-              format: 'a4'
-          });
-          
+          const pdf = new jsPDF({ orientation: 'portrait', unit: 'px', format: 'a4' });
           const imgProps = pdf.getImageProperties(imgData);
           const pdfWidth = pdf.internal.pageSize.getWidth();
           const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
@@ -159,69 +160,73 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, l
       if (flatCurriculum.length === 0) return;
       setIsExportingBook(true);
       setBookLectures([]);
+      setExportProgress(t.preparingBook);
 
       try {
           const allLectures: GeneratedLecture[] = [];
           
-          for (const item of flatCurriculum) {
-              let lecture: GeneratedLecture | null = null;
+          // Phase 1: Knowledge Gathering
+          for (let i = 0; i < flatCurriculum.length; i++) {
+              const item = flatCurriculum[i];
+              setExportProgress(`${t.preparingBook} (${i + 1}/${flatCurriculum.length})`);
               
-              // 1. Try static
+              let lecture: GeneratedLecture | null = null;
               if (OFFLINE_LECTURES[item.title]) {
                   lecture = OFFLINE_LECTURES[item.title];
               } else if (SPOTLIGHT_DATA[channel.id]?.lectures?.[item.title]) {
                   lecture = SPOTLIGHT_DATA[channel.id].lectures[item.title];
               } else {
-                  // 2. Try cache
                   const cacheKey = `lecture_${channel.id}_${item.id}_${language}`;
                   lecture = await getCachedLectureScript(cacheKey);
-                  
-                  // 3. Generate if missing
                   if (!lecture) {
                       lecture = await generateLectureScript(item.title, channel.description, language);
                       if (lecture) await cacheLectureScript(cacheKey, lecture);
                   }
               }
-              
               if (lecture) allLectures.push(lecture);
           }
 
           setBookLectures(allLectures);
           
-          // Wait for render
-          await new Promise(r => setTimeout(r, 1500));
+          // Small delay to let the hidden DOM render fully
+          await new Promise(r => setTimeout(r, 2000));
+          setExportProgress(t.typesetting);
 
-          const pdf = new jsPDF({
-              orientation: 'portrait',
-              unit: 'px',
-              format: 'a4'
-          });
+          const pdf = new jsPDF({ orientation: 'portrait', unit: 'px', format: 'a4' });
+          const pdfWidth = pdf.internal.pageSize.getWidth();
+          const pdfHeight = pdf.internal.pageSize.getHeight();
 
+          // Helper for rendering and adding page
+          const addPageToPdf = async (elementId: string) => {
+              const el = document.getElementById(elementId);
+              if (!el) return;
+              const canvas = await html2canvas(el, { scale: 2, useCORS: true, backgroundColor: '#ffffff' });
+              const imgData = canvas.toDataURL('image/jpeg', 0.95);
+              pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, pdfHeight);
+          };
+
+          // 1. Cover
+          await addPageToPdf('book-lecture-cover');
+          pdf.addPage();
+
+          // 2. Table of Contents
+          await addPageToPdf('book-lecture-toc');
+          pdf.addPage();
+
+          // 3. Lessons
           for (let i = 0; i < allLectures.length; i++) {
-              const el = document.getElementById(`book-lecture-${i}`);
-              if (el) {
-                  const canvas = await html2canvas(el, {
-                      scale: 2,
-                      useCORS: true,
-                      backgroundColor: '#ffffff'
-                  });
-                  const imgData = canvas.toDataURL('image/jpeg', 0.95);
-                  const imgProps = pdf.getImageProperties(imgData);
-                  const pdfWidth = pdf.internal.pageSize.getWidth();
-                  const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
-                  
-                  if (i > 0) pdf.addPage();
-                  pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, pdfHeight);
-              }
+              if (i > 0) pdf.addPage();
+              await addPageToPdf(`book-lecture-${i}`);
           }
 
-          pdf.save(`${channel.title.replace(/\s+/g, '_')}_Complete_Course.pdf`);
+          pdf.save(`${channel.title.replace(/\s+/g, '_')}_AIVoiceCast_Book.pdf`);
       } catch (e) {
           console.error("Full book export failed", e);
           alert("Failed to assemble the full course book.");
       } finally {
           setIsExportingBook(false);
           setBookLectures([]);
+          setExportProgress('');
       }
   };
 
@@ -241,7 +246,6 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, l
 
   return (
     <div className="h-full bg-slate-950 text-slate-100 flex flex-col relative overflow-y-auto pb-24">
-      {/* Hero Section */}
       <div className="relative h-48 md:h-64 w-full shrink-0">
         <div className="absolute inset-0">
             <img src={channel.imageUrl} alt={channel.title} className="w-full h-full object-cover opacity-40"/>
@@ -260,10 +264,9 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, l
       </div>
 
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 py-8 grid grid-cols-12 gap-8">
-        {/* Sidebar Curriculum */}
         <div className="col-span-12 lg:col-span-4">
             <div className="bg-slate-900 border border-slate-800 rounded-xl shadow-xl overflow-hidden flex flex-col">
-                <div className="p-4 border-b border-slate-800 bg-slate-800/50 flex items-center justify-between">
+                <div className="p-4 border-b border-slate-800 bg-indigo-900/10 flex items-center justify-between">
                     <h3 className="text-sm font-bold text-white flex items-center gap-2">
                         <BookOpen size={16} className="text-indigo-400" />
                         {t.curriculum}
@@ -271,11 +274,11 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, l
                     <button 
                         onClick={handleDownloadFullBook}
                         disabled={isExportingBook}
-                        className="text-[10px] font-bold text-indigo-400 hover:text-white flex items-center gap-1 transition-colors px-2 py-1 bg-indigo-500/10 rounded-md border border-indigo-500/20"
-                        title="Download all lessons as one PDF book"
+                        className="text-[10px] font-bold text-indigo-100 hover:text-white flex items-center gap-1.5 transition-all px-3 py-1.5 bg-indigo-600 rounded-lg shadow-lg shadow-indigo-500/20 active:scale-95"
+                        title="AI Book Synthesis: Draft and assemble all lessons into one PDF"
                     >
-                        {isExportingBook ? <Loader2 size={10} className="animate-spin"/> : <Download size={10}/>}
-                        {isExportingBook ? t.exporting : t.downloadPdf}
+                        {isExportingBook ? <Loader2 size={12} className="animate-spin"/> : <Book size={12} fill="currentColor"/>}
+                        {isExportingBook ? t.exporting : t.downloadBook}
                     </button>
                 </div>
                 <div className="divide-y divide-slate-800">
@@ -309,7 +312,6 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, l
             </div>
         </div>
 
-        {/* Content Area */}
         <div className="col-span-12 lg:col-span-8">
           {isLoadingLecture ? (
              <div className="h-64 flex flex-col items-center justify-center p-12 text-center bg-slate-900/50 rounded-2xl border border-slate-800 animate-pulse">
@@ -318,8 +320,7 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, l
                 <p className="text-slate-400 text-sm mt-1">{t.genDesc}</p>
              </div>
           ) : activeLecture ? (
-            <div className="space-y-6">
-                {/* Static Toolbar */}
+            <div className="space-y-6 animate-fade-in">
                 <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 md:p-6 shadow-xl flex flex-col sm:flex-row items-center justify-between gap-4">
                     <div>
                         <h2 className="text-xl font-bold text-white">{activeLecture.topic}</h2>
@@ -329,7 +330,7 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, l
                         <button 
                             onClick={handleExportPDF} 
                             disabled={isExporting}
-                            className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-800 text-white rounded-lg text-sm font-bold shadow-lg transition-all"
+                            className="flex items-center gap-2 px-4 py-2 bg-slate-800 hover:bg-slate-700 disabled:bg-slate-800 text-white rounded-lg text-sm font-bold border border-slate-700 transition-all"
                         >
                             {isExporting ? <Loader2 size={16} className="animate-spin" /> : <FileDown size={16} />}
                             <span>{isExporting ? t.exporting : t.downloadPdf}</span>
@@ -337,11 +338,7 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, l
                     </div>
                 </div>
 
-                {/* Readable Content */}
-                <div 
-                    ref={lectureContentRef}
-                    className="bg-white rounded-2xl p-8 md:p-12 shadow-2xl text-slate-900 space-y-8"
-                >
+                <div ref={lectureContentRef} className="bg-white rounded-2xl p-8 md:p-12 shadow-2xl text-slate-900 space-y-8">
                     <div className="border-b border-slate-200 pb-6 mb-8">
                         <h1 className="text-3xl font-black text-slate-900 mb-2">{activeLecture.topic}</h1>
                         <div className="flex gap-4 text-xs font-bold text-slate-500 uppercase tracking-widest">
@@ -350,7 +347,6 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, l
                             <span>Speaker B: {activeLecture.studentName}</span>
                         </div>
                     </div>
-
                     <div className="space-y-10">
                         {activeLecture.sections.map((section, idx) => (
                             <div key={idx} className="flex gap-6">
@@ -364,37 +360,23 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, l
                                     <p className="text-[10px] font-black text-slate-400 uppercase mb-2">
                                         {section.speaker === 'Teacher' ? activeLecture.professorName : activeLecture.studentName}
                                     </p>
-                                    <p className="text-lg leading-relaxed font-serif text-slate-800">
-                                        {section.text}
-                                    </p>
+                                    <p className="text-lg leading-relaxed font-serif text-slate-800">{section.text}</p>
                                 </div>
                             </div>
                         ))}
                     </div>
-                    
                     <div className="pt-12 border-t border-slate-100 flex justify-between items-center opacity-50">
-                        <span className="text-[10px] font-bold text-slate-400">GENERATED BY AIVOICECAST</span>
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Generated by AIVoiceCast Publishing</span>
                         <span className="text-[10px] font-bold text-slate-400">{new Date().toLocaleDateString()}</span>
                     </div>
                 </div>
 
-                {/* Footer Navigation */}
                 <div className="flex justify-between items-center py-4 px-2">
-                    <button 
-                        onClick={handlePrevLesson} 
-                        disabled={currentLectureIndex <= 0} 
-                        className="flex items-center gap-2 text-sm font-bold text-slate-400 hover:text-white disabled:opacity-20 transition-colors"
-                    >
-                        <ChevronLeft size={20} />
-                        {t.prev}
+                    <button onClick={handlePrevLesson} disabled={currentLectureIndex <= 0} className="flex items-center gap-2 text-sm font-bold text-slate-400 hover:text-white disabled:opacity-20 transition-colors">
+                        <ChevronLeft size={20} /> {t.prev}
                     </button>
-                    <button 
-                        onClick={handleNextLesson} 
-                        disabled={currentLectureIndex === -1 || currentLectureIndex >= flatCurriculum.length - 1} 
-                        className="flex items-center gap-2 text-sm font-bold text-slate-400 hover:text-white disabled:opacity-20 transition-colors"
-                    >
-                        {t.next}
-                        <ChevronRight size={20} />
+                    <button onClick={handleNextLesson} disabled={currentLectureIndex === -1 || currentLectureIndex >= flatCurriculum.length - 1} className="flex items-center gap-2 text-sm font-bold text-slate-400 hover:text-white disabled:opacity-20 transition-colors">
+                        {t.next} <ChevronRight size={20} />
                     </button>
                 </div>
             </div>
@@ -408,30 +390,110 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, l
         </div>
       </main>
 
-      {/* Hidden container for full book PDF assembly */}
-      {(isExportingBook && bookLectures.length > 0) && (
+      {/* Progress Toast for Book Export */}
+      {isExportingBook && exportProgress && (
+          <div className="fixed bottom-10 left-1/2 -translate-x-1/2 bg-slate-900 border border-indigo-500/50 p-4 rounded-xl shadow-2xl flex items-center gap-3 z-[100] animate-fade-in-up">
+              <Loader2 className="text-indigo-400 animate-spin" size={20}/>
+              <span className="text-sm font-bold text-indigo-100">{exportProgress}</span>
+          </div>
+      )}
+
+      {/* HIDDEN EXPORT AREA - STRICTLY FORMATTED FOR PDF CAPTURE */}
+      {isExportingBook && bookLectures.length > 0 && (
           <div style={{ position: 'absolute', left: '-9999px', top: '-9999px', width: '595px' }}>
-              <div className="bg-white p-12 text-center" id="book-lecture-cover">
-                  <h1 className="text-4xl font-black text-slate-900 mt-40">{channel.title}</h1>
-                  <p className="text-xl text-slate-600 mt-4">Complete Course Transcript</p>
-                  <p className="text-sm text-slate-400 mt-80 uppercase tracking-widest font-bold">AIVoiceCast Platform</p>
-              </div>
-              {bookLectures.map((lec, lIdx) => (
-                  <div key={lIdx} id={`book-lecture-${lIdx}`} className="bg-white p-10 min-h-[842px] flex flex-col">
-                      <div className="border-b-2 border-slate-100 pb-4 mb-8">
-                          <h2 className="text-2xl font-black text-slate-900">Lesson {lIdx + 1}: {lec.topic}</h2>
+              
+              {/* PAGE 1: PROFESSIONAL COVER */}
+              <div className="bg-slate-950 relative overflow-hidden flex flex-col items-center justify-center text-center" id="book-lecture-cover" style={{ width: '595px', height: '842px' }}>
+                  <div className="absolute inset-0">
+                      <img src={channel.imageUrl} className="w-full h-full object-cover opacity-20 blur-sm" alt=""/>
+                      <div className="absolute inset-0 bg-gradient-to-b from-indigo-950/80 via-slate-950/90 to-slate-950"></div>
+                  </div>
+                  
+                  <div className="relative z-10 p-12 flex flex-col items-center justify-between h-full w-full">
+                      <div className="mt-12 flex flex-col items-center">
+                          <div className="w-24 h-24 bg-indigo-600 rounded-3xl flex items-center justify-center shadow-2xl mb-8 transform rotate-3">
+                              <Sparkles size={48} className="text-white" fill="white"/>
+                          </div>
+                          <span className="text-indigo-400 font-bold tracking-[0.3em] text-xs uppercase mb-4">A Generative Publication</span>
+                          <h1 className="text-5xl font-black text-white leading-tight max-w-md">{channel.title}</h1>
+                          <div className="w-20 h-1.5 bg-indigo-500 mt-8 rounded-full"></div>
                       </div>
-                      <div className="space-y-8 flex-1">
+
+                      <div className="space-y-4">
+                          <p className="text-xl text-slate-300 font-medium">Synthetic Curriculum & Technical Lectures</p>
+                          <p className="text-sm text-slate-500 uppercase tracking-widest font-bold">Curated by {channel.author}</p>
+                      </div>
+
+                      <div className="mb-12 pt-12 border-t border-white/10 w-full flex justify-between items-center px-12">
+                          <div className="text-left">
+                              <p className="text-[10px] text-slate-500 font-bold uppercase">Version</p>
+                              <p className="text-xs text-white font-mono">v3.85.1-AUTO</p>
+                          </div>
+                          <div className="text-right">
+                              <p className="text-[10px] text-slate-500 font-bold uppercase">Date</p>
+                              <p className="text-xs text-white font-mono">{new Date().getFullYear()}</p>
+                          </div>
+                      </div>
+                  </div>
+              </div>
+
+              {/* PAGE 2: TABLE OF CONTENTS */}
+              <div className="bg-white p-16 flex flex-col" id="book-lecture-toc" style={{ width: '595px', height: '842px' }}>
+                  <h2 className="text-3xl font-black text-slate-900 border-b-4 border-indigo-600 pb-4 mb-12 uppercase tracking-tight">{t.toc}</h2>
+                  <div className="space-y-6 overflow-hidden">
+                      {chapters.map((ch, idx) => (
+                          <div key={ch.id} className="space-y-2">
+                              <div className="flex items-baseline gap-2">
+                                  <span className="text-indigo-600 font-black text-sm">CH {idx + 1}</span>
+                                  <h3 className="text-lg font-bold text-slate-800">{ch.title}</h3>
+                                  <div className="flex-1 border-b border-dotted border-slate-300 mb-1"></div>
+                              </div>
+                              <div className="pl-10 space-y-1">
+                                  {ch.subTopics.map((sub, sIdx) => (
+                                      <div key={sub.id} className="flex justify-between items-center text-sm text-slate-500">
+                                          <span>{sub.title}</span>
+                                      </div>
+                                  ))}
+                              </div>
+                          </div>
+                      ))}
+                  </div>
+                  <div className="mt-auto pt-12 text-center">
+                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">© AIVoiceCast Publishing • Knowledge Operating System</p>
+                  </div>
+              </div>
+
+              {/* LESSON PAGES */}
+              {bookLectures.map((lec, lIdx) => (
+                  <div key={lIdx} id={`book-lecture-${lIdx}`} className="bg-white p-16 flex flex-col" style={{ width: '595px', height: '842px' }}>
+                      <div className="flex justify-between items-start mb-8 border-b-2 border-slate-100 pb-4">
+                          <div className="flex-1">
+                              <span className="text-indigo-600 text-xs font-black uppercase tracking-wider">Lesson {lIdx + 1}</span>
+                              <h2 className="text-2xl font-black text-slate-900 mt-1">{lec.topic}</h2>
+                          </div>
+                          <div className="text-right">
+                              <p className="text-[8px] font-bold text-slate-400 uppercase tracking-tighter">Transcript Archive</p>
+                              <p className="text-[10px] font-mono text-slate-500">#{lIdx + 101}</p>
+                          </div>
+                      </div>
+                      
+                      <div className="space-y-10 flex-1 overflow-hidden">
                           {lec.sections.map((sec, sIdx) => (
-                              <div key={sIdx} className="flex gap-4">
-                                  <div className="shrink-0 w-10 text-[8px] font-bold text-slate-400 uppercase py-1">
-                                      {sec.speaker === 'Teacher' ? lec.professorName : lec.studentName}
+                              <div key={sIdx} className="flex gap-6">
+                                  <div className="shrink-0 w-16 text-right">
+                                      <p className="text-[9px] font-black text-indigo-600 uppercase leading-none">{sec.speaker === 'Teacher' ? lec.professorName : lec.studentName}</p>
+                                      <p className="text-[8px] text-slate-400 uppercase mt-1 tracking-tighter">{sec.speaker === 'Teacher' ? 'Expert' : 'Learner'}</p>
                                   </div>
                                   <div className="flex-1">
-                                      <p className="text-base font-serif text-slate-800 leading-relaxed">{sec.text}</p>
+                                      <p className="text-sm font-serif text-slate-800 leading-relaxed text-justify">{sec.text}</p>
                                   </div>
                               </div>
                           ))}
+                      </div>
+
+                      <div className="mt-12 pt-8 border-t border-slate-100 flex justify-between items-center">
+                          <span className="text-[8px] font-bold text-slate-400 uppercase">Page {lIdx + 3}</span>
+                          <span className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">{channel.title}</span>
                       </div>
                   </div>
               ))}
