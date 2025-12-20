@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Channel, GeneratedLecture, Chapter, SubTopic, Attachment } from '../types';
-import { ArrowLeft, BookOpen, FileText, Download, Loader2, ChevronDown, ChevronRight, ChevronLeft, Check, Printer, FileDown, Info, Sparkles, Book, CloudDownload, Music, Package, FileAudio } from 'lucide-react';
+import { ArrowLeft, BookOpen, FileText, Download, Loader2, ChevronDown, ChevronRight, ChevronLeft, Check, Printer, FileDown, Info, Sparkles, Book, CloudDownload, Music, Package, FileAudio, Zap, Radio } from 'lucide-react';
 import { generateLectureScript } from '../services/lectureGenerator';
 import { synthesizeSpeech } from '../services/tts';
 import { OFFLINE_CHANNEL_ID, OFFLINE_CURRICULUM, OFFLINE_LECTURES } from '../utils/offlineContent';
@@ -81,8 +81,14 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, l
   const [exportProgress, setExportProgress] = useState('');
   
   // Real-time channel state to reflect new bookUrl
-  // FIX: Changed currentChannel || channel to just channel to fix "used before its declaration" error.
   const [currentChannel, setCurrentChannel] = useState<Channel>(channel);
+
+  // TTS Model State
+  const [provider, setProvider] = useState<'system' | 'gemini' | 'openai'>(() => {
+    const hasOpenAI = !!(localStorage.getItem('openai_api_key'));
+    if (hasOpenAI) return 'openai';
+    return 'gemini';
+  });
 
   const [chapters, setChapters] = useState<Chapter[]>(() => {
     if (channel.chapters && channel.chapters.length > 0) return channel.chapters;
@@ -116,6 +122,15 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, l
       setCurrentChannel(channel);
       return () => { mountedRef.current = false; };
   }, [channel]);
+
+  const toggleTtsMode = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    let newMode: 'system' | 'gemini' | 'openai' = 'system';
+    if (provider === 'gemini') newMode = 'openai';
+    else if (provider === 'openai') newMode = 'system';
+    else newMode = 'gemini';
+    setProvider(newMode);
+  };
 
   const handleTopicClick = async (topicTitle: string, subTopicId?: string) => {
     setActiveSubTopicId(subTopicId || null);
@@ -212,8 +227,13 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, l
                   if (withAudio && zip && audioCtx) {
                       const audioBuffers: AudioBuffer[] = [];
                       for (const section of lecture.sections) {
-                          const res = await synthesizeSpeech(section.text, section.speaker === 'Teacher' ? channel.voiceName : 'Zephyr', audioCtx);
-                          if (res.buffer) audioBuffers.push(res.buffer);
+                          const res = await synthesizeSpeech(section.text, section.speaker === 'Teacher' ? channel.voiceName : 'Zephyr', audioCtx, provider);
+                          if (res.buffer) {
+                             audioBuffers.push(res.buffer);
+                          } else if (provider === 'system') {
+                             // System voice doesn't return a buffer for file export unfortunately
+                             console.warn("System voice selected for package export. Only cloud providers return file buffers.");
+                          }
                       }
                       
                       const fullAudioBuffer = concatAudioBuffers(audioBuffers, audioCtx);
@@ -227,7 +247,6 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, l
           }
 
           setBookLectures(allLectures);
-          // Wait for DOM to render the off-screen hidden elements for PDF generation
           await new Promise(r => setTimeout(r, 2000));
           setExportProgress(t.typesetting);
 
@@ -267,7 +286,6 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, l
               pdf.save(`${safeTitle}_AIVoiceCast_Book.pdf`);
           }
 
-          // Upload to Cloud Storage if logged in (for regular sync)
           if (currentUser && !withAudio) {
               setExportProgress(t.syncing);
               const storagePath = `books/${channel.id}/${language}_book.pdf`;
@@ -313,12 +331,32 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, l
             <img src={channel.imageUrl} alt={channel.title} className="w-full h-full object-cover opacity-40"/>
             <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/60 to-transparent" />
         </div>
-        <div className="absolute top-4 left-4 z-20">
+        <div className="absolute top-4 left-4 z-20 flex items-center gap-3">
             <button onClick={onBack} className="flex items-center space-x-2 px-4 py-2 bg-black/40 backdrop-blur-md rounded-full hover:bg-white/10 transition-colors border border-white/10 text-sm font-medium">
                 <ArrowLeft size={16} />
                 <span>{t.back}</span>
             </button>
         </div>
+
+        {/* Floating TTS Selector & Status - Similar to Feed Design */}
+        <div className="absolute top-4 right-4 z-30 flex flex-col items-end gap-2">
+            <button 
+                onClick={toggleTtsMode} 
+                className={`backdrop-blur-md px-3 py-1.5 rounded-full flex items-center gap-2 border text-[10px] font-bold shadow-lg transition-all active:scale-95 ${provider === 'openai' ? 'bg-emerald-900/60 border-emerald-500/50 text-emerald-300' : provider === 'gemini' ? 'bg-indigo-900/60 border-indigo-500/50 text-indigo-300' : 'bg-slate-800/60 border-slate-600 text-slate-300'}`}
+                title="Change TTS Engine"
+            >
+                {provider === 'openai' ? <Sparkles size={12} fill="currentColor"/> : provider === 'gemini' ? <Zap size={12} fill="currentColor"/> : <Radio size={12} />}
+                <span>{provider === 'openai' ? 'OpenAI' : provider === 'gemini' ? 'Gemini' : 'System'}</span>
+            </button>
+            
+            {(exportProgress) && (
+                <div className="backdrop-blur-md px-3 py-1.5 rounded-full flex items-center gap-2 border shadow-lg bg-black/60 border-white/10 animate-fade-in">
+                    <Loader2 size={12} className="animate-spin text-indigo-400" />
+                    <span className="text-[9px] font-bold text-white uppercase tracking-wider">{exportProgress}</span>
+                </div>
+            )}
+        </div>
+
         <div className="absolute bottom-0 left-0 w-full p-6 md:p-8 max-w-7xl mx-auto">
            <h1 className="text-3xl md:text-4xl font-bold text-white mb-2">{channel.title}</h1>
            <p className="text-sm md:text-base text-slate-300 max-w-2xl line-clamp-2">{channel.description}</p>
@@ -476,13 +514,7 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, l
         </div>
       </main>
 
-      {(isExportingBook || isExportingAudioPackage) && exportProgress && (
-          <div className="fixed bottom-10 left-1/2 -translate-x-1/2 bg-slate-900 border border-indigo-500/50 p-4 rounded-xl shadow-2xl flex items-center gap-3 z-[100] animate-fade-in-up">
-              <Loader2 className="text-indigo-400 animate-spin" size={20}/>
-              <span className="text-sm font-bold text-indigo-100">{exportProgress}</span>
-          </div>
-      )}
-
+      {/* Off-screenhidden elements for PDF generation */}
       {(isExportingBook || isExportingAudioPackage) && bookLectures.length > 0 && (
           <div style={{ position: 'absolute', left: '-9999px', top: '-9999px', width: '595px' }}>
               <div className="bg-slate-950 relative overflow-hidden flex flex-col items-center justify-center text-center" id="book-lecture-cover" style={{ width: '595px', height: '842px' }}>

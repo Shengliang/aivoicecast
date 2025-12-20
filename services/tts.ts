@@ -10,7 +10,7 @@ export interface TtsResult {
   buffer: AudioBuffer | null;
   errorType: TtsErrorType;
   errorMessage?: string;
-  provider?: 'gemini' | 'openai';
+  provider?: 'gemini' | 'openai' | 'system';
 }
 
 const OPENAI_VOICES = ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'];
@@ -19,10 +19,8 @@ const pendingRequests = new Map<string, Promise<TtsResult>>();
 
 /**
  * Maps specific gen-lang-client IDs and Names to valid high-quality provider voices.
- * This prevents "Voice Not Found" errors that trigger the system voice fallback.
  */
 function getValidVoiceName(voiceName: string, provider: 'gemini' | 'openai'): string {
-    // 1. Handle user-provided specific Voice IDs
     const isInterview = voiceName.includes('0648937375') || voiceName === 'Software Interview Voice';
     const isLinux = voiceName.includes('0375218270') || voiceName === 'Linux Kernel Voice';
     const isDefaultGem = voiceName === 'Default Gem' || voiceName.includes('default-gem');
@@ -33,7 +31,6 @@ function getValidVoiceName(voiceName: string, provider: 'gemini' | 'openai'): st
         if (isDefaultGem) return 'nova';
         return OPENAI_VOICES.includes(voiceName.toLowerCase()) ? voiceName.toLowerCase() : 'alloy';
     } else {
-        // Gemini Mapping
         if (isInterview) return 'Fenrir';
         if (isLinux) return 'Puck';
         if (isDefaultGem) return 'Zephyr';
@@ -82,7 +79,8 @@ async function synthesizeGemini(text: string, voice: string): Promise<ArrayBuffe
 export async function synthesizeSpeech(
   text: string, 
   voiceName: string, 
-  audioContext: AudioContext
+  audioContext: AudioContext,
+  preferredProvider?: 'gemini' | 'openai' | 'system'
 ): Promise<TtsResult> {
   const cleanText = cleanTextForTTS(text);
   const cacheKey = `${voiceName}:${cleanText}`;
@@ -94,7 +92,6 @@ export async function synthesizeSpeech(
     try {
       const cached = await getCachedAudioBuffer(cacheKey);
       if (cached) {
-        // Use provided IDs to detect if cache is OpenAI (MP3) or Gemini (Raw PCM)
         const isOp = OPENAI_VOICES.some(v => voiceName.toLowerCase().includes(v)) 
                   || voiceName.includes('06489') 
                   || voiceName.includes('03752');
@@ -106,14 +103,25 @@ export async function synthesizeSpeech(
         return { buffer: audioBuffer, errorType: 'none' };
       }
 
+      // If user specifically asked for system voice, don't even try cloud APIs
+      if (preferredProvider === 'system') {
+          return { buffer: null, errorType: 'none', provider: 'system' };
+      }
+
       let rawBuffer: ArrayBuffer;
       let usedProvider: 'gemini' | 'openai' = 'gemini';
 
       const openAiKey = localStorage.getItem('openai_api_key') || OPENAI_API_KEY || process.env.OPENAI_API_KEY || '';
       const geminiKey = localStorage.getItem('gemini_api_key') || GEMINI_API_KEY || process.env.API_KEY || '';
       
-      // Smart Provider Selection
-      if (openAiKey && !geminiKey) {
+      // Determine which API to call based on preference or availability
+      if (preferredProvider === 'openai' && openAiKey) {
+          usedProvider = 'openai';
+          rawBuffer = await synthesizeOpenAI(cleanText, voiceName, openAiKey);
+      } else if (preferredProvider === 'gemini' && geminiKey) {
+          usedProvider = 'gemini';
+          rawBuffer = await synthesizeGemini(cleanText, voiceName);
+      } else if (openAiKey && !geminiKey) {
           usedProvider = 'openai';
           rawBuffer = await synthesizeOpenAI(cleanText, voiceName, openAiKey);
       } else {
@@ -131,7 +139,6 @@ export async function synthesizeSpeech(
       return { buffer: audioBuffer, errorType: 'none', provider: usedProvider };
     } catch (error: any) {
       console.error("TTS Pipeline Error:", error);
-      // Ensure system voice fallback doesn't loop forever
       return { buffer: null, errorType: 'unknown', errorMessage: error.message };
     } finally {
       pendingRequests.delete(cacheKey);
