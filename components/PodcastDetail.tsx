@@ -28,7 +28,9 @@ const UI_TEXT = {
     genDesc: "Our AI is drafting the lecture script.",
     lectureTitle: "Lecture Script",
     downloadPdf: "Download PDF",
+    downloadBook: "Download Book",
     exporting: "Generating PDF...",
+    preparingBook: "Assembling Course Book...",
     prev: "Prev Lesson",
     next: "Next Lesson",
     noLesson: "No Lesson Selected",
@@ -42,7 +44,9 @@ const UI_TEXT = {
     genDesc: "AI 正在编写讲座脚本。",
     lectureTitle: "讲座文稿",
     downloadPdf: "下载 PDF",
+    downloadBook: "下载整本课程",
     exporting: "正在生成 PDF...",
+    preparingBook: "正在汇编课程书籍...",
     prev: "上一节",
     next: "下一节",
     noLesson: "未选择课程",
@@ -55,6 +59,8 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, l
   const [activeLecture, setActiveLecture] = useState<GeneratedLecture | null>(null);
   const [isLoadingLecture, setIsLoadingLecture] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
+  const [isExportingBook, setIsExportingBook] = useState(false);
+  const [bookLectures, setBookLectures] = useState<GeneratedLecture[]>([]);
   
   const [chapters, setChapters] = useState<Chapter[]>(() => {
     if (channel.chapters && channel.chapters.length > 0) return channel.chapters;
@@ -149,6 +155,76 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, l
       }
   };
 
+  const handleDownloadFullBook = async () => {
+      if (flatCurriculum.length === 0) return;
+      setIsExportingBook(true);
+      setBookLectures([]);
+
+      try {
+          const allLectures: GeneratedLecture[] = [];
+          
+          for (const item of flatCurriculum) {
+              let lecture: GeneratedLecture | null = null;
+              
+              // 1. Try static
+              if (OFFLINE_LECTURES[item.title]) {
+                  lecture = OFFLINE_LECTURES[item.title];
+              } else if (SPOTLIGHT_DATA[channel.id]?.lectures?.[item.title]) {
+                  lecture = SPOTLIGHT_DATA[channel.id].lectures[item.title];
+              } else {
+                  // 2. Try cache
+                  const cacheKey = `lecture_${channel.id}_${item.id}_${language}`;
+                  lecture = await getCachedLectureScript(cacheKey);
+                  
+                  // 3. Generate if missing
+                  if (!lecture) {
+                      lecture = await generateLectureScript(item.title, channel.description, language);
+                      if (lecture) await cacheLectureScript(cacheKey, lecture);
+                  }
+              }
+              
+              if (lecture) allLectures.push(lecture);
+          }
+
+          setBookLectures(allLectures);
+          
+          // Wait for render
+          await new Promise(r => setTimeout(r, 1500));
+
+          const pdf = new jsPDF({
+              orientation: 'portrait',
+              unit: 'px',
+              format: 'a4'
+          });
+
+          for (let i = 0; i < allLectures.length; i++) {
+              const el = document.getElementById(`book-lecture-${i}`);
+              if (el) {
+                  const canvas = await html2canvas(el, {
+                      scale: 2,
+                      useCORS: true,
+                      backgroundColor: '#ffffff'
+                  });
+                  const imgData = canvas.toDataURL('image/jpeg', 0.95);
+                  const imgProps = pdf.getImageProperties(imgData);
+                  const pdfWidth = pdf.internal.pageSize.getWidth();
+                  const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
+                  
+                  if (i > 0) pdf.addPage();
+                  pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, pdfHeight);
+              }
+          }
+
+          pdf.save(`${channel.title.replace(/\s+/g, '_')}_Complete_Course.pdf`);
+      } catch (e) {
+          console.error("Full book export failed", e);
+          alert("Failed to assemble the full course book.");
+      } finally {
+          setIsExportingBook(false);
+          setBookLectures([]);
+      }
+  };
+
   const handlePrevLesson = () => { 
     if (currentLectureIndex > 0) { 
       const prev = flatCurriculum[currentLectureIndex - 1]; 
@@ -187,11 +263,20 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, l
         {/* Sidebar Curriculum */}
         <div className="col-span-12 lg:col-span-4">
             <div className="bg-slate-900 border border-slate-800 rounded-xl shadow-xl overflow-hidden flex flex-col">
-                <div className="p-4 border-b border-slate-800 bg-slate-800/50">
+                <div className="p-4 border-b border-slate-800 bg-slate-800/50 flex items-center justify-between">
                     <h3 className="text-sm font-bold text-white flex items-center gap-2">
                         <BookOpen size={16} className="text-indigo-400" />
                         {t.curriculum}
                     </h3>
+                    <button 
+                        onClick={handleDownloadFullBook}
+                        disabled={isExportingBook}
+                        className="text-[10px] font-bold text-indigo-400 hover:text-white flex items-center gap-1 transition-colors px-2 py-1 bg-indigo-500/10 rounded-md border border-indigo-500/20"
+                        title="Download all lessons as one PDF book"
+                    >
+                        {isExportingBook ? <Loader2 size={10} className="animate-spin"/> : <Download size={10}/>}
+                        {isExportingBook ? t.exporting : t.downloadPdf}
+                    </button>
                 </div>
                 <div className="divide-y divide-slate-800">
                     {chapters.map((ch) => (
@@ -300,7 +385,6 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, l
                         disabled={currentLectureIndex <= 0} 
                         className="flex items-center gap-2 text-sm font-bold text-slate-400 hover:text-white disabled:opacity-20 transition-colors"
                     >
-                        {/* FIX: Added ChevronLeft to the lucide-react import list above to resolve 'Cannot find name' error. */}
                         <ChevronLeft size={20} />
                         {t.prev}
                     </button>
@@ -323,6 +407,36 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, l
           )}
         </div>
       </main>
+
+      {/* Hidden container for full book PDF assembly */}
+      {(isExportingBook && bookLectures.length > 0) && (
+          <div style={{ position: 'absolute', left: '-9999px', top: '-9999px', width: '595px' }}>
+              <div className="bg-white p-12 text-center" id="book-lecture-cover">
+                  <h1 className="text-4xl font-black text-slate-900 mt-40">{channel.title}</h1>
+                  <p className="text-xl text-slate-600 mt-4">Complete Course Transcript</p>
+                  <p className="text-sm text-slate-400 mt-80 uppercase tracking-widest font-bold">AIVoiceCast Platform</p>
+              </div>
+              {bookLectures.map((lec, lIdx) => (
+                  <div key={lIdx} id={`book-lecture-${lIdx}`} className="bg-white p-10 min-h-[842px] flex flex-col">
+                      <div className="border-b-2 border-slate-100 pb-4 mb-8">
+                          <h2 className="text-2xl font-black text-slate-900">Lesson {lIdx + 1}: {lec.topic}</h2>
+                      </div>
+                      <div className="space-y-8 flex-1">
+                          {lec.sections.map((sec, sIdx) => (
+                              <div key={sIdx} className="flex gap-4">
+                                  <div className="shrink-0 w-10 text-[8px] font-bold text-slate-400 uppercase py-1">
+                                      {sec.speaker === 'Teacher' ? lec.professorName : lec.studentName}
+                                  </div>
+                                  <div className="flex-1">
+                                      <p className="text-base font-serif text-slate-800 leading-relaxed">{sec.text}</p>
+                                  </div>
+                              </div>
+                          ))}
+                      </div>
+                  </div>
+              ))}
+          </div>
+      )}
     </div>
   );
 };
