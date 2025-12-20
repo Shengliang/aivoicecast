@@ -60,7 +60,7 @@ const PlantUMLRenderer: React.FC<{ code: string }> = ({ code }) => {
                 </div>
             </div>
 
-            <div className="p-1 bg-white flex justify-center min-h-[100px] relative">
+            <div className="p-6 bg-slate-950 flex justify-center min-h-[100px] relative">
                 {loading && (
                     <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-900/50 backdrop-blur-sm z-10 text-white gap-2">
                         <Loader2 size={24} className="animate-spin text-indigo-400" />
@@ -76,7 +76,7 @@ const PlantUMLRenderer: React.FC<{ code: string }> = ({ code }) => {
                     <img 
                         src={url} 
                         alt="PlantUML Diagram" 
-                        className="max-w-full h-auto py-4"
+                        className="max-w-full h-auto py-4 invert brightness-110 contrast-125"
                         onLoad={() => setLoading(false)}
                     />
                 ) : !loading && (

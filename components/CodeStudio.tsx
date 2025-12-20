@@ -560,7 +560,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
                         {getLanguageFromExt(file.name) === 'whiteboard' ? (
                             <Whiteboard initialData={file.content} onDataChange={(code) => handleCodeChangeInSlot(code, idx)} disableAI={true} />
                         ) : viewMode === 'preview' ? (
-                            <div className="h-full overflow-y-auto p-8 bg-white text-slate-900 selection:bg-indigo-100">
+                            <div className="h-full overflow-y-auto p-8 bg-slate-950 text-slate-300 selection:bg-indigo-500/30">
                                 <MarkdownView content={file.name.endsWith('.puml') || file.name.endsWith('.plantuml') ? `\`\`\`plantuml\n${file.content}\n\`\`\`` : file.content} />
                             </div>
                         ) : (
