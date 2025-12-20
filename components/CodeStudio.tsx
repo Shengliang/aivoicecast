@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { CodeProject, CodeFile, UserProfile, Channel, CursorPosition, CloudItem } from '../types';
-import { ArrowLeft, Save, Plus, Github, Cloud, HardDrive, Code, X, ChevronRight, ChevronDown, File, Folder, DownloadCloud, Loader2, CheckCircle, AlertTriangle, Info, FolderPlus, FileCode, RefreshCw, LogIn, CloudUpload, Trash2, ArrowUp, Edit2, FolderOpen, MoreVertical, Send, MessageSquare, Bot, Mic, Sparkles, SidebarClose, SidebarOpen, Users, Eye, FileText as FileTextIcon, Image as ImageIcon, StopCircle, Minus, Maximize2, Minimize2, Lock, Unlock, Share2, Terminal, Copy, WifiOff, PanelRightClose, PanelRightOpen, PanelLeftClose, PanelLeftOpen, Monitor, Laptop, PenTool, Edit3, ShieldAlert, ZoomIn, ZoomOut, Columns, Rows, Grid2X2, Square as SquareIcon, GripVertical, GripHorizontal } from 'lucide-react';
+import { ArrowLeft, Save, Plus, Github, Cloud, HardDrive, Code, X, ChevronRight, ChevronDown, File, Folder, DownloadCloud, Loader2, CheckCircle, AlertTriangle, Info, FolderPlus, FileCode, RefreshCw, LogIn, CloudUpload, Trash2, ArrowUp, Edit2, FolderOpen, MoreVertical, Send, MessageSquare, Bot, Mic, Sparkles, SidebarClose, SidebarOpen, Users, Eye, FileText as FileTextIcon, Image as ImageIcon, StopCircle, Minus, Maximize2, Minimize2, Lock, Unlock, Share2, Terminal, Copy, WifiOff, PanelRightClose, PanelRightOpen, PanelLeftClose, PanelLeftOpen, Monitor, Laptop, PenTool, Edit3, ShieldAlert, ZoomIn, ZoomOut, Columns, Rows, Grid2X2, Square as SquareIcon, GripVertical, GripHorizontal, FileSearch } from 'lucide-react';
 import { listCloudDirectory, saveProjectToCloud, deleteCloudItem, createCloudFolder, subscribeToCodeProject, saveCodeProject, updateCodeFile, updateCursor, claimCodeProjectLock, updateProjectActiveFile, deleteCodeFile, moveCloudFile, updateProjectAccess, sendShareNotification, deleteCloudFolderRecursive } from '../services/firestoreService';
 import { ensureCodeStudioFolder, listDriveFiles, readDriveFile, saveToDrive, deleteDriveFile, createDriveFolder, DriveFile, moveDriveFile } from '../services/googleDriveService';
 import { connectGoogleDrive, signInWithGitHub } from '../services/authService';
@@ -212,7 +212,9 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
   const [layoutMode, setLayoutMode] = useState<LayoutMode>('single');
   const [activeSlots, setActiveSlots] = useState<(CodeFile | null)[]>([defaultFile, null, null, null]);
   const [focusedSlot, setFocusedSlot] = useState<number>(0);
-  const [innerSplitRatio, setInnerSplitRatio] = useState(50); // Percent
+  const [slotViewModes, setSlotViewModes] = useState<Record<number, 'code' | 'preview'>>({});
+  
+  const [innerSplitRatio, setInnerSplitRatio] = useState(50); // Percent for splits
   const [isDraggingInner, setIsDraggingInner] = useState(false);
   
   const [project, setProject] = useState<CodeProject>({ id: 'init', name: 'New Project', files: [defaultFile], lastModified: Date.now() });
@@ -273,10 +275,28 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
       const newSlots = [...activeSlots];
       newSlots[slotIndex] = file;
       setActiveSlots(newSlots);
+      
+      // Default to preview mode if it's a markdown/puml file being opened for the first time
+      if (file && isPreviewable(file.name)) {
+          setSlotViewModes(prev => ({ ...prev, [slotIndex]: 'code' }));
+      }
+
       if (file && isSharedSession && sessionId) {
           updateProjectActiveFile(sessionId, file.path || file.name);
           updateCodeFile(sessionId, file);
       }
+  };
+
+  const isPreviewable = (filename: string) => {
+      const ext = filename.split('.').pop()?.toLowerCase();
+      return ['md', 'puml', 'plantuml'].includes(ext || '');
+  };
+
+  const toggleSlotViewMode = (idx: number) => {
+      setSlotViewModes(prev => ({
+          ...prev,
+          [idx]: prev[idx] === 'preview' ? 'code' : 'preview'
+      }));
   };
 
   const handleExplorerSelect = async (node: TreeNode) => {
@@ -337,10 +357,10 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
         const rect = centerContainerRef.current.getBoundingClientRect();
         if (layoutMode === 'split-v') {
             const newRatio = ((e.clientX - rect.left) / rect.width) * 100;
-            if (newRatio > 15 && newRatio < 85) setInnerSplitRatio(newRatio);
+            if (newRatio > 10 && newRatio < 90) setInnerSplitRatio(newRatio);
         } else if (layoutMode === 'split-h') {
             const newRatio = ((e.clientY - rect.top) / rect.height) * 100;
-            if (newRatio > 15 && newRatio < 85) setInnerSplitRatio(newRatio);
+            if (newRatio > 10 && newRatio < 90) setInnerSplitRatio(newRatio);
         }
     }
   }, [isDraggingLeft, isDraggingRight, isDraggingInner, layoutMode]);
@@ -454,6 +474,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
   const renderSlot = (idx: number) => {
       const file = activeSlots[idx];
       const isFocused = focusedSlot === idx;
+      const viewMode = slotViewModes[idx] || 'code';
       
       const isVisible = layoutMode === 'single' ? idx === 0 : (layoutMode === 'quad' ? true : idx < 2);
       if (!isVisible) return null;
@@ -471,7 +492,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
             key={idx} 
             onClick={() => setFocusedSlot(idx)}
             style={slotStyle}
-            className={`flex flex-col min-w-0 border ${isFocused ? 'border-indigo-500 z-10 ring-2 ring-indigo-500/20' : 'border-slate-800'} relative transition-all overflow-hidden bg-slate-950 flex-1`}
+            className={`flex flex-col min-w-0 border ${isFocused ? 'border-indigo-500 z-10 shadow-[inset_0_0_10px_rgba(79,70,229,0.1)]' : 'border-slate-800'} relative transition-all overflow-hidden bg-slate-950 flex-1`}
           >
               {file ? (
                   <>
@@ -480,11 +501,26 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
                             <FileIcon filename={file.name} />
                             <span className={`text-xs font-bold truncate ${isFocused ? 'text-indigo-200' : 'text-slate-400'}`}>{file.name}</span>
                         </div>
-                        <button onClick={(e) => { e.stopPropagation(); updateSlotFile(null, idx); }} className="p-1 hover:bg-slate-800 rounded text-slate-500 hover:text-white transition-colors"><X size={12}/></button>
+                        <div className="flex items-center gap-1">
+                            {isPreviewable(file.name) && (
+                                <button 
+                                    onClick={(e) => { e.stopPropagation(); toggleSlotViewMode(idx); }} 
+                                    className={`p-1.5 rounded transition-colors ${viewMode === 'preview' ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:text-white'}`}
+                                    title={viewMode === 'preview' ? 'Show Code' : 'Show Preview'}
+                                >
+                                    {viewMode === 'preview' ? <Code size={14}/> : <Eye size={14}/>}
+                                </button>
+                            )}
+                            <button onClick={(e) => { e.stopPropagation(); updateSlotFile(null, idx); }} className="p-1.5 hover:bg-slate-800 rounded text-slate-500 hover:text-white transition-colors" title="Close Panel"><X size={14}/></button>
+                        </div>
                     </div>
                     <div className="flex-1 overflow-hidden relative">
                         {getLanguageFromExt(file.name) === 'whiteboard' ? (
                             <Whiteboard initialData={file.content} onDataChange={(code) => handleCodeChangeInSlot(code, idx)} disableAI={true} />
+                        ) : viewMode === 'preview' ? (
+                            <div className="h-full overflow-y-auto p-8 bg-white text-slate-900 selection:bg-indigo-100">
+                                <MarkdownView content={file.name.endsWith('.puml') || file.name.endsWith('.plantuml') ? `\`\`\`plantuml\n${file.content}\n\`\`\`` : file.content} />
+                            </div>
                         ) : (
                             <RichCodeEditor code={file.content} onChange={(code: string) => handleCodeChangeInSlot(code, idx)} language={file.language} fontSize={fontSize} />
                         )}
@@ -577,8 +613,8 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
               {layoutMode === 'split-v' && (
                   <>
                     {renderSlot(0)}
-                    <div onMouseDown={() => setIsDraggingInner(true)} className="w-1.5 cursor-col-resize hover:bg-indigo-500/50 transition-colors z-40 bg-slate-800 group relative">
-                        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 bg-indigo-500 p-1 rounded-full shadow-lg pointer-events-none"><GripVertical size={12}/></div>
+                    <div onMouseDown={() => setIsDraggingInner(true)} className="w-1.5 cursor-col-resize hover:bg-indigo-500/50 transition-colors z-40 bg-slate-800 group relative flex-shrink-0">
+                        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 bg-indigo-500 p-1 rounded-full shadow-lg pointer-events-none transition-opacity duration-200"><GripVertical size={12}/></div>
                     </div>
                     {renderSlot(1)}
                   </>
@@ -587,8 +623,8 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
               {layoutMode === 'split-h' && (
                   <>
                     {renderSlot(0)}
-                    <div onMouseDown={() => setIsDraggingInner(true)} className="h-1.5 cursor-row-resize hover:bg-indigo-500/50 transition-colors z-40 bg-slate-800 group relative">
-                        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 bg-indigo-500 p-1 rounded-full shadow-lg pointer-events-none"><GripHorizontal size={12}/></div>
+                    <div onMouseDown={() => setIsDraggingInner(true)} className="h-1.5 cursor-row-resize hover:bg-indigo-500/50 transition-colors z-40 bg-slate-800 group relative flex-shrink-0">
+                        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 bg-indigo-500 p-1 rounded-full shadow-lg pointer-events-none transition-opacity duration-200"><GripHorizontal size={12}/></div>
                     </div>
                     {renderSlot(1)}
                   </>
