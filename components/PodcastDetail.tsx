@@ -7,7 +7,7 @@ import { synthesizeSpeech, clearAudioCache, cleanTextForTTS, TtsErrorType } from
 import { OFFLINE_CHANNEL_ID, OFFLINE_CURRICULUM, OFFLINE_LECTURES } from '../utils/offlineContent';
 import { SPOTLIGHT_DATA } from '../utils/spotlightContent';
 import { cacheLectureScript, getCachedLectureScript } from '../utils/db';
-import { getAudioAuditLogs, getCurrentAudioOwner, registerAudioOwner, logAudioEvent, isAudioOwner, getGlobalAudioContext, warmUpAudioContext, coolDownAudioContext, connectOutput, stopAllPlatformAudio } from '../utils/audioUtils';
+import { getAudioAuditLogs, getCurrentAudioOwner, registerAudioOwner, logAudioEvent, isAudioOwner, getGlobalAudioContext, warmUpAudioContext, coolDownAudioContext, connectOutput, stopAllPlatformAudio, getGlobalAudioGeneration } from '../utils/audioUtils';
 
 interface PodcastDetailProps {
   channel: Channel;
@@ -71,7 +71,7 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
   const isPlayingRef = useRef(false);
   const activeSourcesRef = useRef<Set<AudioBufferSourceNode>>(new Set());
   const schedulingCursorRef = useRef(0); 
-  const playSessionIdRef = useRef(0);
+  const localSessionIdRef = useRef(0);
   const lastUtteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
 
   const flatCurriculum = useMemo(() => {
@@ -97,10 +97,9 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
    * ATOMIC KILL
    */
   const stopAudio = useCallback(() => {
-    // 1. Immediately invalidate the session ID
-    const oldSession = playSessionIdRef.current;
-    playSessionIdRef.current++; 
-    logAudioEvent(MY_TOKEN, 'STOP', `Session ${oldSession} kill. Next: ${playSessionIdRef.current}`);
+    // 1. Immediately invalidate local session
+    localSessionIdRef.current++; 
+    logAudioEvent(MY_TOKEN, 'STOP', `Local session reset to ${localSessionIdRef.current}`);
 
     // 2. Kill Recursive Scheduler
     if (schedulerTimerRef.current) { 
@@ -153,12 +152,13 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
       return;
     }
 
-    // 1. Kill other components' audio (like the Feed)
+    // 1. Kill other components' audio and increment Global Gen
     stopAllPlatformAudio(`PodcastDetailToggle:${channel.id}`);
     
-    // 2. Clear our own stale state and start new session
+    // 2. Capture the fresh Global Gen and local session
+    const targetGlobalGen = getGlobalAudioGeneration();
     stopAudio();
-    const sessionId = playSessionIdRef.current; 
+    const localSessionId = localSessionIdRef.current; 
 
     // 3. Re-acquire Lock
     registerAudioOwner(MY_TOKEN, stopAudio);
@@ -166,8 +166,11 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
     const ctx = getGlobalAudioContext();
     await warmUpAudioContext(ctx);
     
-    // Re-check after async warmup
-    if (sessionId !== playSessionIdRef.current) return;
+    // ZOMBIE CHECK: Did user cancel during warmup?
+    if (localSessionId !== localSessionIdRef.current || targetGlobalGen !== getGlobalAudioGeneration()) {
+        logAudioEvent(MY_TOKEN, 'ABORT_STALE', "Aborted after warmup delay");
+        return;
+    }
 
     const startIdx = currentSectionIndex !== null && currentSectionIndex < (activeLecture?.sections.length || 0) ? currentSectionIndex : 0;
     schedulingCursorRef.current = startIdx;
@@ -177,15 +180,15 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
     nextScheduleTimeRef.current = ctx.currentTime + 0.1;
     
     if (voiceProvider === 'system') {
-        runSystemTts(sessionId);
+        runSystemTts(localSessionId, targetGlobalGen);
     } else {
-        runWebAudioScheduler(sessionId);
+        runWebAudioScheduler(localSessionId, targetGlobalGen);
     }
   };
 
-  const runWebAudioScheduler = async (sessionId: number) => {
-      // ATOMIC GUARD: Check if session still alive
-      if (!isPlayingRef.current || sessionId !== playSessionIdRef.current || !activeLecture || !isAudioOwner(MY_TOKEN)) {
+  const runWebAudioScheduler = async (localSessionId: number, targetGlobalGen: number) => {
+      // ATOMIC GUARD: Check if session and platform gen still match
+      if (!isPlayingRef.current || localSessionId !== localSessionIdRef.current || targetGlobalGen !== getGlobalAudioGeneration() || !activeLecture || !isAudioOwner(MY_TOKEN)) {
           return;
       }
       
@@ -194,13 +197,13 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
       
       while (nextScheduleTimeRef.current < ctx.currentTime + lookahead) {
           // SYNC CHECK inside loop
-          if (!isPlayingRef.current || sessionId !== playSessionIdRef.current || !isAudioOwner(MY_TOKEN)) break;
+          if (!isPlayingRef.current || localSessionId !== localSessionIdRef.current || targetGlobalGen !== getGlobalAudioGeneration() || !isAudioOwner(MY_TOKEN)) break;
 
           const idx = schedulingCursorRef.current;
           if (idx >= activeLecture.sections.length) {
               const remaining = (nextScheduleTimeRef.current - ctx.currentTime) * 1000;
               setTimeout(() => { 
-                if (sessionId === playSessionIdRef.current && isAudioOwner(MY_TOKEN)) { 
+                if (localSessionId === localSessionIdRef.current && targetGlobalGen === getGlobalAudioGeneration() && isAudioOwner(MY_TOKEN)) { 
                     stopAudio(); 
                     setCurrentSectionIndex(0); 
                 } 
@@ -217,8 +220,8 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
               setIsBuffering(false);
               
               // CRITICAL ZOMBIE CHECK: Did user stop or switch during TTS network delay?
-              if (!isPlayingRef.current || sessionId !== playSessionIdRef.current || !isAudioOwner(MY_TOKEN)) {
-                  logAudioEvent(MY_TOKEN, 'ABORT_STALE', `Aborted session ${sessionId} after TTS delay`);
+              if (!isPlayingRef.current || localSessionId !== localSessionIdRef.current || targetGlobalGen !== getGlobalAudioGeneration() || !isAudioOwner(MY_TOKEN)) {
+                  logAudioEvent(MY_TOKEN, 'ABORT_STALE', `Zombie buffer discarded after TTS delay (Gen mismatch)`);
                   return;
               }
               
@@ -229,12 +232,12 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
                   const startAt = Math.max(nextScheduleTimeRef.current, ctx.currentTime);
                   
                   // FINAL ZOMBIE CHECK before touching destination
-                  if (sessionId !== playSessionIdRef.current || !isAudioOwner(MY_TOKEN)) {
+                  if (localSessionId !== localSessionIdRef.current || targetGlobalGen !== getGlobalAudioGeneration() || !isAudioOwner(MY_TOKEN)) {
                       source.disconnect();
                       return;
                   }
 
-                  logAudioEvent(MY_TOKEN, 'PLAY_BUFFER', `Session ${sessionId}: Idx ${idx} @ ${startAt.toFixed(2)}s`);
+                  logAudioEvent(MY_TOKEN, 'PLAY_BUFFER', `Playing idx ${idx} (Gen: ${targetGlobalGen})`);
                   
                   connectOutput(source, ctx);
                   source.start(startAt);
@@ -246,7 +249,7 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
                   
                   const delay = (startAt - ctx.currentTime) * 1000;
                   setTimeout(() => {
-                      if (sessionId === playSessionIdRef.current && isAudioOwner(MY_TOKEN)) {
+                      if (localSessionId === localSessionIdRef.current && targetGlobalGen === getGlobalAudioGeneration() && isAudioOwner(MY_TOKEN)) {
                           setCurrentSectionIndex(idx);
                           sectionRefs.current[idx]?.scrollIntoView({ behavior: 'smooth', block: 'center' });
                       }
@@ -255,30 +258,31 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
                   nextScheduleTimeRef.current = startAt + result.buffer.duration;
                   schedulingCursorRef.current++;
               } else {
-                  if (sessionId === playSessionIdRef.current && isAudioOwner(MY_TOKEN)) {
+                  // Fallback
+                  if (localSessionId === localSessionIdRef.current && targetGlobalGen === getGlobalAudioGeneration() && isAudioOwner(MY_TOKEN)) {
                       setVoiceProvider('system');
-                      runSystemTts(sessionId);
+                      runSystemTts(localSessionId, targetGlobalGen);
                   }
                   return;
               }
           } catch(e) {
-              if (sessionId === playSessionIdRef.current && isAudioOwner(MY_TOKEN)) {
+              if (localSessionId === localSessionIdRef.current && targetGlobalGen === getGlobalAudioGeneration() && isAudioOwner(MY_TOKEN)) {
                 setVoiceProvider('system');
-                runSystemTts(sessionId);
+                runSystemTts(localSessionId, targetGlobalGen);
               }
               return;
           }
       }
 
-      if (sessionId === playSessionIdRef.current && isAudioOwner(MY_TOKEN)) {
-        schedulerTimerRef.current = setTimeout(() => runWebAudioScheduler(sessionId), 400);
+      if (localSessionId === localSessionIdRef.current && targetGlobalGen === getGlobalAudioGeneration() && isAudioOwner(MY_TOKEN)) {
+        schedulerTimerRef.current = setTimeout(() => runWebAudioScheduler(localSessionId, targetGlobalGen), 400);
       }
   };
 
-  const runSystemTts = (sessionId: number) => {
+  const runSystemTts = (localSessionId: number, targetGlobalGen: number) => {
       const idx = schedulingCursorRef.current;
-      if (!activeLecture || idx >= activeLecture.sections.length || sessionId !== playSessionIdRef.current || !isAudioOwner(MY_TOKEN)) {
-          if (sessionId === playSessionIdRef.current && isAudioOwner(MY_TOKEN)) stopAudio();
+      if (!activeLecture || idx >= activeLecture.sections.length || localSessionId !== localSessionIdRef.current || targetGlobalGen !== getGlobalAudioGeneration() || !isAudioOwner(MY_TOKEN)) {
+          if (localSessionId === localSessionIdRef.current && targetGlobalGen === getGlobalAudioGeneration() && isAudioOwner(MY_TOKEN)) stopAudio();
           return;
       }
       
@@ -293,25 +297,25 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
       if (v) utter.voice = v;
       
       utter.onend = () => { 
-          if (sessionId === playSessionIdRef.current && isAudioOwner(MY_TOKEN)) { 
+          if (localSessionId === localSessionIdRef.current && targetGlobalGen === getGlobalAudioGeneration() && isAudioOwner(MY_TOKEN)) { 
               schedulingCursorRef.current++; 
-              runSystemTts(sessionId); 
+              runSystemTts(localSessionId, targetGlobalGen); 
           } 
       };
       
       utter.onerror = () => {
-          if (sessionId === playSessionIdRef.current && isAudioOwner(MY_TOKEN)) {
+          if (localSessionId === localSessionIdRef.current && targetGlobalGen === getGlobalAudioGeneration() && isAudioOwner(MY_TOKEN)) {
               stopAudio();
           }
       };
 
-      if (sessionId === playSessionIdRef.current && isAudioOwner(MY_TOKEN)) {
+      if (localSessionId === localSessionIdRef.current && targetGlobalGen === getGlobalAudioGeneration() && isAudioOwner(MY_TOKEN)) {
         window.speechSynthesis.speak(utter);
       }
   };
 
   const handleTopicClick = async (topicTitle: string, subTopicId?: string) => {
-    stopAudio(); // Clear any existing sequence immediately
+    stopAudio(); 
     
     setActiveSubTopicId(subTopicId || null);
     setCurrentSectionIndex(0);

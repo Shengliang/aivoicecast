@@ -11,7 +11,7 @@ import { getCachedLectureScript, cacheLectureScript, getUserChannels } from '../
 import { GEMINI_API_KEY, OPENAI_API_KEY } from '../services/private_keys';
 import { SPOTLIGHT_DATA } from '../utils/spotlightContent';
 import { OFFLINE_CHANNEL_ID, OFFLINE_CURRICULUM, OFFLINE_LECTURES } from '../utils/offlineContent';
-import { warmUpAudioContext, getGlobalAudioContext, stopAllPlatformAudio, registerAudioOwner, logAudioEvent, isAudioOwner } from '../utils/audioUtils';
+import { warmUpAudioContext, getGlobalAudioContext, stopAllPlatformAudio, registerAudioOwner, logAudioEvent, isAudioOwner, getGlobalAudioGeneration } from '../utils/audioUtils';
 
 interface PodcastFeedProps {
   channels: Channel[];
@@ -65,7 +65,7 @@ const MobileFeedCard = ({
     const [trackIndex, setTrackIndex] = useState(-1); 
     const mountedRef = useRef(true);
     const isLoopingRef = useRef(false);
-    const playbackSessionRef = useRef(0); 
+    const localSessionIdRef = useRef(0); 
     const isActiveRef = useRef(isActive); 
     const preloadedScriptRef = useRef<Promise<GeneratedLecture | null> | null>(null);
     const activeSourcesRef = useRef<Set<AudioBufferSourceNode>>(new Set());
@@ -76,8 +76,7 @@ const MobileFeedCard = ({
      * ATOMIC STOP
      */
     const stopAudio = useCallback(() => {
-        logAudioEvent(MY_TOKEN, 'STOP', `Session ${playbackSessionRef.current} hard stop`);
-        playbackSessionRef.current++; // Invalidate current session
+        localSessionIdRef.current++; // Invalidate local session
         isLoopingRef.current = false;
         
         if (typeof window !== 'undefined' && window.speechSynthesis) {
@@ -94,6 +93,7 @@ const MobileFeedCard = ({
         
         setPlaybackState('idle');
         setStatusMessage("");
+        logAudioEvent(MY_TOKEN, 'STOP', `Session Reset to ${localSessionIdRef.current}`);
     }, [MY_TOKEN]);
 
     const flatCurriculum = useMemo(() => {
@@ -121,7 +121,6 @@ const MobileFeedCard = ({
         return () => { 
             mountedRef.current = false;
             stopAudio();
-            // Explicitly kill the global lock for this item on unmount
             if (isAudioOwner(MY_TOKEN)) {
                 stopAllPlatformAudio(`MobileFeedUnmount:${channel.id}`);
             }
@@ -138,9 +137,10 @@ const MobileFeedCard = ({
             if (ctx.state === 'suspended' || (ctx.state as any) === 'interrupted') {
                 setIsAutoplayBlocked(true);
             } else {
+                // ADD SETTLING DELAY: Prevents overlapping audio during fast scrolling
                 const timer = setTimeout(() => { 
                     if (isActiveRef.current) attemptAutoPlay(); 
-                }, 800); 
+                }, 400); 
                 return () => {
                     clearTimeout(timer);
                     stopAudio();
@@ -162,9 +162,13 @@ const MobileFeedCard = ({
             return;
         }
 
+        // KILL OTHERS and CAPTURE GEN
+        stopAllPlatformAudio(`MobileFeedAutoplay:${channel.id}`);
+        const targetGen = getGlobalAudioGeneration();
+        
         registerAudioOwner(MY_TOKEN, stopAudio);
-        const newSessionId = ++playbackSessionRef.current;
-        runTrackSequence(-1, newSessionId);
+        const localSessionId = ++localSessionIdRef.current;
+        runTrackSequence(-1, localSessionId, targetGen);
     };
 
     const handleEnableAudio = async (e: React.MouseEvent) => {
@@ -173,9 +177,12 @@ const MobileFeedCard = ({
         try {
             await warmUpAudioContext(ctx);
             setIsAutoplayBlocked(false);
+            
+            stopAllPlatformAudio(`MobileFeedEnable:${channel.id}`);
+            const targetGen = getGlobalAudioGeneration();
             registerAudioOwner(MY_TOKEN, stopAudio);
-            const newSessionId = ++playbackSessionRef.current;
-            runTrackSequence(-1, newSessionId);
+            const localSessionId = ++localSessionIdRef.current;
+            runTrackSequence(-1, localSessionId, targetGen);
         } catch(err) {
             console.error("Audio resume failed", err);
         }
@@ -200,9 +207,11 @@ const MobileFeedCard = ({
             return; 
         }
         
+        stopAllPlatformAudio(`MobileFeedManualPlay:${channel.id}`);
+        const targetGen = getGlobalAudioGeneration();
         registerAudioOwner(MY_TOKEN, stopAudio);
-        const newSessionId = ++playbackSessionRef.current;
-        runTrackSequence(trackIndex >= totalLessons ? -1 : trackIndex, newSessionId);
+        const localSessionId = ++localSessionIdRef.current;
+        runTrackSequence(trackIndex >= totalLessons ? -1 : trackIndex, localSessionId, targetGen);
     };
 
     const toggleTtsMode = (e: React.MouseEvent) => {
@@ -218,17 +227,17 @@ const MobileFeedCard = ({
             stopAudio();
             setTimeout(() => { 
                 if (isActiveRef.current) {
-                    const newSessionId = ++playbackSessionRef.current;
-                    runTrackSequence(trackIndex === -1 ? -1 : trackIndex, newSessionId); 
+                    const targetGen = getGlobalAudioGeneration();
+                    const localSessionId = ++localSessionIdRef.current;
+                    runTrackSequence(trackIndex === -1 ? -1 : trackIndex, localSessionId, targetGen); 
                 }
             }, 150);
         }
     };
 
-    const playAudioBuffer = (buffer: AudioBuffer, sessionId: number): Promise<void> => {
+    const playAudioBuffer = (buffer: AudioBuffer, localSessionId: number, targetGen: number): Promise<void> => {
         return new Promise(async (resolve) => {
-            // ATOMIC CHECK: Resolve instantly if session changed while we were called
-            if (!mountedRef.current || !isActiveRef.current || sessionId !== playbackSessionRef.current || !isAudioOwner(MY_TOKEN)) { 
+            if (!mountedRef.current || !isActiveRef.current || localSessionId !== localSessionIdRef.current || targetGen !== getGlobalAudioGeneration() || !isAudioOwner(MY_TOKEN)) { 
                 resolve(); 
                 return; 
             }
@@ -252,9 +261,9 @@ const MobileFeedCard = ({
         });
     };
 
-    const playSystemAudio = (text: string, voiceName: string, sessionId: number): Promise<void> => {
+    const playSystemAudio = (text: string, voiceName: string, localSessionId: number, targetGen: number): Promise<void> => {
         return new Promise((resolve) => {
-            if (!mountedRef.current || !isActiveRef.current || sessionId !== playbackSessionRef.current || !isAudioOwner(MY_TOKEN)) { resolve(); return; }
+            if (!mountedRef.current || !isActiveRef.current || localSessionId !== localSessionIdRef.current || targetGen !== getGlobalAudioGeneration() || !isAudioOwner(MY_TOKEN)) { resolve(); return; }
             if (window.speechSynthesis) window.speechSynthesis.cancel();
             
             const utterance = new SpeechSynthesisUtterance(text);
@@ -271,9 +280,6 @@ const MobileFeedCard = ({
     const playBackgroundHeartbeat = () => {
         const ctx = getGlobalAudioContext();
         if (ctx.state === 'suspended') return;
-        
-        // Background Audio Fix: Infrasonic 20Hz hum at 0.1% volume
-        // Prevents tab from sleeping on mobile and keeps timers active.
         const osc = ctx.createOscillator();
         const gain = ctx.createGain();
         osc.frequency.value = 20; 
@@ -284,9 +290,8 @@ const MobileFeedCard = ({
         return { osc, gain };
     };
 
-    const runTrackSequence = async (startIndex: number, sessionId: number) => {
-        // PRE-FLIGHT CHECK
-        if (!isActiveRef.current || sessionId !== playbackSessionRef.current || !isAudioOwner(MY_TOKEN)) return;
+    const runTrackSequence = async (startIndex: number, localSessionId: number, targetGen: number) => {
+        if (!isActiveRef.current || localSessionId !== localSessionIdRef.current || targetGen !== getGlobalAudioGeneration() || !isAudioOwner(MY_TOKEN)) return;
         
         isLoopingRef.current = true;
         setPlaybackState('playing');
@@ -294,7 +299,7 @@ const MobileFeedCard = ({
         const heartbeat = playBackgroundHeartbeat();
         let currentIndex = startIndex;
         
-        while (mountedRef.current && isActiveRef.current && sessionId === playbackSessionRef.current && isAudioOwner(MY_TOKEN)) {
+        while (mountedRef.current && isActiveRef.current && localSessionId === localSessionIdRef.current && targetGen === getGlobalAudioGeneration() && isAudioOwner(MY_TOKEN)) {
             try {
                 setTrackIndex(currentIndex); 
                 let textParts: {speaker: string, text: string, voice: string}[] = [];
@@ -330,11 +335,8 @@ const MobileFeedCard = ({
                         lecture = await fetchLectureData(lessonMeta); 
                     }
                     
-                    // ATOMIC CHECK: Did user scroll away during lecture fetch?
-                    if (!isActiveRef.current || sessionId !== playbackSessionRef.current || !isAudioOwner(MY_TOKEN)) {
-                        logAudioEvent(MY_TOKEN, 'ABORT_STALE', `Aborted session ${sessionId} after lecture fetch`);
-                        break;
-                    }
+                    // ZOMBIE CHECK after network delay
+                    if (!isActiveRef.current || localSessionId !== localSessionIdRef.current || targetGen !== getGlobalAudioGeneration() || !isAudioOwner(MY_TOKEN)) break;
 
                     if (!lecture || !lecture.sections || lecture.sections.length === 0) { currentIndex++; continue; }
                     
@@ -353,34 +355,30 @@ const MobileFeedCard = ({
                 }
 
                 for (let i = 0; i < textParts.length; i++) {
-                    // ATOMIC CHECK: Check owner before every single line of dialogue
-                    if (!isActiveRef.current || sessionId !== playbackSessionRef.current || !isAudioOwner(MY_TOKEN)) break;
+                    // LINE-LEVEL ZOMBIE CHECK
+                    if (!isActiveRef.current || localSessionId !== localSessionIdRef.current || targetGen !== getGlobalAudioGeneration() || !isAudioOwner(MY_TOKEN)) break;
                     
                     const part = textParts[i];
                     setTranscript({ speaker: part.speaker, text: part.text });
                     
                     if (provider === 'system') {
-                        await playSystemAudio(part.text, part.voice, sessionId);
+                        await playSystemAudio(part.text, part.voice, localSessionId, targetGen);
                     } else {
                         setStatusMessage(`Synthesizing...`);
                         const audioResult = await synthesizeSpeech(part.text, part.voice, getGlobalAudioContext());
                         
-                        // ATOMIC CHECK: Did user stop or scroll during TTS network delay?
-                        if (!isActiveRef.current || sessionId !== playbackSessionRef.current || !isAudioOwner(MY_TOKEN)) {
-                            logAudioEvent(MY_TOKEN, 'ABORT_STALE', `Aborted session ${sessionId} after synthesis`);
-                            break;
-                        }
+                        // ZOMBIE CHECK after TTS fetch
+                        if (!isActiveRef.current || localSessionId !== localSessionIdRef.current || targetGen !== getGlobalAudioGeneration() || !isAudioOwner(MY_TOKEN)) break;
 
                         if (audioResult && audioResult.buffer) {
                             setStatusMessage("Playing");
-                            await playAudioBuffer(audioResult.buffer, sessionId);
+                            await playAudioBuffer(audioResult.buffer, localSessionId, targetGen);
                         } else {
-                            await playSystemAudio(part.text, part.voice, sessionId);
+                            await playSystemAudio(part.text, part.voice, localSessionId, targetGen);
                         }
                     }
                     
-                    // FINAL ATOMIC CHECK
-                    if (!isActiveRef.current || sessionId !== playbackSessionRef.current || !isAudioOwner(MY_TOKEN)) break;
+                    if (!isActiveRef.current || localSessionId !== localSessionIdRef.current || targetGen !== getGlobalAudioGeneration() || !isAudioOwner(MY_TOKEN)) break;
                     await new Promise(r => setTimeout(r, 250));
                 }
                 currentIndex++;
@@ -525,7 +523,7 @@ export const PodcastFeed: React.FC<PodcastFeedProps> = ({
   }, [userProfile, channels]);
 
   const recommendedChannels = useMemo(() => {
-      if (!isFeedActive) return []; // DISABLE logic path if feed is not active
+      if (!isFeedActive) return []; 
       if (filterMode === 'mine') return channels.filter(c => currentUser && c.ownerId === currentUser.uid).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
       if (filterMode === 'following') return [...channels].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
       const scored = channels.map(ch => {
@@ -541,7 +539,7 @@ export const PodcastFeed: React.FC<PodcastFeedProps> = ({
   }, [channels, userProfile, filterMode, currentUser, isFeedActive]);
 
   useEffect(() => { 
-      if (!isFeedActive) return; // SKIP effect path
+      if (!isFeedActive) return; 
       if (!isDesktop && recommendedChannels.length > 0 && !activeChannelId) setActiveChannelId(recommendedChannels[0].id); 
   }, [recommendedChannels, isDesktop, activeChannelId, isFeedActive]);
 
@@ -563,7 +561,6 @@ export const PodcastFeed: React.FC<PodcastFeedProps> = ({
   const handleComment = (e: React.MouseEvent, channel: Channel) => { e.stopPropagation(); if(onCommentClick) onCommentClick(channel); };
   const handleScrollToNext = (currentChannelId: string) => { const idx = recommendedChannels.findIndex(c => c.id === currentChannelId); if (idx !== -1 && idx < recommendedChannels.length - 1) { const nextId = recommendedChannels[idx + 1].id; const nextEl = document.querySelector(`[data-id="${nextId}"]`); if (nextEl) nextEl.scrollIntoView({ behavior: 'smooth' }); } };
 
-  // RETURN NULL if Feed is completely backgrounded
   if (!isFeedActive) return null;
 
   if (isDesktop) {
