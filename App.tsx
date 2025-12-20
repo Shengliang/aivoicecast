@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo } from 'react';
 import { Channel, ViewState, UserProfile, TranscriptItem, SubscriptionTier } from './types';
 import { 
@@ -58,7 +57,7 @@ import { HANDCRAFTED_CHANNELS, CATEGORY_STYLES, TOPIC_CATEGORIES } from './utils
 import { OFFLINE_CHANNEL_ID } from './utils/offlineContent';
 import { warmUpAudioContext, stopAllPlatformAudio } from './utils/audioUtils';
 
-const APP_VERSION = "v3.85.0"; 
+const APP_VERSION = "v3.85.1"; 
 
 const UI_TEXT = {
   en: {
@@ -220,7 +219,7 @@ const App: React.FC = () => {
    */
   const handleSetViewState = (newState: ExtendedViewState) => {
     // ATOMIC KILL SWITCH: Kill all audio BEFORE state transition
-    stopAllPlatformAudio();
+    stopAllPlatformAudio(`Navigation:${viewState}->${newState}`);
     setViewState(newState);
   };
 
@@ -948,7 +947,7 @@ const App: React.FC = () => {
               </div>
               <input
                 type="text"
-                className="block w-full pl-10 pr-3 py-2 border border-slate-700 rounded-full leading-5 bg-slate-800/50 text-slate-300 placeholder-slate-500 focus:outline-none focus:bg-slate-800 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 sm:text-sm transition-all"
+                className="block w-full pl-10 pr-3 py-2 border border-slate-700 rounded-full leading-5 bg-slate-800/50 text-slate-300 placeholder-slate-500 focus:outline-none bg-slate-800 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 sm:text-sm transition-all"
                 placeholder={t.search}
                 value={searchQuery}
                 onChange={(e) => {
@@ -1260,7 +1259,6 @@ const App: React.FC = () => {
 
       <CreateChannelModal isOpen={isCreateModalOpen} onClose={() => { setIsCreateModalOpen(false); setCreateModalDate(null); }} onCreate={handleCreateChannel} initialDate={createModalDate} />
       <VoiceCreateModal isOpen={isVoiceCreateOpen} onClose={() => setIsVoiceCreateOpen(false)} onCreate={handleCreateChannel} />
-      {/* FIX: Removed manual ApiKeyModal UI. */}
       <DataSyncModal isOpen={isSyncModalOpen} onClose={() => setIsSyncModalOpen(false)} />
       <FirebaseConfigModal isOpen={isFirebaseModalOpen} onClose={() => setIsFirebaseModalOpen(false)} onConfigUpdate={(valid) => { if(valid) window.location.reload(); }} />
 
