@@ -96,6 +96,8 @@ export interface Channel {
   chapters?: Chapter[];
   appendix?: Attachment[];
   createdAt?: number;
+  bookUrl?: string;
+  bookGeneratedAt?: number;
 }
 
 export interface LectureSection {

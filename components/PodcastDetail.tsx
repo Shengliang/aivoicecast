@@ -1,11 +1,12 @@
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Channel, GeneratedLecture, Chapter, SubTopic, Attachment } from '../types';
-import { ArrowLeft, BookOpen, FileText, Download, Loader2, ChevronDown, ChevronRight, ChevronLeft, Check, Printer, FileDown, Info, Sparkles, Book } from 'lucide-react';
+import { ArrowLeft, BookOpen, FileText, Download, Loader2, ChevronDown, ChevronRight, ChevronLeft, Check, Printer, FileDown, Info, Sparkles, Book, CloudDownload } from 'lucide-react';
 import { generateLectureScript } from '../services/lectureGenerator';
 import { OFFLINE_CHANNEL_ID, OFFLINE_CURRICULUM, OFFLINE_LECTURES } from '../utils/offlineContent';
 import { SPOTLIGHT_DATA } from '../utils/spotlightContent';
 import { cacheLectureScript, getCachedLectureScript } from '../utils/db';
+import { uploadFileToStorage, publishChannelToFirestore } from '../services/firestoreService';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
 
@@ -29,9 +30,11 @@ const UI_TEXT = {
     lectureTitle: "Lecture Script",
     downloadPdf: "Download PDF",
     downloadBook: "Synthesize Book",
+    downloadExisting: "Download Cloud Copy",
     exporting: "Drafting PDF...",
     preparingBook: "Assembling Course Book...",
     typesetting: "Typesetting Pages...",
+    syncing: "Saving to Cloud...",
     toc: "Table of Contents",
     prev: "Prev Lesson",
     next: "Next Lesson",
@@ -47,9 +50,11 @@ const UI_TEXT = {
     lectureTitle: "讲座文稿",
     downloadPdf: "下载 PDF",
     downloadBook: "全书合成",
+    downloadExisting: "下载云端备份",
     exporting: "正在生成 PDF...",
     preparingBook: "正在汇编课程书籍...",
     typesetting: "正在排版页面...",
+    syncing: "正在同步到云端...",
     toc: "目录",
     prev: "上一节",
     next: "下一节",
@@ -67,6 +72,9 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, l
   const [bookLectures, setBookLectures] = useState<GeneratedLecture[]>([]);
   const [exportProgress, setExportProgress] = useState('');
   
+  // Real-time channel state to reflect new bookUrl
+  const [currentChannel, setCurrentChannel] = useState<Channel>(channel);
+
   const [chapters, setChapters] = useState<Chapter[]>(() => {
     if (channel.chapters && channel.chapters.length > 0) return channel.chapters;
     if (channel.id === OFFLINE_CHANNEL_ID) return OFFLINE_CURRICULUM;
@@ -96,8 +104,9 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, l
 
   useEffect(() => {
       mountedRef.current = true;
+      setCurrentChannel(channel);
       return () => { mountedRef.current = false; };
-  }, []);
+  }, [channel]);
 
   const handleTopicClick = async (topicTitle: string, subTopicId?: string) => {
     setActiveSubTopicId(subTopicId || null);
@@ -165,7 +174,6 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, l
       try {
           const allLectures: GeneratedLecture[] = [];
           
-          // Phase 1: Knowledge Gathering
           for (let i = 0; i < flatCurriculum.length; i++) {
               const item = flatCurriculum[i];
               setExportProgress(`${t.preparingBook} (${i + 1}/${flatCurriculum.length})`);
@@ -187,8 +195,6 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, l
           }
 
           setBookLectures(allLectures);
-          
-          // Small delay to let the hidden DOM render fully
           await new Promise(r => setTimeout(r, 2000));
           setExportProgress(t.typesetting);
 
@@ -196,7 +202,6 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, l
           const pdfWidth = pdf.internal.pageSize.getWidth();
           const pdfHeight = pdf.internal.pageSize.getHeight();
 
-          // Helper for rendering and adding page
           const addPageToPdf = async (elementId: string) => {
               const el = document.getElementById(elementId);
               if (!el) return;
@@ -205,21 +210,41 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, l
               pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, pdfHeight);
           };
 
-          // 1. Cover
           await addPageToPdf('book-lecture-cover');
           pdf.addPage();
-
-          // 2. Table of Contents
           await addPageToPdf('book-lecture-toc');
           pdf.addPage();
 
-          // 3. Lessons
           for (let i = 0; i < allLectures.length; i++) {
               if (i > 0) pdf.addPage();
               await addPageToPdf(`book-lecture-${i}`);
           }
 
-          pdf.save(`${channel.title.replace(/\s+/g, '_')}_AIVoiceCast_Book.pdf`);
+          // Generate filename
+          const safeTitle = channel.title.replace(/\s+/g, '_');
+          const fileName = `${safeTitle}_AIVoiceCast_Book.pdf`;
+          
+          // PDF to Blob for storage
+          const pdfBlob = pdf.output('blob');
+          
+          // Download locally for immediate feedback
+          pdf.save(fileName);
+
+          // Upload to Cloud Storage if logged in
+          if (currentUser) {
+              setExportProgress(t.syncing);
+              const storagePath = `books/${channel.id}/${language}_book.pdf`;
+              const downloadUrl = await uploadFileToStorage(storagePath, pdfBlob, { contentType: 'application/pdf' });
+              
+              // Update Channel Metadata in Firestore
+              const updatedChannel = { 
+                  ...currentChannel, 
+                  bookUrl: downloadUrl, 
+                  bookGeneratedAt: Date.now() 
+              };
+              await publishChannelToFirestore(updatedChannel);
+              setCurrentChannel(updatedChannel);
+          }
       } catch (e) {
           console.error("Full book export failed", e);
           alert("Failed to assemble the full course book.");
@@ -227,6 +252,12 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, l
           setIsExportingBook(false);
           setBookLectures([]);
           setExportProgress('');
+      }
+  };
+
+  const handleDownloadCloudCopy = () => {
+      if (currentChannel.bookUrl) {
+          window.open(currentChannel.bookUrl, '_blank');
       }
   };
 
@@ -271,15 +302,29 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, l
                         <BookOpen size={16} className="text-indigo-400" />
                         {t.curriculum}
                     </h3>
-                    <button 
-                        onClick={handleDownloadFullBook}
-                        disabled={isExportingBook}
-                        className="text-[10px] font-bold text-indigo-100 hover:text-white flex items-center gap-1.5 transition-all px-3 py-1.5 bg-indigo-600 rounded-lg shadow-lg shadow-indigo-500/20 active:scale-95"
-                        title="AI Book Synthesis: Draft and assemble all lessons into one PDF"
-                    >
-                        {isExportingBook ? <Loader2 size={12} className="animate-spin"/> : <Book size={12} fill="currentColor"/>}
-                        {isExportingBook ? t.exporting : t.downloadBook}
-                    </button>
+                    
+                    <div className="flex gap-2">
+                        {currentChannel.bookUrl && (
+                            <button 
+                                onClick={handleDownloadCloudCopy}
+                                className="text-[10px] font-bold text-emerald-100 hover:text-white flex items-center gap-1.5 transition-all px-3 py-1.5 bg-emerald-600 rounded-lg shadow-lg shadow-emerald-500/20 active:scale-95"
+                                title="Download the existing cloud backup of this book"
+                            >
+                                <CloudDownload size={12}/>
+                                <span className="hidden sm:inline">Cloud Copy</span>
+                            </button>
+                        )}
+                        
+                        <button 
+                            onClick={handleDownloadFullBook}
+                            disabled={isExportingBook}
+                            className={`text-[10px] font-bold text-indigo-100 hover:text-white flex items-center gap-1.5 transition-all px-3 py-1.5 bg-indigo-600 rounded-lg shadow-lg shadow-indigo-500/20 active:scale-95 ${currentChannel.bookUrl ? 'opacity-70 hover:opacity-100' : ''}`}
+                            title={currentChannel.bookUrl ? "Re-synthesize the book from scratch" : "AI Book Synthesis: Draft and assemble all lessons into one PDF"}
+                        >
+                            {isExportingBook ? <Loader2 size={12} className="animate-spin"/> : <Book size={12} fill="currentColor"/>}
+                            {isExportingBook ? t.exporting : currentChannel.bookUrl ? "Re-Synthesize" : t.downloadBook}
+                        </button>
+                    </div>
                 </div>
                 <div className="divide-y divide-slate-800">
                     {chapters.map((ch) => (
@@ -390,7 +435,6 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, l
         </div>
       </main>
 
-      {/* Progress Toast for Book Export */}
       {isExportingBook && exportProgress && (
           <div className="fixed bottom-10 left-1/2 -translate-x-1/2 bg-slate-900 border border-indigo-500/50 p-4 rounded-xl shadow-2xl flex items-center gap-3 z-[100] animate-fade-in-up">
               <Loader2 className="text-indigo-400 animate-spin" size={20}/>
@@ -398,11 +442,8 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, l
           </div>
       )}
 
-      {/* HIDDEN EXPORT AREA - STRICTLY FORMATTED FOR PDF CAPTURE */}
       {isExportingBook && bookLectures.length > 0 && (
           <div style={{ position: 'absolute', left: '-9999px', top: '-9999px', width: '595px' }}>
-              
-              {/* PAGE 1: PROFESSIONAL COVER */}
               <div className="bg-slate-950 relative overflow-hidden flex flex-col items-center justify-center text-center" id="book-lecture-cover" style={{ width: '595px', height: '842px' }}>
                   <div className="absolute inset-0">
                       <img src={channel.imageUrl} className="w-full h-full object-cover opacity-20 blur-sm" alt=""/>
@@ -437,7 +478,6 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, l
                   </div>
               </div>
 
-              {/* PAGE 2: TABLE OF CONTENTS */}
               <div className="bg-white p-16 flex flex-col" id="book-lecture-toc" style={{ width: '595px', height: '842px' }}>
                   <h2 className="text-3xl font-black text-slate-900 border-b-4 border-indigo-600 pb-4 mb-12 uppercase tracking-tight">{t.toc}</h2>
                   <div className="space-y-6 overflow-hidden">
@@ -463,7 +503,6 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, l
                   </div>
               </div>
 
-              {/* LESSON PAGES */}
               {bookLectures.map((lec, lIdx) => (
                   <div key={lIdx} id={`book-lecture-${lIdx}`} className="bg-white p-16 flex flex-col" style={{ width: '595px', height: '842px' }}>
                       <div className="flex justify-between items-start mb-8 border-b-2 border-slate-100 pb-4">
