@@ -121,6 +121,7 @@ const MobileFeedCard = ({
         return () => { 
             mountedRef.current = false;
             stopAudio();
+            // If we were the owner, explicitly kill all platform audio on unmount
             if (isAudioOwner(MY_TOKEN)) {
                 stopAllPlatformAudio(`MobileFeedUnmount:${channel.id}`);
             }

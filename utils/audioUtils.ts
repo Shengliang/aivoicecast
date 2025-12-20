@@ -1,3 +1,4 @@
+
 import { Blob as GeminiBlob } from '@google/genai';
 
 let mainAudioContext: AudioContext | null = null;
@@ -52,7 +53,7 @@ export function stopAllPlatformAudio(sourceCaller: string = "Global") {
     if (typeof window !== 'undefined' && window.speechSynthesis) {
         window.speechSynthesis.cancel();
         try {
-            // Aggressive fallback to kill remaining speech buffers
+            // Aggressive dummy-speak trick to force-clear browser internal queues
             const dummy = new SpeechSynthesisUtterance("");
             dummy.volume = 0;
             window.speechSynthesis.speak(dummy);
@@ -60,7 +61,7 @@ export function stopAllPlatformAudio(sourceCaller: string = "Global") {
         } catch (e) {}
     }
 
-    // 3. Kill the Media Bridge
+    // 3. Kill the Media Bridge (stops background playback)
     if (audioBridgeElement) {
         audioBridgeElement.pause();
         audioBridgeElement.srcObject = null;

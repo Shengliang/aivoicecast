@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Channel, GeneratedLecture, Chapter, SubTopic, TranscriptItem, Attachment, UserProfile } from '../types';
 import { ArrowLeft, Play, Pause, BookOpen, MessageCircle, Sparkles, User, GraduationCap, Loader2, ChevronDown, ChevronRight, SkipForward, SkipBack, Settings, X, Mic, Download, RefreshCw, Square, MoreVertical, Edit, Lock, Zap, ToggleLeft, ToggleRight, Users, Check, AlertTriangle, Activity, MessageSquare, FileText, Code, Video, Monitor, PlusCircle, Bot, ExternalLink, ChevronLeft, Menu, List, PanelLeftClose, PanelLeftOpen, CornerDownRight, Trash2, FileDown, Printer, FileJson, HelpCircle, ListMusic, Copy, Paperclip, UploadCloud, Crown, Radio, Info, AlertCircle, Bug, Terminal } from 'lucide-react';
@@ -136,11 +137,13 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
   }, [MY_TOKEN]);
 
   useEffect(() => {
+      // NOTE: We keep channel.id out of dependencies to avoid audio stopping 
+      // on like/comment updates if the detail view stays active.
       return () => {
           stopAudio();
           stopAllPlatformAudio(`PodcastDetailUnmount:${channel.id}`);
       };
-  }, [stopAudio, channel.id]);
+  }, [stopAudio]);
 
   /**
    * ATOMIC TOGGLE
@@ -406,7 +409,7 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
                     <div className="flex items-center justify-between mb-4">
                         <h2 className="text-xl font-bold text-white">{activeLecture.topic}</h2>
                         <div className="flex items-center gap-2">
-                            <button onClick={() => setShowDebugger(!showDebugger)} className={`p-2 rounded-full ${showDebugger ? 'bg-amber-600 text-white' : 'bg-slate-800 text-slate-400'}`} title="Audio Debugger"><Bug size={18} /></button>
+                            <button onClick={() => setShowDebugger(!showDebugger)} className={`p-2 rounded-full ${showDebugger ? 'bg-amber-600 text-white' : 'bg-slate-800 text-slate-400'}`} title="Audio Mutex Debugger"><Bug size={18} /></button>
                             <button onClick={() => setShowVoiceSettings(!showVoiceSettings)} className={`p-2 rounded-full ${showVoiceSettings ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-400'}`}><Settings size={18} /></button>
                         </div>
                     </div>
