@@ -97,7 +97,7 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
    * ATOMIC KILL
    */
   const stopAudio = useCallback(() => {
-    // 1. Immediately invalidate local session
+    // 1. Immediately invalidate local session to stop current loops
     localSessionIdRef.current++; 
     logAudioEvent(MY_TOKEN, 'STOP', `Local session reset to ${localSessionIdRef.current}`);
 
@@ -107,7 +107,7 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
         schedulerTimerRef.current = null; 
     }
 
-    // 3. Clear the timeline
+    // 3. Reset internal player state
     nextScheduleTimeRef.current = 0;
     isPlayingRef.current = false;
     setIsPlaying(false);
@@ -146,11 +146,13 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
    * ATOMIC TOGGLE
    */
   const togglePlayback = async () => {
+    // CRITICAL: If currently playing, STOP it.
     if (isPlaying) { 
       stopAudio(); 
       return;
     }
 
+    // --- START LOGIC ---
     // 1. REGISTRATION MUST BE FIRST
     // registerAudioOwner internally calls stopAllPlatformAudio which increments Global Gen
     const localSessionId = ++localSessionIdRef.current;
@@ -165,7 +167,11 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
         return;
     }
 
-    const startIdx = currentSectionIndex !== null && currentSectionIndex < (activeLecture?.sections.length || 0) ? currentSectionIndex : 0;
+    // Resume from current index if paused, or start over if finished
+    const startIdx = (currentSectionIndex !== null && activeLecture && currentSectionIndex < activeLecture.sections.length) 
+        ? currentSectionIndex 
+        : 0;
+        
     schedulingCursorRef.current = startIdx;
     
     setIsPlaying(true);
@@ -189,7 +195,7 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
       const lookahead = 2.0; 
       
       while (nextScheduleTimeRef.current < ctx.currentTime + lookahead) {
-          // SYNC CHECK inside loop
+          // SYNC CHECK inside loop before any work
           if (!isPlayingRef.current || localSessionId !== localSessionIdRef.current || targetGlobalGen !== getGlobalAudioGeneration() || !isAudioOwner(MY_TOKEN)) break;
 
           const idx = schedulingCursorRef.current;
@@ -212,7 +218,7 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
               const result = await synthesizeSpeech(section.text, voice, ctx);
               setIsBuffering(false);
               
-              // 2. CRITICAL ZOMBIE CHECK
+              // 2. CRITICAL ZOMBIE CHECK after TTS await
               if (!isPlayingRef.current || localSessionId !== localSessionIdRef.current || targetGlobalGen !== getGlobalAudioGeneration() || !isAudioOwner(MY_TOKEN)) {
                   logAudioEvent(MY_TOKEN, 'ABORT_STALE', `Zombie buffer discarded (Gen mismatch)`);
                   return;
@@ -224,7 +230,7 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
                   
                   const startAt = Math.max(nextScheduleTimeRef.current, ctx.currentTime);
                   
-                  // 3. FINAL ZOMBIE CHECK
+                  // 3. FINAL ZOMBIE CHECK before source.start()
                   if (localSessionId !== localSessionIdRef.current || targetGlobalGen !== getGlobalAudioGeneration() || !isAudioOwner(MY_TOKEN)) {
                       source.disconnect();
                       return;
@@ -251,6 +257,7 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
                   nextScheduleTimeRef.current = startAt + result.buffer.duration;
                   schedulingCursorRef.current++;
               } else {
+                  // Fallback to system on synthesize error
                   if (localSessionId === localSessionIdRef.current && targetGlobalGen === getGlobalAudioGeneration() && isAudioOwner(MY_TOKEN)) {
                       setVoiceProvider('system');
                       runSystemTts(localSessionId, targetGlobalGen);
@@ -266,6 +273,7 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
           }
       }
 
+      // Schedule next check
       if (localSessionId === localSessionIdRef.current && targetGlobalGen === getGlobalAudioGeneration() && isAudioOwner(MY_TOKEN)) {
         schedulerTimerRef.current = setTimeout(() => runWebAudioScheduler(localSessionId, targetGlobalGen), 400);
       }
@@ -284,8 +292,9 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
       const utter = new SpeechSynthesisUtterance(cleanTextForTTS(activeLecture.sections[idx].text));
       lastUtteranceRef.current = utter;
 
+      const voices = window.speechSynthesis.getVoices();
       const targetURI = activeLecture.sections[idx].speaker === 'Teacher' ? sysTeacherVoiceURI : sysStudentVoiceURI;
-      const v = systemVoices.find(v => v.voiceURI === targetURI);
+      const v = voices.find(v => v.voiceURI === targetURI) || voices.find(v => v.lang.startsWith('en'));
       if (v) utter.voice = v;
       
       utter.onend = () => { 
@@ -426,8 +435,8 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
                     <div className="flex justify-between items-center mt-6 pt-6 border-t border-slate-800">
                         <button onClick={handlePrevLesson} disabled={currentLectureIndex <= 0} className="text-slate-400 disabled:opacity-30 flex items-center space-x-2 text-sm font-bold"><SkipBack size={20} /></button>
                         <div className="flex flex-col items-center gap-2">
-                            <button onClick={togglePlayback} className={`w-16 h-16 rounded-full flex items-center justify-center ${isPlaying ? 'bg-slate-800 text-red-400' : 'bg-emerald-600 text-white'}`}>
-                                {isBuffering ? <Loader2 className="animate-spin" /> : isPlaying ? <Pause fill="currentColor" size={28} /> : <Play fill="currentColor" size={28} />}
+                            <button onClick={togglePlayback} className={`w-16 h-16 rounded-full flex items-center justify-center transition-all shadow-2xl active:scale-95 ${isPlaying ? 'bg-slate-800 text-red-400' : 'bg-emerald-600 hover:bg-emerald-500 text-white'}`}>
+                                {isBuffering ? <Loader2 className="animate-spin" /> : isPlaying ? <Pause fill="currentColor" size={28} /> : <Play fill="currentColor" size={28} className="ml-1" />}
                             </button>
                             {isBuffering && <span className="text-xs text-slate-500">{t.loadingAudio}</span>}
                         </div>

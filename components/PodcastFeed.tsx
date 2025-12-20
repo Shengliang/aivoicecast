@@ -284,6 +284,7 @@ const MobileFeedCard = ({
     };
 
     const runTrackSequence = async (startIndex: number, localSessionId: number, targetGen: number) => {
+        // Guard against initial state mismatch
         if (!isActiveRef.current || localSessionId !== localSessionIdRef.current || targetGen !== getGlobalAudioGeneration() || !isAudioOwner(MY_TOKEN)) return;
         
         isLoopingRef.current = true;
@@ -328,7 +329,7 @@ const MobileFeedCard = ({
                         lecture = await fetchLectureData(lessonMeta); 
                     }
                     
-                    // ZOMBIE CHECK
+                    // ZOMBIE CHECK after fetch
                     if (!isActiveRef.current || localSessionId !== localSessionIdRef.current || targetGen !== getGlobalAudioGeneration() || !isAudioOwner(MY_TOKEN)) break;
 
                     if (!lecture || !lecture.sections || lecture.sections.length === 0) { currentIndex++; continue; }
@@ -348,6 +349,7 @@ const MobileFeedCard = ({
                 }
 
                 for (let i = 0; i < textParts.length; i++) {
+                    // ZOMBIE CHECK before each section part
                     if (!isActiveRef.current || localSessionId !== localSessionIdRef.current || targetGen !== getGlobalAudioGeneration() || !isAudioOwner(MY_TOKEN)) break;
                     
                     const part = textParts[i];
@@ -359,6 +361,7 @@ const MobileFeedCard = ({
                         setStatusMessage(`Synthesizing...`);
                         const audioResult = await synthesizeSpeech(part.text, part.voice, getGlobalAudioContext());
                         
+                        // ZOMBIE CHECK after synthesis
                         if (!isActiveRef.current || localSessionId !== localSessionIdRef.current || targetGen !== getGlobalAudioGeneration() || !isAudioOwner(MY_TOKEN)) break;
 
                         if (audioResult && audioResult.buffer) {
@@ -369,6 +372,7 @@ const MobileFeedCard = ({
                         }
                     }
                     
+                    // ZOMBIE CHECK after playing part
                     if (!isActiveRef.current || localSessionId !== localSessionIdRef.current || targetGen !== getGlobalAudioGeneration() || !isAudioOwner(MY_TOKEN)) break;
                     await new Promise(r => setTimeout(r, 250));
                 }
