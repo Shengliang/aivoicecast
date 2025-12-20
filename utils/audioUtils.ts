@@ -1,4 +1,3 @@
-
 import { Blob as GeminiBlob } from '@google/genai';
 
 let mainAudioContext: AudioContext | null = null;
@@ -53,6 +52,7 @@ export function stopAllPlatformAudio(sourceCaller: string = "Global") {
     if (typeof window !== 'undefined' && window.speechSynthesis) {
         window.speechSynthesis.cancel();
         try {
+            // Aggressive fallback to kill remaining speech buffers
             const dummy = new SpeechSynthesisUtterance("");
             dummy.volume = 0;
             window.speechSynthesis.speak(dummy);

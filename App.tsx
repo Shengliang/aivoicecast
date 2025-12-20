@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo } from 'react';
 import { Channel, ViewState, UserProfile, TranscriptItem, SubscriptionTier } from './types';
 import { 
@@ -58,7 +57,7 @@ import { HANDCRAFTED_CHANNELS, CATEGORY_STYLES, TOPIC_CATEGORIES } from './utils
 import { OFFLINE_CHANNEL_ID } from './utils/offlineContent';
 import { warmUpAudioContext, stopAllPlatformAudio } from './utils/audioUtils';
 
-const APP_VERSION = "v3.83.2"; 
+const APP_VERSION = "v3.83.3"; 
 
 const UI_TEXT = {
   en: {

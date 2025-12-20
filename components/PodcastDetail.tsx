@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Channel, GeneratedLecture, Chapter, SubTopic, TranscriptItem, Attachment, UserProfile } from '../types';
 import { ArrowLeft, Play, Pause, BookOpen, MessageCircle, Sparkles, User, GraduationCap, Loader2, ChevronDown, ChevronRight, SkipForward, SkipBack, Settings, X, Mic, Download, RefreshCw, Square, MoreVertical, Edit, Lock, Zap, ToggleLeft, ToggleRight, Users, Check, AlertTriangle, Activity, MessageSquare, FileText, Code, Video, Monitor, PlusCircle, Bot, ExternalLink, ChevronLeft, Menu, List, PanelLeftClose, PanelLeftOpen, CornerDownRight, Trash2, FileDown, Printer, FileJson, HelpCircle, ListMusic, Copy, Paperclip, UploadCloud, Crown, Radio, Info, AlertCircle, Bug, Terminal } from 'lucide-react';
@@ -73,6 +72,7 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
   const schedulingCursorRef = useRef(0); 
   const localSessionIdRef = useRef(0);
   const lastUtteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
+  const isToggleInProgressRef = useRef(false);
 
   const flatCurriculum = useMemo(() => {
     return chapters.flatMap((ch) => 
@@ -146,42 +146,52 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
    * ATOMIC TOGGLE
    */
   const togglePlayback = async () => {
+    // Prevent re-entry while async warmup is happening
+    if (isToggleInProgressRef.current) return;
+
     // CRITICAL: If currently playing, STOP it.
     if (isPlaying) { 
       stopAudio(); 
       return;
     }
 
+    isToggleInProgressRef.current = true;
+    
     // --- START LOGIC ---
     // 1. REGISTRATION MUST BE FIRST
     // registerAudioOwner internally calls stopAllPlatformAudio which increments Global Gen
     const localSessionId = ++localSessionIdRef.current;
     const targetGlobalGen = registerAudioOwner(MY_TOKEN, stopAudio);
 
-    const ctx = getGlobalAudioContext();
-    await warmUpAudioContext(ctx);
-    
-    // 2. ZOMBIE CHECK after async warmup
-    if (localSessionId !== localSessionIdRef.current || targetGlobalGen !== getGlobalAudioGeneration()) {
-        logAudioEvent(MY_TOKEN, 'ABORT_STALE', "Aborted after warmup delay");
-        return;
-    }
-
-    // Resume from current index if paused, or start over if finished
-    const startIdx = (currentSectionIndex !== null && activeLecture && currentSectionIndex < activeLecture.sections.length) 
-        ? currentSectionIndex 
-        : 0;
+    try {
+        const ctx = getGlobalAudioContext();
+        await warmUpAudioContext(ctx);
         
-    schedulingCursorRef.current = startIdx;
-    
-    setIsPlaying(true);
-    isPlayingRef.current = true;
-    nextScheduleTimeRef.current = ctx.currentTime + 0.1;
-    
-    if (voiceProvider === 'system') {
-        runSystemTts(localSessionId, targetGlobalGen);
-    } else {
-        runWebAudioScheduler(localSessionId, targetGlobalGen);
+        // 2. ZOMBIE CHECK after async warmup
+        if (localSessionId !== localSessionIdRef.current || targetGlobalGen !== getGlobalAudioGeneration()) {
+            logAudioEvent(MY_TOKEN, 'ABORT_STALE', "Aborted after warmup delay");
+            setIsPlaying(false);
+            return;
+        }
+
+        // Resume from current index if paused, or start over if finished
+        const startIdx = (currentSectionIndex !== null && activeLecture && currentSectionIndex < activeLecture.sections.length) 
+            ? currentSectionIndex 
+            : 0;
+            
+        schedulingCursorRef.current = startIdx;
+        
+        setIsPlaying(true);
+        isPlayingRef.current = true;
+        nextScheduleTimeRef.current = ctx.currentTime + 0.1;
+        
+        if (voiceProvider === 'system') {
+            runSystemTts(localSessionId, targetGlobalGen);
+        } else {
+            runWebAudioScheduler(localSessionId, targetGlobalGen);
+        }
+    } finally {
+        isToggleInProgressRef.current = false;
     }
   };
 
