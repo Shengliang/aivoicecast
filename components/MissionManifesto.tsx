@@ -8,7 +8,7 @@ interface MissionManifestoProps {
 
 export const MissionManifesto: React.FC<MissionManifestoProps> = ({ onBack }) => {
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col">
+    <div className="h-full bg-slate-950 text-slate-100 flex flex-col">
       {/* Header */}
       <div className="p-6 border-b border-slate-900 flex items-center gap-4 sticky top-0 bg-slate-950/90 backdrop-blur-md z-20">
         <button onClick={onBack} className="p-2 hover:bg-slate-800 rounded-full transition-colors">
@@ -17,7 +17,7 @@ export const MissionManifesto: React.FC<MissionManifestoProps> = ({ onBack }) =>
         <h1 className="text-xl font-bold tracking-widest uppercase text-slate-400">Mission Statement</h1>
       </div>
 
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 overflow-y-auto scrollbar-thin scrollbar-thumb-slate-800">
         <div className="max-w-4xl mx-auto px-6 py-12 space-y-24">
           
           {/* Hero Section */}
@@ -72,7 +72,7 @@ export const MissionManifesto: React.FC<MissionManifestoProps> = ({ onBack }) =>
             
             <div className="relative z-10 flex flex-col md:flex-row items-center gap-10">
               <div className="flex-1 space-y-6">
-                <h3 className="text-3xl font-bold text-white">Competitive in the AI Era</h3>
+                <h3 className="text-3xl font-bold text-white">Competitive in the AI era</h3>
                 <ul className="space-y-4">
                   <li className="flex items-start gap-3">
                     <BrainCircuit className="text-indigo-400 shrink-0 mt-1" />

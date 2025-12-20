@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { ArrowLeft, Book } from 'lucide-react';
 import { MarkdownView } from './MarkdownView';
@@ -96,18 +97,18 @@ Work together with peers or mentors in Code Studio and Whiteboard.
 
 export const UserManual: React.FC<UserManualProps> = ({ onBack }) => {
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col">
+    <div className="h-full bg-slate-950 text-slate-100 flex flex-col">
       {/* Header */}
       <div className="p-6 border-b border-slate-900 flex items-center gap-4 sticky top-0 bg-slate-950/90 backdrop-blur-md z-20">
         <button onClick={onBack} className="p-2 hover:bg-slate-800 rounded-full transition-colors">
-          <ArrowLeft size="24" />
+          <ArrowLeft size={24} />
         </button>
         <h1 className="text-xl font-bold tracking-widest uppercase text-slate-400 flex items-center gap-2">
             <Book size="20" className="text-indigo-400"/> User Guide
         </h1>
       </div>
 
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 overflow-y-auto scrollbar-thin scrollbar-thumb-slate-800">
         <div className="max-w-4xl mx-auto px-6 py-12">
             <div className="prose prose-invert prose-lg max-w-none">
                 <MarkdownView content={MANUAL_CONTENT} />
