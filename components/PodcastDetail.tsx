@@ -138,7 +138,6 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
   useEffect(() => {
       return () => {
           stopAudio();
-          // Also explicitly kill platform lock if we leave the detail view
           stopAllPlatformAudio(`PodcastDetailUnmount:${channel.id}`);
       };
   }, [stopAudio, channel.id]);
@@ -152,21 +151,15 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
       return;
     }
 
-    // 1. Kill other components' audio and increment Global Gen
-    stopAllPlatformAudio(`PodcastDetailToggle:${channel.id}`);
-    
-    // 2. Capture the fresh Global Gen and local session
-    const targetGlobalGen = getGlobalAudioGeneration();
-    stopAudio();
-    const localSessionId = localSessionIdRef.current; 
-
-    // 3. Re-acquire Lock
-    registerAudioOwner(MY_TOKEN, stopAudio);
+    // 1. REGISTRATION MUST BE FIRST
+    // registerAudioOwner internally calls stopAllPlatformAudio which increments Global Gen
+    const localSessionId = ++localSessionIdRef.current;
+    const targetGlobalGen = registerAudioOwner(MY_TOKEN, stopAudio);
 
     const ctx = getGlobalAudioContext();
     await warmUpAudioContext(ctx);
     
-    // ZOMBIE CHECK: Did user cancel during warmup?
+    // 2. ZOMBIE CHECK after async warmup
     if (localSessionId !== localSessionIdRef.current || targetGlobalGen !== getGlobalAudioGeneration()) {
         logAudioEvent(MY_TOKEN, 'ABORT_STALE', "Aborted after warmup delay");
         return;
@@ -187,7 +180,7 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
   };
 
   const runWebAudioScheduler = async (localSessionId: number, targetGlobalGen: number) => {
-      // ATOMIC GUARD: Check if session and platform gen still match
+      // 1. ATOMIC GUARD
       if (!isPlayingRef.current || localSessionId !== localSessionIdRef.current || targetGlobalGen !== getGlobalAudioGeneration() || !activeLecture || !isAudioOwner(MY_TOKEN)) {
           return;
       }
@@ -219,9 +212,9 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
               const result = await synthesizeSpeech(section.text, voice, ctx);
               setIsBuffering(false);
               
-              // CRITICAL ZOMBIE CHECK: Did user stop or switch during TTS network delay?
+              // 2. CRITICAL ZOMBIE CHECK
               if (!isPlayingRef.current || localSessionId !== localSessionIdRef.current || targetGlobalGen !== getGlobalAudioGeneration() || !isAudioOwner(MY_TOKEN)) {
-                  logAudioEvent(MY_TOKEN, 'ABORT_STALE', `Zombie buffer discarded after TTS delay (Gen mismatch)`);
+                  logAudioEvent(MY_TOKEN, 'ABORT_STALE', `Zombie buffer discarded (Gen mismatch)`);
                   return;
               }
               
@@ -231,7 +224,7 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
                   
                   const startAt = Math.max(nextScheduleTimeRef.current, ctx.currentTime);
                   
-                  // FINAL ZOMBIE CHECK before touching destination
+                  // 3. FINAL ZOMBIE CHECK
                   if (localSessionId !== localSessionIdRef.current || targetGlobalGen !== getGlobalAudioGeneration() || !isAudioOwner(MY_TOKEN)) {
                       source.disconnect();
                       return;
@@ -258,7 +251,6 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
                   nextScheduleTimeRef.current = startAt + result.buffer.duration;
                   schedulingCursorRef.current++;
               } else {
-                  // Fallback
                   if (localSessionId === localSessionIdRef.current && targetGlobalGen === getGlobalAudioGeneration() && isAudioOwner(MY_TOKEN)) {
                       setVoiceProvider('system');
                       runSystemTts(localSessionId, targetGlobalGen);

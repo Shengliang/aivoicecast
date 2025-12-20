@@ -137,7 +137,6 @@ const MobileFeedCard = ({
             if (ctx.state === 'suspended' || (ctx.state as any) === 'interrupted') {
                 setIsAutoplayBlocked(true);
             } else {
-                // ADD SETTLING DELAY: Prevents overlapping audio during fast scrolling
                 const timer = setTimeout(() => { 
                     if (isActiveRef.current) attemptAutoPlay(); 
                 }, 400); 
@@ -162,12 +161,10 @@ const MobileFeedCard = ({
             return;
         }
 
-        // KILL OTHERS and CAPTURE GEN
-        stopAllPlatformAudio(`MobileFeedAutoplay:${channel.id}`);
-        const targetGen = getGlobalAudioGeneration();
-        
-        registerAudioOwner(MY_TOKEN, stopAudio);
+        // Acquisition must come before ID capture
         const localSessionId = ++localSessionIdRef.current;
+        const targetGen = registerAudioOwner(MY_TOKEN, stopAudio);
+        
         runTrackSequence(-1, localSessionId, targetGen);
     };
 
@@ -178,10 +175,8 @@ const MobileFeedCard = ({
             await warmUpAudioContext(ctx);
             setIsAutoplayBlocked(false);
             
-            stopAllPlatformAudio(`MobileFeedEnable:${channel.id}`);
-            const targetGen = getGlobalAudioGeneration();
-            registerAudioOwner(MY_TOKEN, stopAudio);
             const localSessionId = ++localSessionIdRef.current;
+            const targetGen = registerAudioOwner(MY_TOKEN, stopAudio);
             runTrackSequence(-1, localSessionId, targetGen);
         } catch(err) {
             console.error("Audio resume failed", err);
@@ -207,10 +202,8 @@ const MobileFeedCard = ({
             return; 
         }
         
-        stopAllPlatformAudio(`MobileFeedManualPlay:${channel.id}`);
-        const targetGen = getGlobalAudioGeneration();
-        registerAudioOwner(MY_TOKEN, stopAudio);
         const localSessionId = ++localSessionIdRef.current;
+        const targetGen = registerAudioOwner(MY_TOKEN, stopAudio);
         runTrackSequence(trackIndex >= totalLessons ? -1 : trackIndex, localSessionId, targetGen);
     };
 
@@ -227,8 +220,8 @@ const MobileFeedCard = ({
             stopAudio();
             setTimeout(() => { 
                 if (isActiveRef.current) {
-                    const targetGen = getGlobalAudioGeneration();
                     const localSessionId = ++localSessionIdRef.current;
+                    const targetGen = registerAudioOwner(MY_TOKEN, stopAudio);
                     runTrackSequence(trackIndex === -1 ? -1 : trackIndex, localSessionId, targetGen); 
                 }
             }, 150);
@@ -335,7 +328,7 @@ const MobileFeedCard = ({
                         lecture = await fetchLectureData(lessonMeta); 
                     }
                     
-                    // ZOMBIE CHECK after network delay
+                    // ZOMBIE CHECK
                     if (!isActiveRef.current || localSessionId !== localSessionIdRef.current || targetGen !== getGlobalAudioGeneration() || !isAudioOwner(MY_TOKEN)) break;
 
                     if (!lecture || !lecture.sections || lecture.sections.length === 0) { currentIndex++; continue; }
@@ -355,7 +348,6 @@ const MobileFeedCard = ({
                 }
 
                 for (let i = 0; i < textParts.length; i++) {
-                    // LINE-LEVEL ZOMBIE CHECK
                     if (!isActiveRef.current || localSessionId !== localSessionIdRef.current || targetGen !== getGlobalAudioGeneration() || !isAudioOwner(MY_TOKEN)) break;
                     
                     const part = textParts[i];
@@ -367,7 +359,6 @@ const MobileFeedCard = ({
                         setStatusMessage(`Synthesizing...`);
                         const audioResult = await synthesizeSpeech(part.text, part.voice, getGlobalAudioContext());
                         
-                        // ZOMBIE CHECK after TTS fetch
                         if (!isActiveRef.current || localSessionId !== localSessionIdRef.current || targetGen !== getGlobalAudioGeneration() || !isAudioOwner(MY_TOKEN)) break;
 
                         if (audioResult && audioResult.buffer) {

@@ -45,7 +45,7 @@ export function getCurrentAudioOwner() {
  * Resets the global lock and increments the Atomic Generation.
  */
 export function stopAllPlatformAudio(sourceCaller: string = "Global") {
-    // 1. Increment Generation - This invalidates all pending .then() blocks platform-wide
+    // 1. Increment Generation - This invalidates all pending async blocks
     globalAudioGeneration++;
     logAudioEvent(sourceCaller, 'STOP', `Gen INC to ${globalAudioGeneration}. Current owner: ${currentOwnerToken}`);
     
@@ -53,7 +53,6 @@ export function stopAllPlatformAudio(sourceCaller: string = "Global") {
     if (typeof window !== 'undefined' && window.speechSynthesis) {
         window.speechSynthesis.cancel();
         try {
-            // Some browsers need a dummy utterance to actually clear the hardware buffer
             const dummy = new SpeechSynthesisUtterance("");
             dummy.volume = 0;
             window.speechSynthesis.speak(dummy);
@@ -61,7 +60,7 @@ export function stopAllPlatformAudio(sourceCaller: string = "Global") {
         } catch (e) {}
     }
 
-    // 3. Kill the Media Bridge physically
+    // 3. Kill the Media Bridge
     if (audioBridgeElement) {
         audioBridgeElement.pause();
         audioBridgeElement.srcObject = null;
@@ -79,20 +78,18 @@ export function stopAllPlatformAudio(sourceCaller: string = "Global") {
 
 /**
  * Register a unique ownership token.
- * If someone else has the lock, it triggers their stop function first.
+ * Kills everyone else and returns the current valid generation.
  */
-export function registerAudioOwner(uniqueToken: string, stopFn: () => void) {
-    // Increment generation even on new registration to clear any late network arrivals
-    globalAudioGeneration++;
+export function registerAudioOwner(uniqueToken: string, stopFn: () => void): number {
+    // 1. Clear everything (Increments generation)
+    stopAllPlatformAudio(`Reg:${uniqueToken}`);
     
-    // If someone else has the lock, kill them first
-    if (currentOwnerToken && currentOwnerToken !== uniqueToken) {
-        stopAllPlatformAudio(`Auto-reset for ${uniqueToken}`);
-    }
-    
+    // 2. Set new owner
     currentOwnerToken = uniqueToken;
     currentStopFn = stopFn;
-    logAudioEvent(uniqueToken, 'REGISTER', `Acquired Lock (Gen: ${globalAudioGeneration})`);
+    
+    logAudioEvent(uniqueToken, 'REGISTER', `Lock Acquired @ Gen ${globalAudioGeneration}`);
+    return globalAudioGeneration;
 }
 
 export function isAudioOwner(token: string): boolean {
@@ -109,7 +106,6 @@ export function getGlobalAudioContext(sampleRate: number = 24000): AudioContext 
     mediaStreamDest = mainAudioContext.createMediaStreamDestination();
   }
   
-  // Always ensure bridge is attached when context is requested
   if (!audioBridgeElement) {
       audioBridgeElement = new Audio();
       audioBridgeElement.id = 'web-audio-bg-bridge';
@@ -128,15 +124,10 @@ export function getGlobalAudioContext(sampleRate: number = 24000): AudioContext 
 }
 
 export function connectOutput(source: AudioNode, ctx: AudioContext) {
-    // 1. Connect to standard destination
     source.connect(ctx.destination);
-    
-    // 2. Connect to the media bridge for background play
     if (mediaStreamDest) {
         source.connect(mediaStreamDest);
     }
-    
-    // 3. Ensure bridge is actually playing
     if (audioBridgeElement && audioBridgeElement.paused) {
         audioBridgeElement.play().catch(() => {});
     }
