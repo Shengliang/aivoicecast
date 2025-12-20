@@ -125,11 +125,13 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
     
     // 5. Hard kill system TTS
     if (typeof window !== 'undefined' && window.speechSynthesis) {
-        window.speechSynthesis.cancel();
+        // Aggressively clear callbacks to prevent overlap on the next session
         if (lastUtteranceRef.current) {
             lastUtteranceRef.current.onend = null;
             lastUtteranceRef.current.onerror = null;
+            lastUtteranceRef.current = null;
         }
+        window.speechSynthesis.cancel();
     }
     
     // 6. Cool down context
@@ -154,6 +156,7 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
     
     if (isPlaying) { 
       stopAudio(); 
+      isToggleInProgressRef.current = false; // Release lock after stop
       return;
     }
 
@@ -173,6 +176,7 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
         // ZOMBIE CHECK: Did the user click stop while we were warming up?
         if (localSessionId !== localSessionIdRef.current || targetGlobalGen !== getGlobalAudioGeneration() || !isAudioOwner(MY_TOKEN)) {
             setIsPlaying(false);
+            isToggleInProgressRef.current = false;
             return;
         }
 
