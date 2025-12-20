@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { CodeProject, CodeFile, UserProfile, Channel, CursorPosition, CloudItem } from '../types';
-import { ArrowLeft, Save, Plus, Github, Cloud, HardDrive, Code, X, ChevronRight, ChevronDown, File, Folder, DownloadCloud, Loader2, CheckCircle, AlertTriangle, Info, FolderPlus, FileCode, RefreshCw, LogIn, CloudUpload, Trash2, ArrowUp, Edit2, FolderOpen, MoreVertical, Send, MessageSquare, Bot, Mic, Sparkles, SidebarClose, SidebarOpen, Users, Eye, FileText as FileTextIcon, Image as ImageIcon, StopCircle, Minus, Maximize2, Minimize2, Lock, Unlock, Share2, Terminal, Copy, WifiOff, PanelRightClose, PanelRightOpen, PanelLeftClose, PanelLeftOpen, Monitor, Laptop, PenTool, Edit3, ShieldAlert, ZoomIn, ZoomOut, Columns, Rows, Grid2X2, Square as SquareIcon, GripVertical, GripHorizontal, FileSearch, Indent } from 'lucide-react';
+import { ArrowLeft, Save, Plus, Github, Cloud, HardDrive, Code, X, ChevronRight, ChevronDown, File, Folder, DownloadCloud, Loader2, CheckCircle, AlertTriangle, Info, FolderPlus, FileCode, RefreshCw, LogIn, CloudUpload, Trash2, ArrowUp, Edit2, FolderOpen, MoreVertical, Send, MessageSquare, Bot, Mic, Sparkles, SidebarClose, SidebarOpen, Users, Eye, FileText as FileTextIcon, Image as ImageIcon, StopCircle, Minus, Maximize2, Minimize2, Lock, Unlock, Share2, Terminal, Copy, WifiOff, PanelRightClose, PanelRightOpen, PanelLeftClose, PanelLeftOpen, Monitor, Laptop, PenTool, Edit3, ShieldAlert, ZoomIn, ZoomOut, Columns, Rows, Grid2X2, Square as SquareIcon, GripVertical, GripHorizontal, FileSearch, Indent, Wand2 } from 'lucide-react';
 import { listCloudDirectory, saveProjectToCloud, deleteCloudItem, createCloudFolder, subscribeToCodeProject, saveCodeProject, updateCodeFile, updateCursor, claimCodeProjectLock, updateProjectActiveFile, deleteCodeFile, moveCloudFile, updateProjectAccess, sendShareNotification, deleteCloudFolderRecursive } from '../services/firestoreService';
 import { ensureCodeStudioFolder, listDriveFiles, readDriveFile, saveToDrive, deleteDriveFile, createDriveFolder, DriveFile, moveDriveFile } from '../services/googleDriveService';
 import { connectGoogleDrive, signInWithGitHub } from '../services/authService';
@@ -113,7 +113,7 @@ const FileTreeItem = ({ node, depth, activeId, onSelect, onToggle, onDelete, onR
                             node={child} 
                             depth={depth + 1} 
                             activeId={activeId} 
-                            onSelect={node} 
+                            onSelect={onSelect} 
                             onToggle={onToggle} 
                             onDelete={onDelete} 
                             onRename={onRename}
@@ -250,6 +250,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
   const [isRightOpen, setIsRightOpen] = useState(true);
   const [chatMessages, setChatMessages] = useState<Array<{role: 'user' | 'ai', text: string}>>([{ role: 'ai', text: "Hello! I'm your coding assistant. Open a code file or whiteboard to begin." }]);
   const [isChatThinking, setIsChatThinking] = useState(false);
+  const [isFormattingSlots, setIsFormattingSlots] = useState<Record<number, boolean>>({});
   
   const [cloudItems, setCloudItems] = useState<CloudItem[]>([]); 
   const [driveItems, setDriveItems] = useState<(DriveFile & { parentId?: string, isLoaded?: boolean })[]>([]); 
@@ -297,6 +298,34 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
         }
         setSaveStatus('saved');
     } catch(e: any) { setSaveStatus('modified'); }
+  };
+
+  const handleFormatCode = async (slotIdx: number) => {
+      const file = activeSlots[slotIdx];
+      if (!file || isFormattingSlots[slotIdx]) return;
+
+      setIsFormattingSlots(prev => ({ ...prev, [slotIdx]: true }));
+      try {
+          const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+          const prompt = `You are an expert code formatter. Reformat the following ${file.language} code to follow standard industry best practices (e.g., PEP 8 for Python, standard C++ styling). 
+          Maintain all logic, comments, and structure. 
+          Respond ONLY with the reformatted code. No markdown formatting, no backticks.
+          
+          CODE:
+          ${file.content}`;
+
+          const resp = await ai.models.generateContent({
+              model: 'gemini-3-flash-preview',
+              contents: prompt
+          });
+
+          const formatted = resp.text?.trim() || file.content;
+          handleCodeChangeInSlot(formatted, slotIdx);
+      } catch (e: any) {
+          console.error("Formatting failed", e);
+      } finally {
+          setIsFormattingSlots(prev => ({ ...prev, [slotIdx]: false }));
+      }
   };
 
   const updateSlotFile = async (file: CodeFile | null, slotIndex: number) => {
@@ -546,6 +575,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
       const file = activeSlots[idx];
       const isFocused = focusedSlot === idx;
       const viewMode = slotViewModes[idx] || 'code';
+      const isFormatting = isFormattingSlots[idx];
       
       const isVisible = layoutMode === 'single' ? idx === 0 : (layoutMode === 'quad' ? true : idx < 2);
       if (!isVisible) return null;
@@ -573,6 +603,16 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
                             <span className={`text-xs font-bold truncate ${isFocused ? 'text-indigo-200' : 'text-slate-400'}`}>{file.name}</span>
                         </div>
                         <div className="flex items-center gap-1">
+                            {viewMode === 'code' && !['whiteboard', 'markdown', 'plantuml'].includes(getLanguageFromExt(file.name)) && (
+                                <button 
+                                    onClick={(e) => { e.stopPropagation(); handleFormatCode(idx); }}
+                                    disabled={isFormatting}
+                                    className={`p-1.5 rounded transition-colors ${isFormatting ? 'text-indigo-400' : 'text-slate-500 hover:text-indigo-400'}`}
+                                    title="Auto-Reformat Code (AI)"
+                                >
+                                    {isFormatting ? <Loader2 size={14} className="animate-spin"/> : <Wand2 size={14}/>}
+                                </button>
+                            )}
                             {isPreviewable(file.name) && (
                                 <button 
                                     onClick={(e) => { e.stopPropagation(); toggleSlotViewMode(idx); }} 
