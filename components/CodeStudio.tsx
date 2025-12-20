@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { CodeProject, CodeFile, UserProfile, Channel, CursorPosition, CloudItem } from '../types';
 import { ArrowLeft, Save, Plus, Github, Cloud, HardDrive, Code, X, ChevronRight, ChevronDown, File, Folder, DownloadCloud, Loader2, CheckCircle, AlertTriangle, Info, FolderPlus, FileCode, RefreshCw, LogIn, CloudUpload, Trash2, ArrowUp, Edit2, FolderOpen, MoreVertical, Send, MessageSquare, Bot, Mic, Sparkles, SidebarClose, SidebarOpen, Users, Eye, FileText as FileTextIcon, Image as ImageIcon, StopCircle, Minus, Maximize2, Minimize2, Lock, Unlock, Share2, Terminal, Copy, WifiOff, PanelRightClose, PanelRightOpen, PanelLeftClose, PanelLeftOpen, Monitor, Laptop, PenTool, Edit3, ShieldAlert, ZoomIn, ZoomOut, Columns, Rows, Grid2X2, Square as SquareIcon, GripVertical, GripHorizontal, FileSearch } from 'lucide-react';
@@ -471,6 +470,49 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
       }
   };
 
+  const handleOpenRepo = async (repoPath?: string) => {
+    const path = repoPath || userProfile?.defaultRepoUrl;
+    if (!path) {
+        alert("No default repository set in your profile settings.");
+        return;
+    }
+    const [owner, repo] = path.split('/');
+    if (!owner || !repo) {
+        alert("Invalid repository format in profile. Expected 'owner/repo'.");
+        return;
+    }
+    
+    setLoadingFolders(prev => ({ ...prev, github_root: true }));
+    try {
+        const info = await fetchRepoInfo(owner, repo, githubToken);
+        const { files, latestSha } = await fetchRepoContents(githubToken, owner, repo, info.default_branch);
+        
+        setProject({
+            id: `gh-${info.id}`,
+            name: info.full_name,
+            files: files,
+            lastModified: Date.now(),
+            github: {
+                owner,
+                repo,
+                branch: info.default_branch,
+                sha: latestSha
+            }
+        });
+        setActiveTab('github');
+    } catch (e: any) {
+        alert(e.message);
+    } finally {
+        setLoadingFolders(prev => ({ ...prev, github_root: false }));
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'cloud' && currentUser) {
+        refreshExplorer();
+    }
+  }, [activeTab, currentUser]);
+
   const renderSlot = (idx: number) => {
       const file = activeSlots[idx];
       const isFocused = focusedSlot === idx;
@@ -598,7 +640,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
               <div className="flex-1 overflow-y-auto">
                   {activeTab === 'cloud' && cloudTree.map(node => <FileTreeItem key={node.id} node={node} depth={0} activeId={activeFile?.path} onSelect={handleExplorerSelect} onToggle={handleCloudToggle} onDelete={()=>{}} onShare={()=>{}} expandedIds={expandedFolders} loadingIds={loadingFolders} onDragStart={()=>{}} onDrop={()=>{}}/>)}
                   {activeTab === 'drive' && (driveToken ? driveTree.map(node => <FileTreeItem key={node.id} node={node} depth={0} activeId={activeFile?.path} onSelect={handleExplorerSelect} onToggle={handleDriveToggle} onDelete={()=>{}} expandedIds={expandedFolders} loadingIds={loadingFolders} onDragStart={()=>{}} onDrop={()=>{}}/>) : <div className="p-4 text-center"><button onClick={handleConnectDrive} className="px-4 py-2 bg-slate-800 text-white text-xs font-bold rounded-lg border border-slate-700 hover:bg-slate-700">Connect Drive</button></div>)}
-                  {activeTab === 'github' && (project.github ? workspaceTree.map(node => <FileTreeItem key={node.id} node={node} depth={0} activeId={activeFile?.path} onSelect={handleExplorerSelect} onToggle={()=>{}} onDelete={()=>{}} onRename={()=>{}} expandedIds={expandedFolders} loadingIds={loadingFolders} onDragStart={()=>{}} onDrop={()=>{}}/>) : <div className="p-4 text-center"><button onClick={()=> {}} className="px-4 py-2 bg-slate-800 text-white text-xs font-bold rounded-lg border border-slate-700 hover:bg-slate-700">Open Repo</button></div>)}
+                  {activeTab === 'github' && (project.github ? workspaceTree.map(node => <FileTreeItem key={node.id} node={node} depth={0} activeId={activeFile?.path} onSelect={handleExplorerSelect} onToggle={()=>{}} onDelete={()=>{}} onRename={()=>{}} expandedIds={expandedFolders} loadingIds={loadingFolders} onDragStart={()=>{}} onDrop={()=>{}}/>) : <div className="p-4 text-center"><button onClick={() => handleOpenRepo()} className="px-4 py-2 bg-slate-800 text-white text-xs font-bold rounded-lg border border-slate-700 hover:bg-slate-700">Open Default Repo</button></div>)}
               </div>
           </div>
 
