@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { CodeProject, CodeFile, UserProfile, Channel, CursorPosition, CloudItem } from '../types';
-import { ArrowLeft, Save, Plus, Github, Cloud, HardDrive, Code, X, ChevronRight, ChevronDown, File, Folder, DownloadCloud, Loader2, CheckCircle, AlertTriangle, Info, FolderPlus, FileCode, RefreshCw, LogIn, CloudUpload, Trash2, ArrowUp, Edit2, FolderOpen, MoreVertical, Send, MessageSquare, Bot, Mic, Sparkles, SidebarClose, SidebarOpen, Users, Eye, FileText as FileTextIcon, Image as ImageIcon, StopCircle, Minus, Maximize2, Minimize2, Lock, Unlock, Share2, Terminal, Copy, WifiOff, PanelRightClose, PanelRightOpen, PanelLeftClose, PanelLeftOpen, Monitor, Laptop, PenTool, Edit3, ShieldAlert, ZoomIn, ZoomOut, Columns, Rows, Grid2X2, Square as SquareIcon, GripVertical, GripHorizontal, FileSearch } from 'lucide-react';
+import { ArrowLeft, Save, Plus, Github, Cloud, HardDrive, Code, X, ChevronRight, ChevronDown, File, Folder, DownloadCloud, Loader2, CheckCircle, AlertTriangle, Info, FolderPlus, FileCode, RefreshCw, LogIn, CloudUpload, Trash2, ArrowUp, Edit2, FolderOpen, MoreVertical, Send, MessageSquare, Bot, Mic, Sparkles, SidebarClose, SidebarOpen, Users, Eye, FileText as FileTextIcon, Image as ImageIcon, StopCircle, Minus, Maximize2, Minimize2, Lock, Unlock, Share2, Terminal, Copy, WifiOff, PanelRightClose, PanelRightOpen, PanelLeftClose, PanelLeftOpen, Monitor, Laptop, PenTool, Edit3, ShieldAlert, ZoomIn, ZoomOut, Columns, Rows, Grid2X2, Square as SquareIcon, GripVertical, GripHorizontal, FileSearch, Indent } from 'lucide-react';
 import { listCloudDirectory, saveProjectToCloud, deleteCloudItem, createCloudFolder, subscribeToCodeProject, saveCodeProject, updateCodeFile, updateCursor, claimCodeProjectLock, updateProjectActiveFile, deleteCodeFile, moveCloudFile, updateProjectAccess, sendShareNotification, deleteCloudFolderRecursive } from '../services/firestoreService';
 import { ensureCodeStudioFolder, listDriveFiles, readDriveFile, saveToDrive, deleteDriveFile, createDriveFolder, DriveFile, moveDriveFile } from '../services/googleDriveService';
 import { connectGoogleDrive, signInWithGitHub } from '../services/authService';
@@ -24,6 +24,7 @@ interface TreeNode {
 }
 
 type LayoutMode = 'single' | 'split-v' | 'split-h' | 'quad';
+type IndentMode = 'tabs' | 'spaces';
 
 interface CodeStudioProps {
   onBack: () => void;
@@ -112,7 +113,7 @@ const FileTreeItem = ({ node, depth, activeId, onSelect, onToggle, onDelete, onR
                             node={child} 
                             depth={depth + 1} 
                             activeId={activeId} 
-                            onSelect={onSelect} 
+                            onSelect={node} 
                             onToggle={onToggle} 
                             onDelete={onDelete} 
                             onRename={onRename}
@@ -129,7 +130,7 @@ const FileTreeItem = ({ node, depth, activeId, onSelect, onToggle, onDelete, onR
     );
 };
 
-const RichCodeEditor = ({ code, onChange, onCursorMove, language, readOnly, fontSize }: any) => {
+const RichCodeEditor = ({ code, onChange, onCursorMove, language, readOnly, fontSize, indentMode }: any) => {
     const textareaRef = useRef<HTMLTextAreaElement>(null);
     const lineNumbersRef = useRef<HTMLDivElement>(null);
     const lineCount = (code || '').split('\n').length;
@@ -140,7 +141,33 @@ const RichCodeEditor = ({ code, onChange, onCursorMove, language, readOnly, font
         }
     };
 
-    const editorStyles = { fontSize: `${fontSize}px`, lineHeight: '1.6' };
+    const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+        if (e.key === 'Tab') {
+            e.preventDefault();
+            if (readOnly) return;
+            
+            const target = e.currentTarget;
+            const start = target.selectionStart;
+            const end = target.selectionEnd;
+            const value = target.value;
+            const tabStr = indentMode === 'spaces' ? "    " : "\t"; 
+            
+            const updatedValue = value.substring(0, start) + tabStr + value.substring(end);
+            onChange(updatedValue);
+
+            // Sync the cursor position after the DOM update
+            requestAnimationFrame(() => {
+                target.selectionStart = target.selectionEnd = start + tabStr.length;
+            });
+        }
+    };
+
+    const editorStyles = { 
+        fontSize: `${fontSize}px`, 
+        lineHeight: '1.6', 
+        tabSize: 4, 
+        MozTabSize: 4 
+    } as React.CSSProperties;
 
     return (
         <div className="w-full h-full flex bg-slate-950 font-mono overflow-hidden relative">
@@ -154,6 +181,7 @@ const RichCodeEditor = ({ code, onChange, onCursorMove, language, readOnly, font
                 value={code || ''}
                 wrap="off"
                 onChange={(e) => onChange(e.target.value)}
+                onKeyDown={handleKeyDown}
                 onScroll={handleScroll}
                 onSelect={(e) => {
                     const target = e.target as HTMLTextAreaElement;
@@ -235,6 +263,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
   const [isSharedSession, setIsSharedSession] = useState(!!sessionId);
   const [isZenMode, setIsZenMode] = useState(false);
   const [fontSize, setFontSize] = useState(14);
+  const [indentMode, setIndentMode] = useState<IndentMode>('spaces');
   const [leftWidth, setLeftWidth] = useState(256); 
   const [rightWidth, setRightWidth] = useState(320); 
   const [isDraggingLeft, setIsDraggingLeft] = useState(false);
@@ -343,7 +372,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
       setActiveSlots(newSlots);
       setProject(prev => ({
           ...prev,
-          files: prev.files.map(f => (f.path || f.name) === (file.path || file.name) ? updatedFile : f)
+          files: prev.files.map(f => (f.path || f.name) === (file.path || f.name) ? updatedFile : f)
       }));
       setSaveStatus('modified');
       if (isSharedSession && sessionId) updateCodeFile(sessionId, updatedFile);
@@ -564,7 +593,13 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
                                 <MarkdownView content={file.name.endsWith('.puml') || file.name.endsWith('.plantuml') ? `\`\`\`plantuml\n${file.content}\n\`\`\`` : file.content} />
                             </div>
                         ) : (
-                            <RichCodeEditor code={file.content} onChange={(code: string) => handleCodeChangeInSlot(code, idx)} language={file.language} fontSize={fontSize} />
+                            <RichCodeEditor 
+                                code={file.content} 
+                                onChange={(code: string) => handleCodeChangeInSlot(code, idx)} 
+                                language={file.language} 
+                                fontSize={fontSize} 
+                                indentMode={indentMode}
+                            />
                         )}
                     </div>
                   </>
@@ -607,6 +642,15 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
             </div>
 
             <div className="flex items-center gap-1 bg-slate-800/50 p-1 rounded-lg border border-slate-700 mr-2">
+                <button 
+                    onClick={() => setIndentMode(prev => prev === 'spaces' ? 'tabs' : 'spaces')} 
+                    className={`p-1.5 rounded transition-colors flex items-center gap-1.5 px-2.5 ${indentMode === 'tabs' ? 'bg-indigo-600 text-white' : 'bg-slate-700 text-slate-400 hover:text-white'}`}
+                    title={indentMode === 'tabs' ? "Using Real Tabs" : "Using 4 Spaces"}
+                >
+                    <Indent size={14} />
+                    <span className="text-[10px] font-bold uppercase">{indentMode}</span>
+                </button>
+                <div className="w-px h-4 bg-slate-700 mx-1"></div>
                 <button onClick={() => setFontSize(f => Math.max(10, f - 2))} className="p-1.5 hover:bg-slate-700 rounded text-slate-400"><ZoomOut size={16}/></button>
                 <button onClick={() => setFontSize(f => Math.min(48, f + 2))} className="p-1.5 hover:bg-slate-700 rounded text-slate-400"><ZoomIn size={16}/></button>
             </div>
