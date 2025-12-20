@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { CodeProject, CodeFile, UserProfile, Channel, CursorPosition, CloudItem } from '../types';
-import { ArrowLeft, Save, Plus, Github, Cloud, HardDrive, Code, X, ChevronRight, ChevronDown, File, Folder, DownloadCloud, Loader2, CheckCircle, AlertTriangle, Info, FolderPlus, FileCode, RefreshCw, LogIn, CloudUpload, Trash2, ArrowUp, Edit2, FolderOpen, MoreVertical, Send, MessageSquare, Bot, Mic, Sparkles, SidebarClose, SidebarOpen, Users, Eye, FileText as FileTextIcon, Image as ImageIcon, StopCircle, Minus, Maximize2, Minimize2, Lock, Unlock, Share2, Terminal, Copy, WifiOff, PanelRightClose, PanelRightOpen, Monitor, Laptop, PenTool, Edit3, ShieldAlert, ZoomIn, ZoomOut, Columns, Rows, Grid2X2, Square as SquareIcon, GripVertical, GripHorizontal } from 'lucide-react';
+import { ArrowLeft, Save, Plus, Github, Cloud, HardDrive, Code, X, ChevronRight, ChevronDown, File, Folder, DownloadCloud, Loader2, CheckCircle, AlertTriangle, Info, FolderPlus, FileCode, RefreshCw, LogIn, CloudUpload, Trash2, ArrowUp, Edit2, FolderOpen, MoreVertical, Send, MessageSquare, Bot, Mic, Sparkles, SidebarClose, SidebarOpen, Users, Eye, FileText as FileTextIcon, Image as ImageIcon, StopCircle, Minus, Maximize2, Minimize2, Lock, Unlock, Share2, Terminal, Copy, WifiOff, PanelRightClose, PanelRightOpen, PanelLeftClose, PanelLeftOpen, Monitor, Laptop, PenTool, Edit3, ShieldAlert, ZoomIn, ZoomOut, Columns, Rows, Grid2X2, Square as SquareIcon, GripVertical, GripHorizontal } from 'lucide-react';
 import { listCloudDirectory, saveProjectToCloud, deleteCloudItem, createCloudFolder, subscribeToCodeProject, saveCodeProject, updateCodeFile, updateCursor, claimCodeProjectLock, updateProjectActiveFile, deleteCodeFile, moveCloudFile, updateProjectAccess, sendShareNotification, deleteCloudFolderRecursive } from '../services/firestoreService';
 import { ensureCodeStudioFolder, listDriveFiles, readDriveFile, saveToDrive, deleteDriveFile, createDriveFolder, DriveFile, moveDriveFile } from '../services/googleDriveService';
 import { connectGoogleDrive, signInWithGitHub } from '../services/authService';
@@ -175,7 +175,7 @@ const AIChatPanel = ({ isOpen, onClose, messages, onSendMessage, isThinking }: a
         <div className="flex flex-col h-full bg-slate-950 border-l border-slate-800">
             <div className="p-3 border-b border-slate-800 flex justify-between items-center bg-slate-900">
                 <span className="font-bold text-slate-300 text-sm flex items-center gap-2"><Bot size={16} className="text-indigo-400"/> AI Assistant</span>
-                <button onClick={onClose}><PanelRightClose size={16} className="text-slate-500 hover:text-white"/></button>
+                <button onClick={onClose} title="Minimize AI Panel"><PanelRightClose size={16} className="text-slate-500 hover:text-white"/></button>
             </div>
             <div className="flex-1 overflow-y-auto p-4 space-y-4">
                 {messages.map((m: any, i: number) => (
@@ -507,6 +507,16 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
       <header className="h-14 bg-slate-950 border-b border-slate-800 flex items-center justify-between px-4 shrink-0 z-20">
          <div className="flex items-center space-x-4">
             <button onClick={onBack} className="p-2 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white"><ArrowLeft size={20} /></button>
+            
+            {/* Sidebar Toggle: Explorer */}
+            <button 
+                onClick={() => setIsLeftOpen(!isLeftOpen)} 
+                className={`p-2 rounded-lg transition-colors ${isLeftOpen ? 'bg-slate-800 text-white' : 'text-slate-500 hover:text-white'}`}
+                title={isLeftOpen ? "Hide Explorer" : "Show Explorer"}
+            >
+                {isLeftOpen ? <PanelLeftClose size={20} /> : <PanelLeftOpen size={20} />}
+            </button>
+
             <h1 className="font-bold text-white text-sm flex items-center gap-2">{project.name}</h1>
          </div>
 
@@ -523,12 +533,22 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
                 <button onClick={() => setFontSize(f => Math.min(48, f + 2))} className="p-1.5 hover:bg-slate-700 rounded text-slate-400"><ZoomIn size={16}/></button>
             </div>
 
-            <button onClick={() => handleSmartSave()} className="flex items-center space-x-2 px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold shadow-md"><Save size={14}/><span>Save</span></button>
+            <button onClick={() => handleSmartSave()} className="flex items-center space-x-2 px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold shadow-md mr-2"><Save size={14}/><span>Save</span></button>
+
+            {/* Sidebar Toggle: AI Assistant */}
+            <button 
+                onClick={() => setIsRightOpen(!isRightOpen)} 
+                className={`p-2 rounded-lg transition-colors ${isRightOpen ? 'bg-slate-800 text-white' : 'text-slate-500 hover:text-white'}`}
+                title={isRightOpen ? "Hide AI Assistant" : "Show AI Assistant"}
+            >
+                {isRightOpen ? <PanelRightClose size={20} /> : <PanelRightOpen size={20} />}
+            </button>
          </div>
       </header>
 
       <div className="flex-1 flex overflow-hidden relative">
-          <div className={`${isZenMode ? 'hidden' : (isLeftOpen ? '' : 'hidden')} bg-slate-900 border-r border-slate-800 flex flex-col shrink-0`} style={{ width: `${leftWidth}px` }}>
+          {/* EXPLORER PANEL */}
+          <div className={`${isZenMode ? 'hidden' : (isLeftOpen ? '' : 'hidden')} bg-slate-900 border-r border-slate-800 flex flex-col shrink-0 overflow-hidden`} style={{ width: `${leftWidth}px` }}>
               <div className="flex border-b border-slate-800 bg-slate-900">
                   <button onClick={() => setActiveTab('cloud')} className={`flex-1 py-3 flex justify-center border-b-2 transition-colors ${activeTab === 'cloud' ? 'border-indigo-500 text-white' : 'border-transparent text-slate-500 hover:text-slate-300'}`}><Cloud size={16}/></button>
                   <button onClick={() => setActiveTab('drive')} className={`flex-1 py-3 flex justify-center border-b-2 transition-colors ${activeTab === 'drive' ? 'border-indigo-500 text-white' : 'border-transparent text-slate-500 hover:text-slate-300'}`}><HardDrive size={16}/></button>
@@ -546,7 +566,9 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
               </div>
           </div>
 
-          <div onMouseDown={() => setIsDraggingLeft(true)} className="w-1 cursor-col-resize hover:bg-indigo-500/50 transition-colors z-30 shrink-0" />
+          <div onMouseDown={() => setIsDraggingLeft(true)} className="w-1 cursor-col-resize hover:bg-indigo-500/50 transition-colors z-30 shrink-0 bg-slate-800/20 group relative">
+             <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 bg-indigo-500 p-0.5 rounded-full pointer-events-none"><GripVertical size={10}/></div>
+          </div>
 
           {/* MAIN EDITOR AREA: DYNAMIC GRID/FLEX LAYOUT */}
           <div ref={centerContainerRef} className={`flex-1 bg-slate-950 flex min-w-0 relative ${layoutMode === 'quad' ? 'grid grid-cols-2 grid-rows-2' : layoutMode === 'split-v' ? 'flex-row' : layoutMode === 'split-h' ? 'flex-col' : 'flex-col'}`}>
@@ -555,8 +577,8 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
               {layoutMode === 'split-v' && (
                   <>
                     {renderSlot(0)}
-                    <div onMouseDown={() => setIsDraggingInner(true)} className="w-1 cursor-col-resize hover:bg-indigo-500/50 transition-colors z-40 bg-slate-800 group">
-                        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 bg-indigo-500 p-1 rounded-full"><GripVertical size={12}/></div>
+                    <div onMouseDown={() => setIsDraggingInner(true)} className="w-1.5 cursor-col-resize hover:bg-indigo-500/50 transition-colors z-40 bg-slate-800 group relative">
+                        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 bg-indigo-500 p-1 rounded-full shadow-lg pointer-events-none"><GripVertical size={12}/></div>
                     </div>
                     {renderSlot(1)}
                   </>
@@ -565,8 +587,8 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
               {layoutMode === 'split-h' && (
                   <>
                     {renderSlot(0)}
-                    <div onMouseDown={() => setIsDraggingInner(true)} className="h-1 cursor-row-resize hover:bg-indigo-500/50 transition-colors z-40 bg-slate-800 group">
-                        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 bg-indigo-500 p-1 rounded-full"><GripHorizontal size={12}/></div>
+                    <div onMouseDown={() => setIsDraggingInner(true)} className="h-1.5 cursor-row-resize hover:bg-indigo-500/50 transition-colors z-40 bg-slate-800 group relative">
+                        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 bg-indigo-500 p-1 rounded-full shadow-lg pointer-events-none"><GripHorizontal size={12}/></div>
                     </div>
                     {renderSlot(1)}
                   </>
@@ -575,9 +597,12 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
               {layoutMode === 'quad' && [0,1,2,3].map(i => renderSlot(i))}
           </div>
 
-          <div onMouseDown={() => setIsDraggingRight(true)} className="w-1 cursor-col-resize hover:bg-indigo-500/50 transition-colors z-30 shrink-0" />
+          <div onMouseDown={() => setIsDraggingRight(true)} className="w-1 cursor-col-resize hover:bg-indigo-500/50 transition-colors z-30 shrink-0 bg-slate-800/20 group relative">
+              <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 bg-indigo-500 p-0.5 rounded-full pointer-events-none"><GripVertical size={10}/></div>
+          </div>
 
-          <div className={`${isZenMode ? 'hidden' : (isRightOpen ? '' : 'hidden')} bg-slate-950 flex flex-col shrink-0`} style={{ width: `${rightWidth}px` }}>
+          {/* AI PANEL */}
+          <div className={`${isZenMode ? 'hidden' : (isRightOpen ? '' : 'hidden')} bg-slate-950 flex flex-col shrink-0 overflow-hidden`} style={{ width: `${rightWidth}px` }}>
               <AIChatPanel isOpen={true} onClose={() => setIsRightOpen(false)} messages={chatMessages} onSendMessage={handleSendMessage} isThinking={isChatThinking} />
           </div>
       </div>
