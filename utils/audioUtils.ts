@@ -7,75 +7,93 @@ let audioBridgeElement: HTMLAudioElement | null = null;
 let silentLoopElement: HTMLAudioElement | null = null;
 
 /**
- * GLOBAL AUDIO ATOMIC STATE
+ * GLOBAL AUDIO AUDIT & ATOMIC GENERATION
  */
-let globalAudioVersion: number = 0;
-let currentOwner: string | null = null;
-let currentStopFn: (() => void) | null = null;
+export interface AudioEvent {
+    timestamp: number;
+    source: string;
+    action: 'REGISTER' | 'STOP' | 'PLAY_BUFFER' | 'PLAY_SYSTEM' | 'ERROR' | 'ABORT_STALE' | 'GEN_INC';
+    details?: string;
+}
 
-export function getGlobalAudioVersion() {
-    return globalAudioVersion;
+let audioAuditLogs: AudioEvent[] = [];
+let currentOwnerToken: string | null = null;
+let currentStopFn: (() => void) | null = null;
+let globalAudioGeneration: number = 0;
+
+export function getAudioAuditLogs() {
+    return audioAuditLogs;
+}
+
+export function getGlobalAudioGeneration() {
+    return globalAudioGeneration;
+}
+
+export function logAudioEvent(source: string, action: AudioEvent['action'], details?: string) {
+    const event = { timestamp: Date.now(), source, action, details };
+    audioAuditLogs = [event, ...audioAuditLogs].slice(0, 50);
+    console.log(`[AUDIO_DEBUG] ${source}: ${action} ${details || ''}`);
+    window.dispatchEvent(new CustomEvent('audio-audit-updated', { detail: event }));
 }
 
 export function getCurrentAudioOwner() {
-    return currentOwner;
+    return currentOwnerToken;
 }
 
 /**
- * Aggressively stops all audio and increments the version counter.
- * This effectively "kills" any pending async callbacks because their 
- * version check will fail.
+ * Hard kill for all platform audio.
+ * Resets the global lock and increments the Atomic Generation.
  */
-export function stopAllPlatformAudio(callerName: string = "Global") {
-    globalAudioVersion++;
-    console.log(`[AUDIO_MUTEX] Stop by ${callerName}. New Version: ${globalAudioVersion}`);
-
-    // 1. Kill System TTS
+export function stopAllPlatformAudio(sourceCaller: string = "Global") {
+    // 1. Increment Generation - This invalidates all pending async blocks
+    globalAudioGeneration++;
+    logAudioEvent(sourceCaller, 'STOP', `Gen INC to ${globalAudioGeneration}. Current owner: ${currentOwnerToken}`);
+    
+    // 2. Purge System Voice Aggressively
     if (typeof window !== 'undefined' && window.speechSynthesis) {
         window.speechSynthesis.cancel();
+        try {
+            const dummy = new SpeechSynthesisUtterance("");
+            dummy.volume = 0;
+            window.speechSynthesis.speak(dummy);
+            window.speechSynthesis.cancel();
+        } catch (e) {}
     }
 
-    // 2. Clear Registered Owner's local cleanup
+    // 3. Kill the Media Bridge
+    if (audioBridgeElement) {
+        audioBridgeElement.pause();
+        audioBridgeElement.srcObject = null;
+    }
+
+    // 4. Trigger the specific stop logic of the registered owner
     if (currentStopFn) {
-        try { currentStopFn(); } catch (e) {}
-        currentStopFn = null;
+        const fn = currentStopFn;
+        currentStopFn = null; 
+        try { fn(); } catch (e) {}
     }
-    currentOwner = null;
-
-    // 3. Suspend Audio Context if exists to stop immediate buffer processing
-    if (mainAudioContext && mainAudioContext.state !== 'suspended') {
-        // We don't close it to avoid re-init overhead, just pause it
-        // mainAudioContext.suspend(); 
-    }
+    
+    currentOwnerToken = null;
 }
 
 /**
- * Claims the lock. Returns a unique version ID for the requester.
+ * Register a unique ownership token.
+ * Kills everyone else and returns the current valid generation.
  */
-export function claimAudioLock(ownerName: string, onStop: () => void): number {
-    // Increment version to kill any existing async tasks
-    stopAllPlatformAudio(`LockRequest:${ownerName}`);
+export function registerAudioOwner(uniqueToken: string, stopFn: () => void): number {
+    // 1. Clear everything (Increments generation)
+    stopAllPlatformAudio(`Reg:${uniqueToken}`);
     
-    currentOwner = ownerName;
-    currentStopFn = onStop;
+    // 2. Set new owner
+    currentOwnerToken = uniqueToken;
+    currentStopFn = stopFn;
     
-    return globalAudioVersion;
+    logAudioEvent(uniqueToken, 'REGISTER', `Lock Acquired @ Gen ${globalAudioGeneration}`);
+    return globalAudioGeneration;
 }
 
-// Added registerAudioOwner as an alias for claimAudioLock to fix import error in geminiLive.ts
-export function registerAudioOwner(ownerName: string, onStop: () => void): number {
-    return claimAudioLock(ownerName, onStop);
-}
-
-// Added coolDownAudioContext to fix import error in geminiLive.ts
-export function coolDownAudioContext() {
-    if (silentLoopElement) {
-        silentLoopElement.pause();
-    }
-}
-
-export function isVersionValid(version: number): boolean {
-    return version === globalAudioVersion;
+export function isAudioOwner(token: string): boolean {
+    return currentOwnerToken === token;
 }
 
 export function getGlobalAudioContext(sampleRate: number = 24000): AudioContext {
@@ -84,12 +102,15 @@ export function getGlobalAudioContext(sampleRate: number = 24000): AudioContext 
         sampleRate,
         latencyHint: 'playback' 
     });
+    
     mediaStreamDest = mainAudioContext.createMediaStreamDestination();
   }
   
   if (!audioBridgeElement) {
       audioBridgeElement = new Audio();
-      audioBridgeElement.id = 'platform-audio-bridge';
+      audioBridgeElement.id = 'web-audio-bg-bridge';
+      audioBridgeElement.muted = false;
+      audioBridgeElement.volume = 1.0;
       audioBridgeElement.setAttribute('playsinline', 'true');
       audioBridgeElement.setAttribute('autoplay', 'true');
       document.body.appendChild(audioBridgeElement);
@@ -112,23 +133,6 @@ export function connectOutput(source: AudioNode, ctx: AudioContext) {
     }
 }
 
-export async function warmUpAudioContext(ctx: AudioContext) {
-    if (ctx.state === 'suspended' || (ctx.state as any) === 'interrupted') {
-        await ctx.resume();
-    }
-    
-    if (!silentLoopElement) {
-        silentLoopElement = new Audio();
-        // Silent 1s wav
-        silentLoopElement.src = 'data:audio/wav;base64,UklGRigAAABXQVZFRm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQQAAAAAAAAA';
-        silentLoopElement.loop = true;
-    }
-    
-    try {
-        await silentLoopElement.play();
-    } catch(e) {}
-}
-
 export function base64ToBytes(base64: string): Uint8Array {
   const binaryString = atob(base64);
   const len = binaryString.length;
@@ -137,6 +141,15 @@ export function base64ToBytes(base64: string): Uint8Array {
     bytes[i] = binaryString.charCodeAt(i);
   }
   return bytes;
+}
+
+export function bytesToBase64(bytes: Uint8Array): string {
+  let binary = '';
+  const len = bytes.byteLength;
+  for (let i = 0; i < len; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary);
 }
 
 export async function decodeRawPcm(
@@ -158,6 +171,39 @@ export async function decodeRawPcm(
   return buffer;
 }
 
+export async function warmUpAudioContext(ctx: AudioContext) {
+    if (ctx.state === 'suspended' || (ctx.state as any) === 'interrupted') {
+        await ctx.resume();
+    }
+    
+    if (!silentLoopElement) {
+        silentLoopElement = new Audio();
+        silentLoopElement.src = 'data:audio/wav;base64,UklGRigAAABXQVZFRm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQQAAAAAAAAA';
+        silentLoopElement.loop = true;
+        silentLoopElement.setAttribute('playsinline', 'true');
+    }
+    
+    try {
+        await silentLoopElement.play();
+        if (audioBridgeElement) {
+            if (mediaStreamDest && audioBridgeElement.srcObject !== mediaStreamDest.stream) {
+                audioBridgeElement.srcObject = mediaStreamDest.stream;
+            }
+            await audioBridgeElement.play();
+        }
+    } catch(e) {
+        console.warn("Background Audio failed to prime.", e);
+    }
+}
+
+export function coolDownAudioContext() {
+    if (silentLoopElement) silentLoopElement.pause();
+    if (audioBridgeElement) {
+        audioBridgeElement.pause();
+        audioBridgeElement.srcObject = null;
+    }
+}
+
 export function createPcmBlob(data: Float32Array): GeminiBlob {
   const l = data.length;
   const int16 = new Int16Array(l);
@@ -166,7 +212,7 @@ export function createPcmBlob(data: Float32Array): GeminiBlob {
     int16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
   }
   return {
-    data: btoa(String.fromCharCode(...new Uint8Array(int16.buffer))),
+    data: bytesToBase64(new Uint8Array(int16.buffer)),
     mimeType: 'audio/pcm;rate=16000',
   };
 }
@@ -186,9 +232,13 @@ export function pcmToWavBlobUrl(pcmData: Uint8Array, sampleRate: number = 24000)
     const dataSize = pcmData.length;
     const buffer = new ArrayBuffer(44 + dataSize);
     const view = new DataView(buffer);
+
     const writeString = (offset: number, string: string) => {
-        for (let i = 0; i < string.length; i++) { view.setUint8(offset + i, string.charCodeAt(i)); }
+        for (let i = 0; i < string.length; i++) {
+            view.setUint8(offset + i, string.charCodeAt(i));
+        }
     };
+
     writeString(0, 'RIFF');
     view.setUint32(4, 36 + dataSize, true);
     writeString(8, 'WAVE');
@@ -202,8 +252,10 @@ export function pcmToWavBlobUrl(pcmData: Uint8Array, sampleRate: number = 24000)
     view.setUint32(34, bitsPerSample, true);
     writeString(36, 'data');
     view.setUint32(40, dataSize, true);
+
     const pcmDest = new Uint8Array(buffer, 44);
     pcmDest.set(pcmData);
+
     const blob = new Blob([buffer], { type: 'audio/wav' });
     return URL.createObjectURL(blob);
 }

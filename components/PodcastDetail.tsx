@@ -1,13 +1,13 @@
 
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Channel, GeneratedLecture, Chapter, SubTopic, TranscriptItem, Attachment, UserProfile } from '../types';
-import { ArrowLeft, Play, Pause, BookOpen, MessageCircle, Sparkles, User, GraduationCap, Loader2, ChevronDown, ChevronRight, SkipForward, SkipBack, Settings, X, Mic, Music, Download, RefreshCw, Square, MoreVertical, Edit, Lock, Zap, ToggleLeft, ToggleRight, Users, Check, AlertTriangle, Activity, MessageSquare, FileText, Code, Video, Monitor, PlusCircle, Bot, ExternalLink, ChevronLeft, Menu, List, PanelLeftClose, PanelLeftOpen, CornerDownRight, Trash2, FileDown, Printer, FileJson, HelpCircle, ListMusic, Copy, Paperclip, UploadCloud, Crown, Radio, Info, AlertCircle, Bug, Terminal } from 'lucide-react';
+import { ArrowLeft, Play, Pause, BookOpen, MessageCircle, Sparkles, User, GraduationCap, Loader2, ChevronDown, ChevronRight, SkipForward, SkipBack, Settings, X, Mic, Download, RefreshCw, Square, MoreVertical, Edit, Lock, Zap, ToggleLeft, ToggleRight, Users, Check, AlertTriangle, Activity, MessageSquare, FileText, Code, Video, Monitor, PlusCircle, Bot, ExternalLink, ChevronLeft, Menu, List, PanelLeftClose, PanelLeftOpen, CornerDownRight, Trash2, FileDown, Printer, FileJson, HelpCircle, ListMusic, Copy, Paperclip, UploadCloud, Crown, Radio, Info, AlertCircle, Bug, Terminal } from 'lucide-react';
 import { generateLectureScript } from '../services/lectureGenerator';
 import { synthesizeSpeech, clearAudioCache, cleanTextForTTS, TtsErrorType } from '../services/tts';
 import { OFFLINE_CHANNEL_ID, OFFLINE_CURRICULUM, OFFLINE_LECTURES } from '../utils/offlineContent';
 import { SPOTLIGHT_DATA } from '../utils/spotlightContent';
 import { cacheLectureScript, getCachedLectureScript } from '../utils/db';
-import { stopAllPlatformAudio, claimAudioLock, isVersionValid, getGlobalAudioContext, warmUpAudioContext, connectOutput } from '../utils/audioUtils';
+import { getAudioAuditLogs, getCurrentAudioOwner, registerAudioOwner, logAudioEvent, isAudioOwner, getGlobalAudioContext, warmUpAudioContext, coolDownAudioContext, connectOutput, stopAllPlatformAudio, getGlobalAudioGeneration } from '../utils/audioUtils';
 
 interface PodcastDetailProps {
   channel: Channel;
@@ -21,10 +21,10 @@ interface PodcastDetailProps {
 
 const UI_TEXT = {
   en: {
-    back: "Back", selectTopic: "Select a lesson to begin", generating: "Preparing Content...", genDesc: "Our AI professor is preparing the material.", loadingAudio: "Preparing...", loading: "Loading...", prev: "Prev", next: "Next"
+    back: "Back", series: "Series", startLive: "Start Live Chat", curriculum: "Curriculum", reading: "Reading", appendix: "Appendix", lessons: "Lessons", chapters: "Chapters", selectTopic: "Select a lesson to begin", generating: "Preparing Content...", genDesc: "Our AI professor is preparing the material.", transcript: "Interactive Transcript", segments: "Segments", discuss: "Discuss", continue: "Continue", viewDiscussion: "View History", askAbout: "Ask about this", noLesson: "No Lesson Selected", chooseChapter: "Choose a chapter and lesson from the curriculum menu.", player: "Lecture Player", prev: "Prev Lesson", next: "Next Lesson", startFree: "Start Free Talk", voiceSettings: "Voice Settings", teacherVoice: "Teacher Voice", studentVoice: "Student Voice", preview: "Test", close: "Close", download: "Export", regenerate: "Regenerate", cached: "Loaded from cache", genCurriculum: "Designing Course Syllabus...", loadingAudio: "Preparing...", downloadCourse: "Download Course", cancelDownload: "Stop Download", downloading: "Downloading Chapter...", edit: "Edit Podcast", loginReq: "Login Required", guestRestrict: "Guests can only view pre-generated content. Please login to generate new AI lectures.", systemVoice: "System Voice (Offline/Free)", quotaError: "Neural Audio Quota Exceeded. Switching to System Voice.", networkError: "Network timeout generating audio. Using System Voice.", upgradeReq: "Daily Neural Limit Reached. Upgrade to Pro for unlimited high-quality audio.", enableNeural: "Enable Neural Audio (Gemini API)", jump: "Double-click to play", preGenAudio: "Stream Audio", preGenDesc: "Generate high-quality Neural Audio for this lecture (Pro Member Only).", communityInsights: "Community Discussions", genAudio: "Stream Audio", genComplete: "Audio Ready!", errorPlayback: "Playback Error", resumeGen: "Resume Generation", genAbsorbed: "Processing...", dailyUsage: "Daily Usage", comments: "Comments", sessionSetup: "Session Setup", recordSession: "Record Session", recordDesc: "Save audio and transcript to cloud", start: "Start", generateCourse: "Generate Course Curriculum", debugTitle: "Audio Mutex Debugger", activeOwner: "Current Lock Owner"
   },
   zh: {
-    back: "返回", selectTopic: "请选择一个主题开始", generating: "正在准备内容...", genDesc: "AI 教授正在准备教学材料。", loadingAudio: "准备中...", loading: "加载中...", prev: "上一节", next: "下一节"
+    back: "返回", series: "系列", startLive: "开始实时对话", curriculum: "课程大纲", reading: "阅读材料", appendix: "附录", lessons: "节课程", chapters: "章", selectTopic: "请选择一个主题开始", generating: "正在准备内容...", genDesc: "AI 教授正在准备教学材料。", transcript: "互动字幕", segments: "段对话", discuss: "讨论", continue: "继续", viewDiscussion: "查看历史", askAbout: "询问详情", noLesson: "未选择课程", chooseChapter: "请从课程大纲菜单中选择章节和课程。", player: "播放器", prev: "上一节", next: "下一节", startFree: "开始自由对话", voiceSettings: "语音设置", teacherVoice: "老师声音", studentVoice: "学生声音", preview: "试听", close: "关闭", download: "导出", regenerate: "重新生成", cached: "已加载缓存", genCurriculum: "正在设计课程大纲...", loadingAudio: "准备中...", downloadCourse: "下载全套课程", cancelDownload: "停止下载", downloading: "正在下载章节...", edit: "编辑播客", loginReq: "需要登录", guestRestrict: "访客只能查看预生成的内容。请登录以使用 AI 生成新课程。", systemVoice: "系统语音 (离线/免费)", quotaError: "神经语音配额已满。切换到系统语音。", networkError: "网络超时。切换到系统语音。", upgradeReq: "今日神经语音额度已用完。升级 Pro 以解锁无限量高质量语音。", enableNeural: "启用神经语音 (Gemini API)", jump: "双击播放", preGenAudio: "流式播放", preGenDesc: "生成高质量神经语音（仅限Pro会员）。", communityInsights: "社区讨论", genAudio: "流式播放", genComplete: "音频就绪！", errorPlayback: "播放错误", resumeGen: "恢复生成", genAbsorbed: "处理中...", dailyUsage: "今日用量", comments: "评论", sessionSetup: "会话设置", recordSession: "录制会话", recordDesc: "保存音频 and 幕到云端", start: "开始", generateCourse: "生成课程大纲", debugTitle: "音频互斥调试器", activeOwner: "当前锁持有者"
   }
 };
 
@@ -32,178 +32,291 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
   const t = UI_TEXT[language];
   const [activeLecture, setActiveLecture] = useState<GeneratedLecture | null>(null);
   const [isLoadingLecture, setIsLoadingLecture] = useState(false);
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [isBuffering, setIsBuffering] = useState(false);
-  const [currentSectionIndex, setCurrentSectionIndex] = useState<number>(0);
-  const [expandedChapterId, setExpandedChapterId] = useState<string | null>(null);
-  const [activeSubTopicId, setActiveSubTopicId] = useState<string | null>(null);
   
-  const MY_TOKEN = useMemo(() => `Detail:${channel.id}`, [channel.id]);
+  const MY_TOKEN = useMemo(() => `LecturePlayer:${channel.id}`, [channel.id]);
 
-  const [chapters] = useState<Chapter[]>(() => {
+  const [chapters, setChapters] = useState<Chapter[]>(() => {
     if (channel.chapters && channel.chapters.length > 0) return channel.chapters;
     if (channel.id === OFFLINE_CHANNEL_ID) return OFFLINE_CURRICULUM;
     if (SPOTLIGHT_DATA[channel.id]) return SPOTLIGHT_DATA[channel.id].curriculum;
     return [];
   });
   
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [isBuffering, setIsBuffering] = useState(false);
+  const [currentSectionIndex, setCurrentSectionIndex] = useState<number | null>(null);
+  const [showVoiceSettings, setShowVoiceSettings] = useState(false);
+  const [showDebugger, setShowDebugger] = useState(false);
+  
+  const [teacherVoice, setTeacherVoice] = useState(channel.voiceName || 'Puck');
+  const [studentVoice, setStudentVoice] = useState('Zephyr');
+  
+  const hasGeminiKey = !!(localStorage.getItem('gemini_api_key') || process.env.API_KEY);
+  const hasOpenAiKey = !!(localStorage.getItem('openai_api_key') || process.env.OPENAI_API_KEY);
+  
+  const [voiceProvider, setVoiceProvider] = useState<'system' | 'gemini' | 'openai'>(
+      hasOpenAiKey ? 'openai' : (hasGeminiKey ? 'gemini' : 'system')
+  );
+  
+  const [systemVoices, setSystemVoices] = useState<SpeechSynthesisVoice[]>([]);
+  const [sysTeacherVoiceURI, setSysTeacherVoiceURI] = useState('');
+  const [sysStudentVoiceURI, setSysStudentVoiceURI] = useState('');
+  const [expandedChapterId, setExpandedChapterId] = useState<string | null>(null);
+  const [activeSubTopicId, setActiveSubTopicId] = useState<string | null>(null);
+  const [auditLogs, setAuditLogs] = useState(getAudioAuditLogs());
+  
   const sectionRefs = useRef<(HTMLDivElement | null)[]>([]);
-  const activeSourcesRef = useRef<Set<AudioBufferSourceNode>>(new Set());
+  const nextScheduleTimeRef = useRef(0);
   const schedulerTimerRef = useRef<any>(null);
-  const nextScheduleTimeRef = useRef<number>(0);
-  const schedulingCursorRef = useRef<number>(0);
-  const activeVersionRef = useRef<number>(-1);
+  const isPlayingRef = useRef(false);
+  const activeSourcesRef = useRef<Set<AudioBufferSourceNode>>(new Set());
+  const schedulingCursorRef = useRef(0); 
+  const localSessionIdRef = useRef(0);
+  const lastUtteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
+
+  const flatCurriculum = useMemo(() => {
+    return chapters.flatMap((ch) => 
+        (ch.subTopics || []).map((sub) => ({
+            id: sub.id,
+            title: sub.title
+        }))
+    );
+  }, [chapters]);
+
+  const currentLectureIndex = useMemo(() => {
+    return flatCurriculum.findIndex(t => t.id === activeSubTopicId);
+  }, [flatCurriculum, activeSubTopicId]);
+
+  useEffect(() => {
+      const handleAudit = () => setAuditLogs(getAudioAuditLogs());
+      window.addEventListener('audio-audit-updated', handleAudit);
+      return () => window.removeEventListener('audio-audit-updated', handleAudit);
+  }, []);
 
   /**
-   * ATOMIC LOCAL STOP
+   * ATOMIC KILL
    */
-  const stopLocalAudio = useCallback(() => {
-    // 1. Incrementing global version is done by the caller (stopAllPlatformAudio)
-    // Here we just cleanup local hardware
-    setIsPlaying(false);
-    setIsBuffering(false);
-    
-    if (schedulerTimerRef.current) {
-        clearTimeout(schedulerTimerRef.current);
-        schedulerTimerRef.current = null;
+  const stopAudio = useCallback(() => {
+    // 1. Immediately invalidate local session
+    localSessionIdRef.current++; 
+    logAudioEvent(MY_TOKEN, 'STOP', `Local session reset to ${localSessionIdRef.current}`);
+
+    // 2. Kill Recursive Scheduler
+    if (schedulerTimerRef.current) { 
+        clearTimeout(schedulerTimerRef.current); 
+        schedulerTimerRef.current = null; 
     }
 
-    activeSourcesRef.current.forEach(source => {
-        try { source.stop(); source.disconnect(); } catch(e) {}
+    // 3. Clear the timeline
+    nextScheduleTimeRef.current = 0;
+    isPlayingRef.current = false;
+    setIsPlaying(false);
+    setIsBuffering(false);
+
+    // 4. Force kill all scheduled buffers
+    activeSourcesRef.current.forEach(source => { 
+        try { 
+            source.stop(0); 
+            source.disconnect(); 
+        } catch(e) {} 
     });
     activeSourcesRef.current.clear();
     
+    // 5. Kill System TTS
     if (typeof window !== 'undefined' && window.speechSynthesis) {
         window.speechSynthesis.cancel();
+        if (lastUtteranceRef.current) {
+            lastUtteranceRef.current.onend = null;
+            lastUtteranceRef.current.onerror = null;
+        }
     }
-  }, []);
-
-  useEffect(() => {
-    return () => {
-        stopAllPlatformAudio(`Unmount:${MY_TOKEN}`);
-    };
+    
+    // 6. Bridge Purge
+    coolDownAudioContext();
   }, [MY_TOKEN]);
 
+  useEffect(() => {
+      return () => {
+          stopAudio();
+          stopAllPlatformAudio(`PodcastDetailUnmount:${channel.id}`);
+      };
+  }, [stopAudio, channel.id]);
+
   /**
-   * TOGGLE PLAYBACK (RESUMABLE)
+   * ATOMIC TOGGLE
    */
   const togglePlayback = async () => {
-    if (isPlaying) {
-      // PAUSE: Stop audio, but don't reset currentSectionIndex
-      stopAllPlatformAudio(`UserPause:${MY_TOKEN}`);
+    if (isPlaying) { 
+      stopAudio(); 
       return;
     }
 
-    // 1. Claim Lock and get fresh version
-    const version = claimAudioLock(MY_TOKEN, stopLocalAudio);
-    activeVersionRef.current = version;
+    // 1. REGISTRATION MUST BE FIRST
+    // registerAudioOwner internally calls stopAllPlatformAudio which increments Global Gen
+    const localSessionId = ++localSessionIdRef.current;
+    const targetGlobalGen = registerAudioOwner(MY_TOKEN, stopAudio);
 
     const ctx = getGlobalAudioContext();
     await warmUpAudioContext(ctx);
+    
+    // 2. ZOMBIE CHECK after async warmup
+    if (localSessionId !== localSessionIdRef.current || targetGlobalGen !== getGlobalAudioGeneration()) {
+        logAudioEvent(MY_TOKEN, 'ABORT_STALE', "Aborted after warmup delay");
+        return;
+    }
 
-    // Zombie check after async warmup
-    if (!isVersionValid(version)) return;
-
-    // 2. Initialize Scheduler
-    // Resume from currentSectionIndex
-    schedulingCursorRef.current = currentSectionIndex;
-    nextScheduleTimeRef.current = ctx.currentTime + 0.1;
+    const startIdx = currentSectionIndex !== null && currentSectionIndex < (activeLecture?.sections.length || 0) ? currentSectionIndex : 0;
+    schedulingCursorRef.current = startIdx;
+    
     setIsPlaying(true);
-
-    runScheduler(version);
-  };
-
-  const runScheduler = async (version: number) => {
-    if (!activeLecture || !isVersionValid(version) || !isPlaying) return;
-
-    const ctx = getGlobalAudioContext();
-    const lookahead = 1.5; // Look ahead 1.5 seconds
-
-    while (nextScheduleTimeRef.current < ctx.currentTime + lookahead) {
-        // Inner loop zombie check
-        if (!isVersionValid(version)) return;
-
-        const idx = schedulingCursorRef.current;
-        if (idx >= activeLecture.sections.length) {
-            // End of lecture
-            const delay = (nextScheduleTimeRef.current - ctx.currentTime) * 1000;
-            setTimeout(() => {
-                if (isVersionValid(version)) {
-                    setIsPlaying(false);
-                    setCurrentSectionIndex(0);
-                }
-            }, Math.max(0, delay));
-            return;
-        }
-
-        const section = activeLecture.sections[idx];
-        const voice = section.speaker === 'Teacher' ? (channel.voiceName || 'Puck') : 'Zephyr';
-
-        try {
-            setIsBuffering(true);
-            const result = await synthesizeSpeech(section.text, voice, ctx);
-            setIsBuffering(false);
-
-            // Zombie check after network delay
-            if (!isVersionValid(version)) return;
-
-            if (result.buffer) {
-                const source = ctx.createBufferSource();
-                source.buffer = result.buffer;
-                
-                const startTime = Math.max(nextScheduleTimeRef.current, ctx.currentTime);
-                connectOutput(source, ctx);
-                source.start(startTime);
-                activeSourcesRef.current.add(source);
-                source.onended = () => { activeSourcesRef.current.delete(source); };
-
-                // Track UI progress
-                const uiDelay = (startTime - ctx.currentTime) * 1000;
-                setTimeout(() => {
-                    if (isVersionValid(version)) {
-                        setCurrentSectionIndex(idx);
-                        sectionRefs.current[idx]?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                    }
-                }, Math.max(0, uiDelay));
-
-                nextScheduleTimeRef.current = startTime + result.buffer.duration;
-                schedulingCursorRef.current++;
-            } else {
-                // Fallback to system voice if buffer failed
-                await playSystemLine(section.text, voice, version);
-                schedulingCursorRef.current++;
-            }
-        } catch (e) {
-            console.error("Schedule error", e);
-            break;
-        }
-    }
-
-    // Schedule next check
-    if (isVersionValid(version)) {
-        schedulerTimerRef.current = setTimeout(() => runScheduler(version), 300);
+    isPlayingRef.current = true;
+    nextScheduleTimeRef.current = ctx.currentTime + 0.1;
+    
+    if (voiceProvider === 'system') {
+        runSystemTts(localSessionId, targetGlobalGen);
+    } else {
+        runWebAudioScheduler(localSessionId, targetGlobalGen);
     }
   };
 
-  const playSystemLine = (text: string, voiceName: string, version: number): Promise<void> => {
-      return new Promise((resolve) => {
-          if (!isVersionValid(version)) { resolve(); return; }
-          const utter = new SpeechSynthesisUtterance(cleanTextForTTS(text));
-          utter.onend = () => resolve();
-          utter.onerror = () => resolve();
-          window.speechSynthesis.speak(utter);
-      });
+  const runWebAudioScheduler = async (localSessionId: number, targetGlobalGen: number) => {
+      // 1. ATOMIC GUARD
+      if (!isPlayingRef.current || localSessionId !== localSessionIdRef.current || targetGlobalGen !== getGlobalAudioGeneration() || !activeLecture || !isAudioOwner(MY_TOKEN)) {
+          return;
+      }
+      
+      const ctx = getGlobalAudioContext();
+      const lookahead = 2.0; 
+      
+      while (nextScheduleTimeRef.current < ctx.currentTime + lookahead) {
+          // SYNC CHECK inside loop
+          if (!isPlayingRef.current || localSessionId !== localSessionIdRef.current || targetGlobalGen !== getGlobalAudioGeneration() || !isAudioOwner(MY_TOKEN)) break;
+
+          const idx = schedulingCursorRef.current;
+          if (idx >= activeLecture.sections.length) {
+              const remaining = (nextScheduleTimeRef.current - ctx.currentTime) * 1000;
+              setTimeout(() => { 
+                if (localSessionId === localSessionIdRef.current && targetGlobalGen === getGlobalAudioGeneration() && isAudioOwner(MY_TOKEN)) { 
+                    stopAudio(); 
+                    setCurrentSectionIndex(0); 
+                } 
+              }, Math.max(0, remaining));
+              return;
+          }
+
+          const section = activeLecture.sections[idx];
+          const voice = section.speaker === 'Teacher' ? teacherVoice : studentVoice;
+          
+          try {
+              setIsBuffering(true);
+              const result = await synthesizeSpeech(section.text, voice, ctx);
+              setIsBuffering(false);
+              
+              // 2. CRITICAL ZOMBIE CHECK
+              if (!isPlayingRef.current || localSessionId !== localSessionIdRef.current || targetGlobalGen !== getGlobalAudioGeneration() || !isAudioOwner(MY_TOKEN)) {
+                  logAudioEvent(MY_TOKEN, 'ABORT_STALE', `Zombie buffer discarded (Gen mismatch)`);
+                  return;
+              }
+              
+              if (result.buffer) {
+                  const source = ctx.createBufferSource();
+                  source.buffer = result.buffer;
+                  
+                  const startAt = Math.max(nextScheduleTimeRef.current, ctx.currentTime);
+                  
+                  // 3. FINAL ZOMBIE CHECK
+                  if (localSessionId !== localSessionIdRef.current || targetGlobalGen !== getGlobalAudioGeneration() || !isAudioOwner(MY_TOKEN)) {
+                      source.disconnect();
+                      return;
+                  }
+
+                  logAudioEvent(MY_TOKEN, 'PLAY_BUFFER', `Playing idx ${idx} (Gen: ${targetGlobalGen})`);
+                  
+                  connectOutput(source, ctx);
+                  source.start(startAt);
+                  activeSourcesRef.current.add(source);
+                  
+                  source.onended = () => {
+                      activeSourcesRef.current.delete(source);
+                  };
+                  
+                  const delay = (startAt - ctx.currentTime) * 1000;
+                  setTimeout(() => {
+                      if (localSessionId === localSessionIdRef.current && targetGlobalGen === getGlobalAudioGeneration() && isAudioOwner(MY_TOKEN)) {
+                          setCurrentSectionIndex(idx);
+                          sectionRefs.current[idx]?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                      }
+                  }, Math.max(0, delay));
+
+                  nextScheduleTimeRef.current = startAt + result.buffer.duration;
+                  schedulingCursorRef.current++;
+              } else {
+                  if (localSessionId === localSessionIdRef.current && targetGlobalGen === getGlobalAudioGeneration() && isAudioOwner(MY_TOKEN)) {
+                      setVoiceProvider('system');
+                      runSystemTts(localSessionId, targetGlobalGen);
+                  }
+                  return;
+              }
+          } catch(e) {
+              if (localSessionId === localSessionIdRef.current && targetGlobalGen === getGlobalAudioGeneration() && isAudioOwner(MY_TOKEN)) {
+                setVoiceProvider('system');
+                runSystemTts(localSessionId, targetGlobalGen);
+              }
+              return;
+          }
+      }
+
+      if (localSessionId === localSessionIdRef.current && targetGlobalGen === getGlobalAudioGeneration() && isAudioOwner(MY_TOKEN)) {
+        schedulerTimerRef.current = setTimeout(() => runWebAudioScheduler(localSessionId, targetGlobalGen), 400);
+      }
   };
 
-  const handleTopicClick = async (topicTitle: string, subTopicId: string) => {
-    // Clear everything for new topic
-    stopAllPlatformAudio(`TopicSwitch:${MY_TOKEN}`);
-    setActiveSubTopicId(subTopicId);
+  const runSystemTts = (localSessionId: number, targetGlobalGen: number) => {
+      const idx = schedulingCursorRef.current;
+      if (!activeLecture || idx >= activeLecture.sections.length || localSessionId !== localSessionIdRef.current || targetGlobalGen !== getGlobalAudioGeneration() || !isAudioOwner(MY_TOKEN)) {
+          if (localSessionId === localSessionIdRef.current && targetGlobalGen === getGlobalAudioGeneration() && isAudioOwner(MY_TOKEN)) stopAudio();
+          return;
+      }
+      
+      setCurrentSectionIndex(idx);
+      sectionRefs.current[idx]?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      
+      const utter = new SpeechSynthesisUtterance(cleanTextForTTS(activeLecture.sections[idx].text));
+      lastUtteranceRef.current = utter;
+
+      const targetURI = activeLecture.sections[idx].speaker === 'Teacher' ? sysTeacherVoiceURI : sysStudentVoiceURI;
+      const v = systemVoices.find(v => v.voiceURI === targetURI);
+      if (v) utter.voice = v;
+      
+      utter.onend = () => { 
+          if (localSessionId === localSessionIdRef.current && targetGlobalGen === getGlobalAudioGeneration() && isAudioOwner(MY_TOKEN)) { 
+              schedulingCursorRef.current++; 
+              runSystemTts(localSessionId, targetGlobalGen); 
+          } 
+      };
+      
+      utter.onerror = () => {
+          if (localSessionId === localSessionIdRef.current && targetGlobalGen === getGlobalAudioGeneration() && isAudioOwner(MY_TOKEN)) {
+              stopAudio();
+          }
+      };
+
+      if (localSessionId === localSessionIdRef.current && targetGlobalGen === getGlobalAudioGeneration() && isAudioOwner(MY_TOKEN)) {
+        window.speechSynthesis.speak(utter);
+      }
+  };
+
+  const handleTopicClick = async (topicTitle: string, subTopicId?: string) => {
+    stopAudio(); 
+    
+    setActiveSubTopicId(subTopicId || null);
     setCurrentSectionIndex(0);
+    schedulingCursorRef.current = 0;
     setActiveLecture(null);
     setIsLoadingLecture(true);
     
     try {
+        if (OFFLINE_LECTURES[topicTitle]) { setActiveLecture(OFFLINE_LECTURES[topicTitle]); return; }
         const cacheKey = `lecture_${channel.id}_${subTopicId}_${language}`;
         const cached = await getCachedLectureScript(cacheKey);
         if (cached) { setActiveLecture(cached); return; }
@@ -213,47 +326,45 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
           setActiveLecture(script);
           await cacheLectureScript(cacheKey, script);
         }
-    } catch (e) { 
+    } catch (e: any) { 
         console.error(e); 
     } finally { 
         setIsLoadingLecture(false); 
     }
   };
 
+  const handlePrevLesson = () => { if (currentLectureIndex > 0) { const prev = flatCurriculum[currentLectureIndex - 1]; handleTopicClick(prev.title, prev.id); } };
+  const handleNextLesson = () => { if (currentLectureIndex !== -1 && currentLectureIndex < flatCurriculum.length - 1) { const next = flatCurriculum[currentLectureIndex + 1]; handleTopicClick(next.title, next.id); } };
+
   return (
-    <div className="h-full bg-slate-950 text-slate-100 flex flex-col overflow-y-auto pb-24">
+    <div className="h-full bg-slate-950 text-slate-100 flex flex-col relative overflow-y-auto pb-24">
       <div className="relative h-64 md:h-80 w-full shrink-0">
-        <div className="absolute inset-0">
-          <img src={channel.imageUrl} alt={channel.title} className="w-full h-full object-cover opacity-60"/>
-          <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/60 to-transparent" />
-        </div>
-        <div className="absolute top-4 left-4 z-20">
-          <button onClick={onBack} className="flex items-center space-x-2 px-4 py-2 bg-black/40 backdrop-blur-md rounded-full hover:bg-white/10 transition-colors border border-white/10 text-sm font-medium">
-            <ArrowLeft size={16} /><span>{t.back}</span>
-          </button>
-        </div>
+        <div className="absolute inset-0"><img src={channel.imageUrl} alt={channel.title} className="w-full h-full object-cover opacity-60"/><div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/60 to-transparent" /></div>
+        <div className="absolute top-4 left-4 z-20 flex items-center gap-3"><button onClick={() => { stopAudio(); onBack(); }} className="flex items-center space-x-2 px-4 py-2 bg-black/40 backdrop-blur-md rounded-full hover:bg-white/10 transition-colors border border-white/10 text-sm font-medium"><ArrowLeft size={16} /><span>{t.back}</span></button></div>
         <div className="absolute bottom-0 left-0 w-full p-6 md:p-8 max-w-7xl mx-auto">
-           <h1 className="text-4xl md:text-5xl font-bold text-white mb-2">{channel.title}</h1>
-           <p className="text-lg text-slate-300 max-w-2xl line-clamp-2">{channel.description}</p>
+           <div className="flex items-end justify-between">
+             <div><h1 className="text-4xl md:text-5xl font-bold text-white mb-2">{channel.title}</h1><p className="text-lg text-slate-300 max-w-2xl line-clamp-2">{channel.description}</p></div>
+             <div className="hidden md:flex items-center space-x-3"><button onClick={() => onStartLiveSession()} className="flex items-center space-x-2 bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-3 rounded-full font-bold shadow-lg"><Play size={20} fill="currentColor" /><span>{t.startLive}</span></button></div>
+           </div>
         </div>
       </div>
 
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 py-8 grid grid-cols-12 gap-8">
-        <div className="col-span-12 lg:col-span-4">
-            <div className="bg-slate-900 border border-slate-800 rounded-xl shadow-xl overflow-hidden">
-                <div className="bg-slate-800 p-4 font-bold text-sm">Curriculum</div>
-                <div className="max-h-[500px] overflow-y-auto">
+      <main className="flex-1 max-w-7xl w-full mx-auto px-4 py-8 grid grid-cols-12 gap-8 relative">
+        <div className="col-span-12 lg:col-span-4 h-full">
+            <div className="bg-slate-900 border border-slate-800 rounded-xl shadow-xl overflow-hidden h-full flex flex-col">
+                <div className="flex border-b border-slate-800"><button className="flex-1 py-3 text-sm font-bold bg-slate-800 text-white">{t.curriculum}</button></div>
+                <div className="flex-1 overflow-y-auto">
                     {chapters.map((ch) => (
                         <div key={ch.id}>
-                            <button onClick={() => setExpandedChapterId(expandedChapterId === ch.id ? null : ch.id)} className="w-full flex items-center justify-between p-4 hover:bg-slate-800 text-left border-b border-slate-800/50">
+                            <button onClick={() => setExpandedChapterId(expandedChapterId === ch.id ? null : ch.id)} className="w-full flex items-center justify-between p-4 hover:bg-slate-800 transition-colors text-left">
                                 <span className="font-semibold text-sm text-slate-200">{ch.title}</span>
                                 {expandedChapterId === ch.id ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
                             </button>
                             {expandedChapterId === ch.id && (
                                 <div className="bg-slate-950/50 py-2">
                                     {ch.subTopics.map((sub) => (
-                                        <button key={sub.id} onClick={() => handleTopicClick(sub.title, sub.id)} className={`w-full text-left px-6 py-3 text-sm ${activeSubTopicId === sub.id ? 'text-indigo-400 bg-indigo-900/10 border-l-2 border-indigo-500' : 'text-slate-400 hover:bg-slate-800'}`}>
-                                            {sub.title}
+                                        <button key={sub.id} onClick={() => handleTopicClick(sub.title, sub.id)} className={`w-full flex items-start space-x-3 px-6 py-3 ${activeSubTopicId === sub.id ? 'bg-indigo-900/20 border-l-2 border-indigo-500' : 'hover:bg-slate-800'}`}>
+                                            <span className={`text-sm ${activeSubTopicId === sub.id ? 'text-indigo-200' : 'text-slate-400'}`}>{sub.title}</span>
                                         </button>
                                     ))}
                                 </div>
@@ -263,7 +374,6 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
                 </div>
             </div>
         </div>
-
         <div className="col-span-12 lg:col-span-8">
           {isLoadingLecture ? (
              <div className="h-full flex flex-col items-center justify-center p-12 text-center animate-pulse">
@@ -272,46 +382,77 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
                 <p className="text-slate-400 mt-2">{t.genDesc}</p>
              </div>
           ) : activeLecture ? (
-            <div className="space-y-6">
-                <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl sticky top-4 z-20 backdrop-blur-md bg-slate-900/90 flex items-center justify-between">
-                    <h2 className="text-xl font-bold text-white truncate mr-4">{activeLecture.topic}</h2>
-                    <div className="flex items-center gap-6">
-                        <button onClick={togglePlayback} className={`w-14 h-14 rounded-full flex items-center justify-center shadow-lg transition-transform active:scale-95 ${isPlaying ? 'bg-slate-800 text-red-400' : 'bg-emerald-600 text-white'}`}>
-                            {isBuffering ? <Loader2 className="animate-spin" /> : isPlaying ? <Pause fill="currentColor" size={24} /> : <Play fill="currentColor" size={24} className="ml-1" />}
-                        </button>
+            <div className="space-y-8">
+                <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl sticky top-8 z-20 backdrop-blur-md bg-slate-900/90">
+                    <div className="flex items-center justify-between mb-4">
+                        <h2 className="text-xl font-bold text-white">{activeLecture.topic}</h2>
+                        <div className="flex items-center gap-2">
+                            <button onClick={() => setShowDebugger(!showDebugger)} className={`p-2 rounded-full ${showDebugger ? 'bg-amber-600 text-white' : 'bg-slate-800 text-slate-400'}`} title="Audio Debugger"><Bug size={18} /></button>
+                            <button onClick={() => setShowVoiceSettings(!showVoiceSettings)} className={`p-2 rounded-full ${showVoiceSettings ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-400'}`}><Settings size={18} /></button>
+                        </div>
+                    </div>
+
+                    {showDebugger && (
+                        <div className="mb-4 bg-black/80 rounded-xl border border-amber-500/30 p-4 font-mono text-[10px] animate-fade-in-up">
+                            <div className="flex justify-between items-center mb-2 border-b border-slate-800 pb-1">
+                                <span className="text-amber-400 font-bold flex items-center gap-1"><Terminal size={12}/> {t.debugTitle}</span>
+                                <span className="text-slate-500">{t.activeOwner}: <span className="text-indigo-300 font-bold">{getCurrentAudioOwner() || 'NONE'}</span></span>
+                            </div>
+                            <div className="max-h-32 overflow-y-auto space-y-1">
+                                {auditLogs.map((log, i) => (
+                                    <div key={i} className="flex gap-2">
+                                        <span className="text-slate-600">[{new Date(log.timestamp).toLocaleTimeString()}]</span>
+                                        <span className={`font-bold ${log.source.includes('LecturePlayer') ? 'text-indigo-400' : 'text-pink-400'}`}>{log.source}</span>
+                                        <span className="text-slate-300 font-bold">{log.action}</span>
+                                        <span className="text-slate-500 italic">{log.details}</span>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    {showVoiceSettings && (
+                        <div className="mb-4 p-4 bg-slate-800/50 rounded-xl border border-slate-700 animate-fade-in">
+                            <div className="flex justify-between items-center mb-4">
+                                <h4 className="text-xs font-bold text-slate-400 uppercase">{t.voiceSettings}</h4>
+                                <div className="flex items-center bg-slate-900 rounded-lg p-1">
+                                    <button onClick={() => { setVoiceProvider('system'); stopAudio(); }} className={`px-3 py-1.5 text-xs font-bold rounded-md ${voiceProvider === 'system' ? 'bg-indigo-600 text-white' : 'text-slate-500'}`}>System</button>
+                                    <button onClick={() => { setVoiceProvider('gemini'); stopAudio(); }} className={`px-3 py-1.5 text-xs font-bold rounded-md ${voiceProvider === 'gemini' ? 'bg-indigo-600 text-white' : 'text-slate-500'}`}>Gemini</button>
+                                    <button onClick={() => { setVoiceProvider('openai'); stopAudio(); }} className={`px-3 py-1.5 text-xs font-bold rounded-md ${voiceProvider === 'openai' ? 'bg-indigo-600 text-white' : 'text-slate-500'}`}>OpenAI</button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                    <div className="flex justify-between items-center mt-6 pt-6 border-t border-slate-800">
+                        <button onClick={handlePrevLesson} disabled={currentLectureIndex <= 0} className="text-slate-400 disabled:opacity-30 flex items-center space-x-2 text-sm font-bold"><SkipBack size={20} /></button>
+                        <div className="flex flex-col items-center gap-2">
+                            <button onClick={togglePlayback} className={`w-16 h-16 rounded-full flex items-center justify-center ${isPlaying ? 'bg-slate-800 text-red-400' : 'bg-emerald-600 text-white'}`}>
+                                {isBuffering ? <Loader2 className="animate-spin" /> : isPlaying ? <Pause fill="currentColor" size={28} /> : <Play fill="currentColor" size={28} />}
+                            </button>
+                            {isBuffering && <span className="text-xs text-slate-500">{t.loadingAudio}</span>}
+                        </div>
+                        <button onClick={handleNextLesson} disabled={currentLectureIndex === -1 || currentLectureIndex >= flatCurriculum.length - 1} className="text-slate-400 disabled:opacity-30 flex items-center space-x-2 text-sm font-bold"><SkipForward size={20} /></button>
                     </div>
                 </div>
-                
                 <div className="space-y-6 max-w-4xl mx-auto">
                     {activeLecture.sections.map((section, idx) => (
-                        <div key={idx} ref={(el) => { sectionRefs.current[idx] = el; }} className={`p-5 rounded-2xl transition-all border ${currentSectionIndex === idx ? 'bg-indigo-900/40 border-indigo-500/50 shadow-lg' : 'bg-slate-900/40 border-transparent hover:bg-slate-900/60'}`}>
-                            <p className="text-[10px] font-bold text-indigo-400 uppercase mb-2 tracking-widest">{section.speaker === 'Teacher' ? activeLecture.professorName : activeLecture.studentName}</p>
-                            <p className={`text-base leading-relaxed ${currentSectionIndex === idx ? 'text-white' : 'text-slate-400'}`}>{section.text}</p>
+                        <div key={idx} ref={(el) => { sectionRefs.current[idx] = el; }} className={`p-4 rounded-xl transition-all ${currentSectionIndex === idx ? 'bg-indigo-900/40 border border-indigo-500/50 shadow-lg' : 'hover:bg-slate-800/30 border border-transparent'}`}>
+                            <div className="flex items-start space-x-4">
+                                <div className={`flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center text-xs font-bold border ${section.speaker === 'Teacher' ? 'bg-slate-800 border-indigo-500 text-indigo-400' : 'bg-slate-800 border-purple-500 text-purple-400'}`}>{section.speaker === 'Teacher' ? 'Pro' : 'Stu'}</div>
+                                <div className="flex-1">
+                                    <p className="text-xs font-bold text-slate-500 uppercase mb-1">{section.speaker === 'Teacher' ? activeLecture.professorName : activeLecture.studentName}</p>
+                                    <p className={`text-base leading-relaxed ${currentSectionIndex === idx ? 'text-white font-medium' : 'text-slate-400'}`}>{section.text}</p>
+                                </div>
+                            </div>
                         </div>
                     ))}
                 </div>
             </div>
           ) : (
-            <div className="h-full flex flex-col items-center justify-center text-slate-500 p-8">
-                <h3 className="text-xl font-bold text-slate-300 mb-2">{t.selectTopic}</h3>
-            </div>
+            <div className="h-full flex flex-col items-center justify-center text-slate-500 p-8"><h3 className="text-xl font-bold text-slate-300 mb-2">{t.selectTopic}</h3></div>
           )}
         </div>
       </main>
-      
-      {/* Mobile Playback Floating Bar */}
-      {activeLecture && isPlaying && (
-        <div className="md:hidden fixed bottom-20 left-4 right-4 bg-indigo-600 rounded-2xl p-4 shadow-2xl flex items-center justify-between z-50 animate-fade-in-up">
-            <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-white/20 rounded-lg flex items-center justify-center text-white"><Music size={20}/></div>
-                <div className="min-w-0">
-                    <p className="text-xs font-bold text-white truncate">{activeLecture.topic}</p>
-                    <p className="text-[10px] text-white/70">Playing Lesson...</p>
-                </div>
-            </div>
-            <button onClick={togglePlayback} className="w-10 h-10 bg-white text-indigo-600 rounded-full flex items-center justify-center shadow-md"><Pause size={20} fill="currentColor"/></button>
-        </div>
-      )}
     </div>
   );
 };
