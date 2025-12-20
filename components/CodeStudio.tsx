@@ -1,7 +1,6 @@
-
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { CodeProject, CodeFile, UserProfile, Channel, CursorPosition, CloudItem } from '../types';
-import { ArrowLeft, Save, Plus, Github, Cloud, HardDrive, Code, X, ChevronRight, ChevronDown, File, Folder, DownloadCloud, Loader2, CheckCircle, AlertTriangle, Info, FolderPlus, FileCode, RefreshCw, LogIn, CloudUpload, Trash2, ArrowUp, Edit2, FolderOpen, MoreVertical, Send, MessageSquare, Bot, Mic, Sparkles, SidebarClose, SidebarOpen, Users, Eye, FileText as FileTextIcon, Image as ImageIcon, StopCircle, Minus, Maximize2, Minimize2, Lock, Unlock, Share2, Terminal, Copy, WifiOff, PanelRightClose, PanelRightOpen, Monitor, Laptop, PenTool, Edit3, ShieldAlert } from 'lucide-react';
+import { ArrowLeft, Save, Plus, Github, Cloud, HardDrive, Code, X, ChevronRight, ChevronDown, File, Folder, DownloadCloud, Loader2, CheckCircle, AlertTriangle, Info, FolderPlus, FileCode, RefreshCw, LogIn, CloudUpload, Trash2, ArrowUp, Edit2, FolderOpen, MoreVertical, Send, MessageSquare, Bot, Mic, Sparkles, SidebarClose, SidebarOpen, Users, Eye, FileText as FileTextIcon, Image as ImageIcon, StopCircle, Minus, Maximize2, Minimize2, Lock, Unlock, Share2, Terminal, Copy, WifiOff, PanelRightClose, PanelRightOpen, Monitor, Laptop, PenTool, Edit3, ShieldAlert, ZoomIn, ZoomOut } from 'lucide-react';
 import { listCloudDirectory, saveProjectToCloud, deleteCloudItem, createCloudFolder, subscribeToCodeProject, saveCodeProject, updateCodeFile, updateCursor, claimCodeProjectLock, updateProjectActiveFile, deleteCodeFile, moveCloudFile, updateProjectAccess, sendShareNotification, deleteCloudFolderRecursive } from '../services/firestoreService';
 import { ensureCodeStudioFolder, listDriveFiles, readDriveFile, saveToDrive, deleteDriveFile, createDriveFolder, DriveFile, moveDriveFile } from '../services/googleDriveService';
 import { connectGoogleDrive, signInWithGitHub } from '../services/authService';
@@ -137,7 +136,7 @@ const FileTreeItem = ({ node, depth, activeId, onSelect, onToggle, onDelete, onR
     );
 };
 
-const RichCodeEditor = ({ code, onChange, onCursorMove, language, isShared, remoteCursors, localCursor, readOnly }: any) => {
+const RichCodeEditor = ({ code, onChange, onCursorMove, language, isShared, remoteCursors, localCursor, readOnly, fontSize }: any) => {
     const textareaRef = useRef<HTMLTextAreaElement>(null);
     const lineNumbersRef = useRef<HTMLDivElement>(null);
 
@@ -149,16 +148,21 @@ const RichCodeEditor = ({ code, onChange, onCursorMove, language, isShared, remo
         }
     };
 
+    const editorStyles = {
+        fontSize: `${fontSize}px`,
+        lineHeight: '1.6',
+    };
+
     return (
-        <div className="w-full h-full flex bg-slate-950 font-mono text-sm overflow-hidden relative">
+        <div className="w-full h-full flex bg-slate-950 font-mono overflow-hidden relative">
             {/* Line Numbers Gutter */}
             <div 
                 ref={lineNumbersRef}
                 className="w-12 flex-shrink-0 bg-slate-900 text-slate-600 py-4 text-right pr-3 select-none overflow-hidden border-r border-slate-800"
-                style={{ lineHeight: '1.6rem' }}
+                style={editorStyles}
             >
                 {Array.from({ length: lineCount }).map((_, i) => (
-                    <div key={i} className="h-[1.6rem]">{i + 1}</div>
+                    <div key={i} className="h-[1.6em]">{i + 1}</div>
                 ))}
             </div>
 
@@ -166,7 +170,7 @@ const RichCodeEditor = ({ code, onChange, onCursorMove, language, isShared, remo
             <textarea
                 ref={textareaRef}
                 className="flex-1 bg-transparent text-slate-300 p-4 resize-none outline-none leading-relaxed overflow-auto whitespace-pre"
-                style={{ lineHeight: '1.6rem' }}
+                style={editorStyles}
                 value={code || ''}
                 wrap="off"
                 onChange={(e) => onChange(e.target.value)}
@@ -294,6 +298,9 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
   const [isAccessDenied, setIsAccessDenied] = useState(false);
 
+  // FontSize (Zoom) State
+  const [fontSize, setFontSize] = useState(14);
+
   // --- RESIZE LOGIC ---
   const [leftWidth, setLeftWidth] = useState(256); // w-64
   const [rightWidth, setRightWidth] = useState(320); // w-80
@@ -340,8 +347,55 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
       });
   };
 
+  const handleSmartSave = async (targetFileOverride?: CodeFile) => {
+    const fileToSave = targetFileOverride || activeFile;
+    if (!fileToSave || (!fileToSave.isModified && saveStatus === 'saved')) return;
+
+    setSaveStatus('saving');
+    try {
+        if (activeTab === 'cloud' && currentUser) {
+             const rootPrefix = `projects/${currentUser.uid}`;
+             let targetPath = fileToSave.path || `${rootPrefix}/${fileToSave.name}`;
+             if (!targetPath.startsWith(rootPrefix)) targetPath = `${rootPrefix}/${targetPath.replace(/^\/+/, '')}`;
+             const lastSlash = targetPath.lastIndexOf('/');
+             const parentPath = lastSlash > -1 ? targetPath.substring(0, lastSlash) : rootPrefix;
+             await saveProjectToCloud(parentPath, fileToSave.name, fileToSave.content);
+             await refreshCloudPath(parentPath);
+             showToast(`Saved ${fileToSave.name} to Cloud`, "success");
+        } else if (activeTab === 'drive' && driveToken && driveRootId) {
+             await saveToDrive(driveToken, driveRootId, fileToSave.name, fileToSave.content);
+             showToast(`Saved ${fileToSave.name} to Drive`, "success");
+        } else if (activeTab === 'github' && project.github) {
+             const token = await getOrRequestGithubToken();
+             if (!token) throw new Error("GitHub Token required.");
+             const message = await generateAICommitMessage(fileToSave.name, fileToSave.content);
+             const { sha } = await updateRepoFile(token, project.github.owner, project.github.repo, fileToSave.path || fileToSave.name, fileToSave.content, fileToSave.sha, message, project.github.branch);
+             const updatedFile = { ...fileToSave, sha, isModified: false };
+             if (!targetFileOverride) setActiveFile(updatedFile);
+             setProject(prev => ({ ...prev, files: prev.files.map(f => (f.path === fileToSave.path) ? updatedFile : f) }));
+             showToast(`Committed: ${message}`, "success");
+        } else if (isSharedSession && sessionId) {
+             await updateCodeFile(sessionId, fileToSave);
+             await saveCodeProject(project);
+             showToast(`Synced ${fileToSave.name} to Session`, "success");
+        } else { 
+            showToast("Saved locally (Session)", "success"); 
+        }
+        setSaveStatus('saved');
+    } catch(e: any) { 
+        setSaveStatus('modified'); 
+        showToast("Save failed: " + e.message, "error"); 
+    }
+};
+
   // Sync active file with Firestore
-  const updateActiveFileAndSync = (file: CodeFile | null) => {
+  const updateActiveFileAndSync = async (file: CodeFile | null) => {
+      // AUTO SAVE: If we have an active file and it's modified, save it before switching
+      if (activeFile && activeFile.isModified && saveStatus === 'modified') {
+          addDebugLog(`Auto-saving ${activeFile.name} before switch...`);
+          await handleSmartSave();
+      }
+
       setActiveFile(file);
       if (file) {
           const filePath = file.path || file.name;
@@ -606,39 +660,6 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
       } catch (e) { return `Update ${filename}`; }
   };
 
-  const handleSmartSave = async () => {
-      setSaveStatus('saving');
-      try {
-          if (activeTab === 'cloud' && currentUser && activeFile) {
-               const rootPrefix = `projects/${currentUser.uid}`;
-               let targetPath = activeFile.path || `${rootPrefix}/${activeFile.name}`;
-               if (!targetPath.startsWith(rootPrefix)) targetPath = `${rootPrefix}/${targetPath.replace(/^\/+/, '')}`;
-               const lastSlash = targetPath.lastIndexOf('/');
-               const parentPath = lastSlash > -1 ? targetPath.substring(0, lastSlash) : rootPrefix;
-               await saveProjectToCloud(parentPath, activeFile.name, activeFile.content);
-               await refreshCloudPath(parentPath);
-               showToast("Saved to Cloud", "success");
-          } else if (activeTab === 'drive' && driveToken && driveRootId && activeFile) {
-               await saveToDrive(driveToken, driveRootId, activeFile.name, activeFile.content);
-               showToast("Saved to Drive", "success");
-          } else if (activeTab === 'github' && project.github && activeFile) {
-               const token = await getOrRequestGithubToken();
-               if (!token) throw new Error("GitHub Token required.");
-               const message = await generateAICommitMessage(activeFile.name, activeFile.content);
-               const { sha } = await updateRepoFile(token, project.github.owner, project.github.repo, activeFile.path || activeFile.name, activeFile.content, activeFile.sha, message, project.github.branch);
-               const updatedFile = { ...activeFile, sha, isModified: false };
-               setActiveFile(updatedFile);
-               setProject(prev => ({ ...prev, files: prev.files.map(f => (f.path === activeFile.path) ? updatedFile : f) }));
-               showToast(`Committed: ${message}`, "success");
-          } else if (isSharedSession && sessionId) {
-               if (activeFile) await updateCodeFile(sessionId, activeFile);
-               await saveCodeProject(project);
-               showToast("Synced to Session", "success");
-          } else { showToast("Saved locally (Session)", "success"); }
-          setSaveStatus('saved');
-      } catch(e: any) { setSaveStatus('modified'); showToast("Save failed: " + e.message, "error"); }
-  };
-
   const refreshCloudPath = async (path: string) => {
       if (!currentUser) return;
       try { const items = await listCloudDirectory(path); setCloudItems(prev => { const map = new Map(prev.map(i => [i.fullPath, i])); items.forEach(i => map.set(i.fullPath, i)); return Array.from(map.values()); }); } catch(e) { console.error(e); }
@@ -671,7 +692,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
                   await updateCodeFile(sessionId, newFile);
               }
 
-              updateActiveFileAndSync(newFile);
+              await updateActiveFileAndSync(newFile);
               
           } catch(e) { showToast("Failed to load file", "error"); }
       }
@@ -679,13 +700,13 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
 
   const handleCloudToggle = async (node: TreeNode) => { const isExpanded = expandedFolders[node.id]; setExpandedFolders(prev => ({ ...prev, [node.id]: !isExpanded })); if (!isExpanded) { setLoadingFolders(prev => ({ ...prev, [node.id]: true })); try { await refreshCloudPath(node.id); } catch(e) { console.error(e); } finally { setLoadingFolders(prev => ({ ...prev, [node.id]: false })); } } };
   
-  const handleExplorerSelect = (node: TreeNode) => {
+  const handleExplorerSelect = async (node: TreeNode) => {
       setSelectedExplorerNode(node);
       if (node.type === 'file') {
-          if (activeTab === 'cloud') handleCloudSelect(node);
-          else if (activeTab === 'drive') handleDriveSelect(node);
-          else if (activeTab === 'github') handleWorkspaceSelect(node);
-          else updateActiveFileAndSync(node.data);
+          if (activeTab === 'cloud') await handleCloudSelect(node);
+          else if (activeTab === 'drive') await handleDriveSelect(node);
+          else if (activeTab === 'github') await handleWorkspaceSelect(node);
+          else await updateActiveFileAndSync(node.data);
       } else {
           if (activeTab === 'cloud') handleCloudToggle(node);
           else if (activeTab === 'drive') handleDriveToggle(node);
@@ -704,8 +725,8 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
         
         const files = await listDriveFiles(token, rootId); 
         const initialDriveItems = [
-            { id: rootId, name: 'CodeStudio', mimeType: 'application/vnd.google-apps.folder', isLoaded: true }, 
-            ...files.map(f => ({ ...f, parentId: rootId, isLoaded: false }))
+            { id: driveRootId, name: 'CodeStudio', mimeType: 'application/vnd.google-apps.folder', isLoaded: true }, 
+            ...files.map(f => ({ ...f, parentId: driveRootId, isLoaded: false }))
         ];
         
         setDriveItems(initialDriveItems); 
@@ -715,7 +736,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
   };
 
   const handleDriveToggle = async (node: TreeNode) => { const driveFile = node.data as DriveFile; const isExpanded = expandedFolders[node.id]; setExpandedFolders(prev => ({ ...prev, [node.id]: !isExpanded })); if (!isExpanded && driveToken && (!node.children || node.children.length === 0)) { setLoadingFolders(prev => ({ ...prev, [node.id]: true })); try { const files = await listDriveFiles(driveToken, driveFile.id); setDriveItems(prev => { const newItems = files.map(f => ({ ...f, parentId: node.id, isLoaded: false })); return Array.from(new Map([...prev, ...newItems].map(item => [item.id, item])).values()); }); } catch(e) { console.error(e); } finally { setLoadingFolders(prev => ({ ...prev, [node.id]: false })); } } };
-  const handleDriveSelect = async (node: TreeNode) => { const driveFile = node.data as DriveFile; if (!driveToken) return; setLoadingFolders(prev => ({ ...prev, [node.id]: true })); try { const text = await readDriveFile(driveToken, driveFile.id); const newFile: CodeFile = { name: driveFile.name, path: `drive://${driveFile.id}`, content: text, language: getLanguageFromExt(driveFile.name), loaded: true, isDirectory: false, isModified: false }; if (isSharedSession && sessionId) { await updateCodeFile(sessionId, newFile); } updateActiveFileAndSync(newFile); } catch (e: any) { showToast("Failed to read Drive file", "error"); } finally { setLoadingFolders(prev => ({ ...prev, [node.id]: false })); } };
+  const handleDriveSelect = async (node: TreeNode) => { const driveFile = node.data as DriveFile; if (!driveToken) return; setLoadingFolders(prev => ({ ...prev, [node.id]: true })); try { const text = await readDriveFile(driveToken, driveFile.id); const newFile: CodeFile = { name: driveFile.name, path: `drive://${driveFile.id}`, content: text, language: getLanguageFromExt(driveFile.name), loaded: true, isDirectory: false, isModified: false }; if (isSharedSession && sessionId) { await updateCodeFile(sessionId, newFile); } await updateActiveFileAndSync(newFile); } catch (e: any) { showToast("Failed to read Drive file", "error"); } finally { setLoadingFolders(prev => ({ ...prev, [node.id]: false })); } };
   const handleDragStart = (e: React.DragEvent, node: TreeNode) => { setDraggedNode(node); e.dataTransfer.effectAllowed = 'move'; };
   const handleDrop = async (e: React.DragEvent, targetNode: TreeNode) => { e.preventDefault(); if (!draggedNode) return; if (draggedNode.id === targetNode.id) return; if (targetNode.type !== 'folder') return; try { if (activeTab === 'cloud') { const item = draggedNode.data as CloudItem; const targetPath = (targetNode.data as CloudItem).fullPath; const newFullPath = targetPath.replace(/\/+$/, '') + '/' + item.name; await moveCloudFile(item.fullPath, newFullPath);
                 
@@ -728,7 +749,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
   const handleCreateFolder = async () => { const name = prompt("Folder Name:"); if (!name) return; try { if (activeTab === 'cloud' && currentUser) { await createCloudFolder(`projects/${currentUser.uid}`, name); showToast("Folder created", "success"); await refreshCloudPath(`projects/${currentUser.uid}`); } } catch(e: any) { showToast(e.message, "error"); } };
   const handleCreateFile = async () => { const name = prompt("File Name:"); if (!name) return; await createFileInActiveContext(name, "// New File"); };
   const handleCreateWhiteboard = async () => { const name = prompt("Whiteboard Name:"); if (!name) return; await createFileInActiveContext(name.endsWith('.wb')?name:name+'.wb', "[]"); };
-  const createFileInActiveContext = async (name: string, content: string) => { try { if (activeTab === 'cloud' && currentUser) { await saveProjectToCloud(`projects/${currentUser.uid}`, name, content); await refreshCloudPath(`projects/${currentUser.uid}`); const newFile: CodeFile = { name, path: `projects/${currentUser.uid}/${name}`, language: getLanguageFromExt(name), content, loaded: true, isDirectory: false, isModified: false }; setProject(prev => ({ ...prev, files: [...prev.files, newFile] })); if (isSharedSession && sessionId) { await updateCodeFile(sessionId, newFile); } updateActiveFileAndSync(newFile); } else if (activeTab === 'session') { const newFile: CodeFile = { name, path: name, language: getLanguageFromExt(name), content, loaded: true, isDirectory: false, isModified: true }; setProject(prev => ({ ...prev, files: [...prev.files, newFile] })); if (isSharedSession && sessionId) await updateCodeFile(sessionId, newFile); updateActiveFileAndSync(newFile); } } catch(e: any) { showToast(e.message, "error"); } };
+  const createFileInActiveContext = async (name: string, content: string) => { try { if (activeTab === 'cloud' && currentUser) { await saveProjectToCloud(`projects/${currentUser.uid}`, name, content); await refreshCloudPath(`projects/${currentUser.uid}`); const newFile: CodeFile = { name, path: `projects/${currentUser.uid}/${name}`, language: getLanguageFromExt(name), content, loaded: true, isDirectory: false, isModified: false }; setProject(prev => ({ ...prev, files: [...prev.files, newFile] })); if (isSharedSession && sessionId) { await updateCodeFile(sessionId, newFile); } await updateActiveFileAndSync(newFile); } else if (activeTab === 'session') { const newFile: CodeFile = { name, path: name, language: getLanguageFromExt(name), content, loaded: true, isDirectory: false, isModified: true }; setProject(prev => ({ ...prev, files: [...prev.files, newFile] })); if (isSharedSession && sessionId) await updateCodeFile(sessionId, newFile); await updateActiveFileAndSync(newFile); } } catch(e: any) { showToast(e.message, "error"); } };
   
   const handleDeleteItem = async (node: TreeNode) => { 
       const isFolder = node.type === 'folder';
@@ -786,7 +807,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
 
   const handleRenameItem = async (node: TreeNode) => { /* ... */ };
   const handleShareItem = (node: TreeNode) => { const link = (node.data as CloudItem).url || ""; if (link) { navigator.clipboard.writeText(link); showToast("Link copied!", "success"); } };
-  const handleWorkspaceSelect = async (node: TreeNode) => { const file = node.data as CodeFile; if (!file.loaded && project.github) { try { const content = await fetchFileContent(githubToken, project.github.owner, project.github.repo, file.path || file.name, project.github.branch); const updatedFile = { ...file, content, loaded: true }; setProject(prev => ({ ...prev, files: prev.files.map(f => (f.path || f.name) === (file.path || file.name) ? updatedFile : f) })); if (isSharedSession && sessionId) { await updateCodeFile(sessionId, updatedFile); } updateActiveFileAndSync(updatedFile); } catch(e) { showToast("Load failed", "error"); } } else { updateActiveFileAndSync(file); } };
+  const handleWorkspaceSelect = async (node: TreeNode) => { const file = node.data as CodeFile; if (!file.loaded && project.github) { try { const content = await fetchFileContent(githubToken, project.github.owner, project.github.repo, file.path || file.name, project.github.branch); const updatedFile = { ...file, content, loaded: true }; setProject(prev => ({ ...prev, files: prev.files.map(f => (f.path || f.name) === (file.path || file.name) ? updatedFile : f) })); if (isSharedSession && sessionId) { await updateCodeFile(sessionId, updatedFile); } await updateActiveFileAndSync(updatedFile); } catch(e) { showToast("Load failed", "error"); } } else { await updateActiveFileAndSync(file); } };
 
   useEffect(() => { 
       if (activeTab === 'cloud' && currentUser) listCloudDirectory(`projects/${currentUser.uid}`).then(setCloudItems); 
@@ -878,6 +899,14 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
             </div>
          </div>
          <div className="flex items-center space-x-2">
+            
+            {/* ZOOM CONTROLS */}
+            <div className="flex items-center gap-1 bg-slate-800/50 p-1 rounded-lg border border-slate-700 mr-2">
+                <button onClick={() => setFontSize(f => Math.max(10, f - 2))} className="p-1.5 hover:bg-slate-700 rounded text-slate-400" title="Zoom Out"><ZoomOut size={16}/></button>
+                <span className="text-[10px] font-mono text-slate-400 w-8 text-center">{fontSize}px</span>
+                <button onClick={() => setFontSize(f => Math.min(48, f + 2))} className="p-1.5 hover:bg-slate-700 rounded text-slate-400" title="Zoom In"><ZoomIn size={16}/></button>
+            </div>
+
             {!isZenMode && (
                 <button onClick={() => setIsLeftOpen(!isLeftOpen)} className={`p-2 rounded-lg transition-colors ${!isLeftOpen ? 'text-indigo-400 bg-slate-800' : 'text-slate-400 hover:text-white'}`}><SidebarOpen size={18}/></button>
             )}
@@ -906,7 +935,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
                 <button onClick={handleShare} className="flex items-center space-x-2 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-bold shadow-md"><Share2 size={14}/><span>Share</span></button>
             )}
 
-            <button onClick={handleSmartSave} className="flex items-center space-x-2 px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold shadow-md"><Save size={14}/><span>Save</span></button>
+            <button onClick={() => handleSmartSave()} className="flex items-center space-x-2 px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold shadow-md"><Save size={14}/><span>Save</span></button>
             
             {!isZenMode && (
                 <button onClick={() => setIsRightOpen(!isRightOpen)} className={`p-2 rounded-lg transition-colors ${!isRightOpen ? 'text-indigo-400 bg-slate-800' : 'text-slate-400 hover:text-white'}`}><PanelRightOpen size={18}/></button>
@@ -1003,7 +1032,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
           {!isZenMode && isLeftOpen && (
               <div 
                   onMouseDown={startResizingLeft}
-                  className={`w-1 cursor-col-resize hover:bg-indigo-500/50 transition-colors z-30 shrink-0 ${isDraggingLeft ? 'bg-indigo-500' : ''}`}
+                  className={`w-1 cursor-col-resize hover:bg-indigo-500/50 transition-colors z-30 shrink-0 ${isDraggingLeft ? 'bg-indigo-50' : ''}`}
               />
           )}
 
@@ -1057,7 +1086,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
                                 )}
                             </div>
                         ) : (
-                            <RichCodeEditor code={activeFile.content || ''} onChange={handleCodeChange} onCursorMove={(l: number, c: number) => setLocalCursor({line: l, col: c})} language={activeFile.language} isShared={isSharedSession} remoteCursors={activeRemoteCursors} localCursor={localCursor} readOnly={isLockedByOther} />
+                            <RichCodeEditor code={activeFile.content || ''} onChange={handleCodeChange} onCursorMove={(l: number, c: number) => setLocalCursor({line: l, col: c})} language={activeFile.language} isShared={isSharedSession} remoteCursors={activeRemoteCursors} localCursor={localCursor} readOnly={isLockedByOther} fontSize={fontSize} />
                         )}
                     </div>
                   </>
