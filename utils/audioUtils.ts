@@ -40,6 +40,10 @@ export function getCurrentAudioOwner() {
     return currentOwnerToken;
 }
 
+export function isAnyAudioPlaying(): boolean {
+    return !!currentOwnerToken;
+}
+
 /**
  * Hard kill for all platform audio.
  * Resets the global lock and increments the Atomic Generation.
@@ -47,7 +51,6 @@ export function getCurrentAudioOwner() {
 export function stopAllPlatformAudio(sourceCaller: string = "Global") {
     // 1. Increment Generation - This invalidates all pending async blocks globally
     globalAudioGeneration++;
-    logAudioEvent(sourceCaller, 'STOP', `Gen INC to ${globalAudioGeneration}. Current owner: ${currentOwnerToken}`);
     
     // 2. Purge System Voice Aggressively
     if (typeof window !== 'undefined' && window.speechSynthesis) {
@@ -58,12 +61,15 @@ export function stopAllPlatformAudio(sourceCaller: string = "Global") {
     if (currentStopFn) {
         const fn = currentStopFn;
         currentStopFn = null; 
-        try { fn(); } catch (e) {
+        try { 
+            fn(); 
+        } catch (e) {
             console.warn("Error during audio owner cleanup", e);
         }
     }
     
     currentOwnerToken = null;
+    logAudioEvent(sourceCaller, 'STOP', `Gen INC to ${globalAudioGeneration}. Global audio cleared.`);
 }
 
 /**

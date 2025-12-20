@@ -1,3 +1,4 @@
+
 import React, { useMemo, useRef, useState, useEffect, useCallback } from 'react';
 import { Channel, UserProfile, GeneratedLecture } from '../types';
 import { Play, MessageSquare, Heart, Share2, Bookmark, Music, Plus, Pause, Loader2, Volume2, VolumeX, GraduationCap, ChevronRight, Mic, AlignLeft, BarChart3, User, AlertCircle, Zap, Radio, Square, Sparkles } from 'lucide-react';
@@ -470,7 +471,7 @@ const MobileFeedCard = ({
                         {statusMessage === "Synthesizing..." || statusMessage === "Preparing..." ? <Loader2 size={20} className="animate-spin" /> : playbackState === 'playing' ? <Pause size={20} fill="currentColor" /> : <Play size={20} fill="currentColor" className="ml-0.5" />}
                     </button>
                     {(playbackState === 'playing' || statusMessage === "Synthesizing..." || statusMessage === "Preparing...") && (
-                        <button onClick={stopAudio} className="w-10 h-10 rounded-full flex items-center justify-center transition-all shadow-lg bg-slate-800 text-red-400 border border-slate-600 animate-fade-in"><Square size={16} fill="currentColor" /></button>
+                        <button onClick={(e) => { e.stopPropagation(); stopAudio(); }} className="w-10 h-10 rounded-full flex items-center justify-center transition-all shadow-lg bg-slate-800 text-red-400 border border-slate-600 animate-fade-in"><Square size={16} fill="currentColor" /></button>
                     )}
                     <div onClick={handleCardClick} className="cursor-pointer">
                         <div className="flex items-center gap-1.5 text-white font-bold text-lg drop-shadow-md hover:underline"><User size={14} className="text-indigo-400" /><span>@{channel.author}</span></div>

@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Channel, GeneratedLecture, Chapter, SubTopic, TranscriptItem, Attachment, UserProfile } from '../types';
 import { ArrowLeft, Play, Pause, BookOpen, MessageCircle, Sparkles, User, GraduationCap, Loader2, ChevronDown, ChevronRight, SkipForward, SkipBack, Settings, X, Mic, Download, RefreshCw, Square, MoreVertical, Edit, Lock, Zap, ToggleLeft, ToggleRight, Users, Check, AlertTriangle, Activity, MessageSquare, FileText, Code, Video, Monitor, PlusCircle, Bot, ExternalLink, ChevronLeft, Menu, List, PanelLeftClose, PanelLeftOpen, CornerDownRight, Trash2, FileDown, Printer, FileJson, HelpCircle, ListMusic, Copy, Paperclip, UploadCloud, Crown, Radio, Info, AlertCircle, Bug, Terminal } from 'lucide-react';
@@ -160,7 +161,7 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
     if (isToggleInProgressRef.current) return;
     isToggleInProgressRef.current = true;
     
-    if (isPlaying) { 
+    if (isPlayingRef.current) { 
       stopAudio(); 
       isToggleInProgressRef.current = false;
       return;
@@ -246,7 +247,6 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, o
               setIsBuffering(false);
               
               // CRITICAL ZOMBIE CHECK after async TTS
-              // Fixed: renamed 'targetGen' to 'targetGlobalGen' to match the function argument.
               if (!mountedRef.current || !isPlayingRef.current || localSessionId !== localSessionIdRef.current || targetGlobalGen !== getGlobalAudioGeneration() || !isAudioOwner(MY_TOKEN)) {
                   logAudioEvent(MY_TOKEN, 'ABORT_STALE', `Buffer for section ${idx} discarded.`);
                   return;

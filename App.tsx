@@ -1,10 +1,11 @@
+
 import React, { useState, useEffect, useMemo } from 'react';
 import { Channel, ViewState, UserProfile, TranscriptItem, SubscriptionTier } from './types';
 import { 
   Podcast, Mic, Layout, Search, Sparkles, LogOut, 
   Settings, Menu, X, Plus, Github, Database, Cloud, Globe, 
   Calendar, Briefcase, Users, Disc, FileText, AlertTriangle, List, BookOpen, ChevronDown, Table as TableIcon, LayoutGrid, Rocket, Code, Wand2, PenTool, Rss, Loader2, MessageSquare,
-  Home, Video as VideoIcon, Inbox, User, PlusSquare, ArrowLeft, Play, Book, Gift
+  Home, Video as VideoIcon, Inbox, User, PlusSquare, ArrowLeft, Play, Book, Gift, Square
 } from 'lucide-react';
 import { LiveSession } from './components/LiveSession';
 import { PodcastDetail } from './components/PodcastDetail';
@@ -55,7 +56,7 @@ import {
 import { getUserChannels, saveUserChannel, deleteUserChannel } from './utils/db';
 import { HANDCRAFTED_CHANNELS, CATEGORY_STYLES, TOPIC_CATEGORIES } from './utils/initialData';
 import { OFFLINE_CHANNEL_ID } from './utils/offlineContent';
-import { warmUpAudioContext, stopAllPlatformAudio } from './utils/audioUtils';
+import { warmUpAudioContext, stopAllPlatformAudio, isAnyAudioPlaying } from './utils/audioUtils';
 
 const APP_VERSION = "v3.85.1"; 
 
@@ -134,6 +135,9 @@ const App: React.FC = () => {
   const [isMobileSearchOpen, setIsMobileSearchOpen] = useState(false);
   const [mobileSearchQuery, setMobileSearchQuery] = useState('');
   
+  // Audio State UI
+  const [audioIsPlaying, setAudioIsPlaying] = useState(false);
+
   // Auth State
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
@@ -222,6 +226,13 @@ const App: React.FC = () => {
     stopAllPlatformAudio(`Navigation:${viewState}->${newState}`);
     setViewState(newState);
   };
+
+  // Audio Audit Listener for Global UI button
+  useEffect(() => {
+    const updateAudioState = () => setAudioIsPlaying(isAnyAudioPlaying());
+    window.addEventListener('audio-audit-updated', updateAudioState);
+    return () => window.removeEventListener('audio-audit-updated', updateAudioState);
+  }, []);
 
   // Browser Navigation Fix: Stop audio when back/forward button is pressed
   useEffect(() => {
@@ -821,6 +832,14 @@ const App: React.FC = () => {
                   <button onClick={handleMobileQuickStart} className="text-white/80 hover:text-white">
                       <VideoIcon size={24} />
                   </button>
+                  {audioIsPlaying && (
+                    <button 
+                        onClick={() => stopAllPlatformAudio("MobileGlobalStop")}
+                        className="p-2 bg-red-600 rounded-full text-white shadow-lg animate-pulse"
+                    >
+                        <Square size={16} fill="white" />
+                    </button>
+                  )}
                   <button 
                       onClick={() => setLanguage(prev => prev === 'en' ? 'zh' : 'en')}
                       className="w-8 h-8 rounded-full bg-black/40 border border-white/20 flex items-center justify-center text-[10px] font-bold text-white transition-all active:scale-95"
