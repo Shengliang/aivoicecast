@@ -1,4 +1,3 @@
-
 import React, { useMemo, useRef, useState, useEffect, useCallback } from 'react';
 import { Channel, UserProfile, GeneratedLecture } from '../types';
 import { Play, MessageSquare, Heart, Share2, Bookmark, Music, Plus, Pause, Loader2, Volume2, VolumeX, GraduationCap, ChevronRight, Mic, AlignLeft, BarChart3, User, AlertCircle, Zap, Radio, Square, Sparkles } from 'lucide-react';
@@ -72,6 +71,8 @@ const MobileFeedCard = ({
     const activeSourcesRef = useRef<Set<AudioBufferSourceNode>>(new Set());
     const transcriptScrollRef = useRef<HTMLDivElement>(null);
 
+    const isBusy = playbackState === 'playing' || playbackState === 'buffering' || statusMessage !== "";
+
     useEffect(() => { isActiveRef.current = isActive; }, [isActive]);
 
     // Auto-scroll transcript history to keep active text visible
@@ -86,10 +87,10 @@ const MobileFeedCard = ({
     }, [transcriptHistory]);
 
     /**
-     * ATOMIC STOP
+     * ATOMIC STOP - Simplified to clean all synthesis/loop state
      */
     const stopAudio = useCallback(() => {
-        localSessionIdRef.current++; // Invalidate local session
+        localSessionIdRef.current++; // Invalidate local session immediately
         isLoopingRef.current = false;
         
         if (typeof window !== 'undefined' && window.speechSynthesis) {
@@ -106,8 +107,6 @@ const MobileFeedCard = ({
         
         setPlaybackState('idle');
         setStatusMessage("");
-        setTranscriptHistory([]);
-        setActiveTranscriptId(null);
         logAudioEvent(MY_TOKEN, 'STOP', `Session Reset to ${localSessionIdRef.current}`);
     }, [MY_TOKEN]);
 
@@ -212,7 +211,8 @@ const MobileFeedCard = ({
             return;
         }
 
-        if (isLoopingRef.current) { 
+        // Logic simplified: If busy, stop. If not busy, start.
+        if (isBusy || isLoopingRef.current) { 
             stopAudio(); 
             return; 
         }
@@ -365,10 +365,8 @@ const MobileFeedCard = ({
                     
                     const part = textParts[i];
                     
-                    // Add to history if not intro or if first time seeing this ID
                     setTranscriptHistory(prev => {
                         if (prev.some(p => p.id === part.id)) return prev;
-                        // Limit history to last 50 segments for performance
                         return [...prev, { speaker: part.speaker, text: part.text, id: part.id }].slice(-50);
                     });
                     setActiveTranscriptId(part.id);
@@ -444,22 +442,38 @@ const MobileFeedCard = ({
                 )}
 
                 <div className="absolute top-20 right-4 z-30 flex flex-col items-end gap-2">
-                    <button onClick={toggleTtsMode} className={`backdrop-blur-md px-3 py-1.5 rounded-full flex items-center gap-2 border text-xs font-bold shadow-lg transition-all ${provider === 'openai' ? 'bg-emerald-900/60 border-emerald-500/50 text-emerald-300' : provider === 'gemini' ? 'bg-indigo-900/60 border-indigo-500/50 text-indigo-300' : 'bg-slate-800/60 border-slate-600 text-slate-300'}`}>
+                    {/* Simplified Unified Playback Control at Top Right */}
+                    <button 
+                        onClick={handleTogglePlay}
+                        className={`backdrop-blur-md px-4 py-2 rounded-full flex items-center gap-2 border text-xs font-black shadow-lg transition-all active:scale-95 ${isBusy ? 'bg-indigo-600 border-indigo-400 text-white' : 'bg-white border-slate-200 text-black'}`}
+                    >
+                        {playbackState === 'buffering' || statusMessage === "Synthesizing..." || statusMessage === "Preparing..." ? (
+                            <Loader2 size={16} className="animate-spin" />
+                        ) : isBusy ? (
+                            <Pause size={16} fill="currentColor" />
+                        ) : (
+                            <Play size={16} fill="currentColor" />
+                        )}
+                        <span>{isBusy ? 'PAUSE' : 'PLAY'}</span>
+                    </button>
+
+                    <button onClick={toggleTtsMode} className={`backdrop-blur-md px-3 py-1.5 rounded-full flex items-center gap-2 border text-[10px] font-bold shadow-lg transition-all ${provider === 'openai' ? 'bg-emerald-900/60 border-emerald-500/50 text-emerald-300' : provider === 'gemini' ? 'bg-indigo-900/60 border-indigo-500/50 text-indigo-300' : 'bg-slate-800/60 border-slate-600 text-slate-300'}`}>
                         {provider === 'openai' ? <Sparkles size={12} fill="currentColor"/> : provider === 'gemini' ? <Zap size={12} fill="currentColor"/> : <Radio size={12} />}
                         <span>{provider === 'openai' ? 'OpenAI' : provider === 'gemini' ? 'Gemini' : 'System'}</span>
                     </button>
-                    {(playbackState === 'buffering' || statusMessage) && (
-                        <div className={`backdrop-blur-md px-3 py-1.5 rounded-full flex items-center gap-2 border shadow-lg bg-black/60 border-white/10`}>
-                            {statusMessage === "Synthesizing..." || statusMessage === "Preparing..." ? <Loader2 size={12} className="animate-spin text-indigo-400" /> : <Music size={12} className="text-slate-400" />}
-                            <span className="text-[10px] font-bold text-white uppercase tracking-wider">{statusMessage || "Active"}</span>
+                    
+                    {statusMessage && (
+                        <div className={`backdrop-blur-md px-3 py-1.5 rounded-full flex items-center gap-2 border shadow-lg bg-black/60 border-white/10 animate-fade-in`}>
+                            {statusMessage === "Synthesizing..." || statusMessage === "Preparing..." ? <Loader2 size={10} className="animate-spin text-indigo-400" /> : <Music size={10} className="text-slate-400" />}
+                            <span className="text-[9px] font-bold text-white uppercase tracking-wider">{statusMessage}</span>
                         </div>
                     )}
                 </div>
 
-                {/* IMPROVED TRANSCRIPT BOX: Scrollable, Auto-centering, Interactive */}
+                {/* SEGMENT VIEW WINDOW: Height increased by approx 50% for immersive text viewing */}
                 <div 
-                    className="absolute top-1/4 bottom-1/3 left-4 right-16 z-20 flex flex-col justify-end overflow-hidden pointer-events-none"
-                    style={{ maskImage: 'linear-gradient(to bottom, transparent, black 10%, black 90%, transparent)' }}
+                    className="absolute top-[10%] bottom-[18%] left-4 right-16 z-20 flex flex-col justify-end overflow-hidden pointer-events-none"
+                    style={{ maskImage: 'linear-gradient(to bottom, transparent, black 8%, black 92%, transparent)' }}
                 >
                     <div 
                         ref={transcriptScrollRef}
@@ -499,18 +513,13 @@ const MobileFeedCard = ({
                 <button onClick={(e) => onComment(e, channel)} className="flex flex-col items-center gap-1"><MessageSquare size={32} fill="white" className="text-white" /><span className="text-white text-xs font-bold shadow-black drop-shadow-md">{channel.comments?.length || 0}</span></button>
                 <button onClick={(e) => onShare(e, channel)} className="flex flex-col items-center gap-1"><Share2 size={32} fill="rgba(255,255,255,0.9)" className="text-white" /><span className="text-white text-xs font-bold shadow-black drop-shadow-md">Share</span></button>
             </div>
+            
             <div className="absolute left-0 bottom-0 w-full p-4 pb-6 bg-gradient-to-t from-black via-black/80 to-transparent z-30 pr-20">
                 <div onClick={handleCardClick} className="inline-flex items-center gap-2 mb-3 bg-slate-800/80 backdrop-blur-md px-3 py-1.5 rounded-lg border border-slate-700 cursor-pointer active:scale-95 transition-transform">
                     <span className="text-[10px] font-bold text-indigo-400 uppercase flex items-center gap-1"><GraduationCap size={10} /> {trackIndex === -1 ? 'Introduction' : `Lesson ${trackIndex + 1}/${totalLessons}`}</span>
                     <ChevronRight size={12} className="text-slate-500" />
                 </div>
                 <div className="flex items-center gap-3 mb-2">
-                    <button onClick={handleTogglePlay} className={`w-10 h-10 rounded-full flex items-center justify-center transition-all shadow-lg ${playbackState === 'playing' ? 'bg-slate-800 text-indigo-400 border border-slate-600' : 'bg-white text-black'}`}>
-                        {statusMessage === "Synthesizing..." || statusMessage === "Preparing..." ? <Loader2 size={20} className="animate-spin" /> : playbackState === 'playing' ? <Pause size={20} fill="currentColor" /> : <Play size={20} fill="currentColor" className="ml-0.5" />}
-                    </button>
-                    {(playbackState === 'playing' || statusMessage === "Synthesizing..." || statusMessage === "Preparing...") && (
-                        <button onClick={(e) => { e.stopPropagation(); stopAudio(); }} className="w-10 h-10 rounded-full flex items-center justify-center transition-all shadow-lg bg-slate-800 text-red-400 border border-slate-600 animate-fade-in"><Square size={16} fill="currentColor" /></button>
-                    )}
                     <div onClick={handleCardClick} className="cursor-pointer">
                         <div className="flex items-center gap-1.5 text-white font-bold text-lg drop-shadow-md hover:underline"><User size={14} className="text-indigo-400" /><span>@{channel.author}</span></div>
                         <p className="text-[10px] text-slate-400 uppercase tracking-wider font-bold">Host</p>
