@@ -52,7 +52,8 @@ const MobileFeedCard = ({
     
     const [playbackState, setPlaybackState] = useState<'idle' | 'buffering' | 'playing' | 'error'>('idle');
     const [statusMessage, setStatusMessage] = useState('');
-    const [transcript, setTranscript] = useState<{speaker: string, text: string} | null>(null);
+    const [transcriptHistory, setTranscriptHistory] = useState<{speaker: string, text: string, id: string}[]>([]);
+    const [activeTranscriptId, setActiveTranscriptId] = useState<string | null>(null);
     const [isAutoplayBlocked, setIsAutoplayBlocked] = useState(false);
     
     const [provider, setProvider] = useState<'system' | 'gemini' | 'openai'>(() => {
@@ -69,8 +70,20 @@ const MobileFeedCard = ({
     const isActiveRef = useRef(isActive); 
     const preloadedScriptRef = useRef<Promise<GeneratedLecture | null> | null>(null);
     const activeSourcesRef = useRef<Set<AudioBufferSourceNode>>(new Set());
+    const transcriptScrollRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => { isActiveRef.current = isActive; }, [isActive]);
+
+    // Auto-scroll transcript history to keep active text visible
+    useEffect(() => {
+        if (transcriptScrollRef.current) {
+            const container = transcriptScrollRef.current;
+            container.scrollTo({
+                top: container.scrollHeight,
+                behavior: 'smooth'
+            });
+        }
+    }, [transcriptHistory]);
 
     /**
      * ATOMIC STOP
@@ -93,7 +106,8 @@ const MobileFeedCard = ({
         
         setPlaybackState('idle');
         setStatusMessage("");
-        setTranscript(null);
+        setTranscriptHistory([]);
+        setActiveTranscriptId(null);
         logAudioEvent(MY_TOKEN, 'STOP', `Session Reset to ${localSessionIdRef.current}`);
     }, [MY_TOKEN]);
 
@@ -122,7 +136,6 @@ const MobileFeedCard = ({
         return () => { 
             mountedRef.current = false;
             stopAudio();
-            // Critical unmount cleanup: kill platform audio if we were the owner
             if (isAudioOwner(MY_TOKEN)) {
                 stopAllPlatformAudio(`MobileFeedUnmount:${channel.id}`);
             }
@@ -132,7 +145,8 @@ const MobileFeedCard = ({
     useEffect(() => {
         if (isActive) {
             const introText = channel.welcomeMessage || channel.description || `Welcome to ${channel.title}.`;
-            setTranscript({ speaker: 'Host', text: introText });
+            setTranscriptHistory([{ speaker: 'Host', text: introText, id: 'intro' }]);
+            setActiveTranscriptId('intro');
             setTrackIndex(-1);
             
             const ctx = getGlobalAudioContext();
@@ -163,7 +177,6 @@ const MobileFeedCard = ({
             return;
         }
 
-        // Acquisition must come before ID capture
         const localSessionId = ++localSessionIdRef.current;
         const targetGen = registerAudioOwner(MY_TOKEN, stopAudio);
         
@@ -297,7 +310,7 @@ const MobileFeedCard = ({
         while (mountedRef.current && isActiveRef.current && localSessionId === localSessionIdRef.current && targetGen === getGlobalAudioGeneration() && isAudioOwner(MY_TOKEN)) {
             try {
                 setTrackIndex(currentIndex); 
-                let textParts: {speaker: string, text: string, voice: string}[] = [];
+                let textParts: {speaker: string, text: string, voice: string, id: string}[] = [];
                 let hostVoice = channel.voiceName || 'Puck';
                 let studentVoice = 'Zephyr';
                 
@@ -305,9 +318,7 @@ const MobileFeedCard = ({
 
                 if (currentIndex === -1) {
                     const introText = channel.welcomeMessage || channel.description || `Welcome to ${channel.title}.`;
-                    setTranscript({ speaker: 'Host', text: introText });
-                    setStatusMessage("Intro...");
-                    textParts = [{ speaker: 'Host', text: introText, voice: hostVoice }];
+                    textParts = [{ speaker: 'Host', text: introText, voice: hostVoice, id: 'intro' }];
                     if (flatCurriculum.length > 0) preloadedScriptRef.current = fetchLectureData(flatCurriculum[0]);
                 } else {
                     if (currentIndex >= totalLessons) { 
@@ -330,7 +341,6 @@ const MobileFeedCard = ({
                         lecture = await fetchLectureData(lessonMeta); 
                     }
                     
-                    // RE-CHECK LOCK AFTER FETCH
                     if (!mountedRef.current || !isActiveRef.current || localSessionId !== localSessionIdRef.current || targetGen !== getGlobalAudioGeneration() || !isAudioOwner(MY_TOKEN)) break;
 
                     if (!lecture || !lecture.sections || lecture.sections.length === 0) { currentIndex++; continue; }
@@ -338,10 +348,11 @@ const MobileFeedCard = ({
                     setPlaybackState('playing');
                     setStatusMessage("Playing");
                     
-                    textParts = lecture.sections.map((s: any) => ({
+                    textParts = lecture.sections.map((s: any, sIdx: number) => ({
                         speaker: s.speaker === 'Teacher' ? lecture.professorName : lecture.studentName,
                         text: s.text,
-                        voice: s.speaker === 'Teacher' ? hostVoice : studentVoice
+                        voice: s.speaker === 'Teacher' ? hostVoice : studentVoice,
+                        id: `lec-${currentIndex}-sec-${sIdx}`
                     }));
                     
                     if (currentIndex + 1 < totalLessons) {
@@ -350,11 +361,17 @@ const MobileFeedCard = ({
                 }
 
                 for (let i = 0; i < textParts.length; i++) {
-                    // RE-CHECK LOCK BEFORE STARTING SENTENCE
                     if (!mountedRef.current || !isActiveRef.current || localSessionId !== localSessionIdRef.current || targetGen !== getGlobalAudioGeneration() || !isAudioOwner(MY_TOKEN)) break;
                     
                     const part = textParts[i];
-                    setTranscript({ speaker: part.speaker, text: part.text });
+                    
+                    // Add to history if not intro or if first time seeing this ID
+                    setTranscriptHistory(prev => {
+                        if (prev.some(p => p.id === part.id)) return prev;
+                        // Limit history to last 50 segments for performance
+                        return [...prev, { speaker: part.speaker, text: part.text, id: part.id }].slice(-50);
+                    });
+                    setActiveTranscriptId(part.id);
                     
                     if (provider === 'system') {
                         await playSystemAudio(part.text, part.voice, localSessionId, targetGen);
@@ -362,7 +379,6 @@ const MobileFeedCard = ({
                         setStatusMessage(`Synthesizing...`);
                         const audioResult = await synthesizeSpeech(part.text, part.voice, getGlobalAudioContext());
                         
-                        // RE-CHECK LOCK AFTER TTS FETCH
                         if (!mountedRef.current || !isActiveRef.current || localSessionId !== localSessionIdRef.current || targetGen !== getGlobalAudioGeneration() || !isAudioOwner(MY_TOKEN)) break;
 
                         if (audioResult && audioResult.buffer) {
@@ -410,7 +426,7 @@ const MobileFeedCard = ({
     };
 
     return (
-        <div className="h-full w-full snap-start relative flex flex-col justify-center bg-slate-900 border-b border-slate-800">
+        <div className="h-full w-full snap-start relative flex flex-col justify-center bg-slate-900 border-b border-slate-800 overflow-hidden">
             <div className="absolute inset-0">
                 <img src={channel.imageUrl} alt={channel.title} className="w-full h-full object-cover opacity-60" loading={isActive ? "eager" : "lazy"} />
                 <div className="absolute inset-0 bg-gradient-to-b from-black/30 via-transparent to-black/90"></div>
@@ -439,17 +455,39 @@ const MobileFeedCard = ({
                         </div>
                     )}
                 </div>
-                {transcript && (
-                    <div className="absolute top-1/2 left-4 right-16 -translate-y-1/2 pointer-events-none z-10">
-                        <div className="bg-black/40 backdrop-blur-sm p-6 rounded-3xl border-l-4 border-indigo-500/50 shadow-2xl animate-fade-in-up">
-                            <div className="flex items-center gap-2 mb-2">
-                                <span className={`text-[10px] font-bold uppercase tracking-wider ${transcript.speaker === 'Host' ? 'text-emerald-400' : 'text-indigo-400'}`}>{transcript.speaker}</span>
-                            </div>
-                            <p className="text-xl md:text-2xl text-white font-medium leading-relaxed drop-shadow-md">"{transcript.text}"</p>
-                        </div>
+
+                {/* IMPROVED TRANSCRIPT BOX: Scrollable, Auto-centering, Interactive */}
+                <div 
+                    className="absolute top-1/4 bottom-1/3 left-4 right-16 z-20 flex flex-col justify-end overflow-hidden pointer-events-none"
+                    style={{ maskImage: 'linear-gradient(to bottom, transparent, black 10%, black 90%, transparent)' }}
+                >
+                    <div 
+                        ref={transcriptScrollRef}
+                        className="flex flex-col gap-4 overflow-y-auto scrollbar-hide py-10 pointer-events-auto touch-pan-y overscroll-contain"
+                    >
+                        {transcriptHistory.map((item) => {
+                            const isCurrent = activeTranscriptId === item.id;
+                            return (
+                                <div 
+                                    key={item.id} 
+                                    className={`bg-black/30 backdrop-blur-sm p-4 rounded-2xl border-l-4 transition-all duration-500 ${isCurrent ? 'border-indigo-500 bg-black/50 scale-100 opacity-100 shadow-xl' : 'border-slate-700/30 scale-95 opacity-50'}`}
+                                >
+                                    <div className="flex items-center gap-2 mb-1">
+                                        <span className={`text-[9px] font-bold uppercase tracking-wider ${item.speaker === 'Host' ? 'text-emerald-400' : 'text-indigo-400'}`}>
+                                            {item.speaker}
+                                        </span>
+                                        {isCurrent && playbackState === 'playing' && <div className="flex gap-0.5"><div className="w-1 h-1 bg-indigo-500 rounded-full animate-bounce"></div><div className="w-1 h-1 bg-indigo-500 rounded-full animate-bounce [animation-delay:0.2s]"></div><div className="w-1 h-1 bg-indigo-500 rounded-full animate-bounce [animation-delay:0.4s]"></div></div>}
+                                    </div>
+                                    <p className={`text-lg font-medium leading-tight text-white drop-shadow-md`}>
+                                        {item.text}
+                                    </p>
+                                </div>
+                            );
+                        })}
                     </div>
-                )}
+                </div>
             </div>
+
             <div className="absolute right-2 bottom-40 flex flex-col items-center gap-6 z-30">
                 <div className="relative mb-2 cursor-pointer" onClick={(e) => { e.stopPropagation(); onProfileClick(e, channel); }}>
                     <img src={channel.imageUrl} className={`w-12 h-12 rounded-full border-2 object-cover ${isActive && playbackState === 'playing' ? 'animate-spin-slow' : ''}`} alt="Creator" />
