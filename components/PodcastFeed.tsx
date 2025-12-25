@@ -75,7 +75,6 @@ const MobileFeedCard = ({
 
     useEffect(() => { isActiveRef.current = isActive; }, [isActive]);
 
-    // Auto-scroll transcript history to keep active text visible
     useEffect(() => {
         if (transcriptScrollRef.current) {
             const container = transcriptScrollRef.current;
@@ -87,10 +86,10 @@ const MobileFeedCard = ({
     }, [transcriptHistory]);
 
     /**
-     * ATOMIC STOP - Simplified to clean all synthesis/loop state
+     * CLEAN STOP - Completely resets local and global state
      */
-    const stopAudio = useCallback(() => {
-        localSessionIdRef.current++; // Invalidate local session immediately
+    const stopAudioInternal = useCallback((source: string = "Local") => {
+        localSessionIdRef.current++; 
         isLoopingRef.current = false;
         
         if (typeof window !== 'undefined' && window.speechSynthesis) {
@@ -98,17 +97,19 @@ const MobileFeedCard = ({
         }
         
         activeSourcesRef.current.forEach(source => {
-            try { 
-                source.stop(); 
-                source.disconnect(); 
-            } catch(e) {}
+            try { source.stop(); source.disconnect(); } catch(e) {}
         });
         activeSourcesRef.current.clear();
         
         setPlaybackState('idle');
         setStatusMessage("");
-        logAudioEvent(MY_TOKEN, 'STOP', `Session Reset to ${localSessionIdRef.current}`);
+        logAudioEvent(MY_TOKEN, 'STOP', `Session Reset to ${localSessionIdRef.current} via ${source}`);
     }, [MY_TOKEN]);
+
+    // External wrapper that informs the global manager
+    const stopAudioGlobal = useCallback(() => {
+        stopAllPlatformAudio(`CardAction:${channel.id}`);
+    }, [channel.id]);
 
     const flatCurriculum = useMemo(() => {
         let chapters = channel.chapters;
@@ -134,12 +135,13 @@ const MobileFeedCard = ({
         mountedRef.current = true;
         return () => { 
             mountedRef.current = false;
-            stopAudio();
             if (isAudioOwner(MY_TOKEN)) {
                 stopAllPlatformAudio(`MobileFeedUnmount:${channel.id}`);
+            } else {
+                stopAudioInternal("Unmount");
             }
         };
-    }, [stopAudio, MY_TOKEN, channel.id]);
+    }, [stopAudioInternal, MY_TOKEN, channel.id]);
 
     useEffect(() => {
         if (isActive) {
@@ -157,15 +159,15 @@ const MobileFeedCard = ({
                 }, 400); 
                 return () => {
                     clearTimeout(timer);
-                    stopAudio();
+                    stopAudioInternal("Deactivation");
                 };
             }
         } else {
-            stopAudio();
+            stopAudioInternal("Inactive");
             preloadedScriptRef.current = null;
             setIsAutoplayBlocked(false);
         }
-    }, [isActive, channel.id, stopAudio]);
+    }, [isActive, channel.id, stopAudioInternal]);
 
     const attemptAutoPlay = async () => {
         if (!isActiveRef.current || isLoopingRef.current || !mountedRef.current) return;
@@ -177,28 +179,15 @@ const MobileFeedCard = ({
         }
 
         const localSessionId = ++localSessionIdRef.current;
-        const targetGen = registerAudioOwner(MY_TOKEN, stopAudio);
+        const targetGen = registerAudioOwner(MY_TOKEN, () => stopAudioInternal("GlobalReset"));
         
         runTrackSequence(-1, localSessionId, targetGen);
     };
 
-    const handleEnableAudio = async (e: React.MouseEvent) => {
-        e.stopPropagation();
-        const ctx = getGlobalAudioContext();
-        try {
-            await warmUpAudioContext(ctx);
-            setIsAutoplayBlocked(false);
-            
-            const localSessionId = ++localSessionIdRef.current;
-            const targetGen = registerAudioOwner(MY_TOKEN, stopAudio);
-            runTrackSequence(-1, localSessionId, targetGen);
-        } catch(err) {
-            console.error("Audio resume failed", err);
-        }
-    };
-
     const handleTogglePlay = async (e: React.MouseEvent) => {
         e.stopPropagation();
+        
+        // Navigation case
         if (!isActive) { 
             stopAllPlatformAudio(`NavigationTransition:${channel.id}`);
             onChannelClick(channel.id); 
@@ -206,19 +195,25 @@ const MobileFeedCard = ({
         }
         
         const ctx = getGlobalAudioContext();
-        if (ctx.state === 'suspended' || isAutoplayBlocked) {
-            handleEnableAudio(e);
-            return;
+        
+        // Critical for iPhone: Resume on user gesture
+        if (ctx.state === 'suspended' || (ctx.state as any) === 'interrupted' || isAutoplayBlocked) {
+            try {
+                await warmUpAudioContext(ctx);
+                setIsAutoplayBlocked(false);
+            } catch(err) {
+                console.error("Context activation failed", err);
+            }
         }
 
-        // Logic simplified: If busy, stop. If not busy, start.
+        // Logical Toggle
         if (isBusy || isLoopingRef.current) { 
-            stopAudio(); 
+            stopAudioGlobal(); // Reset global lock and increment gen
             return; 
         }
         
         const localSessionId = ++localSessionIdRef.current;
-        const targetGen = registerAudioOwner(MY_TOKEN, stopAudio);
+        const targetGen = registerAudioOwner(MY_TOKEN, () => stopAudioInternal("GlobalReset"));
         runTrackSequence(trackIndex >= totalLessons ? -1 : trackIndex, localSessionId, targetGen);
     };
 
@@ -232,11 +227,11 @@ const MobileFeedCard = ({
         setProvider(newMode);
         
         if (isLoopingRef.current) {
-            stopAudio();
+            stopAudioGlobal();
             setTimeout(() => { 
                 if (isActiveRef.current && mountedRef.current) {
                     const localSessionId = ++localSessionIdRef.current;
-                    const targetGen = registerAudioOwner(MY_TOKEN, stopAudio);
+                    const targetGen = registerAudioOwner(MY_TOKEN, () => stopAudioInternal("GlobalReset"));
                     runTrackSequence(trackIndex === -1 ? -1 : trackIndex, localSessionId, targetGen); 
                 }
             }, 150);
@@ -245,16 +240,13 @@ const MobileFeedCard = ({
 
     const playAudioBuffer = (buffer: AudioBuffer, localSessionId: number, targetGen: number): Promise<void> => {
         return new Promise(async (resolve) => {
-            if (!mountedRef.current || !isActiveRef.current || localSessionId !== localSessionIdRef.current || targetGen !== getGlobalAudioGeneration() || !isAudioOwner(MY_TOKEN)) { 
-                resolve(); 
-                return; 
-            }
             const ctx = getGlobalAudioContext();
             
-            if (ctx.state === 'suspended') {
-                setIsAutoplayBlocked(true);
-                resolve();
-                return;
+            const isAborted = () => !mountedRef.current || !isActiveRef.current || localSessionId !== localSessionIdRef.current || targetGen !== getGlobalAudioGeneration() || !isAudioOwner(MY_TOKEN) || ctx.state === 'suspended';
+
+            if (isAborted()) { 
+                resolve(); 
+                return; 
             }
 
             const source = ctx.createBufferSource();
@@ -271,7 +263,9 @@ const MobileFeedCard = ({
 
     const playSystemAudio = (text: string, voiceName: string, localSessionId: number, targetGen: number): Promise<void> => {
         return new Promise((resolve) => {
-            if (!mountedRef.current || !isActiveRef.current || localSessionId !== localSessionIdRef.current || targetGen !== getGlobalAudioGeneration() || !isAudioOwner(MY_TOKEN)) { resolve(); return; }
+            const isAborted = () => !mountedRef.current || !isActiveRef.current || localSessionId !== localSessionIdRef.current || targetGen !== getGlobalAudioGeneration() || !isAudioOwner(MY_TOKEN);
+            
+            if (isAborted()) { resolve(); return; }
             if (window.speechSynthesis) window.speechSynthesis.cancel();
             
             const utterance = new SpeechSynthesisUtterance(text);
@@ -285,29 +279,17 @@ const MobileFeedCard = ({
         });
     };
 
-    const playBackgroundHeartbeat = () => {
-        const ctx = getGlobalAudioContext();
-        if (ctx.state === 'suspended') return;
-        const osc = ctx.createOscillator();
-        const gain = ctx.createGain();
-        osc.frequency.value = 20; 
-        gain.gain.value = 0.001; 
-        osc.connect(gain);
-        gain.connect(ctx.destination);
-        osc.start();
-        return { osc, gain };
-    };
-
     const runTrackSequence = async (startIndex: number, localSessionId: number, targetGen: number) => {
-        if (!isActiveRef.current || localSessionId !== localSessionIdRef.current || targetGen !== getGlobalAudioGeneration() || !isAudioOwner(MY_TOKEN) || !mountedRef.current) return;
+        const isAborted = () => !mountedRef.current || !isActiveRef.current || localSessionId !== localSessionIdRef.current || targetGen !== getGlobalAudioGeneration() || !isAudioOwner(MY_TOKEN);
+
+        if (isAborted()) return;
         
         isLoopingRef.current = true;
         setPlaybackState('playing');
         
-        const heartbeat = playBackgroundHeartbeat();
         let currentIndex = startIndex;
         
-        while (mountedRef.current && isActiveRef.current && localSessionId === localSessionIdRef.current && targetGen === getGlobalAudioGeneration() && isAudioOwner(MY_TOKEN)) {
+        while (!isAborted()) {
             try {
                 setTrackIndex(currentIndex); 
                 let textParts: {speaker: string, text: string, voice: string, id: string}[] = [];
@@ -341,7 +323,7 @@ const MobileFeedCard = ({
                         lecture = await fetchLectureData(lessonMeta); 
                     }
                     
-                    if (!mountedRef.current || !isActiveRef.current || localSessionId !== localSessionIdRef.current || targetGen !== getGlobalAudioGeneration() || !isAudioOwner(MY_TOKEN)) break;
+                    if (isAborted()) break;
 
                     if (!lecture || !lecture.sections || lecture.sections.length === 0) { currentIndex++; continue; }
                     
@@ -361,7 +343,7 @@ const MobileFeedCard = ({
                 }
 
                 for (let i = 0; i < textParts.length; i++) {
-                    if (!mountedRef.current || !isActiveRef.current || localSessionId !== localSessionIdRef.current || targetGen !== getGlobalAudioGeneration() || !isAudioOwner(MY_TOKEN)) break;
+                    if (isAborted()) break;
                     
                     const part = textParts[i];
                     
@@ -377,7 +359,7 @@ const MobileFeedCard = ({
                         setStatusMessage(`Synthesizing...`);
                         const audioResult = await synthesizeSpeech(part.text, part.voice, getGlobalAudioContext());
                         
-                        if (!mountedRef.current || !isActiveRef.current || localSessionId !== localSessionIdRef.current || targetGen !== getGlobalAudioGeneration() || !isAudioOwner(MY_TOKEN)) break;
+                        if (isAborted()) break;
 
                         if (audioResult && audioResult.buffer) {
                             setStatusMessage("Playing");
@@ -387,18 +369,18 @@ const MobileFeedCard = ({
                         }
                     }
                     
-                    if (!mountedRef.current || !isActiveRef.current || localSessionId !== localSessionIdRef.current || targetGen !== getGlobalAudioGeneration() || !isAudioOwner(MY_TOKEN)) break;
+                    if (isAborted()) break;
                     await new Promise(r => setTimeout(r, 250));
                 }
                 currentIndex++;
             } catch (e) { break; }
         }
         
-        if (heartbeat) {
-            heartbeat.osc.stop();
-            heartbeat.osc.disconnect();
-        }
         isLoopingRef.current = false;
+        if (localSessionId === localSessionIdRef.current) {
+            setPlaybackState('idle');
+            setStatusMessage("");
+        }
     };
 
     const fetchLectureData = async (meta: any) => {
@@ -418,8 +400,7 @@ const MobileFeedCard = ({
     };
 
     const handleCardClick = (e: React.MouseEvent) => {
-        stopAudio();
-        stopAllPlatformAudio(`NavigatingToDetail:${channel.id}`);
+        stopAudioGlobal();
         onChannelClick(channel.id);
     };
 
@@ -432,7 +413,7 @@ const MobileFeedCard = ({
                 {isAutoplayBlocked && isActive && (
                     <div className="absolute inset-0 z-40 bg-black/50 backdrop-blur-md flex flex-col items-center justify-center animate-fade-in">
                         <button 
-                            onClick={handleEnableAudio}
+                            onClick={handleTogglePlay}
                             className="w-20 h-20 bg-indigo-600 hover:bg-indigo-500 text-white rounded-full flex items-center justify-center shadow-2xl transition-transform active:scale-95"
                         >
                             <Play size={40} fill="currentColor" className="ml-1" />
@@ -442,7 +423,6 @@ const MobileFeedCard = ({
                 )}
 
                 <div className="absolute top-20 right-4 z-30 flex flex-col items-end gap-2">
-                    {/* Simplified Unified Playback Control at Top Right */}
                     <button 
                         onClick={handleTogglePlay}
                         className={`backdrop-blur-md px-4 py-2 rounded-full flex items-center gap-2 border text-xs font-black shadow-lg transition-all active:scale-95 ${isBusy ? 'bg-indigo-600 border-indigo-400 text-white' : 'bg-white border-slate-200 text-black'}`}
@@ -470,7 +450,6 @@ const MobileFeedCard = ({
                     )}
                 </div>
 
-                {/* SEGMENT VIEW WINDOW: Height increased by approx 50% for immersive text viewing */}
                 <div 
                     className="absolute top-[10%] bottom-[18%] left-4 right-16 z-20 flex flex-col justify-end overflow-hidden pointer-events-none"
                     style={{ maskImage: 'linear-gradient(to bottom, transparent, black 8%, black 92%, transparent)' }}
