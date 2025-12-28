@@ -9,45 +9,45 @@ interface MarkdownViewProps {
 const LatexRenderer: React.FC<{ tex: string, displayMode?: boolean }> = ({ tex, displayMode = true }) => {
     const containerRef = useRef<HTMLDivElement>(null);
     const [error, setError] = useState<string | null>(null);
+    const [isReady, setIsReady] = useState(false);
 
     useEffect(() => {
         let isMounted = true;
-        let timer: any;
         
-        const renderMath = () => {
-            if (!containerRef.current || !isMounted) return;
-
-            // Log if in Quirks Mode but attempt render anyway
-            if (document.compatMode === 'BackCompat') {
-                console.warn("KaTeX: Browser is in Quirks Mode. This may cause layout issues.");
-            }
-
+        const checkLibrary = () => {
             if ((window as any).katex) {
-                try {
-                    (window as any).katex.render(tex, containerRef.current, {
-                        throwOnError: true,
-                        displayMode: displayMode,
-                        trust: true
-                    });
-                    setError(null);
-                } catch (err: any) {
-                    console.error("KaTeX render error:", err);
-                    setError(err.message || "Invalid LaTeX syntax");
-                    if (containerRef.current) {
-                        containerRef.current.textContent = displayMode ? `$$\n${tex}\n$$` : `$${tex}$`;
-                    }
-                }
+                if (isMounted) setIsReady(true);
             } else {
-                timer = setTimeout(renderMath, 100);
+                setTimeout(checkLibrary, 50);
             }
         };
 
-        renderMath();
-        return () => {
-            isMounted = false;
-            if (timer) clearTimeout(timer);
-        };
-    }, [tex, displayMode]);
+        checkLibrary();
+        return () => { isMounted = false; };
+    }, []);
+
+    useEffect(() => {
+        if (!isReady || !containerRef.current) return;
+
+        try {
+            // Clear previous content to prevent duplication on re-renders
+            containerRef.current.innerHTML = '';
+            
+            (window as any).katex.render(tex, containerRef.current, {
+                throwOnError: true,
+                displayMode: displayMode,
+                trust: true,
+                strict: false
+            });
+            setError(null);
+        } catch (err: any) {
+            console.error("KaTeX render error:", err);
+            setError(err.message || "Invalid LaTeX syntax");
+            if (containerRef.current) {
+                containerRef.current.textContent = displayMode ? `$$\n${tex}\n$$` : `$${tex}$`;
+            }
+        }
+    }, [tex, displayMode, isReady]);
 
     if (displayMode) {
         return (
@@ -58,16 +58,16 @@ const LatexRenderer: React.FC<{ tex: string, displayMode?: boolean }> = ({ tex, 
                     </div>
                 )}
                 <div ref={containerRef} className="text-indigo-100 text-lg selection:bg-indigo-500/30 font-serif">
-                    {!((window as any).katex) && <code className="text-xs text-slate-500 font-mono">$$\n{tex}\n$$</code>}
+                    {!isReady && <code className="text-xs text-slate-500 font-mono">$$\n{tex}\n$$</code>}
                 </div>
             </div>
         );
     }
 
     return (
-        <span className="inline-flex items-center group relative">
+        <span className="inline-flex items-center group relative whitespace-nowrap">
             <span ref={containerRef} className="inline-block px-1 font-serif italic text-indigo-300">
-                {!((window as any).katex) && `$${tex}$`}
+                {!isReady && `$${tex}$`}
             </span>
             {error && (
                 <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block z-50">
@@ -170,12 +170,15 @@ export const MarkdownView: React.FC<MarkdownViewProps> = ({ content }) => {
     setTimeout(() => setCopiedIndex(null), 2000);
   };
 
-  const formatInline = (text: string) => {
-    const parts = text.split(/(\*\*.*?\*\*|\$.*?\$)/g);
+  const formatInline = (text: string): React.ReactNode[] => {
+    // Regex logic:
+    // 1. **bold**
+    // 2. $inline math$
+    const parts = text.split(/(\*\*.*?\*\*|\$[^\$]+?\$)/g);
     
     return parts.map((p, i) => {
         if (p.startsWith('**') && p.endsWith('**')) {
-            return <strong key={i} className="text-white font-semibold">{p.slice(2, -2)}</strong>;
+            return <strong key={i} className="text-white font-semibold">{formatInline(p.slice(2, -2))}</strong>;
         }
         if (p.startsWith('$') && p.endsWith('$')) {
             const math = p.slice(1, -1).trim();
@@ -187,10 +190,15 @@ export const MarkdownView: React.FC<MarkdownViewProps> = ({ content }) => {
   };
 
   const renderContent = (text: string) => {
+    if (!text) return null;
+    
     // Correct split order to preserve math and code blocks
+    // Added [\s\S] to block math to handle newlines correctly
     const parts = text.split(/(```[\s\S]*?```|\$\$[\s\S]*?\$\$)/g);
     
     return parts.map((part, index) => {
+      if (!part) return null;
+
       if (part.startsWith('```')) {
         const content = part.replace(/^```\w*\n?/, '').replace(/```$/, '');
         const langMatch = part.match(/^```(\w+)/);
@@ -218,7 +226,7 @@ export const MarkdownView: React.FC<MarkdownViewProps> = ({ content }) => {
       } else if (part.startsWith('$$')) {
           const tex = part.slice(2, -2).trim();
           if (!tex) return null;
-          return <LatexRenderer key={index} tex={tex} />;
+          return <LatexRenderer key={index} tex={tex} displayMode={true} />;
       } else {
         const lines = part.split('\n');
         const renderedElements: React.ReactNode[] = [];
