@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { CommunityDiscussion, UserProfile } from '../types';
 import { getUserDesignDocs, deleteDiscussion, getPublicDesignDocs, getGroupDesignDocs, getUserProfile } from '../services/firestoreService';
@@ -5,7 +6,7 @@ import { getUserDesignDocs, deleteDiscussion, getPublicDesignDocs, getGroupDesig
 import { FileText, ArrowRight, Loader2, MessageSquare, Plus, Edit, ShieldCheck, Trash2, Info, FileCode, Sparkles, Wand2, Globe, Users, Lock, User } from 'lucide-react';
 import { auth } from '../services/firebaseConfig';
 import { DiscussionModal } from './DiscussionModal';
-import { APP_COMPARISON_DOC } from '../utils/docContent';
+import { APP_COMPARISON_DOC, LATEX_EXAMPLE_DOC } from '../utils/docContent';
 
 interface DocumentListProps {
   onBack?: () => void;
@@ -39,14 +40,14 @@ export const DocumentList: React.FC<DocumentListProps> = ({ onBack }) => {
       const unique = Array.from(new Map(all.map(item => [item.id, item])).values());
       
       const isSystemDocHidden = localStorage.getItem('hide_system_doc_v1') === 'true';
-      const userDocs = unique.filter(d => d.id !== APP_COMPARISON_DOC.id);
+      const userDocs = unique.filter(d => d.id !== APP_COMPARISON_DOC.id && d.id !== LATEX_EXAMPLE_DOC.id);
       
-      const final = isSystemDocHidden ? userDocs : [APP_COMPARISON_DOC, ...userDocs];
+      const final = isSystemDocHidden ? userDocs : [LATEX_EXAMPLE_DOC, APP_COMPARISON_DOC, ...userDocs];
       setDocs(final.sort((a, b) => b.createdAt - a.createdAt));
 
     } catch (e) {
       console.error(e);
-      setDocs([APP_COMPARISON_DOC]);
+      setDocs([LATEX_EXAMPLE_DOC, APP_COMPARISON_DOC]);
     } finally {
       setLoading(false);
     }
@@ -61,7 +62,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ onBack }) => {
       
       if (!id || id === 'new') return;
 
-      if (id === APP_COMPARISON_DOC.id) {
+      if (id === APP_COMPARISON_DOC.id || id === LATEX_EXAMPLE_DOC.id) {
           if (confirm("This is a system example. Hide it from your list?")) {
               localStorage.setItem('hide_system_doc_v1', 'true');
               loadData();
@@ -84,7 +85,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ onBack }) => {
   };
 
   const handleCleanupUntitled = async () => {
-      const untitledDocs = docs.filter(d => d.userId === currentUser?.uid && (!d.title || d.title === 'Untitled Document') && d.id !== APP_COMPARISON_DOC.id && d.id !== 'new');
+      const untitledDocs = docs.filter(d => d.userId === currentUser?.uid && (!d.title || d.title === 'Untitled Document') && d.id !== APP_COMPARISON_DOC.id && d.id !== LATEX_EXAMPLE_DOC.id && d.id !== 'new');
       
       if (untitledDocs.length === 0) {
           alert("No untitled documents found to clean up.");
@@ -165,7 +166,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ onBack }) => {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {docs.map((doc) => {
-            const isSystem = doc.id === APP_COMPARISON_DOC.id;
+            const isSystem = doc.id === APP_COMPARISON_DOC.id || doc.id === LATEX_EXAMPLE_DOC.id;
             const hasSynthesis = !!doc.designDoc;
             const isCodeDoc = doc.title?.endsWith('.hpp') || doc.title?.endsWith('.cpp') || doc.title?.endsWith('.py');
             const isMyDoc = doc.userId === currentUser.uid;
@@ -221,7 +222,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ onBack }) => {
                      {doc.title || "Untitled Document"}
                   </h3>
                   <p className="text-xs text-slate-400 mb-4 line-clamp-2">
-                     {isSystem ? "Official distinction between platform pillars." : doc.isManual ? "Manual Technical Specification" : (doc.transcript && doc.transcript.length > 0 ? `Captured from: ${doc.lectureId}` : "No content captured yet.")}
+                     {isSystem ? (doc.id === LATEX_EXAMPLE_DOC.id ? "Guide to mathematical typesetting with LaTeX." : "Official distinction between platform pillars.") : doc.isManual ? "Manual Technical Specification" : (doc.transcript && doc.transcript.length > 0 ? `Captured from: ${doc.lectureId}` : "No content captured yet.")}
                   </p>
                 </div>
 
@@ -277,7 +278,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ onBack }) => {
               isManual: true,
               title: "[Manual] New Specification",
               visibility: 'private'
-           } : (selectedDocId === APP_COMPARISON_DOC.id ? APP_COMPARISON_DOC : undefined)}
+           } : (selectedDocId === APP_COMPARISON_DOC.id ? APP_COMPARISON_DOC : (selectedDocId === LATEX_EXAMPLE_DOC.id ? LATEX_EXAMPLE_DOC : undefined))}
         />
       )}
     </div>
