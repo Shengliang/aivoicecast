@@ -11,6 +11,7 @@ export const APP_COMPARISON_DOC: CommunityDiscussion = {
   createdAt: 1766016000000, // Dec 18, 2025
   isManual: true,
   title: "Design Doc: Document Studio vs. Community Blog",
+  // FIX: Escaped backticks to prevent premature closing of the template literal string and syntax errors in the object definition
   designDoc: `
 # Design Specification: Knowledge Pillars
 
@@ -30,7 +31,43 @@ The AIVoiceCast platform bifurcates long-form content into two distinct engines:
 | **Output Formats** | **Google Docs**, PDF, JSZip Package | Web Feed, Social Share, Comments |
 | **AI Role** | Synthesizes transcripts into Design Docs | Suggests titles, tags, and proofreads |
 
-## 3. Behavioral Architecture
+## 3. Architectural Flow
+The following diagram demonstrates the synchronization process between the frontend, the Gemini AI engine, and our dual-storage persistence layers.
+
+\`\`\`plantuml
+@startuml
+skinparam backgroundColor #0f172a
+skinparam sequence {
+    ArrowColor #818cf8
+    LifeLineBorderColor #818cf8
+    ParticipantBorderColor #334155
+    ParticipantBackgroundColor #1e293b
+    ParticipantFontColor #f8fafc
+}
+
+participant "User Browser" as UI
+participant "Gemini 3 Pro" as AI
+database "IndexedDB (Cache)" as Cache
+database "Cloud Firestore" as DB
+
+UI -> AI: Send Session Context
+AI --> UI: Synthesized Technical Draft
+UI -> Cache: Cache Result (Offline Access)
+UI -> DB: Persist Document (Collaboration)
+UI -> UI: Render Preview
+@enduml
+\`\`\`
+
+## 4. Mathematical Modeling
+We model the efficiency of our AI-driven synthesis using the context compression ratio $R$. For a session with $n$ individual transcript turns, the document fidelity $F$ is defined as:
+
+$$
+F = \int_{0}^{T} \frac{\sum_{i=1}^{n} w_i \cdot \text{entropy}(turn_i)}{\text{tokens}_{total}} dt
+$$
+
+Where $w_i$ represents the semantic weight assigned by the reasoning engine. Inline math examples like $\sigma^2$ or $\sqrt{x}$ are also supported for technical specifications.
+
+## 5. Behavioral Architecture
 
 ### The Document Studio (Workflow Engine)
 The Studio is designed for "Work-in-Progress" and "Institutional Memory." 
@@ -42,11 +79,7 @@ The Blog is designed for "Audience Reach" and "Community Engagement."
 - **The Lifecycle:** Concept → Editor Draft → Peer Review (Optional) → **Published to Feed**.
 - **Engagement:** Focuses on Likes, Comments, and Follower growth. It is the "Social Identity" of a creator.
 
-## 4. Technical Constraints
-- **Documents** require explicit sharing tokens for external viewing to maintain security for technical specifications.
-- **Blog Posts** are automatically indexed by the Public Registry for discovery.
-
-## 5. Conclusion
+## 6. Conclusion
 Use the **Document Studio** when you are building and need to remember *how* or *why*. Use the **Blog** when you have something to say to the *world*.
 `
 };

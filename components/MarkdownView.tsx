@@ -7,26 +7,56 @@ interface MarkdownViewProps {
   content: string;
 }
 
-const LatexRenderer: React.FC<{ tex: string }> = ({ tex }) => {
+const LatexRenderer: React.FC<{ tex: string, displayMode?: boolean }> = ({ tex, displayMode = true }) => {
     const containerRef = useRef<HTMLDivElement>(null);
+    const [renderError, setRenderError] = useState(false);
 
     useEffect(() => {
-        if (containerRef.current && (window as any).katex) {
-            try {
-                (window as any).katex.render(tex, containerRef.current, {
-                    throwOnError: false,
-                    displayMode: true
-                });
-            } catch (err) {
-                console.error("KaTeX error:", err);
+        let isMounted = true;
+        let timer: any;
+        
+        const tryRender = () => {
+            if (!containerRef.current || !isMounted) return;
+            
+            if ((window as any).katex) {
+                try {
+                    (window as any).katex.render(tex, containerRef.current, {
+                        throwOnError: false,
+                        displayMode: displayMode
+                    });
+                    setRenderError(false);
+                } catch (err) {
+                    console.error("KaTeX error:", err);
+                    setRenderError(true);
+                }
+            } else {
+                // If KaTeX isn't loaded yet, poll for it
+                timer = setTimeout(tryRender, 100);
             }
-        }
-    }, [tex]);
+        };
+
+        tryRender();
+        return () => {
+            isMounted = false;
+            if (timer) clearTimeout(timer);
+        };
+    }, [tex, displayMode]);
+
+    if (displayMode) {
+        return (
+            <div className="my-6 p-6 bg-slate-900/50 rounded-xl border border-slate-800 flex justify-center items-center overflow-x-auto shadow-inner relative group">
+                {renderError && <span className="absolute top-2 right-2 text-[10px] text-red-400 opacity-50">Latex Error</span>}
+                <div ref={containerRef} className="text-indigo-100 text-lg">
+                    {!((window as any).katex) && <code className="text-xs text-slate-500 font-mono">$$\n{tex}\n$$</code>}
+                </div>
+            </div>
+        );
+    }
 
     return (
-        <div className="my-6 p-6 bg-slate-900/50 rounded-xl border border-slate-800 flex justify-center items-center overflow-x-auto shadow-inner">
-            <div ref={containerRef} className="text-indigo-100 text-lg"></div>
-        </div>
+        <span ref={containerRef} className="inline-block px-1 font-serif italic text-indigo-300">
+            {!((window as any).katex) && `$${tex}$`}
+        </span>
     );
 };
 
@@ -121,9 +151,6 @@ export const MarkdownView: React.FC<MarkdownViewProps> = ({ content }) => {
   };
 
   const formatInline = (text: string) => {
-    // Basic inline formatting: Bold and Inline Math
-    let result: React.ReactNode[] = [];
-    
     // Split by **bold** or $inline math$
     const parts = text.split(/(\*\*.*?\*\*|\$.*?\$)/g);
     
@@ -133,13 +160,7 @@ export const MarkdownView: React.FC<MarkdownViewProps> = ({ content }) => {
         }
         if (p.startsWith('$') && p.endsWith('$')) {
             const math = p.slice(1, -1);
-            // If KaTeX is available, we'll try to render it inline using a simple span
-            // For true high quality, a more complex regex engine would be needed.
-            return (
-                <span key={i} className="inline-block px-1 font-serif italic text-indigo-300" dangerouslySetInnerHTML={{
-                    __html: (window as any).katex ? (window as any).katex.renderToString(math, { throwOnError: false }) : math
-                }} />
-            );
+            return <LatexRenderer key={i} tex={math} displayMode={false} />;
         }
         return p;
     });
