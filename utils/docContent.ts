@@ -11,7 +11,6 @@ export const APP_COMPARISON_DOC: CommunityDiscussion = {
   createdAt: 1766016000000, // Dec 18, 2025
   isManual: true,
   title: "Design Doc: Document Studio vs. Community Blog",
-  // FIX: Escaped backticks to prevent premature closing of the template literal string and syntax errors in the object definition
   designDoc: `
 # Design Specification: Knowledge Pillars
 
@@ -62,10 +61,10 @@ UI -> UI: Render Preview
 We model the efficiency of our AI-driven synthesis using the context compression ratio $R$. For a session with $n$ individual transcript turns, the document fidelity $F$ is defined as:
 
 $$
-F = \int_{0}^{T} \frac{\sum_{i=1}^{n} w_i \cdot \text{entropy}(turn_i)}{\text{tokens}_{total}} dt
+F = \\int_{0}^{T} \\frac{\\sum_{i=1}^{n} w_i \\cdot \\text{entropy}(turn_i)}{\\text{tokens}_{total}} dt
 $$
 
-Where $w_i$ represents the semantic weight assigned by the reasoning engine. Inline math examples like $\sigma^2$ or $\sqrt{x}$ are also supported for technical specifications.
+Where $w_i$ represents the semantic weight assigned by the reasoning engine. Inline math examples like $\\sigma^2$ or $\\sqrt{x}$ are also supported for technical specifications.
 
 ## 5. Behavioral Architecture
 

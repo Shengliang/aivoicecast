@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Copy, Check, Image as ImageIcon, Loader2, Code as CodeIcon, ExternalLink, Sigma } from 'lucide-react';
+import { Copy, Check, Image as ImageIcon, Loader2, Code as CodeIcon, ExternalLink, Sigma, AlertCircle } from 'lucide-react';
 import { encodePlantUML } from '../utils/plantuml';
 
 interface MarkdownViewProps {
@@ -9,7 +9,7 @@ interface MarkdownViewProps {
 
 const LatexRenderer: React.FC<{ tex: string, displayMode?: boolean }> = ({ tex, displayMode = true }) => {
     const containerRef = useRef<HTMLDivElement>(null);
-    const [renderError, setRenderError] = useState(false);
+    const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
     useEffect(() => {
         let isMounted = true;
@@ -21,13 +21,15 @@ const LatexRenderer: React.FC<{ tex: string, displayMode?: boolean }> = ({ tex, 
             if ((window as any).katex) {
                 try {
                     (window as any).katex.render(tex, containerRef.current, {
-                        throwOnError: false,
+                        throwOnError: true, // Throw so we can catch and show our UI
                         displayMode: displayMode
                     });
-                    setRenderError(false);
-                } catch (err) {
+                    setErrorMessage(null);
+                } catch (err: any) {
                     console.error("KaTeX error:", err);
-                    setRenderError(true);
+                    setErrorMessage(err.message || "Unknown LaTeX error");
+                    // Fallback to raw text inside the container if error
+                    containerRef.current.textContent = displayMode ? `$$\n${tex}\n$$` : `$${tex}$`;
                 }
             } else {
                 // If KaTeX isn't loaded yet, poll for it
@@ -44,9 +46,13 @@ const LatexRenderer: React.FC<{ tex: string, displayMode?: boolean }> = ({ tex, 
 
     if (displayMode) {
         return (
-            <div className="my-6 p-6 bg-slate-900/50 rounded-xl border border-slate-800 flex justify-center items-center overflow-x-auto shadow-inner relative group">
-                {renderError && <span className="absolute top-2 right-2 text-[10px] text-red-400 opacity-50">Latex Error</span>}
-                <div ref={containerRef} className="text-indigo-100 text-lg">
+            <div className="my-6 p-6 bg-slate-900/50 rounded-xl border border-slate-800 flex justify-center items-center overflow-x-auto shadow-inner relative group min-h-[60px]">
+                {errorMessage && (
+                    <div className="absolute top-2 right-2 text-red-400 opacity-50 group-hover:opacity-100 transition-opacity cursor-help" title={errorMessage}>
+                        <AlertCircle size={14} />
+                    </div>
+                )}
+                <div ref={containerRef} className="text-indigo-100 text-lg selection:bg-indigo-500/30">
                     {!((window as any).katex) && <code className="text-xs text-slate-500 font-mono">$$\n{tex}\n$$</code>}
                 </div>
             </div>
@@ -54,8 +60,17 @@ const LatexRenderer: React.FC<{ tex: string, displayMode?: boolean }> = ({ tex, 
     }
 
     return (
-        <span ref={containerRef} className="inline-block px-1 font-serif italic text-indigo-300">
-            {!((window as any).katex) && `$${tex}$`}
+        <span className="inline-flex items-center group relative">
+            <span ref={containerRef} className="inline-block px-1 font-serif italic text-indigo-300">
+                {!((window as any).katex) && `$${tex}$`}
+            </span>
+            {errorMessage && (
+                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block z-50">
+                    <div className="bg-red-900 text-red-100 text-[10px] p-2 rounded shadow-xl whitespace-nowrap border border-red-700">
+                        {errorMessage}
+                    </div>
+                </div>
+            )}
         </span>
     );
 };
