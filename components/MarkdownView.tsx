@@ -17,15 +17,9 @@ const LatexRenderer: React.FC<{ tex: string, displayMode?: boolean }> = ({ tex, 
         const renderMath = () => {
             if (!containerRef.current || !isMounted) return;
 
-            // KaTeX strictly requires Standards Mode (CSS1Compat).
-            // Quirks Mode (BackCompat) happens if the <!DOCTYPE html> is missing or malformed.
+            // Log if in Quirks Mode but attempt render anyway
             if (document.compatMode === 'BackCompat') {
-                setError("Quirks Mode detected. Ensure index.html starts with <!DOCTYPE html> on line 1.");
-                containerRef.current.innerHTML = `<div class="p-2 border border-red-900/50 bg-red-950/20 text-red-200 text-[10px] font-mono leading-tight">
-                    <p class="font-bold mb-1">KaTeX Error: Browser in Quirks Mode</p>
-                    <p>Mathematics cannot render in Quirks Mode. Fix index.html by removing all whitespace before DOCTYPE.</p>
-                </div>`;
-                return;
+                console.warn("KaTeX: Browser is in Quirks Mode. This may cause layout issues.");
             }
 
             if ((window as any).katex) {
@@ -40,7 +34,6 @@ const LatexRenderer: React.FC<{ tex: string, displayMode?: boolean }> = ({ tex, 
                     console.error("KaTeX render error:", err);
                     setError(err.message || "Invalid LaTeX syntax");
                     if (containerRef.current) {
-                        // Fallback to raw text if syntax is bad
                         containerRef.current.textContent = displayMode ? `$$\n${tex}\n$$` : `$${tex}$`;
                     }
                 }
@@ -178,7 +171,6 @@ export const MarkdownView: React.FC<MarkdownViewProps> = ({ content }) => {
   };
 
   const formatInline = (text: string) => {
-    // Priority split by **bold** or $inline math$
     const parts = text.split(/(\*\*.*?\*\*|\$.*?\$)/g);
     
     return parts.map((p, i) => {
@@ -195,7 +187,7 @@ export const MarkdownView: React.FC<MarkdownViewProps> = ({ content }) => {
   };
 
   const renderContent = (text: string) => {
-    // First split by Blocks (Code Blocks and LaTeX Blocks)
+    // Correct split order to preserve math and code blocks
     const parts = text.split(/(```[\s\S]*?```|\$\$[\s\S]*?\$\$)/g);
     
     return parts.map((part, index) => {
