@@ -3,7 +3,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { Blog, BlogPost, Comment } from '../types';
 import { ensureUserBlog, getCommunityPosts, getUserPosts, createBlogPost, updateBlogPost, deleteBlogPost, updateBlogSettings, addPostComment, getBlogPost } from '../services/firestoreService';
 import { auth } from '../services/firebaseConfig';
-import { Edit3, Plus, Trash2, Globe, User, MessageSquare, Loader2, ArrowLeft, Save, Image as ImageIcon, Search, LayoutList, PenTool, Rss, X, Pin, AlertCircle, RefreshCw } from 'lucide-react';
+import { Edit3, Plus, Trash2, Globe, User, MessageSquare, Loader2, ArrowLeft, Save, Image as ImageIcon, Search, LayoutList, PenTool, Rss, X, Pin, AlertCircle, RefreshCw, Eye, Code } from 'lucide-react';
 import { MarkdownView } from './MarkdownView';
 import { CommentsModal } from './CommentsModal';
 import { SYSTEM_BLOG_POSTS } from '../utils/blogContent';
@@ -30,6 +30,7 @@ export const BlogView: React.FC<BlogViewProps> = ({ currentUser, onBack }) => {
   // Editor State
   const [editingPost, setEditingPost] = useState<Partial<BlogPost>>({ title: '', content: '', tags: [] });
   const [tagInput, setTagInput] = useState('');
+  const [isPreviewMode, setIsPreviewMode] = useState(false);
 
   // Detail View State
   const [activePost, setActivePost] = useState<BlogPost | null>(null);
@@ -112,11 +113,13 @@ export const BlogView: React.FC<BlogViewProps> = ({ currentUser, onBack }) => {
 
   const handleCreatePost = () => {
     setEditingPost({ title: '', content: '', tags: [], status: 'draft' });
+    setIsPreviewMode(false);
     setActiveTab('editor');
   };
 
   const handleEditPost = (post: BlogPost) => {
     setEditingPost(post);
+    setIsPreviewMode(false);
     setActiveTab('editor');
   };
 
@@ -145,7 +148,7 @@ export const BlogView: React.FC<BlogViewProps> = ({ currentUser, onBack }) => {
             authorId: currentUser.uid,
             authorName: currentUser.displayName || 'Anonymous',
             authorImage: currentUser.photoURL || '',
-            excerpt: editingPost.content?.substring(0, 150) + '...',
+            excerpt: editingPost.content?.substring(0, 150).replace(/[#*`]/g, '') + '...',
             publishedAt: editingPost.status === 'published' ? (editingPost.publishedAt || now) : null,
             createdAt: editingPost.createdAt || now,
             likes: editingPost.likes || 0,
@@ -238,8 +241,8 @@ export const BlogView: React.FC<BlogViewProps> = ({ currentUser, onBack }) => {
               </div>
               {isOwner && (
                   <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <button onClick={() => handleEditPost(post)} className="p-1.5 hover:bg-slate-800 rounded text-slate-400 hover:text-white"><Edit3 size={14}/></button>
-                      <button onClick={() => handleDeletePost(post.id)} className="p-1.5 hover:bg-slate-800 rounded text-slate-400 hover:text-red-400"><Trash2 size={14}/></button>
+                      <button onClick={() => handleEditPost(post)} className="p-1.5 hover:bg-slate-800 rounded text-slate-400 hover:text-white" title="Edit"><Edit3 size={14}/></button>
+                      <button onClick={() => handleDeletePost(post.id)} className="p-1.5 hover:bg-slate-800 rounded text-slate-400 hover:text-red-400" title="Delete"><Trash2 size={14}/></button>
                   </div>
               )}
           </div>
@@ -271,7 +274,7 @@ export const BlogView: React.FC<BlogViewProps> = ({ currentUser, onBack }) => {
                 )}
                 <h1 className="text-xl font-bold flex items-center gap-2">
                     <Rss className="text-indigo-400"/>
-                    <span>{activeTab === 'my_blog' ? 'My Blog' : activeTab === 'editor' ? 'Editor' : 'Community Blog'}</span>
+                    <span className="hidden sm:inline">{activeTab === 'my_blog' ? 'My Blog' : activeTab === 'editor' ? 'Post Editor' : 'Community Blog'}</span>
                 </h1>
             </div>
             
@@ -402,22 +405,41 @@ export const BlogView: React.FC<BlogViewProps> = ({ currentUser, onBack }) => {
             {activeTab === 'editor' && (
                 <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 space-y-6 shadow-xl animate-fade-in-up h-full flex flex-col">
                     <div className="space-y-4">
-                        <input 
-                            type="text" 
-                            value={editingPost.title} 
-                            onChange={e => setEditingPost({...editingPost, title: e.target.value})}
-                            className="w-full bg-transparent text-3xl font-bold text-white placeholder-slate-600 outline-none border-b border-slate-800 pb-2 focus:border-indigo-500 transition-colors"
-                            placeholder="Enter Title..."
-                        />
+                        <div className="flex justify-between items-center">
+                            <input 
+                                type="text" 
+                                value={editingPost.title} 
+                                onChange={e => setEditingPost({...editingPost, title: e.target.value})}
+                                className="flex-1 bg-transparent text-3xl font-bold text-white placeholder-slate-600 outline-none border-b border-slate-800 pb-2 focus:border-indigo-500 transition-colors mr-4"
+                                placeholder="Post Title..."
+                            />
+                            
+                            <div className="flex bg-slate-950 p-1 rounded-lg border border-slate-800">
+                                <button 
+                                    onClick={() => setIsPreviewMode(false)}
+                                    className={`p-2 rounded transition-colors ${!isPreviewMode ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-500 hover:text-white'}`}
+                                    title="Edit Raw Markdown"
+                                >
+                                    <Code size={18}/>
+                                </button>
+                                <button 
+                                    onClick={() => setIsPreviewMode(true)}
+                                    className={`p-2 rounded transition-colors ${isPreviewMode ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-500 hover:text-white'}`}
+                                    title="Preview Rendered Content"
+                                >
+                                    <Eye size={18}/>
+                                </button>
+                            </div>
+                        </div>
                         
                         <div className="flex items-center gap-4">
                             <select 
                                 value={editingPost.status} 
                                 onChange={e => setEditingPost({...editingPost, status: e.target.value as any})}
-                                className="bg-slate-800 border border-slate-700 rounded-lg px-3 py-1.5 text-sm text-white outline-none"
+                                className="bg-slate-800 border border-slate-700 rounded-lg px-3 py-1.5 text-sm text-white outline-none focus:border-indigo-500"
                             >
-                                <option value="draft">Draft</option>
-                                <option value="published">Published</option>
+                                <option value="draft">Save as Draft</option>
+                                <option value="published">Publish to Feed</option>
                             </select>
                             
                             <div className="flex items-center gap-2 flex-1">
@@ -431,7 +453,7 @@ export const BlogView: React.FC<BlogViewProps> = ({ currentUser, onBack }) => {
                                             setTagInput('');
                                         }
                                     }}
-                                    className="bg-slate-800 border border-slate-700 rounded-lg px-3 py-1.5 text-sm text-white outline-none w-full"
+                                    className="bg-slate-800 border border-slate-700 rounded-lg px-3 py-1.5 text-sm text-white outline-none w-full focus:border-indigo-500"
                                     placeholder="Add tags (Enter to add)"
                                 />
                             </div>
@@ -440,18 +462,33 @@ export const BlogView: React.FC<BlogViewProps> = ({ currentUser, onBack }) => {
                         <div className="flex flex-wrap gap-2">
                             {editingPost.tags?.map((t, i) => (
                                 <span key={i} className="text-xs bg-indigo-900/30 text-indigo-300 px-2 py-1 rounded flex items-center gap-1 border border-indigo-500/30">
-                                    #{t} <button onClick={() => setEditingPost(prev => ({...prev, tags: prev.tags?.filter((_, idx) => idx !== i)}))}><X size={10}/></button>
+                                    #{t} <button onClick={() => setEditingPost(prev => ({...prev, tags: prev.tags?.filter((_, idx) => idx !== i)}))} className="hover:text-white"><X size={10}/></button>
                                 </span>
                             ))}
                         </div>
                     </div>
 
-                    <textarea 
-                        value={editingPost.content}
-                        onChange={e => setEditingPost({...editingPost, content: e.target.value})}
-                        className="flex-1 w-full bg-slate-950 border border-slate-800 rounded-xl p-4 text-slate-300 font-mono text-sm leading-relaxed outline-none focus:border-indigo-500 resize-none"
-                        placeholder="Write your story in Markdown..."
-                    />
+                    <div className="flex-1 min-h-[400px]">
+                        {isPreviewMode ? (
+                            <div className="h-full w-full bg-slate-950 border border-slate-800 rounded-xl p-8 overflow-y-auto prose prose-invert prose-sm max-w-none shadow-inner">
+                                {editingPost.content ? (
+                                    <MarkdownView content={editingPost.content} />
+                                ) : (
+                                    <div className="h-full flex flex-col items-center justify-center text-slate-700 italic">
+                                        <Eye size={48} className="mb-2 opacity-10" />
+                                        <p>Nothing to preview yet.</p>
+                                    </div>
+                                )}
+                            </div>
+                        ) : (
+                            <textarea 
+                                value={editingPost.content}
+                                onChange={e => setEditingPost({...editingPost, content: e.target.value})}
+                                className="w-full h-full bg-slate-950 border border-slate-800 rounded-xl p-6 text-slate-300 font-mono text-sm leading-relaxed outline-none focus:ring-2 focus:ring-indigo-500/30 resize-none shadow-inner"
+                                placeholder="Write your story in Markdown... Support for PlantUML (```plantuml) and LaTeX ($$ \sum $$) included."
+                            />
+                        )}
+                    </div>
 
                     <div className="flex justify-end pt-2">
                         <button 

@@ -1,10 +1,34 @@
-import React, { useState, useEffect } from 'react';
-import { Copy, Check, Image as ImageIcon, Loader2, Code as CodeIcon, ExternalLink } from 'lucide-react';
+
+import React, { useState, useEffect, useRef } from 'react';
+import { Copy, Check, Image as ImageIcon, Loader2, Code as CodeIcon, ExternalLink, Sigma } from 'lucide-react';
 import { encodePlantUML } from '../utils/plantuml';
 
 interface MarkdownViewProps {
   content: string;
 }
+
+const LatexRenderer: React.FC<{ tex: string }> = ({ tex }) => {
+    const containerRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        if (containerRef.current && (window as any).katex) {
+            try {
+                (window as any).katex.render(tex, containerRef.current, {
+                    throwOnError: false,
+                    displayMode: true
+                });
+            } catch (err) {
+                console.error("KaTeX error:", err);
+            }
+        }
+    }, [tex]);
+
+    return (
+        <div className="my-6 p-6 bg-slate-900/50 rounded-xl border border-slate-800 flex justify-center items-center overflow-x-auto shadow-inner">
+            <div ref={containerRef} className="text-indigo-100 text-lg"></div>
+        </div>
+    );
+};
 
 const PlantUMLRenderer: React.FC<{ code: string }> = ({ code }) => {
     const [url, setUrl] = useState<string | null>(null);
@@ -17,7 +41,7 @@ const PlantUMLRenderer: React.FC<{ code: string }> = ({ code }) => {
         setLoading(true);
         encodePlantUML(code).then(encoded => {
             if (isMounted) {
-                setUrl(`http://www.plantuml.com/plantuml/svg/${encoded}`);
+                setUrl(`https://www.plantuml.com/plantuml/svg/${encoded}`);
                 setLoading(false);
             }
         }).catch(err => {
@@ -36,7 +60,7 @@ const PlantUMLRenderer: React.FC<{ code: string }> = ({ code }) => {
     };
 
     return (
-        <div className="my-6 border border-slate-700 rounded-xl overflow-hidden bg-slate-900 shadow-lg">
+        <div className="my-6 border border-slate-700 rounded-xl overflow-hidden bg-slate-900 shadow-lg group">
             <div className="flex items-center justify-between px-4 py-2 bg-slate-800/80 border-b border-slate-700">
                 <div className="flex items-center gap-2">
                     <ImageIcon size={14} className="text-pink-400" />
@@ -60,11 +84,11 @@ const PlantUMLRenderer: React.FC<{ code: string }> = ({ code }) => {
                 </div>
             </div>
 
-            <div className="p-6 bg-slate-950 flex justify-center min-h-[100px] relative">
+            <div className="p-6 bg-white/5 flex justify-center min-h-[100px] relative">
                 {loading && (
                     <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-900/50 backdrop-blur-sm z-10 text-white gap-2">
                         <Loader2 size={24} className="animate-spin text-indigo-400" />
-                        <span className="text-[10px] font-bold uppercase">Rendering...</span>
+                        <span className="text-[10px] font-bold uppercase">Rendering Diagram...</span>
                     </div>
                 )}
                 
@@ -76,7 +100,7 @@ const PlantUMLRenderer: React.FC<{ code: string }> = ({ code }) => {
                     <img 
                         src={url} 
                         alt="PlantUML Diagram" 
-                        className="max-w-full h-auto py-4 invert brightness-110 contrast-125"
+                        className="max-w-full h-auto py-4 invert brightness-110 contrast-125 transition-transform duration-500 hover:scale-[1.02]"
                         onLoad={() => setLoading(false)}
                     />
                 ) : !loading && (
@@ -97,16 +121,33 @@ export const MarkdownView: React.FC<MarkdownViewProps> = ({ content }) => {
   };
 
   const formatInline = (text: string) => {
-    const parts = text.split(/(\*\*.*?\*\*)/g);
-    return parts.map((p, i) => 
-        p.startsWith('**') 
-        ? <strong key={i} className="text-white font-semibold">{p.slice(2, -2)}</strong> 
-        : p
-    );
+    // Basic inline formatting: Bold and Inline Math
+    let result: React.ReactNode[] = [];
+    
+    // Split by **bold** or $inline math$
+    const parts = text.split(/(\*\*.*?\*\*|\$.*?\$)/g);
+    
+    return parts.map((p, i) => {
+        if (p.startsWith('**') && p.endsWith('**')) {
+            return <strong key={i} className="text-white font-semibold">{p.slice(2, -2)}</strong>;
+        }
+        if (p.startsWith('$') && p.endsWith('$')) {
+            const math = p.slice(1, -1);
+            // If KaTeX is available, we'll try to render it inline using a simple span
+            // For true high quality, a more complex regex engine would be needed.
+            return (
+                <span key={i} className="inline-block px-1 font-serif italic text-indigo-300" dangerouslySetInnerHTML={{
+                    __html: (window as any).katex ? (window as any).katex.renderToString(math, { throwOnError: false }) : math
+                }} />
+            );
+        }
+        return p;
+    });
   };
 
   const renderContent = (text: string) => {
-    const parts = text.split(/(```[\s\S]*?```)/g);
+    // 1. First split by Blocks (Code Blocks and LaTeX Blocks)
+    const parts = text.split(/(```[\s\S]*?```|\$\$[\s\S]*?\$\$)/g);
     
     return parts.map((part, index) => {
       if (part.startsWith('```')) {
@@ -133,6 +174,9 @@ export const MarkdownView: React.FC<MarkdownViewProps> = ({ content }) => {
              <pre className="p-4 text-sm font-mono text-indigo-100 overflow-x-auto whitespace-pre-wrap">{content}</pre>
           </div>
         );
+      } else if (part.startsWith('$$')) {
+          const tex = part.slice(2, -2).trim();
+          return <LatexRenderer key={index} tex={tex} />;
       } else {
         const lines = part.split('\n');
         const renderedElements: React.ReactNode[] = [];
