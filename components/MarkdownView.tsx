@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { Copy, Check, Image as ImageIcon, Loader2, Code as CodeIcon, ExternalLink, Sigma, AlertCircle } from 'lucide-react';
 import { encodePlantUML } from '../utils/plantuml';
@@ -18,10 +17,18 @@ const LatexRenderer: React.FC<{ tex: string, displayMode?: boolean }> = ({ tex, 
         const tryRender = () => {
             if (!containerRef.current || !isMounted) return;
             
+            // KaTeX explicitly fails in Quirks Mode. 
+            // document.compatMode should be 'CSS1Compat' for Standards Mode.
+            if (document.compatMode === 'BackCompat') {
+                setErrorMessage("Browser is in Quirks Mode. LaTeX rendering disabled. Check HTML DOCTYPE.");
+                containerRef.current.textContent = displayMode ? `$$\n${tex}\n$$` : `$${tex}$`;
+                return;
+            }
+
             if ((window as any).katex) {
                 try {
                     (window as any).katex.render(tex, containerRef.current, {
-                        throwOnError: true, // Throw so we can catch and show our UI
+                        throwOnError: true,
                         displayMode: displayMode
                     });
                     setErrorMessage(null);
@@ -29,7 +36,9 @@ const LatexRenderer: React.FC<{ tex: string, displayMode?: boolean }> = ({ tex, 
                     console.error("KaTeX error:", err);
                     setErrorMessage(err.message || "Unknown LaTeX error");
                     // Fallback to raw text inside the container if error
-                    containerRef.current.textContent = displayMode ? `$$\n${tex}\n$$` : `$${tex}$`;
+                    if (containerRef.current) {
+                        containerRef.current.textContent = displayMode ? `$$\n${tex}\n$$` : `$${tex}$`;
+                    }
                 }
             } else {
                 // If KaTeX isn't loaded yet, poll for it
