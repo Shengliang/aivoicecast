@@ -105,6 +105,24 @@ const FileTreeItem = ({ node, depth, activeId, onSelect, onToggle, onDelete, onR
                 )}
                 <span className="text-xs truncate flex-1">{node.name}</span>
                 {node.status === 'modified' && <div className="w-1.5 h-1.5 rounded-full bg-amber-400 ml-1"></div>}
+                
+                {/* Rename/Delete Buttons */}
+                <div className="flex opacity-0 group-hover:opacity-100 transition-opacity gap-0.5">
+                    <button 
+                        onClick={(e) => { e.stopPropagation(); onRename(node); }}
+                        className="p-1 hover:bg-slate-700 rounded text-slate-500 hover:text-indigo-400"
+                        title="Rename"
+                    >
+                        <Edit2 size={12} />
+                    </button>
+                    <button 
+                        onClick={(e) => { e.stopPropagation(); onDelete(node); }}
+                        className="p-1 hover:bg-slate-700 rounded text-slate-500 hover:text-red-400"
+                        title="Delete"
+                    >
+                        <Trash2 size={12} />
+                    </button>
+                </div>
             </div>
             {isExpanded && node.children && (
                 <div>
@@ -428,6 +446,96 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
       if (isSharedSession && sessionId) updateCodeFile(sessionId, updatedFile);
   };
 
+  const handleRenameNode = async (node: TreeNode) => {
+    const newName = prompt(`Rename ${node.name} to:`, node.name);
+    if (!newName || newName === node.name) return;
+
+    try {
+        setLoadingFolders(prev => ({ ...prev, [node.id]: true }));
+        if (activeTab === 'cloud') {
+            const oldPath = node.id;
+            const parts = oldPath.split('/');
+            parts.pop();
+            const newPath = [...parts, newName].join('/');
+            await moveCloudFile(oldPath, newPath);
+            await refreshExplorer();
+        } else if (activeTab === 'drive' && driveToken) {
+            // Drive rename is typically a simple patch of the title/name
+            // but our moveDriveFile service handles complex parent moving.
+            // A simpler rename patch would be better for local name changes.
+            // For now, we assume same parent:
+            const driveData = node.data as DriveFile;
+            // Since our moveDriveFile uses query params for parent changes,
+            // we can reuse it with same parents if we update service to support simple rename
+            // or just use this hacky but effective way for now
+            alert("Google Drive renaming functionality coming soon.");
+        } else if (activeTab === 'github' && project.github && githubToken) {
+            const githubData = node.data as CodeFile;
+            await renameRepoFile(
+                githubToken,
+                project.github.owner,
+                project.github.repo,
+                githubData.path || githubData.name,
+                newName,
+                githubData.content || '',
+                githubData.sha || '',
+                project.github.branch
+            );
+            await refreshExplorer();
+        }
+    } catch (e: any) {
+        alert(`Rename failed: ${e.message}`);
+    } finally {
+        setLoadingFolders(prev => ({ ...prev, [node.id]: false }));
+    }
+  };
+
+  const handleDeleteNode = async (node: TreeNode) => {
+    if (!confirm(`Delete ${node.name}? This action cannot be undone.`)) return;
+
+    try {
+        setLoadingFolders(prev => ({ ...prev, [node.id]: true }));
+        if (activeTab === 'cloud') {
+            if (node.type === 'folder') {
+                await deleteCloudFolderRecursive(node.id);
+            } else {
+                await deleteCloudItem(node.id);
+            }
+            await refreshExplorer();
+        } else if (activeTab === 'drive' && driveToken) {
+            await deleteDriveFile(driveToken, node.id);
+            await refreshExplorer();
+        } else if (activeTab === 'github' && project.github && githubToken) {
+            const githubData = node.data as CodeFile;
+            await deleteRepoFile(
+                githubToken,
+                project.github.owner,
+                project.github.repo,
+                githubData.path || githubData.name,
+                githubData.sha || '',
+                `Delete ${node.name}`,
+                project.github.branch
+            );
+            await refreshExplorer();
+        } else if (activeTab === 'session' && sessionId) {
+            await deleteCodeFile(sessionId, node.name);
+            // Local state update for ephemeral sessions handled by firestore subscription
+        }
+        
+        // Remove from slots if active
+        activeSlots.forEach((slot, idx) => {
+            if (slot && (slot.path === node.id || slot.name === node.name)) {
+                updateSlotFile(null, idx);
+            }
+        });
+
+    } catch (e: any) {
+        alert(`Delete failed: ${e.message}`);
+    } finally {
+        setLoadingFolders(prev => ({ ...prev, [node.id]: false }));
+    }
+  };
+
   const resize = useCallback((e: MouseEvent) => {
     if (isDraggingLeft) { const newWidth = e.clientX; if (newWidth > 160 && newWidth < 500) setLeftWidth(newWidth); }
     if (isDraggingRight) { const newWidth = window.innerWidth - e.clientX; if (newWidth > 160 && newWidth < 500) setRightWidth(newWidth); }
@@ -585,6 +693,9 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
       } else if (activeTab === 'drive' && driveToken && driveRootId) {
           const files = await listDriveFiles(driveToken, driveRootId);
           setDriveItems([{ id: driveRootId, name: 'CodeStudio', mimeType: 'application/vnd.google-apps.folder', isLoaded: true }, ...files.map(f => ({ ...f, parentId: driveRootId, isLoaded: false }))]);
+      } else if (activeTab === 'github' && project.github && githubToken) {
+          // Force refresh repo
+          await handleOpenRepo(`${project.github.owner}/${project.github.repo}`);
       }
   };
 
@@ -782,9 +893,9 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
                   <button onClick={refreshExplorer} className="p-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded border border-slate-700 transition-colors"><RefreshCw size={16}/></button>
               </div>
               <div className="flex-1 overflow-y-auto">
-                  {activeTab === 'cloud' && cloudTree.map(node => <FileTreeItem key={node.id} node={node} depth={0} activeId={activeFile?.path} onSelect={handleExplorerSelect} onToggle={handleCloudToggle} onDelete={()=>{}} onShare={()=>{}} expandedIds={expandedFolders} loadingIds={loadingFolders} onDragStart={()=>{}} onDrop={()=>{}}/>)}
-                  {activeTab === 'drive' && (driveToken ? driveTree.map(node => <FileTreeItem key={node.id} node={node} depth={0} activeId={activeFile?.path} onSelect={handleExplorerSelect} onToggle={handleDriveToggle} onDelete={()=>{}} expandedIds={expandedFolders} loadingIds={loadingFolders} onDragStart={()=>{}} onDrop={()=>{}}/>) : <div className="p-4 text-center"><button onClick={handleConnectDrive} className="px-4 py-2 bg-slate-800 text-white text-xs font-bold rounded-lg border border-slate-700 hover:bg-slate-700">Connect Drive</button></div>)}
-                  {activeTab === 'github' && (project.github ? workspaceTree.map(node => <FileTreeItem key={node.id} node={node} depth={0} activeId={activeFile?.path} onSelect={handleExplorerSelect} onToggle={()=>{}} onDelete={()=>{}} onRename={()=>{}} expandedIds={expandedFolders} loadingIds={loadingFolders} onDragStart={()=>{}} onDrop={()=>{}}/>) : <div className="p-4 text-center"><button onClick={() => handleOpenRepo()} className="px-4 py-2 bg-slate-800 text-white text-xs font-bold rounded-lg border border-slate-700 hover:bg-slate-700">Open Default Repo</button></div>)}
+                  {activeTab === 'cloud' && cloudTree.map(node => <FileTreeItem key={node.id} node={node} depth={0} activeId={activeFile?.path} onSelect={handleExplorerSelect} onToggle={handleCloudToggle} onDelete={handleDeleteNode} onRename={handleRenameNode} expandedIds={expandedFolders} loadingIds={loadingFolders} onDragStart={()=>{}} onDrop={()=>{}}/>)}
+                  {activeTab === 'drive' && (driveToken ? driveTree.map(node => <FileTreeItem key={node.id} node={node} depth={0} activeId={activeFile?.path} onSelect={handleExplorerSelect} onToggle={handleDriveToggle} onDelete={handleDeleteNode} onRename={handleRenameNode} expandedIds={expandedFolders} loadingIds={loadingFolders} onDragStart={()=>{}} onDrop={()=>{}}/>) : <div className="p-4 text-center"><button onClick={handleConnectDrive} className="px-4 py-2 bg-slate-800 text-white text-xs font-bold rounded-lg border border-slate-700 hover:bg-slate-700">Connect Drive</button></div>)}
+                  {activeTab === 'github' && (project.github ? workspaceTree.map(node => <FileTreeItem key={node.id} node={node} depth={0} activeId={activeFile?.path} onSelect={handleExplorerSelect} onToggle={()=>{}} onDelete={handleDeleteNode} onRename={handleRenameNode} expandedIds={expandedFolders} loadingIds={loadingFolders} onDragStart={()=>{}} onDrop={()=>{}}/>) : <div className="p-4 text-center"><button onClick={() => handleOpenRepo()} className="px-4 py-2 bg-slate-800 text-white text-xs font-bold rounded-lg border border-slate-700 hover:bg-slate-700">Open Default Repo</button></div>)}
               </div>
           </div>
 
