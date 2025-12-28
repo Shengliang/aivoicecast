@@ -1,4 +1,3 @@
-
 import { CommunityDiscussion } from '../types';
 
 export const LATEX_EXAMPLE_DOC: CommunityDiscussion = {
@@ -17,47 +16,47 @@ export const LATEX_EXAMPLE_DOC: CommunityDiscussion = {
 This document demonstrates the mathematical typesetting capabilities of the AIVoiceCast Platform using KaTeX.
 
 ## 1. Inline Math
-You can include math within a sentence using single dollar signs. For example, the Pythagorean theorem is $a^2 + b^2 = c^2$. You can also show variables like $\alpha$, $\beta$, and $\gamma$.
+You can include math within a sentence using single dollar signs. For example, the Pythagorean theorem is $a^2 + b^2 = c^2$. You can also show variables like $\\alpha$, $\\beta$, and $\\gamma$.
 
 ## 2. Block Math
 For larger equations, use double dollar signs:
 
 $$
-e^{i\pi} + 1 = 0
+e^{i\\pi} + 1 = 0
 $$
 
 ## 3. Calculus
 The definition of a derivative:
 $$
-f'(a) = \lim_{h \to 0} \frac{f(a+h) - f(a)}{h}
+f'(a) = \\lim_{h \\to 0} \\frac{f(a+h) - f(a)}{h}
 $$
 
 And a complex integral:
 $$
-\int_{-\infty}^{\infty} e^{-x^2} dx = \sqrt{\pi}
+\\int_{-\\infty}^{\\infty} e^{-x^2} dx = \\sqrt{\\pi}
 $$
 
 ## 4. Linear Algebra
 Matrices are also supported:
 
 $$
-\begin{pmatrix}
-1 & 0 & 0 \\
-0 & 1 & 0 \\
+\\begin{pmatrix}
+1 & 0 & 0 \\\\
+0 & 1 & 0 \\\\
 0 & 0 & 1
-\end{pmatrix}
+\\end{pmatrix}
 $$
 
 ## 5. Statistics
 The standard normal distribution probability density function:
 $$
-\phi(x) = \frac{1}{\sigma\sqrt{2\pi}} e^{-\frac{1}{2}\left(\frac{x-\mu}{\sigma}\right)^2}
+\\phi(x) = \\frac{1}{\\sigma\\sqrt{2\\pi}} e^{-\\frac{1}{2}\\left(\\frac{x-\\mu}{\\sigma}\\right)^2}
 $$
 
 ## 6. Physics
 Einstein's Field Equations:
 $$
-G_{\mu\nu} + \Lambda g_{\mu\nu} = \kappa T_{\mu\nu}
+G_{\\mu\\nu} + \\Lambda g_{\\mu\\nu} = \\kappa T_{\\mu\\nu}
 $$
 
 ---
@@ -72,7 +71,7 @@ export const APP_COMPARISON_DOC: CommunityDiscussion = {
   userId: 'system',
   userName: 'System Architect',
   transcript: [],
-  createdAt: 1766016000000, // Dec 18, 2025
+  createdAt: 1766016000000,
   isManual: true,
   title: "Design Doc: Document Studio vs. Community Blog",
   designDoc: `
@@ -125,10 +124,10 @@ UI -> UI: Render Preview
 We model the efficiency of our AI-driven synthesis using the context compression ratio $R$. For a session with $n$ individual transcript turns, the document fidelity $F$ is defined as:
 
 $$
-F = \int_{0}^{T} \frac{\sum_{i=1}^{n} w_i \cdot \text{entropy}(turn_i)}{\text{tokens}_{total}} dt
+F = \\int_{0}^{T} \\frac{\\sum_{i=1}^{n} w_i \\cdot \\text{entropy}(turn_i)}{\\text{tokens}_{total}} dt
 $$
 
-Where $w_i$ represents the semantic weight assigned by the reasoning engine. Inline math examples like $\sigma^2$ or $\sqrt{x}$ are also supported for technical specifications.
+Where $w_i$ represents the semantic weight assigned by the reasoning engine. Inline math examples like $\\sigma^2$ or $\\sqrt{x}$ are also supported for technical specifications.
 
 ## 5. Behavioral Architecture
 
