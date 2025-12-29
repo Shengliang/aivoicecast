@@ -149,7 +149,8 @@ export type ViewState =
   | 'notebook_viewer' 
   | 'card_workshop' 
   | 'card_explorer' 
-  | 'card_viewer';
+  | 'card_viewer'
+  | 'icon_studio';
 
 export interface AudioState {
   isConnected: boolean;
