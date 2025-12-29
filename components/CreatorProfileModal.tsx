@@ -1,5 +1,6 @@
+
 import React, { useState, useEffect } from 'react';
-import { X, User, MessageSquare, Heart, Users, Check, Bell, Play } from 'lucide-react';
+import { X, User, MessageSquare, Heart, Users, Check, Bell, Play, Calendar } from 'lucide-react';
 import { Channel, UserProfile } from '../types';
 import { getUserProfile, followUser, unfollowUser, getUserProfileByEmail, getChannelsByIds, getCreatorChannels } from '../services/firestoreService';
 
@@ -9,10 +10,11 @@ interface CreatorProfileModalProps {
   channel: Channel;
   onMessage: () => void;
   onChannelClick: (id: string) => void;
+  onBookSession?: (user: UserProfile) => void;
   currentUser?: any;
 }
 
-export const CreatorProfileModal: React.FC<CreatorProfileModalProps> = ({ isOpen, onClose, channel, onMessage, onChannelClick, currentUser }) => {
+export const CreatorProfileModal: React.FC<CreatorProfileModalProps> = ({ isOpen, onClose, channel, onMessage, onChannelClick, onBookSession, currentUser }) => {
   const [creatorProfile, setCreatorProfile] = useState<UserProfile | null>(null);
   const [isFollowing, setIsFollowing] = useState(false);
   const [followerCount, setFollowerCount] = useState(0);
@@ -73,7 +75,7 @@ export const CreatorProfileModal: React.FC<CreatorProfileModalProps> = ({ isOpen
                     }
                 }
                 
-                // NEW: Load Created Channels (Episodes)
+                // Load Created Channels (Episodes)
                 setLoadingRecent(true);
                 getCreatorChannels(oid).then(channels => {
                     if (isActive) setRecentChannels(channels);
@@ -86,7 +88,6 @@ export const CreatorProfileModal: React.FC<CreatorProfileModalProps> = ({ isOpen
                 console.error("Failed to load creator profile", err);
             }
         } else {
-            // Fallback purely for display if no owner found at all
             if (isActive) setFollowerCount(1205); 
         }
         if (isActive) setIsLoading(false);
@@ -138,6 +139,14 @@ export const CreatorProfileModal: React.FC<CreatorProfileModalProps> = ({ isOpen
     }
   };
 
+  const handleBook = () => {
+    if (creatorProfile && onBookSession) {
+        onBookSession(creatorProfile);
+    } else if (!creatorProfile) {
+        alert("Availability details for this creator are not loaded yet.");
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm animate-fade-in">
       <div className="w-full sm:w-[400px] bg-slate-900 border-t sm:border border-slate-800 rounded-t-2xl sm:rounded-2xl shadow-2xl overflow-hidden max-h-[90vh] flex flex-col">
@@ -173,8 +182,37 @@ export const CreatorProfileModal: React.FC<CreatorProfileModalProps> = ({ isOpen
             </h2>
             <p className="text-sm text-slate-400">@{channel.voiceName.toLowerCase()}_official</p>
 
+            {/* Action Buttons */}
+            <div className="flex flex-wrap gap-2 w-full mt-6">
+                <button 
+                    onClick={handleFollow}
+                    disabled={isLoading || !targetOwnerId}
+                    className={`flex-1 py-2.5 rounded-lg font-bold transition-all flex items-center justify-center gap-2 ${
+                        isFollowing 
+                        ? 'bg-slate-800 text-slate-200 border border-slate-700' 
+                        : 'bg-red-600 hover:bg-red-500 text-white shadow-lg shadow-red-900/20'
+                    } ${isLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
+                >
+                    {isFollowing ? 'Following' : 'Follow'}
+                </button>
+                <button 
+                    onClick={handleBook}
+                    className="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg font-bold shadow-lg transition-colors flex items-center justify-center gap-2"
+                >
+                    <Calendar size={18} />
+                    Book
+                </button>
+                <button 
+                    onClick={onMessage}
+                    className="w-full py-2.5 bg-slate-800 hover:bg-slate-700 text-white rounded-lg font-bold border border-slate-700 transition-colors flex items-center justify-center gap-2"
+                >
+                    <MessageSquare size={18} />
+                    Message
+                </button>
+            </div>
+
             {/* Stats Row */}
-            <div className="flex items-center gap-6 mt-4 text-sm">
+            <div className="flex items-center justify-center gap-8 mt-6 text-sm">
                 <div className="flex flex-col items-center">
                     <span className="font-bold text-white">{creatorProfile?.following?.length || 142}</span>
                     <span className="text-slate-500 text-xs">Following</span>
@@ -187,32 +225,6 @@ export const CreatorProfileModal: React.FC<CreatorProfileModalProps> = ({ isOpen
                     <span className="font-bold text-white">{creatorProfile?.likedChannelIds?.length || 0}</span>
                     <span className="text-slate-500 text-xs">Loved</span>
                 </div>
-            </div>
-
-            {/* Action Buttons */}
-            <div className="flex gap-2 w-full mt-6">
-                <button 
-                    onClick={handleFollow}
-                    disabled={isLoading || !targetOwnerId}
-                    className={`flex-1 py-3 rounded-lg font-bold transition-all flex items-center justify-center gap-2 ${
-                        isFollowing 
-                        ? 'bg-slate-800 text-slate-200 border border-slate-700' 
-                        : 'bg-red-600 hover:bg-red-500 text-white shadow-lg shadow-red-900/20'
-                    } ${isLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
-                >
-                    {isFollowing ? (
-                        <>Following</>
-                    ) : (
-                        <>Follow</>
-                    )}
-                </button>
-                <button 
-                    onClick={onMessage}
-                    className="flex-1 py-3 bg-slate-800 hover:bg-slate-700 text-white rounded-lg font-bold border border-slate-700 transition-colors flex items-center justify-center gap-2"
-                >
-                    <MessageSquare size={18} />
-                    Message
-                </button>
             </div>
             
             {/* Bio */}
@@ -269,10 +281,6 @@ export const CreatorProfileModal: React.FC<CreatorProfileModalProps> = ({ isOpen
                                     <div className="absolute bottom-1 right-1 flex items-center gap-1 text-[10px] text-white font-bold drop-shadow-md bg-black/40 px-1 rounded backdrop-blur-sm">
                                         <Play size={8} fill="white" /> {ch.likes || 0}
                                     </div>
-                                    {/* New Indicator (created within last 7 days) */}
-                                    {ch.createdAt && (Date.now() - ch.createdAt < 86400000 * 7) && (
-                                        <div className="absolute top-1 left-1 w-2 h-2 bg-red-500 rounded-full border border-white shadow-sm"></div>
-                                    )}
                                 </div>
                             ))}
                         </div>
