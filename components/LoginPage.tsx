@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Podcast, ArrowRight, ShieldCheck, Loader2, AlertCircle, Rocket, Shield, Code, Image as ImageIcon, MessageSquare } from 'lucide-react';
+import { Podcast, ArrowRight, ShieldCheck, Loader2, AlertCircle, Rocket, Shield, Code, Image as ImageIcon, MessageSquare, Sparkles } from 'lucide-react';
 import { signInWithGoogle } from '../services/authService';
 import { logUserActivity } from '../services/firestoreService';
 
@@ -47,39 +47,58 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onPrivacyClick, onMissionC
       {/* Background Ambience */}
       <div className="absolute top-0 left-0 w-full h-full overflow-hidden pointer-events-none">
         <div className="absolute top-[-20%] left-[-10%] w-[50%] h-[50%] bg-indigo-600/10 rounded-full blur-[120px]"></div>
-        <div className="absolute bottom-[-20%] right-[-10%] w-[50%] h-[50%] bg-purple-600/10 rounded-full blur-[120px]"></div>
+        <div className="absolute bottom-[-20%] right-[-10%] w-[50%] h-[50%] bg-cyan-600/10 rounded-full blur-[120px]"></div>
       </div>
 
       <div className="relative z-10 w-full max-w-md">
         <div className="bg-slate-900/80 backdrop-blur-xl border border-slate-800 rounded-3xl shadow-2xl p-8 text-center animate-fade-in-up">
           
-          {/* Branded 'Neural Prism' App Icon */}
+          {/* Branded 'Neural Singularity' App Icon */}
           <div className="w-24 h-24 mx-auto mb-6 relative group">
-             <div className="absolute inset-0 bg-gradient-to-tr from-indigo-600 to-purple-600 rounded-2xl shadow-lg shadow-indigo-500/40 group-hover:scale-105 transition-transform duration-500"></div>
-             <svg viewBox="0 0 512 512" className="relative z-10 w-full h-full p-2">
-                {/* Neural Prism Frame */}
-                <path d="M256 80 L440 256 L256 432 L72 256 Z" fill="none" stroke="white" strokeWidth="12" strokeOpacity="0.3" />
-                {/* Central Workspace Core */}
-                <path d="M256 140 L372 256 L256 372 L140 256 Z" fill="white" />
-                {/* Internal Extension Elements (Simplified for small rendering) */}
-                <g stroke="#4f46e5" strokeWidth="18" strokeLinecap="round" fill="none" transform="translate(256, 256) scale(0.6) translate(-256, -256)">
-                    <path d="M256 180 v152" />
-                    <path d="M200 220 v72" />
-                    <path d="M312 220 v72" />
+             <div className="absolute inset-0 bg-slate-950 rounded-3xl border border-slate-800 group-hover:border-indigo-500/50 transition-colors"></div>
+             <svg viewBox="0 0 512 512" className="relative z-10 w-full h-full p-4">
+                <defs>
+                    <linearGradient id="singularityGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                        <stop offset="0%" stopColor="#6366f1" />
+                        <stop offset="100%" stopColor="#22d3ee" />
+                    </linearGradient>
+                </defs>
+                {/* Prism Hexagon Shell */}
+                <path d="M256 60 L440 160 L440 352 L256 452 L72 352 L72 160 Z" fill="none" stroke="url(#singularityGrad)" strokeWidth="16" strokeOpacity="0.2" />
+                
+                {/* Connection Nodes */}
+                <g stroke="white" strokeWidth="4" strokeOpacity="0.2" strokeLinecap="round">
+                    <line x1="256" y1="256" x2="256" y2="100" />
+                    <line x1="256" y1="256" x2="410" y2="340" />
+                    <line x1="256" y1="256" x2="102" y2="340" />
                 </g>
-                {/* Sparkle */}
-                <path d="M400 120 l8 -20 l8 20 l20 8 l-20 8 l-8 20 l-8 -20 l-20 -8 z" fill="white" opacity="0.9" />
+
+                {/* The "Me" Core - Stylized Pulsing Heartbeat */}
+                <circle cx="256" cy="256" r="85" fill="white" className="drop-shadow-[0_0_20px_rgba(255,255,255,0.6)]" />
+                
+                {/* Voice Interaction Waveform */}
+                <path 
+                    d="M196 256 h15 v-20 h15 v40 h15 v-60 h15 v60 h15 v-40 h15 v20 h15" 
+                    stroke="url(#singularityGrad)" 
+                    strokeWidth="10" 
+                    fill="none" 
+                    strokeLinecap="round" 
+                    strokeLinejoin="round" 
+                />
+                
+                {/* Spark of Intelligence */}
+                <path d="M370 120 l6 -15 l6 15 l15 6 l-15 6 l-6 15 l-6 -15 l-15 -6 z" fill="#6366f1" />
              </svg>
-             {/* Glow effect */}
-             <div className="absolute -inset-1 bg-gradient-to-tr from-indigo-500 to-purple-500 rounded-2xl blur opacity-20 group-hover:opacity-40 transition-opacity"></div>
+             {/* Outer Glow */}
+             <div className="absolute -inset-2 bg-gradient-to-tr from-indigo-500/10 to-cyan-500/10 rounded-3xl blur-xl opacity-0 group-hover:opacity-100 transition-opacity"></div>
           </div>
 
-          <h1 className="text-3xl font-bold text-white mb-2 tracking-tight">AIVoiceCast</h1>
-          <p className="text-slate-400 text-sm mb-8 font-medium tracking-wide">
-            Your personal AI extension for <br/> 
-            <span className="text-indigo-400">Learn</span> • 
-            <span className="text-purple-400"> Work</span> • 
-            <span className="text-emerald-400"> Share</span>
+          <h1 className="text-3xl font-black text-white mb-2 tracking-tight">AIVoiceCast</h1>
+          <p className="text-slate-400 text-sm mb-8 font-medium tracking-wide leading-relaxed">
+            The AI extension of your <br/> 
+            <span className="text-indigo-400 font-bold">Mind</span> • 
+            <span className="text-cyan-400 font-bold">Work</span> • 
+            <span className="text-emerald-400 font-bold">Voice</span>
           </p>
 
           <div className="space-y-6">
@@ -130,7 +149,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onPrivacyClick, onMissionC
                         className="text-xs text-slate-500 hover:text-orange-400 flex items-center gap-1.5 transition-colors group"
                     >
                         <Rocket size={12} className="group-hover:scale-110 transition-transform" />
-                        <span>Mission & Manifesto</span>
+                        <span>Mission</span>
                     </button>
                 )}
                 <div className="w-1 h-1 bg-slate-800 rounded-full"></div>
@@ -140,7 +159,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onPrivacyClick, onMissionC
                         className="text-xs text-slate-500 hover:text-emerald-400 flex items-center gap-1.5 transition-colors group"
                     >
                         <Shield size={12} className="group-hover:scale-110 transition-transform" />
-                        <span>Privacy Policy</span>
+                        <span>Privacy</span>
                     </button>
                 )}
             </div>
@@ -148,25 +167,25 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onPrivacyClick, onMissionC
         </div>
         
         <div className="mt-8 flex flex-col items-center gap-4 animate-fade-in [animation-delay:400ms]">
-            <p className="text-center text-slate-600 text-[10px] uppercase font-bold tracking-widest">
-              Unified Ecosystem
+            <p className="text-center text-slate-600 text-[10px] uppercase font-bold tracking-widest flex items-center gap-2">
+              <Sparkles size={10} /> Knowledge Operating System
             </p>
-            <div className="flex gap-6 text-slate-700">
-                <div className="flex flex-col items-center gap-1">
-                    <Code size={18} />
-                    <span className="text-[8px] uppercase tracking-tighter">Code</span>
+            <div className="flex gap-10 text-slate-700">
+                <div className="flex flex-col items-center gap-1.5">
+                    <Code size={20} />
+                    <span className="text-[8px] uppercase tracking-tighter font-bold">Build</span>
                 </div>
-                <div className="flex flex-col items-center gap-1">
-                    <ImageIcon size={18} />
-                    <span className="text-[8px] uppercase tracking-tighter">Design</span>
+                <div className="flex flex-col items-center gap-1.5">
+                    <Podcast size={20} />
+                    <span className="text-[8px] uppercase tracking-tighter font-bold">Learn</span>
                 </div>
-                <div className="flex flex-col items-center gap-1">
-                    <MessageSquare size={18} />
-                    <span className="text-[8px] uppercase tracking-tighter">Team</span>
+                <div className="flex flex-col items-center gap-1.5">
+                    <MessageSquare size={20} />
+                    <span className="text-[8px] uppercase tracking-tighter font-bold">Connect</span>
                 </div>
-                <div className="flex flex-col items-center gap-1">
-                    <Podcast size={18} />
-                    <span className="text-[8px] uppercase tracking-tighter">Learn</span>
+                <div className="flex flex-col items-center gap-1.5">
+                    <ImageIcon size={20} />
+                    <span className="text-[8px] uppercase tracking-tighter font-bold">Share</span>
                 </div>
             </div>
         </div>
