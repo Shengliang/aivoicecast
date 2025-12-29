@@ -227,6 +227,17 @@ const App: React.FC = () => {
     setViewState(newState);
   };
 
+  const handleLogoClick = () => {
+    if (viewState === 'directory' && activeTab === 'categories') {
+      // If already on the home screen, reload the app
+      window.location.reload();
+    } else {
+      // Otherwise, navigate back home
+      handleSetViewState('directory');
+      setActiveTab('categories');
+    }
+  };
+
   useEffect(() => {
     const updateAudioState = () => setAudioIsPlaying(isAnyAudioPlaying());
     window.addEventListener('audio-audit-updated', updateAudioState);
@@ -370,7 +381,14 @@ const App: React.FC = () => {
       {viewState !== 'live_session' && (
       <nav className="hidden md:block sticky top-0 z-50 bg-slate-900/90 backdrop-blur-md border-b border-slate-800">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-            <div className="flex items-center cursor-pointer" onClick={() => { handleSetViewState('directory'); setActiveTab('categories'); }}><BrandLogo size={36}/><span className="ml-3 text-xl font-bold">AIVoiceCast</span></div>
+            <div 
+              className="flex items-center cursor-pointer group" 
+              onClick={handleLogoClick}
+              title={viewState === 'directory' && activeTab === 'categories' ? "Reload App" : "Back to Home"}
+            >
+              <BrandLogo size={36}/>
+              <span className="ml-3 text-xl font-bold group-hover:text-indigo-400 transition-colors">AIVoiceCast</span>
+            </div>
             <div className="flex flex-1 max-w-md mx-8 relative"><input type="text" className="block w-full pl-10 pr-3 py-2 border border-slate-700 rounded-full bg-slate-800/50 text-slate-300" placeholder={t.search} value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}/></div>
             <div className="flex items-center space-x-4"><StudioMenu isUserMenuOpen={isUserMenuOpen} setIsUserMenuOpen={setIsUserMenuOpen} userProfile={userProfile} setUserProfile={setUserProfile} currentUser={currentUser} globalVoice={globalVoice} setGlobalVoice={setGlobalVoice} setIsCreateModalOpen={setIsCreateModalOpen} setIsVoiceCreateOpen={setIsVoiceCreateOpen} setIsSyncModalOpen={setIsSyncModalOpen} setIsSettingsModalOpen={setIsAccountSettingsOpen} onOpenUserGuide={() => handleSetViewState('user_guide')} onNavigate={(view: any) => handleSetViewState(view)} onOpenPrivacy={() => setIsPrivacyOpen(true)} t={t} channels={channels} language={language} setLanguage={setLanguage} allApps={allApps}/></div>
         </div>
