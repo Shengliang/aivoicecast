@@ -53,35 +53,33 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onPrivacyClick, onMissionC
       <div className="relative z-10 w-full max-w-md">
         <div className="bg-slate-900/80 backdrop-blur-xl border border-slate-800 rounded-3xl shadow-2xl p-8 text-center animate-fade-in-up">
           
-          {/* Branded 'Digital Core' App Icon */}
+          {/* Branded 'Neural Prism' App Icon */}
           <div className="w-24 h-24 mx-auto mb-6 relative group">
              <div className="absolute inset-0 bg-gradient-to-tr from-indigo-600 to-purple-600 rounded-2xl shadow-lg shadow-indigo-500/40 group-hover:scale-105 transition-transform duration-500"></div>
              <svg viewBox="0 0 512 512" className="relative z-10 w-full h-full p-2">
-                {/* Diamond Core */}
-                <path d="M256 60 L452 256 L256 452 L60 256 Z" fill="white" />
-                {/* Pulse Wave */}
-                <path 
-                    d="M140 256 h40 l15 -30 l20 60 l30 -90 l25 60 l15 -30 h80" 
-                    stroke="url(#pulseGrad)" 
-                    strokeWidth="18" 
-                    strokeLinecap="round" 
-                    strokeLinejoin="round" 
-                    fill="none" 
-                />
-                <defs>
-                    <linearGradient id="pulseGrad" x1="0%" y1="0%" x2="100%" y2="0%">
-                        <stop offset="0%" stopColor="#4338ca" />
-                        <stop offset="100%" stopColor="#7e22ce" />
-                    </linearGradient>
-                </defs>
+                {/* Neural Prism Frame */}
+                <path d="M256 80 L440 256 L256 432 L72 256 Z" fill="none" stroke="white" strokeWidth="12" strokeOpacity="0.3" />
+                {/* Central Workspace Core */}
+                <path d="M256 140 L372 256 L256 372 L140 256 Z" fill="white" />
+                {/* Internal Extension Elements (Simplified for small rendering) */}
+                <g stroke="#4f46e5" strokeWidth="18" strokeLinecap="round" fill="none" transform="translate(256, 256) scale(0.6) translate(-256, -256)">
+                    <path d="M256 180 v152" />
+                    <path d="M200 220 v72" />
+                    <path d="M312 220 v72" />
+                </g>
+                {/* Sparkle */}
+                <path d="M400 120 l8 -20 l8 20 l20 8 l-20 8 l-8 20 l-8 -20 l-20 -8 z" fill="white" opacity="0.9" />
              </svg>
              {/* Glow effect */}
              <div className="absolute -inset-1 bg-gradient-to-tr from-indigo-500 to-purple-500 rounded-2xl blur opacity-20 group-hover:opacity-40 transition-opacity"></div>
           </div>
 
-          <h1 className="text-3xl font-bold text-white mb-2">AIVoiceCast</h1>
+          <h1 className="text-3xl font-bold text-white mb-2 tracking-tight">AIVoiceCast</h1>
           <p className="text-slate-400 text-sm mb-8 font-medium tracking-wide">
-            Interactive AI-Native Workspace & Audio Community
+            Your personal AI extension for <br/> 
+            <span className="text-indigo-400">Learn</span> • 
+            <span className="text-purple-400"> Work</span> • 
+            <span className="text-emerald-400"> Share</span>
           </p>
 
           <div className="space-y-6">
@@ -151,14 +149,25 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onPrivacyClick, onMissionC
         
         <div className="mt-8 flex flex-col items-center gap-4 animate-fade-in [animation-delay:400ms]">
             <p className="text-center text-slate-600 text-[10px] uppercase font-bold tracking-widest">
-              Integrated Workspace Suite
+              Unified Ecosystem
             </p>
             <div className="flex gap-6 text-slate-700">
-                <Code size={18} />
-                <ImageIcon size={18} />
-                <MessageSquare size={18} />
-                <Podcast size={18} />
-                <ShieldCheck size={18} />
+                <div className="flex flex-col items-center gap-1">
+                    <Code size={18} />
+                    <span className="text-[8px] uppercase tracking-tighter">Code</span>
+                </div>
+                <div className="flex flex-col items-center gap-1">
+                    <ImageIcon size={18} />
+                    <span className="text-[8px] uppercase tracking-tighter">Design</span>
+                </div>
+                <div className="flex flex-col items-center gap-1">
+                    <MessageSquare size={18} />
+                    <span className="text-[8px] uppercase tracking-tighter">Team</span>
+                </div>
+                <div className="flex flex-col items-center gap-1">
+                    <Podcast size={18} />
+                    <span className="text-[8px] uppercase tracking-tighter">Learn</span>
+                </div>
             </div>
         </div>
       </div>
