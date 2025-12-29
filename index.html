@@ -1,9 +1,19 @@
+
 <!DOCTYPE html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>AIVoiceCast Platform</title>
+    
+    <!-- PWA / Home Screen App Tags -->
+    <link rel="manifest" href="manifest.json" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="AIVoiceCast" />
+    <link rel="apple-touch-icon" href="https://image.pollinations.ai/prompt/premium%203D%20mobile%20app%20icon%20glassmorphic%20microphone%20indigo%20glow%20slate%20background?width=512&height=512&nologo=true" />
+    <meta name="theme-color" content="#0f172a" />
+
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- PrismJS for Syntax Highlighting -->
     <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet" />
@@ -35,7 +45,17 @@
         font-family: 'Inter', sans-serif;
         background-color: #0f172a; /* slate-900 */
         color: #f8fafc; /* slate-5 */
+        margin: 0;
+        padding: 0;
       }
+      /* PWA Safe Area Support */
+      .safe-area-bottom {
+        padding-bottom: env(safe-area-inset-bottom);
+      }
+      .safe-area-top {
+        padding-top: env(safe-area-inset-top);
+      }
+      
       /* Custom scrollbar for sleek look */
       ::-webkit-scrollbar {
         width: 8px;
@@ -55,6 +75,15 @@
       .font-script { font-family: 'Great Vibes', cursive; }
       .font-chinese-brush { font-family: 'Ma Shan Zheng', cursive; }
       .vertical-rl { writing-mode: vertical-rl; text-orientation: upright; }
+
+      /* Animation for smooth page transitions */
+      @keyframes fade-in {
+        from { opacity: 0; transform: translateY(10px); }
+        to { opacity: 1; transform: translateY(0); }
+      }
+      .animate-fade-in {
+        animation: fade-in 0.4s ease-out forwards;
+      }
     </style>
   <script type="importmap">
 {
@@ -79,5 +108,6 @@
 </head>
   <body>
     <div id="root"></div>
+    <script type="module" src="index.tsx"></script>
   </body>
 </html>
