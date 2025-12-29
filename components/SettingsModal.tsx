@@ -1,6 +1,7 @@
+
 import React, { useState, useEffect } from 'react';
 import { UserProfile } from '../types';
-import { X, User, Shield, CreditCard, LogOut, CheckCircle, AlertTriangle, Bell, Lock, Database, Trash2, Edit2, Save, FileText, ExternalLink, Loader2, DollarSign, HelpCircle, ChevronDown, ChevronUp, Github, Heart, Hash, Cpu, Sparkles, RefreshCw } from 'lucide-react';
+import { X, User, Shield, CreditCard, LogOut, CheckCircle, AlertTriangle, Bell, Lock, Database, Trash2, Edit2, Save, FileText, ExternalLink, Loader2, DollarSign, HelpCircle, ChevronDown, ChevronUp, Github, Heart, Hash, Cpu, Sparkles } from 'lucide-react';
 import { logUserActivity, getBillingHistory, createStripePortalSession, updateUserProfile } from '../services/firestoreService';
 import { signOut } from '../services/authService';
 import { clearAudioCache } from '../services/tts';
@@ -125,10 +126,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       }
   };
 
-  const handleReloadApp = () => {
-      window.location.reload();
-  };
-
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
       <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-2xl shadow-2xl overflow-hidden animate-fade-in-up flex flex-col max-h-[90vh]">
@@ -222,7 +219,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
                     <div className="space-y-4">
                         <h4 className="text-sm font-bold text-red-500 uppercase tracking-wider flex items-center gap-2"><AlertTriangle size={16}/> Danger Zone</h4>
-                        <div className="bg-red-900/10 border border-red-900/50 rounded-xl p-4 flex items-center justify-between">
+                        <div className="bg-red-900/10 border border-red-900/30 rounded-xl p-4 flex items-center justify-between">
                             <div className="text-sm text-red-200"><p className="font-bold">Delete Account</p><p className="text-xs opacity-70">Permanently remove your profile and all data.</p></div>
                             <button onClick={handleDeleteAccount} className="px-4 py-2 bg-red-900/20 hover:bg-red-900/40 text-red-400 border border-red-900/50 rounded-lg text-xs font-bold transition-colors">Delete</button>
                         </div>
@@ -354,18 +351,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     </div>
                     <div className="space-y-4">
                         <h4 className="text-sm font-bold text-slate-400 uppercase tracking-wider flex items-center gap-2"><Database size={16}/> Data & Storage</h4>
-                        <div className="bg-slate-800/30 border border-slate-700 rounded-xl p-4 space-y-3">
-                            <div className="flex items-center justify-between">
-                                <div><p className="text-sm font-bold text-white">Clear Local Cache</p><p className="text-xs text-slate-400">Remove downloaded audio and temporary files.</p></div>
-                                <button onClick={handleClearCache} className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-xs font-bold border border-slate-600">Clear Data</button>
-                            </div>
-                            <div className="h-px bg-slate-800 w-full" />
-                            <div className="flex items-center justify-between">
-                                <div><p className="text-sm font-bold text-white">Reload Application</p><p className="text-xs text-slate-400">Force a fresh reload to apply updates or fix issues.</p></div>
-                                <button onClick={handleReloadApp} className="px-3 py-1.5 bg-indigo-600/20 hover:bg-indigo-600 text-indigo-400 hover:text-white rounded-lg text-xs font-bold border border-indigo-500/30 transition-colors flex items-center gap-2">
-                                    <RefreshCw size={14}/> Reload
-                                </button>
-                            </div>
+                        <div className="bg-slate-800/30 border border-slate-700 rounded-xl p-4 flex items-center justify-between">
+                            <div><p className="text-sm font-bold text-white">Clear Local Cache</p><p className="text-xs text-slate-400">Remove downloaded audio and temporary files.</p></div>
+                            <button onClick={handleClearCache} className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-xs font-bold border border-slate-600">Clear Data</button>
                         </div>
                     </div>
                 </div>

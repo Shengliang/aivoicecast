@@ -1,5 +1,6 @@
+
 import { GoogleGenAI, LiveServerMessage, Modality } from '@google/genai';
-import { base64ToBytes, decodeRawPcm, createPcmBlob, getGlobalAudioContext, warmUpAudioContext, coolDownAudioContext, registerAudioOwner, updateMediaSession } from '../utils/audioUtils';
+import { base64ToBytes, decodeRawPcm, createPcmBlob, getGlobalAudioContext, warmUpAudioContext, coolDownAudioContext, registerAudioOwner } from '../utils/audioUtils';
 
 export interface LiveConnectionCallbacks {
   onOpen: () => void;
@@ -64,21 +65,12 @@ export class GeminiLiveService {
     voiceName: string, 
     systemInstruction: string, 
     callbacks: LiveConnectionCallbacks,
-    tools?: any[],
-    channelContext?: { title: string, author: string, imageUrl: string }
+    tools?: any[]
   ) {
     try {
       // 1. REGISTER OWNER TO KILL OTHER AUDIO
+      // Fixed: Added source name "GeminiLive" as the first argument to registerAudioOwner
       registerAudioOwner("GeminiLive", () => this.disconnect());
-
-      if (channelContext) {
-        updateMediaSession({
-            title: `Live Session with ${voiceName}`,
-            artist: channelContext.author,
-            album: channelContext.title,
-            artwork: channelContext.imageUrl
-        });
-      }
 
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       if (!this.inputAudioContext) this.initializeAudio();
@@ -154,7 +146,7 @@ export class GeminiLiveService {
   public sendText(text: string) {
     this.sessionPromise?.then((session) => {
         if (session) {
-            try { session.send({ clientContent: { turns: [{ role: 'user', parts: [{ text }] }], turnComplete: true } }); } catch(e) {}
+            try { session.send({ clientContent: { turns: [{ role: 'user', parts: [{ text }] }], turnComplete: true } }); } catch (e) {}
         }
     });
   }

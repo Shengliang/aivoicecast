@@ -1,3 +1,4 @@
+
 import { Blob as GeminiBlob } from '@google/genai';
 
 let mainAudioContext: AudioContext | null = null;
@@ -44,31 +45,6 @@ export function isAnyAudioPlaying(): boolean {
 }
 
 /**
- * Updates the System Media Session (Lock Screen Controls)
- * This is crucial for preventing the OS from suspending the audio when the screen is locked.
- */
-export function updateMediaSession(metadata: { title: string, artist: string, album?: string, artwork?: string }) {
-    if ('mediaSession' in navigator) {
-        navigator.mediaSession.metadata = new MediaMetadata({
-            title: metadata.title,
-            artist: metadata.artist,
-            album: metadata.album || 'AIVoiceCast Platform',
-            artwork: [
-                { src: metadata.artwork || 'https://image.pollinations.ai/prompt/aivoicecast%20logo%20glowing%20indigo?width=512&height=512', sizes: '512x512', type: 'image/png' }
-            ]
-        });
-
-        // Add dummy handlers to keep the session active
-        navigator.mediaSession.setActionHandler('play', () => {
-            // Handled by UI, but keeping the handler allows the lock screen to show the button
-        });
-        navigator.mediaSession.setActionHandler('pause', () => {
-            stopAllPlatformAudio('MediaSessionPause');
-        });
-    }
-}
-
-/**
  * Hard kill for all platform audio.
  * Resets the global lock and increments the Atomic Generation.
  */
@@ -93,12 +69,6 @@ export function stopAllPlatformAudio(sourceCaller: string = "Global") {
     }
     
     currentOwnerToken = null;
-    
-    // Clear Media Session state
-    if ('mediaSession' in navigator) {
-        navigator.mediaSession.playbackState = 'paused';
-    }
-
     logAudioEvent(sourceCaller, 'STOP', `Gen INC to ${globalAudioGeneration}. Global audio cleared.`);
 }
 
@@ -114,11 +84,6 @@ export function registerAudioOwner(uniqueToken: string, stopFn: () => void): num
     currentOwnerToken = uniqueToken;
     currentStopFn = stopFn;
     
-    // Set Media Session to playing
-    if ('mediaSession' in navigator) {
-        navigator.mediaSession.playbackState = 'playing';
-    }
-
     logAudioEvent(uniqueToken, 'REGISTER', `Lock Acquired @ Gen ${globalAudioGeneration}`);
     return globalAudioGeneration;
 }

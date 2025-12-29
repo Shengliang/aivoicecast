@@ -1,7 +1,8 @@
+
 import React, { useState, useEffect } from 'react';
 import { UserProfile, SubscriptionTier, GlobalStats, Channel } from '../types';
 import { getUserProfile, getGlobalStats, updateUserProfile } from '../services/firestoreService';
-import { Sparkles, BarChart2, Plus, Wand2, Key, Database, Crown, Settings, Book, Users, LogIn, Terminal, Cloud, Globe, Mic, LayoutGrid, HardDrive, AlertCircle, Loader2, Gift, CreditCard, ExternalLink, Languages, MousePointer2, Rocket, Shield, AppWindow, RefreshCw } from 'lucide-react';
+import { Sparkles, BarChart2, Plus, Wand2, Key, Database, Crown, Settings, Book, Users, LogIn, Terminal, Cloud, Globe, Mic, LayoutGrid, HardDrive, AlertCircle, Loader2, Gift, CreditCard, ExternalLink, Languages, MousePointer2, Rocket, Shield, AppWindow } from 'lucide-react';
 import { VOICES } from '../utils/initialData';
 import { PricingModal } from './PricingModal';
 
@@ -321,17 +322,6 @@ export const StudioMenu: React.FC<StudioMenuProps> = ({
             >
                <Settings size={16} />
                <span>Account Settings</span>
-            </button>
-
-            <div className="h-px bg-slate-800 my-2 mx-2" />
-
-            {/* Reload Shortcut */}
-            <button 
-               onClick={() => window.location.reload()}
-               className="w-full flex items-center space-x-3 px-3 py-2 text-sm text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors"
-            >
-               <RefreshCw size={16} />
-               <span>Reload Application</span>
             </button>
 
             {/* Developer Tools Footer - RESTRICTED TO ADMIN */}

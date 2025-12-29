@@ -10,7 +10,7 @@ import { getCachedLectureScript, cacheLectureScript, getUserChannels } from '../
 import { GEMINI_API_KEY, OPENAI_API_KEY } from '../services/private_keys';
 import { SPOTLIGHT_DATA } from '../utils/spotlightContent';
 import { OFFLINE_CHANNEL_ID, OFFLINE_CURRICULUM, OFFLINE_LECTURES } from '../utils/offlineContent';
-import { warmUpAudioContext, getGlobalAudioContext, stopAllPlatformAudio, registerAudioOwner, logAudioEvent, isAudioOwner, getGlobalAudioGeneration, updateMediaSession } from '../utils/audioUtils';
+import { warmUpAudioContext, getGlobalAudioContext, stopAllPlatformAudio, registerAudioOwner, logAudioEvent, isAudioOwner, getGlobalAudioGeneration } from '../utils/audioUtils';
 
 interface PodcastFeedProps {
   channels: Channel[];
@@ -297,16 +297,6 @@ const MobileFeedCard = ({
                 let studentVoice = 'Zephyr';
                 
                 if (provider === 'openai') { hostVoice = 'Alloy'; studentVoice = 'Echo'; }
-
-                const currentMeta = currentIndex === -1 ? { title: 'Introduction' } : flatCurriculum[currentIndex];
-                
-                // Update System Media Session for background persistence
-                updateMediaSession({
-                    title: currentMeta.title,
-                    artist: channel.author,
-                    album: channel.title,
-                    artwork: channel.imageUrl
-                });
 
                 if (currentIndex === -1) {
                     const introText = channel.welcomeMessage || channel.description || `Welcome to ${channel.title}.`;
