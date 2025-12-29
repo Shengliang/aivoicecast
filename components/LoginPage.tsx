@@ -1,8 +1,9 @@
 
 import React, { useState } from 'react';
-import { Podcast, ArrowRight, ShieldCheck, Loader2, AlertCircle, Rocket, Shield } from 'lucide-react';
+import { ArrowRight, ShieldCheck, Loader2, AlertCircle, Rocket, Shield } from 'lucide-react';
 import { signInWithGoogle } from '../services/authService';
 import { logUserActivity } from '../services/firestoreService';
+import { BrandLogo } from './BrandLogo';
 
 interface LoginPageProps {
   onPrivacyClick?: () => void;
@@ -55,15 +56,14 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onPrivacyClick, onMissionC
       <div className="relative z-10 w-full max-w-md">
         <div className="bg-slate-900/80 backdrop-blur-xl border border-slate-800 rounded-3xl shadow-2xl p-8 text-center animate-fade-in-up">
           
-          {/* Logo */}
-          <div className="w-20 h-20 bg-gradient-to-br from-indigo-600 to-purple-600 rounded-2xl mx-auto flex items-center justify-center shadow-lg shadow-indigo-500/20 mb-6">
-            <Podcast className="text-white w-10 h-10" />
+          {/* Brand Identity */}
+          <div className="mb-6 flex flex-col items-center">
+            <BrandLogo size={96} className="mb-4 hover:scale-105 transition-transform duration-500 cursor-pointer" />
+            <h1 className="text-3xl font-bold text-white mb-1 tracking-tight">AIVoiceCast</h1>
+            <p className="text-indigo-400 text-sm font-bold uppercase tracking-widest">
+              Knowledge Ecosystem
+            </p>
           </div>
-
-          <h1 className="text-3xl font-bold text-white mb-2">AIVoiceCast</h1>
-          <p className="text-slate-400 text-sm mb-8">
-            Interactive AI Audio Platform
-          </p>
 
           <div className="space-y-6">
             {error && (
@@ -130,8 +130,8 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onPrivacyClick, onMissionC
           </div>
         </div>
         
-        <p className="text-center text-slate-600 text-xs mt-6">
-          By signing in, you agree to join the AIVoiceCast Member Community.
+        <p className="text-center text-slate-600 text-xs mt-6 font-medium">
+          Join a global network of continuous learners.
         </p>
       </div>
     </div>

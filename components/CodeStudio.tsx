@@ -623,7 +623,8 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
           if (resp.functionCalls) {
               for (const fc of resp.functionCalls) {
                   if (fc.name === 'update_active_file') {
-                      const { new_content, summary } = fc.args;
+                      // Fix: Cast args to any to resolve TypeScript unknown type narrowing error
+                      const { new_content, summary } = fc.args as any;
                       if (activeFile) {
                           handleCodeChangeInSlot(new_content, focusedSlot);
                           setChatMessages(prev => [...prev, { role: 'ai', text: `✨ **In-place Edit Applied to ${activeFile.name}**\n\n${summary || "Code updated successfully."}` }]);

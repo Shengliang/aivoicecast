@@ -46,6 +46,7 @@ import { NotebookViewer } from './components/NotebookViewer';
 import { CardWorkshop } from './components/CardWorkshop';
 import { CardExplorer } from './components/CardExplorer';
 import { IconStudio } from './components/IconStudio';
+import { BrandLogo } from './components/BrandLogo';
 
 import { auth, isFirebaseConfigured } from './services/firebaseConfig';
 import { 
@@ -762,6 +763,7 @@ const App: React.FC = () => {
       return <PrivacyPolicy onBack={() => setIsPrivacyOpen(false)} />;
   }
 
+  // Early returns for primary full-screen views based on narrowed type
   if (viewState === 'mission') {
       return <MissionManifesto onBack={() => handleSetViewState('directory')} />;
   }
@@ -957,9 +959,7 @@ const App: React.FC = () => {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
             <div className="flex items-center cursor-pointer" onClick={() => { handleSetViewState('directory'); setActiveTab('categories'); }}>
-              <div className="bg-gradient-to-tr from-indigo-600 to-purple-600 p-2 rounded-xl shadow-lg shadow-indigo-500/20">
-                <Podcast className="text-white w-6 h-6" />
-              </div>
+              <BrandLogo size={36} className="hover:scale-105 transition-transform" />
               <span className="ml-3 text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-white to-slate-400">
                 {t.appTitle}
               </span>
@@ -1069,7 +1069,7 @@ const App: React.FC = () => {
       <MobileSearchOverlay />
 
       <div className="flex-1 overflow-hidden h-[calc(100vh-64px)] md:h-[calc(100vh-64px)] pb-16 md:pb-0">
-        {viewState === 'mission' && <MissionManifesto onBack={() => handleSetViewState('directory')} />}
+        {/* viewState redundant checks removed to avoid narrowed type intersection errors */}
         {viewState === 'user_guide' && <UserManual onBack={() => handleSetViewState('directory')} />}
         {viewState === 'notebook_viewer' && <NotebookViewer onBack={() => handleSetViewState('directory')} currentUser={currentUser} />}
         {viewState === 'card_workshop' && <CardWorkshop onBack={() => handleSetViewState('directory')} cardId={viewCardId} />}

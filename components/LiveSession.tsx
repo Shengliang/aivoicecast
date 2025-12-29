@@ -1132,7 +1132,7 @@ export const LiveSession: React.FC<LiveSessionProps> = ({
              </button>
          </div>
       ) : (
-         <div className="flex-1 flex flex-col min-h-0 relative">
+         <div className="flex-1 flex flex-col min-0 relative">
             {/* Connecting State */}
             {(!isConnected && !isRetrying) && (
                <div className="absolute inset-0 flex items-center justify-center bg-slate-950/80 z-10 backdrop-blur-sm">
@@ -1162,12 +1162,14 @@ export const LiveSession: React.FC<LiveSessionProps> = ({
                    </div>
                )}
                {transcript.map((item, index) => {
-                   // Robust mapping for technical gen-lang-client roles and specific IDs
-                   const isAIVoice = item.role === 'ai' || 
-                                     item.role.includes('gen-lang-client') || 
-                                     item.role.toLowerCase().includes('gem') ||
-                                     item.role === 'Software Interview Voice' ||
-                                     item.role === 'Linux Kernel Voice';
+                   // Cast role to string to avoid narrowing comparison issues
+                   // Fix for Error: unintentional comparison between 'user' and other voice strings
+                   const role = item.role as string;
+                   const isAIVoice = role === 'ai' || 
+                                     role.includes('gen-lang-client') || 
+                                     role.toLowerCase().includes('gem') ||
+                                     role === 'Software Interview Voice' ||
+                                     role === 'Linux Kernel Voice';
                                      
                    const roleLabel = isAIVoice ? channel.voiceName : t.you;
                    const colorClass = isAIVoice ? 'text-emerald-400' : 'text-indigo-400';

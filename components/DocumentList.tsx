@@ -197,11 +197,11 @@ export const DocumentList: React.FC<DocumentListProps> = ({ onBack }) => {
                         </div>
                         <div className="flex items-center gap-1.5 px-2 py-1 rounded bg-slate-950/50 border border-slate-800">
                            {doc.visibility === 'public' ? (
-                               <Globe size={12} className="text-emerald-400" title="Public"/>
+                               <Globe size={12} className="text-emerald-400"/>
                            ) : doc.visibility === 'group' ? (
-                               <Users size={12} className="text-purple-400" title="Shared with Group"/>
+                               <Users size={12} className="text-purple-400"/>
                            ) : (
-                               <Lock size={12} className="text-slate-500" title="Private"/>
+                               <Lock size={12} className="text-slate-500"/>
                            )}
                            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">{doc.visibility || 'Private'}</span>
                         </div>
