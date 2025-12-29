@@ -1,6 +1,6 @@
-
 import React, { useState } from 'react';
-import { Podcast, ArrowRight, ShieldCheck, Loader2, AlertCircle, Rocket, Shield } from 'lucide-react';
+// Added missing icon imports: Code, Image as ImageIcon, and MessageSquare
+import { Podcast, ArrowRight, ShieldCheck, Loader2, AlertCircle, Rocket, Shield, Code, Image as ImageIcon, MessageSquare } from 'lucide-react';
 import { signInWithGoogle } from '../services/authService';
 import { logUserActivity } from '../services/firestoreService';
 
@@ -44,7 +44,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onPrivacyClick, onMissionC
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-4 relative overflow-hidden">
+    <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-4 relative overflow-hidden font-sans">
       
       {/* Background Ambience */}
       <div className="absolute top-0 left-0 w-full h-full overflow-hidden pointer-events-none">
@@ -55,19 +55,33 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onPrivacyClick, onMissionC
       <div className="relative z-10 w-full max-w-md">
         <div className="bg-slate-900/80 backdrop-blur-xl border border-slate-800 rounded-3xl shadow-2xl p-8 text-center animate-fade-in-up">
           
-          {/* Logo */}
-          <div className="w-20 h-20 bg-gradient-to-br from-indigo-600 to-purple-600 rounded-2xl mx-auto flex items-center justify-center shadow-lg shadow-indigo-500/20 mb-6">
-            <Podcast className="text-white w-10 h-10" />
+          {/* Branded Super App Icon */}
+          <div className="w-24 h-24 mx-auto mb-6 relative group">
+             <div className="absolute inset-0 bg-gradient-to-tr from-indigo-600 to-purple-600 rounded-2xl shadow-lg shadow-indigo-500/40 group-hover:scale-105 transition-transform duration-500"></div>
+             <svg viewBox="0 0 512 512" className="relative z-10 w-full h-full p-2" fill="white">
+                {/* Central Voice Icon */}
+                <path d="M256 100c-35.3 0-64 28.7-64 64v100c0 35.3 28.7 64 64 64s64-28.7 64-64V164c0-35.3-28.7-64-64-64zm-100 164c0 55.2 44.8 100 100 100s100-44.8 100-100h24c0 64.4-49.2 117.5-112 123.5V432h64v24H192v-24h64v-44.5c-62.8-6-112-59.1-112-123.5h24z" />
+                
+                {/* Suite corner icons (Code, Calendar, Chat, Board) */}
+                <g opacity="0.6" stroke="white" strokeWidth="12" fill="none">
+                    <path d="M80 80l-20 20 20 20M120 80l20 20-20 20" /> {/* Top Left: Code */}
+                    <rect x="392" y="80" width="40" height="40" rx="4" /> {/* Top Right: Calendar */}
+                    <path d="M80 392h40v30l-30-30H80z" fill="white" stroke="none" /> {/* Bottom Left: Chat */}
+                    <circle cx="412" cy="412" r="18" strokeWidth="8" /> {/* Bottom Right: Whiteboard */}
+                </g>
+             </svg>
+             {/* Glow effect */}
+             <div className="absolute -inset-1 bg-gradient-to-tr from-indigo-500 to-purple-500 rounded-2xl blur opacity-20 group-hover:opacity-40 transition-opacity"></div>
           </div>
 
           <h1 className="text-3xl font-bold text-white mb-2">AIVoiceCast</h1>
-          <p className="text-slate-400 text-sm mb-8">
-            Interactive AI Audio Platform
+          <p className="text-slate-400 text-sm mb-8 font-medium tracking-wide">
+            Interactive AI-Native Workspace & Audio Community
           </p>
 
           <div className="space-y-6">
             {error && (
-              <div className="bg-red-900/20 border border-red-900/50 rounded-lg p-3 text-red-300 text-xs flex items-center gap-2 text-left">
+              <div className="bg-red-900/20 border border-red-900/50 rounded-xl p-3 text-red-300 text-xs flex items-center gap-2 text-left animate-shake">
                 <AlertCircle size={16} className="shrink-0" />
                 <span className="flex-1">{error}</span>
               </div>
@@ -76,7 +90,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onPrivacyClick, onMissionC
             <button
               onClick={handleLogin}
               disabled={isLoading}
-              className="w-full bg-white hover:bg-slate-100 text-slate-900 font-bold py-3.5 rounded-xl shadow-lg flex items-center justify-center gap-3 transition-all transform hover:scale-[1.02] disabled:opacity-70 disabled:cursor-not-allowed"
+              className="w-full bg-white hover:bg-slate-50 text-slate-900 font-bold py-4 rounded-2xl shadow-xl flex items-center justify-center gap-3 transition-all transform hover:scale-[1.02] active:scale-[0.98] disabled:opacity-70 disabled:cursor-not-allowed"
             >
               {isLoading ? (
                 <Loader2 size={20} className="animate-spin text-indigo-600" />
@@ -100,7 +114,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onPrivacyClick, onMissionC
                       fill="#EA4335"
                     />
                   </svg>
-                  <span>Sign in with Google</span>
+                  <span>Continue with Google</span>
                   <ArrowRight size={16} className="text-slate-400" />
                 </>
               )}
@@ -130,9 +144,18 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onPrivacyClick, onMissionC
           </div>
         </div>
         
-        <p className="text-center text-slate-600 text-xs mt-6">
-          By signing in, you agree to join the AIVoiceCast Member Community.
-        </p>
+        <div className="mt-8 flex flex-col items-center gap-4 animate-fade-in [animation-delay:400ms]">
+            <p className="text-center text-slate-600 text-[10px] uppercase font-bold tracking-widest">
+              Integrated Workspace Suite
+            </p>
+            <div className="flex gap-6 text-slate-700">
+                <Code size={18} />
+                <ImageIcon size={18} />
+                <MessageSquare size={18} />
+                <Podcast size={18} />
+                <ShieldCheck size={18} />
+            </div>
+        </div>
       </div>
     </div>
   );
