@@ -68,6 +68,14 @@ export function stopAllPlatformAudio(sourceCaller: string = "Global") {
         }
     }
     
+    // 4. Kill the background keep-alive silence tracks
+    coolDownAudioContext();
+
+    // 5. Suspend context to kill processing noise
+    if (mainAudioContext && mainAudioContext.state === 'running') {
+        mainAudioContext.suspend().catch(() => {});
+    }
+
     // Clear Media Session state
     if ('mediaSession' in navigator) {
         navigator.mediaSession.playbackState = 'none';

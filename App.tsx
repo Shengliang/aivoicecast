@@ -1,11 +1,10 @@
-
 import React, { useState, useEffect, useMemo } from 'react';
 import { Channel, ViewState, UserProfile, TranscriptItem, SubscriptionTier } from './types';
 import { 
   Podcast, Mic, Layout, Search, Sparkles, LogOut, 
   Settings, Menu, X, Plus, Github, Database, Cloud, Globe, 
   Calendar, Briefcase, Users, Disc, FileText, AlertTriangle, List, BookOpen, ChevronDown, Table as TableIcon, LayoutGrid, Rocket, Code, Wand2, PenTool, Rss, Loader2, MessageSquare,
-  Home, Video as VideoIcon, Inbox, User, PlusSquare, ArrowLeft, Play, Book, Gift, Square, Shield, AppWindow
+  Home, Video as VideoIcon, Inbox, User, PlusSquare, ArrowLeft, Play, Book, Gift, Square, Shield, AppWindow, RefreshCw
 } from 'lucide-react';
 import { LiveSession } from './components/LiveSession';
 import { PodcastDetail } from './components/PodcastDetail';
@@ -833,12 +832,24 @@ const App: React.FC = () => {
 
   const MobileTopNav = () => {
       if (viewState !== 'directory' || activeTab !== 'categories') return null;
+      // Detect Standalone (Installed) Mode
+      const isStandalone = window.matchMedia('(display-mode: standalone)').matches || (window.navigator as any).standalone === true;
+
       return (
           <div className="md:hidden fixed top-0 left-0 w-full z-40 bg-gradient-to-b from-black/80 to-transparent p-4 flex items-center justify-between pointer-events-none">
               <div className="flex items-center gap-3 pointer-events-auto">
                   <button onClick={handleMobileQuickStart} className="text-white/80 hover:text-white">
                       <VideoIcon size={24} />
                   </button>
+                  {isStandalone && (
+                    <button 
+                        onClick={() => window.location.reload()}
+                        className="w-9 h-9 rounded-full bg-black/40 border border-white/20 flex items-center justify-center text-white transition-all active:scale-90"
+                        title="Reload App"
+                    >
+                        <RefreshCw size={18} />
+                    </button>
+                  )}
                   {audioIsPlaying && (
                     <button 
                         onClick={() => stopAllPlatformAudio("MobileGlobalStop")}

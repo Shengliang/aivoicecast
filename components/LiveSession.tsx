@@ -1,4 +1,3 @@
-
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { Channel, TranscriptItem, GeneratedLecture, CommunityDiscussion, RecordingSession, Attachment } from '../types';
 import { GeminiLiveService } from '../services/geminiLive';
@@ -1162,14 +1161,13 @@ export const LiveSession: React.FC<LiveSessionProps> = ({
                    </div>
                )}
                {transcript.map((item, index) => {
-                   // Cast role to string to avoid narrowing comparison issues
-                   // Fix for Error: unintentional comparison between 'user' and other voice strings
-                   const role = item.role as string;
-                   const isAIVoice = role === 'ai' || 
-                                     role.includes('gen-lang-client') || 
-                                     role.toLowerCase().includes('gem') ||
-                                     role === 'Software Interview Voice' ||
-                                     role === 'Linux Kernel Voice';
+                   // Fix: Cast role to string to allow comparison with legacy/external role names that may exist in history
+                   const itemRole = item.role as string;
+                   const isAIVoice = itemRole === 'ai' || 
+                                     itemRole.includes('gen-lang-client') || 
+                                     itemRole.toLowerCase().includes('gem') ||
+                                     itemRole === 'Software Interview Voice' ||
+                                     itemRole === 'Linux Kernel Voice';
                                      
                    const roleLabel = isAIVoice ? channel.voiceName : t.you;
                    const colorClass = isAIVoice ? 'text-emerald-400' : 'text-indigo-400';

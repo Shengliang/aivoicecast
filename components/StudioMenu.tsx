@@ -1,8 +1,7 @@
-
 import React, { useState, useEffect } from 'react';
 import { UserProfile, SubscriptionTier, GlobalStats, Channel } from '../types';
 import { getUserProfile, getGlobalStats, updateUserProfile } from '../services/firestoreService';
-import { Sparkles, BarChart2, Plus, Wand2, Key, Database, Crown, Settings, Book, Users, LogIn, Terminal, Cloud, Globe, Mic, LayoutGrid, HardDrive, AlertCircle, Loader2, Gift, CreditCard, ExternalLink, Languages, MousePointer2, Rocket, Shield, AppWindow } from 'lucide-react';
+import { Sparkles, BarChart2, Plus, Wand2, Key, Database, Crown, Settings, Book, Users, LogIn, Terminal, Cloud, Globe, Mic, LayoutGrid, HardDrive, AlertCircle, Loader2, Gift, CreditCard, ExternalLink, Languages, MousePointer2, Rocket, Shield, AppWindow, RefreshCw } from 'lucide-react';
 import { VOICES } from '../utils/initialData';
 import { PricingModal } from './PricingModal';
 
@@ -295,33 +294,41 @@ export const StudioMenu: React.FC<StudioMenuProps> = ({
                onClick={() => { setIsSyncModalOpen(true); setIsUserMenuOpen(false); }}
                className="w-full flex items-center space-x-3 px-3 py-2 text-sm text-slate-300 hover:text-white hover:bg-slate-800 rounded-lg transition-colors"
             >
-               <Database size={16} />
-               <span>Data Sync & Backup</span>
+               <div className="p-1.5 bg-slate-800 text-slate-400 rounded-md"><Database size={16}/></div>
+               <span className="font-medium">Data Sync & Backup</span>
             </button>
             
             <button 
                onClick={() => { onOpenUserGuide(); setIsUserMenuOpen(false); }}
                className="w-full flex items-center space-x-3 px-3 py-2 text-sm text-slate-300 hover:text-white hover:bg-slate-800 rounded-lg transition-colors"
             >
-               <Book size={16} />
-               <span>User Guide / Manual</span>
+               <div className="p-1.5 bg-slate-800 text-slate-400 rounded-md"><Book size={16}/></div>
+               <span className="font-medium">User Guide / Manual</span>
             </button>
 
             <button 
                onClick={() => { onOpenPrivacy(); setIsUserMenuOpen(false); }}
                className="w-full flex items-center space-x-3 px-3 py-2 text-sm text-slate-300 hover:text-white hover:bg-slate-800 rounded-lg transition-colors"
             >
-               <Shield size={16} />
-               <span>Privacy Policy</span>
+               <div className="p-1.5 bg-slate-800 text-slate-400 rounded-md"><Shield size={16}/></div>
+               <span className="font-medium">Privacy Policy</span>
             </button>
             
-            {/* Settings Button */}
             <button 
                onClick={() => { setIsSettingsModalOpen(true); setIsUserMenuOpen(false); }}
                className="w-full flex items-center space-x-3 px-3 py-2 text-sm text-slate-300 hover:text-white hover:bg-slate-800 rounded-lg transition-colors"
             >
-               <Settings size={16} />
-               <span>Account Settings</span>
+               <div className="p-1.5 bg-slate-800 text-slate-400 rounded-md"><Settings size={16}/></div>
+               <span className="font-medium">Account Settings</span>
+            </button>
+
+            {/* Reload App Button - Helpful for PWA/Standalone Mode */}
+            <button 
+               onClick={() => window.location.reload()}
+               className="w-full flex items-center space-x-3 px-3 py-2 text-sm text-emerald-400 hover:bg-emerald-900/20 rounded-lg transition-colors border border-emerald-900/30 mt-2"
+            >
+               <div className="p-1.5 bg-emerald-900/50 text-emerald-400 rounded-md"><RefreshCw size={16}/></div>
+               <span className="font-bold">Reload Platform</span>
             </button>
 
             {/* Developer Tools Footer - RESTRICTED TO ADMIN */}
