@@ -1072,7 +1072,7 @@ const App: React.FC = () => {
       <MobileSearchOverlay />
 
       <div className="flex-1 overflow-hidden h-[calc(100vh-64px)] md:h-[calc(100vh-64px)] pb-16 md:pb-0">
-        {viewState === 'mission' && <MissionManifesto onBack={() => handleSetViewState('directory')} />}
+        {/* viewState === 'mission' handled via early return above */}
         {viewState === 'user_guide' && <UserManual onBack={() => handleSetViewState('directory')} />}
         {viewState === 'notebook_viewer' && <NotebookViewer onBack={() => handleSetViewState('directory')} currentUser={currentUser} />}
         {viewState === 'card_workshop' && <CardWorkshop onBack={() => handleSetViewState('directory')} cardId={viewCardId} />}

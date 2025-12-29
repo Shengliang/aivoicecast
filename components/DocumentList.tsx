@@ -1,7 +1,7 @@
+
 import React, { useState, useEffect } from 'react';
 import { CommunityDiscussion, UserProfile } from '../types';
 import { getUserDesignDocs, deleteDiscussion, getPublicDesignDocs, getGroupDesignDocs, getUserProfile } from '../services/firestoreService';
-// FIX: Added 'User' to the lucide-react import list to resolve the "Cannot find name 'User'" error on line 231.
 import { FileText, ArrowRight, Loader2, MessageSquare, Plus, Edit, ShieldCheck, Trash2, Info, FileCode, Sparkles, Wand2, Globe, Users, Lock, User } from 'lucide-react';
 import { auth } from '../services/firebaseConfig';
 import { DiscussionModal } from './DiscussionModal';
@@ -195,12 +195,13 @@ export const DocumentList: React.FC<DocumentListProps> = ({ onBack }) => {
                             {isSystem ? <ShieldCheck size={20}/> : isCodeDoc ? <FileCode size={20}/> : <FileText size={20} />}
                         </div>
                         <div className="flex items-center gap-1.5 px-2 py-1 rounded bg-slate-950/50 border border-slate-800">
+                           {/* Fixed: Wrapped icons in span with title attribute as Lucide components don't accept direct 'title' prop */}
                            {doc.visibility === 'public' ? (
-                               <Globe size={12} className="text-emerald-400" title="Public"/>
+                               <span title="Public"><Globe size={12} className="text-emerald-400" /></span>
                            ) : doc.visibility === 'group' ? (
-                               <Users size={12} className="text-purple-400" title="Shared with Group"/>
+                               <span title="Shared with Group"><Users size={12} className="text-purple-400" /></span>
                            ) : (
-                               <Lock size={12} className="text-slate-500" title="Private"/>
+                               <span title="Private"><Lock size={12} className="text-slate-500" /></span>
                            )}
                            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">{doc.visibility || 'Private'}</span>
                         </div>
@@ -228,7 +229,6 @@ export const DocumentList: React.FC<DocumentListProps> = ({ onBack }) => {
                 <div className="flex items-center justify-between border-t border-slate-800/50 pt-3 mt-2">
                    <div className="flex items-center gap-2 text-xs text-slate-500">
                       <div className="flex items-center gap-1">
-                          {/* FIX: Using the newly imported User icon for better clarity on a per-member document view. */}
                           <User size={12} />
                           <span className="truncate max-w-[100px]">{isMyDoc ? 'Me' : doc.userName}</span>
                       </div>

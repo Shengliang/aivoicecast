@@ -1,6 +1,6 @@
 {
   "name": "AIVoiceCast Platform",
-  "description": "A decentralized platform for AI-driven interactive podcasts. Users can create, discover, and converse with domain-specific AI personas powered by Gemini Live API.",
+  "description": "A decentralized AI operating system and shared network of learning. Create, code, and collaborate with domain-specific AI personas.",
   "requestFramePermissions": [
     "microphone",
     "camera",

@@ -1,4 +1,5 @@
 
+
 export interface Invitation {
   id: string;
   fromUserId: string;
@@ -50,7 +51,8 @@ export interface Comment {
 }
 
 export interface TranscriptItem {
-  role: 'user' | 'ai';
+  /* Changed role to string to support robust mapping of AI voices and technical IDs in LiveSession.tsx */
+  role: string;
   text: string;
   timestamp: number;
 }
