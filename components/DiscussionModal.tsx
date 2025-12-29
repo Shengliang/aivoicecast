@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { X, MessageCircle, FileText, Loader2, CornerDownRight, Edit2, Save, Sparkles, ExternalLink, Cloud, Trash2, RefreshCw, Info, Lock, Globe, Users, ChevronDown, Check, Eye, Code } from 'lucide-react';
+import { X, MessageCircle, FileText, Loader2, CornerDownRight, Edit2, Save, Sparkles, ExternalLink, Cloud, Trash2, RefreshCw, Info, Lock, Globe, Users, ChevronDown, Check } from 'lucide-react';
 import { CommunityDiscussion, Group, ChannelVisibility } from '../types';
 import { getDiscussionById, saveDiscussionDesignDoc, saveDiscussion, deleteDiscussion, updateDiscussionVisibility, getUserGroups } from '../services/firestoreService';
 import { generateDesignDocFromTranscript } from '../services/lectureGenerator';
@@ -33,7 +33,6 @@ export const DiscussionModal: React.FC<DiscussionModalProps> = ({
 
   // Doc Editing State
   const [isEditingDoc, setIsEditingDoc] = useState(false);
-  const [isPreviewMode, setIsPreviewMode] = useState(false);
   const [editedDocContent, setEditedDocContent] = useState('');
   const [docTitle, setDocTitle] = useState('');
   const [isSavingDoc, setIsSavingDoc] = useState(false);
@@ -114,7 +113,6 @@ export const DiscussionModal: React.FC<DiscussionModalProps> = ({
               setEditedDocContent(doc);
               setViewMode('doc');
               setIsEditingDoc(false);
-              setIsPreviewMode(false);
           } else {
               alert("Failed to generate document.");
           }
@@ -151,7 +149,6 @@ export const DiscussionModal: React.FC<DiscussionModalProps> = ({
           setActiveDiscussion({ ...activeDiscussion, title: docTitle || 'Untitled Document', designDoc: editedDocContent });
       }
       setIsEditingDoc(false);
-      setIsPreviewMode(false);
     } catch (e) {
       console.error(e);
       alert("Failed to save document.");
@@ -323,24 +320,24 @@ export const DiscussionModal: React.FC<DiscussionModalProps> = ({
               )}
 
               {/* Tabs */}
-              <div className="flex space-x-2">
-                  {(activeDiscussion?.transcript && activeDiscussion.transcript.length > 0 && activeDiscussion.id !== 'new') && (
+              {(activeDiscussion?.transcript && activeDiscussion.transcript.length > 0 && activeDiscussion.id !== 'new') && (
+                  <div className="flex space-x-2">
                       <button 
-                          onClick={() => { setViewMode('transcript'); setIsEditingDoc(false); }}
+                          onClick={() => setViewMode('transcript')}
                           className={`flex-1 py-2 text-sm font-bold rounded-lg transition-colors flex items-center justify-center space-x-2 ${viewMode === 'transcript' ? 'bg-slate-800 text-white' : 'text-slate-500 hover:text-slate-300'}`}
                       >
                           <MessageCircle size={16} />
                           <span>Transcript</span>
                       </button>
-                  )}
-                  <button 
-                      onClick={() => setViewMode('doc')}
-                      className={`flex-1 py-2 text-sm font-bold rounded-lg transition-colors flex items-center justify-center space-x-2 ${viewMode === 'doc' ? 'bg-slate-800 text-indigo-400' : 'text-slate-500 hover:text-slate-300'}`}
-                  >
-                      <FileText size={16} />
-                      <span>Specification</span>
-                  </button>
-              </div>
+                      <button 
+                          onClick={() => setViewMode('doc')}
+                          className={`flex-1 py-2 text-sm font-bold rounded-lg transition-colors flex items-center justify-center space-x-2 ${viewMode === 'doc' ? 'bg-slate-800 text-indigo-400' : 'text-slate-500 hover:text-slate-300'}`}
+                      >
+                          <FileText size={16} />
+                          <span>Specification</span>
+                      </button>
+                  </div>
+              )}
           </div>
           
           <div className="p-6 overflow-y-auto flex-1 scrollbar-thin scrollbar-thumb-slate-700 bg-slate-900">
@@ -415,28 +412,12 @@ export const DiscussionModal: React.FC<DiscussionModalProps> = ({
                                     <div className="flex space-x-2">
                                         {isOwner && (
                                             isEditingDoc ? (
-                                                <div className="flex items-center gap-3">
-                                                    <div className="flex bg-slate-950 p-1 rounded-lg border border-slate-800 mr-2">
-                                                        <button 
-                                                            onClick={() => setIsPreviewMode(false)}
-                                                            className={`p-2 rounded transition-colors ${!isPreviewMode ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-500 hover:text-white'}`}
-                                                            title="Edit Raw Markdown"
-                                                        >
-                                                            <Code size={16}/>
-                                                        </button>
-                                                        <button 
-                                                            onClick={() => setIsPreviewMode(true)}
-                                                            className={`p-2 rounded transition-colors ${isPreviewMode ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-500 hover:text-white'}`}
-                                                            title="Preview Rendered Content"
-                                                        >
-                                                            <Eye size={16}/>
-                                                        </button>
-                                                    </div>
-                                                    <button onClick={() => { setIsEditingDoc(false); setIsPreviewMode(false); }} className="px-3 py-1.5 text-xs text-slate-400 hover:text-white bg-slate-800 rounded-lg border border-slate-700">Cancel</button>
+                                                <>
+                                                    <button onClick={() => setIsEditingDoc(false)} className="px-3 py-1.5 text-xs text-slate-400 hover:text-white bg-slate-800 rounded-lg border border-slate-700">Cancel</button>
                                                     <button onClick={handleSaveDoc} disabled={isSavingDoc} className="px-4 py-1.5 text-xs text-white bg-emerald-600 hover:bg-emerald-500 rounded-lg flex items-center gap-2 font-bold shadow-lg shadow-emerald-500/20">
                                                         {isSavingDoc ? <Loader2 size={14} className="animate-spin"/> : <Save size={14}/>} Save Changes
                                                     </button>
-                                                </div>
+                                                </>
                                             ) : (
                                                 <button onClick={() => setIsEditingDoc(true)} className="px-4 py-1.5 text-xs text-white bg-indigo-600 hover:bg-indigo-500 rounded-lg flex items-center gap-2 font-bold shadow-lg shadow-emerald-500/20">
                                                     <Edit2 size={14}/> Edit Content
@@ -447,26 +428,13 @@ export const DiscussionModal: React.FC<DiscussionModalProps> = ({
                                 </div>
 
                                 {isEditingDoc ? (
-                                    isPreviewMode ? (
-                                        <div className="h-full w-full bg-slate-950 border border-slate-800 rounded-xl p-8 overflow-y-auto prose prose-invert prose-sm max-w-none shadow-inner min-h-[500px]">
-                                            {editedDocContent ? (
-                                                <MarkdownView content={editedDocContent} />
-                                            ) : (
-                                                <div className="h-full flex flex-col items-center justify-center text-slate-700 italic">
-                                                    <Eye size={48} className="mb-2 opacity-10" />
-                                                    <p>Nothing to preview yet.</p>
-                                                </div>
-                                            )}
-                                        </div>
-                                    ) : (
-                                        <textarea 
-                                            autoFocus
-                                            value={editedDocContent}
-                                            onChange={e => setEditedDocContent(e.target.value)}
-                                            className="w-full flex-1 min-h-[500px] bg-slate-950 p-6 rounded-xl border border-slate-700 font-mono text-sm text-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 resize-none leading-relaxed"
-                                            placeholder="Start writing your technical specification here (Markdown supported)... Use ```plantuml for diagrams and $$ for math."
-                                        />
-                                    )
+                                    <textarea 
+                                        autoFocus
+                                        value={editedDocContent}
+                                        onChange={e => setEditedDocContent(e.target.value)}
+                                        className="w-full flex-1 min-h-[500px] bg-slate-950 p-6 rounded-xl border border-slate-700 font-mono text-sm text-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 resize-none leading-relaxed"
+                                        placeholder="Start writing your technical specification here (Markdown supported)..."
+                                    />
                                 ) : (
                                     <div className="prose prose-invert prose-sm max-w-none bg-slate-900/50 p-6 rounded-xl border border-slate-800/50 min-h-[500px]">
                                         {editedDocContent ? (

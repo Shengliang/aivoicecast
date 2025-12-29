@@ -1,3 +1,4 @@
+
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { Channel, TranscriptItem, GeneratedLecture, CommunityDiscussion, RecordingSession, Attachment } from '../types';
 import { GeminiLiveService } from '../services/geminiLive';
@@ -1131,7 +1132,7 @@ export const LiveSession: React.FC<LiveSessionProps> = ({
              </button>
          </div>
       ) : (
-         <div className="flex-1 flex flex-col min-0 relative">
+         <div className="flex-1 flex flex-col min-h-0 relative">
             {/* Connecting State */}
             {(!isConnected && !isRetrying) && (
                <div className="absolute inset-0 flex items-center justify-center bg-slate-950/80 z-10 backdrop-blur-sm">
@@ -1161,13 +1162,12 @@ export const LiveSession: React.FC<LiveSessionProps> = ({
                    </div>
                )}
                {transcript.map((item, index) => {
-                   // Fix: Cast role to string to allow comparison with legacy/external role names that may exist in history
-                   const itemRole = item.role as string;
-                   const isAIVoice = itemRole === 'ai' || 
-                                     itemRole.includes('gen-lang-client') || 
-                                     itemRole.toLowerCase().includes('gem') ||
-                                     itemRole === 'Software Interview Voice' ||
-                                     itemRole === 'Linux Kernel Voice';
+                   // Robust mapping for technical gen-lang-client roles and specific IDs
+                   const isAIVoice = item.role === 'ai' || 
+                                     item.role.includes('gen-lang-client') || 
+                                     item.role.toLowerCase().includes('gem') ||
+                                     item.role === 'Software Interview Voice' ||
+                                     item.role === 'Linux Kernel Voice';
                                      
                    const roleLabel = isAIVoice ? channel.voiceName : t.you;
                    const colorClass = isAIVoice ? 'text-emerald-400' : 'text-indigo-400';

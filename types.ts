@@ -8,9 +8,8 @@ export interface Invitation {
   groupName: string;
   status: 'pending' | 'accepted' | 'rejected';
   createdAt: number;
-  type?: 'group' | 'session' | 'system';
+  type?: 'group' | 'session';
   link?: string;
-  message?: string;
 }
 
 export interface Booking {
@@ -150,8 +149,7 @@ export type ViewState =
   | 'notebook_viewer' 
   | 'card_workshop' 
   | 'card_explorer' 
-  | 'card_viewer'
-  | 'icon_studio';
+  | 'card_viewer';
 
 export interface AudioState {
   isConnected: boolean;
@@ -187,7 +185,6 @@ export interface UserProfile {
   likedChannelIds?: string[];
   preferredAiProvider?: 'gemini' | 'openai';
   preferredMobileQuickApp?: string;
-  availability?: Record<string, string[]>; // { "2025-01-20": ["09:05", "09:35"] }
 }
 
 export interface RecordingSession {

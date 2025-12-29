@@ -1,9 +1,8 @@
 
 import React, { useState } from 'react';
-import { ArrowRight, ShieldCheck, Loader2, AlertCircle, Rocket, Shield } from 'lucide-react';
+import { Podcast, ArrowRight, ShieldCheck, Loader2, AlertCircle, Rocket, Shield } from 'lucide-react';
 import { signInWithGoogle } from '../services/authService';
 import { logUserActivity } from '../services/firestoreService';
-import { BrandLogo } from './BrandLogo';
 
 interface LoginPageProps {
   onPrivacyClick?: () => void;
@@ -56,18 +55,15 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onPrivacyClick, onMissionC
       <div className="relative z-10 w-full max-w-md">
         <div className="bg-slate-900/80 backdrop-blur-xl border border-slate-800 rounded-3xl shadow-2xl p-8 text-center animate-fade-in-up">
           
-          {/* Brand Identity */}
-          <div className="mb-8 flex flex-col items-center">
-            <BrandLogo size={100} className="mb-6 hover:scale-105 transition-transform duration-700 cursor-pointer" />
-            <h1 className="text-3xl font-bold text-white mb-1 tracking-tight">AIVoiceCast</h1>
-            <div className="flex items-center gap-2">
-                <span className="h-px w-4 bg-indigo-500"></span>
-                <p className="text-indigo-400 text-xs font-bold uppercase tracking-[0.2em]">
-                  Universal AI Workspace
-                </p>
-                <span className="h-px w-4 bg-indigo-500"></span>
-            </div>
+          {/* Logo */}
+          <div className="w-20 h-20 bg-gradient-to-br from-indigo-600 to-purple-600 rounded-2xl mx-auto flex items-center justify-center shadow-lg shadow-indigo-500/20 mb-6">
+            <Podcast className="text-white w-10 h-10" />
           </div>
+
+          <h1 className="text-3xl font-bold text-white mb-2">AIVoiceCast</h1>
+          <p className="text-slate-400 text-sm mb-8">
+            Interactive AI Audio Platform
+          </p>
 
           <div className="space-y-6">
             {error && (
@@ -104,7 +100,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onPrivacyClick, onMissionC
                       fill="#EA4335"
                     />
                   </svg>
-                  <span>Enter Platform</span>
+                  <span>Sign in with Google</span>
                   <ArrowRight size={16} className="text-slate-400" />
                 </>
               )}
@@ -117,7 +113,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onPrivacyClick, onMissionC
                         className="text-xs text-slate-500 hover:text-orange-400 flex items-center gap-1.5 transition-colors group"
                     >
                         <Rocket size={12} className="group-hover:scale-110 transition-transform" />
-                        <span>Mission</span>
+                        <span>Mission & Manifesto</span>
                     </button>
                 )}
                 <div className="w-1 h-1 bg-slate-800 rounded-full"></div>
@@ -127,15 +123,15 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onPrivacyClick, onMissionC
                         className="text-xs text-slate-500 hover:text-emerald-400 flex items-center gap-1.5 transition-colors group"
                     >
                         <Shield size={12} className="group-hover:scale-110 transition-transform" />
-                        <span>Privacy</span>
+                        <span>Privacy Policy</span>
                     </button>
                 )}
             </div>
           </div>
         </div>
         
-        <p className="text-center text-slate-600 text-[10px] mt-8 font-bold uppercase tracking-widest">
-          The Future of Interactive Intelligence
+        <p className="text-center text-slate-600 text-xs mt-6">
+          By signing in, you agree to join the AIVoiceCast Member Community.
         </p>
       </div>
     </div>

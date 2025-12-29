@@ -1,10 +1,11 @@
+
 import React, { useState, useEffect, useMemo } from 'react';
 import { Channel, ViewState, UserProfile, TranscriptItem, SubscriptionTier } from './types';
 import { 
   Podcast, Mic, Layout, Search, Sparkles, LogOut, 
   Settings, Menu, X, Plus, Github, Database, Cloud, Globe, 
   Calendar, Briefcase, Users, Disc, FileText, AlertTriangle, List, BookOpen, ChevronDown, Table as TableIcon, LayoutGrid, Rocket, Code, Wand2, PenTool, Rss, Loader2, MessageSquare,
-  Home, Video as VideoIcon, Inbox, User, PlusSquare, ArrowLeft, Play, Book, Gift, Square, Shield, AppWindow, RefreshCw
+  Home, Video as VideoIcon, Inbox, User, PlusSquare, ArrowLeft, Play, Book, Gift, Square, Shield
 } from 'lucide-react';
 import { LiveSession } from './components/LiveSession';
 import { PodcastDetail } from './components/PodcastDetail';
@@ -44,8 +45,6 @@ import { PrivacyPolicy } from './components/PrivacyPolicy';
 import { NotebookViewer } from './components/NotebookViewer'; 
 import { CardWorkshop } from './components/CardWorkshop';
 import { CardExplorer } from './components/CardExplorer';
-import { IconStudio } from './components/IconStudio';
-import { BrandLogo } from './components/BrandLogo';
 
 import { auth, isFirebaseConfigured } from './services/firebaseConfig';
 import { 
@@ -88,8 +87,7 @@ const UI_TEXT = {
     chat: "Team Chat",
     careers: "Careers",
     notebooks: "LLM Notebooks",
-    cards: "Card Workshop",
-    icons: "Icon Studio"
+    cards: "Card Workshop"
   },
   zh: {
     appTitle: "AI 播客",
@@ -117,8 +115,7 @@ const UI_TEXT = {
     chat: "团队聊天",
     careers: "职业发展",
     notebooks: "LLM 笔记本",
-    cards: "贺卡工坊",
-    icons: "图标工作室"
+    cards: "贺卡工坊"
   }
 };
 
@@ -215,7 +212,6 @@ const App: React.FC = () => {
     { id: 'careers', label: t.careers, icon: Briefcase, action: () => handleSetViewState('careers'), color: 'text-yellow-400' },
     { id: 'blog', label: t.blog, icon: Rss, action: () => handleSetViewState('blog'), color: 'text-orange-400' },
     { id: 'card_workshop', label: t.cards, icon: Gift, action: () => handleSetViewState('card_workshop'), color: 'text-red-400' },
-    { id: 'icon_studio', label: t.icons, icon: AppWindow, action: () => handleSetViewState('icon_studio'), color: 'text-cyan-400' },
     { id: 'mentorship', label: t.mentorship, icon: Users, action: () => { handleSetViewState('directory'); setActiveTab('mentorship'); }, color: 'text-purple-400' },
     { id: 'groups', label: t.groups, icon: Users, action: () => { handleSetViewState('directory'); setActiveTab('groups'); }, color: 'text-cyan-400' },
     { id: 'recordings', label: t.recordings, icon: Disc, action: () => { handleSetViewState('directory'); setActiveTab('recordings'); }, color: 'text-red-400' },
@@ -276,8 +272,6 @@ const App: React.FC = () => {
         handleSetViewState('card_workshop');
     } else if (view === 'card_explorer') {
         handleSetViewState('card_explorer');
-    } else if (view === 'icons') {
-        handleSetViewState('icon_studio');
     } else if (view === 'code') {
         handleSetViewState('code_studio');
     } else if (view === 'whiteboard') {
@@ -390,7 +384,6 @@ const App: React.FC = () => {
               case 'card_workshop': viewParam = 'card_workshop'; break;
               case 'card_explorer': viewParam = 'card_explorer'; break;
               case 'card_viewer': viewParam = 'card'; break;
-              case 'icon_studio': viewParam = 'icons'; break;
               case 'podcast_detail': viewParam = 'podcast'; break;
               case 'debug': viewParam = 'debug_local'; break;
               case 'firestore_debug': viewParam = 'debug_firestore'; break;
@@ -762,7 +755,6 @@ const App: React.FC = () => {
       return <PrivacyPolicy onBack={() => setIsPrivacyOpen(false)} />;
   }
 
-  // Early returns for primary full-screen views based on narrowed type
   if (viewState === 'mission') {
       return <MissionManifesto onBack={() => handleSetViewState('directory')} />;
   }
@@ -773,7 +765,7 @@ const App: React.FC = () => {
 
   if (!currentUser) {
       return <LoginPage 
-        onPrivacyClick={() => setIsPrivacyOpen(false)} 
+        onPrivacyClick={() => setIsPrivacyOpen(true)} 
         onMissionClick={() => handleSetViewState('mission')} 
       />;
   }
@@ -832,24 +824,12 @@ const App: React.FC = () => {
 
   const MobileTopNav = () => {
       if (viewState !== 'directory' || activeTab !== 'categories') return null;
-      // Detect Standalone (Installed) Mode
-      const isStandalone = window.matchMedia('(display-mode: standalone)').matches || (window.navigator as any).standalone === true;
-
       return (
           <div className="md:hidden fixed top-0 left-0 w-full z-40 bg-gradient-to-b from-black/80 to-transparent p-4 flex items-center justify-between pointer-events-none">
               <div className="flex items-center gap-3 pointer-events-auto">
                   <button onClick={handleMobileQuickStart} className="text-white/80 hover:text-white">
                       <VideoIcon size={24} />
                   </button>
-                  {isStandalone && (
-                    <button 
-                        onClick={() => window.location.reload()}
-                        className="w-9 h-9 rounded-full bg-black/40 border border-white/20 flex items-center justify-center text-white transition-all active:scale-90"
-                        title="Reload App"
-                    >
-                        <RefreshCw size={18} />
-                    </button>
-                  )}
                   {audioIsPlaying && (
                     <button 
                         onClick={() => stopAllPlatformAudio("MobileGlobalStop")}
@@ -970,7 +950,9 @@ const App: React.FC = () => {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
             <div className="flex items-center cursor-pointer" onClick={() => { handleSetViewState('directory'); setActiveTab('categories'); }}>
-              <BrandLogo size={36} className="hover:scale-105 transition-transform" />
+              <div className="bg-gradient-to-tr from-indigo-600 to-purple-600 p-2 rounded-xl shadow-lg shadow-indigo-500/20">
+                <Podcast className="text-white w-6 h-6" />
+              </div>
               <span className="ml-3 text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-white to-slate-400">
                 {t.appTitle}
               </span>
@@ -1080,7 +1062,7 @@ const App: React.FC = () => {
       <MobileSearchOverlay />
 
       <div className="flex-1 overflow-hidden h-[calc(100vh-64px)] md:h-[calc(100vh-64px)] pb-16 md:pb-0">
-        {/* viewState redundant checks removed to avoid narrowed type intersection errors */}
+        {viewState === 'mission' && <MissionManifesto onBack={() => handleSetViewState('directory')} />}
         {viewState === 'user_guide' && <UserManual onBack={() => handleSetViewState('directory')} />}
         {viewState === 'notebook_viewer' && <NotebookViewer onBack={() => handleSetViewState('directory')} currentUser={currentUser} />}
         {viewState === 'card_workshop' && <CardWorkshop onBack={() => handleSetViewState('directory')} cardId={viewCardId} />}
@@ -1091,7 +1073,6 @@ const App: React.FC = () => {
                 onCreateNew={() => { setViewCardId(undefined); handleSetViewState('card_workshop'); }}
             />
         )}
-        {viewState === 'icon_studio' && <IconStudio onBack={() => handleSetViewState('directory')} />}
         
         {viewState === 'code_studio' && (
             <CodeStudio 

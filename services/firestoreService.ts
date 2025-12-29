@@ -73,22 +73,6 @@ export async function updateUserProfile(uid: string, data: Partial<UserProfile>)
   await db.collection(USERS_COLLECTION).doc(uid).update(data);
 }
 
-export async function updateUserAvailability(uid: string, date: string, slots: string[]) {
-    const userRef = db.collection(USERS_COLLECTION).doc(uid);
-    await userRef.update({
-        [`availability.${date}`]: slots
-    });
-}
-
-export async function addNotification(uid: string, invitation: Partial<Invitation>) {
-    await db.collection('invitations').add({
-        ...sanitizeData(invitation),
-        toUserId: uid,
-        status: 'pending',
-        createdAt: Date.now()
-    });
-}
-
 export async function getAllUsers(): Promise<UserProfile[]> {
   const snap = await db.collection(USERS_COLLECTION).get();
   return snap.docs.map(d => d.data() as UserProfile);

@@ -1,7 +1,8 @@
+
 import React, { useState, useEffect } from 'react';
 import { UserProfile, SubscriptionTier, GlobalStats, Channel } from '../types';
 import { getUserProfile, getGlobalStats, updateUserProfile } from '../services/firestoreService';
-import { Sparkles, BarChart2, Plus, Wand2, Key, Database, Crown, Settings, Book, Users, LogIn, Terminal, Cloud, Globe, Mic, LayoutGrid, HardDrive, AlertCircle, Loader2, Gift, CreditCard, ExternalLink, Languages, MousePointer2, Rocket, Shield, AppWindow, RefreshCw } from 'lucide-react';
+import { Sparkles, BarChart2, Plus, Wand2, Key, Database, Crown, Settings, Book, Users, LogIn, Terminal, Cloud, Globe, Mic, LayoutGrid, HardDrive, AlertCircle, Loader2, Gift, CreditCard, ExternalLink, Languages, MousePointer2, Rocket, Shield } from 'lucide-react';
 import { VOICES } from '../utils/initialData';
 import { PricingModal } from './PricingModal';
 
@@ -184,14 +185,6 @@ export const StudioMenu: React.FC<StudioMenuProps> = ({
                <span className="font-medium">Magic Voice Create</span>
             </button>
             
-            <button 
-               onClick={() => { onNavigate('icon_studio'); setIsUserMenuOpen(false); }}
-               className="w-full flex items-center space-x-3 px-3 py-2 text-sm text-white hover:bg-slate-800 rounded-lg transition-colors"
-            >
-               <div className="p-1.5 bg-cyan-900/50 text-cyan-400 rounded-md"><AppWindow size={16}/></div>
-               <span className="font-medium">Icon Designer Studio</span>
-            </button>
-            
             <div className="h-px bg-slate-800 my-2 mx-2" />
             
             <button 
@@ -294,41 +287,33 @@ export const StudioMenu: React.FC<StudioMenuProps> = ({
                onClick={() => { setIsSyncModalOpen(true); setIsUserMenuOpen(false); }}
                className="w-full flex items-center space-x-3 px-3 py-2 text-sm text-slate-300 hover:text-white hover:bg-slate-800 rounded-lg transition-colors"
             >
-               <div className="p-1.5 bg-slate-800 text-slate-400 rounded-md"><Database size={16}/></div>
-               <span className="font-medium">Data Sync & Backup</span>
+               <Database size={16} />
+               <span>Data Sync & Backup</span>
             </button>
             
             <button 
                onClick={() => { onOpenUserGuide(); setIsUserMenuOpen(false); }}
                className="w-full flex items-center space-x-3 px-3 py-2 text-sm text-slate-300 hover:text-white hover:bg-slate-800 rounded-lg transition-colors"
             >
-               <div className="p-1.5 bg-slate-800 text-slate-400 rounded-md"><Book size={16}/></div>
-               <span className="font-medium">User Guide / Manual</span>
+               <Book size={16} />
+               <span>User Guide / Manual</span>
             </button>
 
             <button 
                onClick={() => { onOpenPrivacy(); setIsUserMenuOpen(false); }}
                className="w-full flex items-center space-x-3 px-3 py-2 text-sm text-slate-300 hover:text-white hover:bg-slate-800 rounded-lg transition-colors"
             >
-               <div className="p-1.5 bg-slate-800 text-slate-400 rounded-md"><Shield size={16}/></div>
-               <span className="font-medium">Privacy Policy</span>
+               <Shield size={16} />
+               <span>Privacy Policy</span>
             </button>
             
+            {/* Settings Button */}
             <button 
                onClick={() => { setIsSettingsModalOpen(true); setIsUserMenuOpen(false); }}
                className="w-full flex items-center space-x-3 px-3 py-2 text-sm text-slate-300 hover:text-white hover:bg-slate-800 rounded-lg transition-colors"
             >
-               <div className="p-1.5 bg-slate-800 text-slate-400 rounded-md"><Settings size={16}/></div>
-               <span className="font-medium">Account Settings</span>
-            </button>
-
-            {/* Reload App Button - Helpful for PWA/Standalone Mode */}
-            <button 
-               onClick={() => window.location.reload()}
-               className="w-full flex items-center space-x-3 px-3 py-2 text-sm text-emerald-400 hover:bg-emerald-900/20 rounded-lg transition-colors border border-emerald-900/30 mt-2"
-            >
-               <div className="p-1.5 bg-emerald-900/50 text-emerald-400 rounded-md"><RefreshCw size={16}/></div>
-               <span className="font-bold">Reload Platform</span>
+               <Settings size={16} />
+               <span>Account Settings</span>
             </button>
 
             {/* Developer Tools Footer - RESTRICTED TO ADMIN */}
