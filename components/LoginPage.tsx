@@ -47,64 +47,72 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onPrivacyClick, onMissionC
       {/* Background Ambience */}
       <div className="absolute top-0 left-0 w-full h-full overflow-hidden pointer-events-none">
         <div className="absolute top-[-20%] left-[-10%] w-[50%] h-[50%] bg-indigo-600/10 rounded-full blur-[120px]"></div>
-        <div className="absolute bottom-[-20%] right-[-10%] w-[50%] h-[50%] bg-cyan-600/10 rounded-full blur-[120px]"></div>
+        <div className="absolute bottom-[-20%] right-[-10%] w-[50%] h-[50%] bg-emerald-600/10 rounded-full blur-[120px]"></div>
       </div>
 
       <div className="relative z-10 w-full max-w-md">
         <div className="bg-slate-900/80 backdrop-blur-xl border border-slate-800 rounded-3xl shadow-2xl p-8 text-center animate-fade-in-up">
           
-          {/* Branded 'Luminous Mind' App Icon */}
-          <div className="w-32 h-32 mx-auto mb-6 relative group">
+          {/* Branded 'Cosmic Extension' App Icon (Larger & More Colorful) */}
+          <div className="w-40 h-40 mx-auto mb-8 relative group">
              <div className="absolute inset-0 bg-slate-950 rounded-3xl border border-slate-800 group-hover:border-indigo-500/50 transition-colors"></div>
              <svg viewBox="0 0 512 512" className="relative z-10 w-full h-full p-2">
                 <defs>
-                    <linearGradient id="luminousA" x1="0%" y1="0%" x2="100%" y2="100%">
-                        <stop offset="0%" stopColor="#4f46e5" />
+                    <linearGradient id="cosmicLearn" x1="0%" y1="0%" x2="100%" y2="100%">
+                        <stop offset="0%" stopColor="#10b981" />
+                        <stop offset="100%" stopColor="#059669" />
+                    </linearGradient>
+                    <linearGradient id="cosmicWork" x1="0%" y1="0%" x2="100%" y2="100%">
+                        <stop offset="0%" stopColor="#6366f1" />
                         <stop offset="100%" stopColor="#06b6d4" />
                     </linearGradient>
-                    <linearGradient id="luminousB" x1="0%" y1="0%" x2="100%" y2="100%">
-                        <stop offset="0%" stopColor="#ec4899" />
+                    <linearGradient id="cosmicShare" x1="0%" y1="0%" x2="100%" y2="100%">
+                        <stop offset="0%" stopColor="#f43f5e" />
                         <stop offset="100%" stopColor="#8b5cf6" />
                     </linearGradient>
                 </defs>
-                {/* Massive Energy Ring */}
-                <circle cx="256" cy="256" r="210" fill="url(#luminousB)" opacity="0.15" />
-                <path d="M256 30 L482 256 L256 482 L30 256 Z" fill="url(#luminousA)" opacity="0.2" />
                 
-                {/* The "Me" Core - Large & Central */}
-                <circle cx="256" cy="256" r="115" fill="white" className="drop-shadow-[0_0_30px_rgba(255,255,255,0.6)]" />
+                {/* Capability Strands */}
+                <g strokeWidth="24" strokeLinecap="round" opacity="0.4">
+                    <line x1="256" y1="256" x2="256" y2="60" stroke="url(#cosmicLearn)" />
+                    <line x1="256" y1="256" x2="440" y2="380" stroke="url(#cosmicWork)" />
+                    <line x1="256" y1="256" x2="72" y2="380" stroke="url(#cosmicShare)" />
+                </g>
+
+                {/* The "Me" Core - Large Concentric Design */}
+                <circle cx="256" cy="256" r="130" fill="white" className="drop-shadow-[0_0_30px_rgba(255,255,255,0.4)]" />
+                <circle cx="256" cy="256" r="110" fill="#020617" />
+                <circle cx="256" cy="256" r="95" fill="white" />
                 
-                {/* Voice & Intelligence Pulse */}
+                {/* Voice & Intelligence Pulse inside Core */}
                 <path 
-                    d="M180 256 h25 l10 -50 l15 100 l15 -130 l15 130 l15 -100 l10 50 h25" 
-                    stroke="url(#luminousA)" 
-                    strokeWidth="16" 
+                    d="M190 256 h25 l10 -50 l15 100 l15 -130 l15 130 l15 -100 l10 50 h25" 
+                    stroke="#020617" 
+                    strokeWidth="14" 
                     fill="none" 
                     strokeLinecap="round" 
                     strokeLinejoin="round" 
                 />
                 
-                {/* Extension Symbols (2x Size) */}
-                <g fill="white">
-                   <circle cx="256" cy="70" r="30" /> {/* Learn */}
-                   <rect x="420" y="226" width="60" height="60" rx="10" /> {/* Work */}
-                   <path d="M60 226 l60 30 l-60 30 z" /> {/* Share */}
-                   <circle cx="256" cy="442" r="30" /> {/* Growth */}
-                </g>
-                {/* Nested Inner Symbols */}
-                <path d="M245 60 h22 l-11 18 z" fill="#4f46e5" />
-                <path d="M435 240 l12 12 l-12 12 M455 240 l-12 12 l 12 12" fill="none" stroke="#8b5cf6" strokeWidth="8" strokeLinecap="round" />
+                {/* Capability Nodes */}
+                <circle cx="256" cy="60" r="35" fill="white" />
+                <path d="M245 50 h22 l-11 20 z" fill="#10b981" /> {/* Learn */}
+                
+                <circle cx="440" cy="380" r="35" fill="white" />
+                <path d="M430 370 l10 10 l-10 10 M450 370 l-10 10 l 10 10" fill="none" stroke="#6366f1" strokeWidth="8" strokeLinecap="round" /> {/* Work */}
+                
+                <circle cx="72" cy="380" r="35" fill="white" />
+                <circle cx="72" cy="380" r="10" fill="#f43f5e" /> {/* Share */}
              </svg>
-             {/* Outer Glow */}
-             <div className="absolute -inset-4 bg-gradient-to-tr from-indigo-500/10 to-cyan-500/10 rounded-3xl blur-2xl opacity-0 group-hover:opacity-100 transition-opacity"></div>
+             {/* Outer Radial Glow */}
+             <div className="absolute -inset-6 bg-gradient-to-tr from-indigo-500/20 to-pink-500/20 rounded-full blur-3xl opacity-0 group-hover:opacity-100 transition-opacity"></div>
           </div>
 
           <h1 className="text-3xl font-black text-white mb-2 tracking-tight">AIVoiceCast</h1>
           <p className="text-slate-400 text-sm mb-8 font-medium tracking-wide leading-relaxed">
-            The AI extension for your <br/> 
-            <span className="text-indigo-400 font-bold">Mind</span> • 
-            <span className="text-cyan-400 font-bold">Work</span> • 
-            <span className="text-pink-400 font-bold">Voice</span>
+            The Personal AI Extension for <br/> 
+            <span className="text-indigo-400 font-bold">Infinite Capacity</span> & <br/> 
+            <span className="text-emerald-400 font-bold">Collaborative Mastery</span>
           </p>
 
           <div className="space-y-6">
@@ -172,26 +180,26 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onPrivacyClick, onMissionC
           </div>
         </div>
         
-        <div className="mt-8 flex flex-col items-center gap-4 animate-fade-in [animation-delay:400ms]">
+        <div className="mt-12 flex flex-col items-center gap-4 animate-fade-in [animation-delay:400ms]">
             <p className="text-center text-slate-600 text-[10px] uppercase font-bold tracking-widest flex items-center gap-2">
               <Sparkles size={10} /> Knowledge Operating System
             </p>
             <div className="flex gap-10 text-slate-700">
                 <div className="flex flex-col items-center gap-1.5">
-                    <Code size={20} />
+                    <Code size={24} />
                     <span className="text-[8px] uppercase tracking-tighter font-bold">Build</span>
                 </div>
                 <div className="flex flex-col items-center gap-1.5">
-                    <Podcast size={20} />
+                    <Podcast size={24} />
                     <span className="text-[8px] uppercase tracking-tighter font-bold">Learn</span>
                 </div>
                 <div className="flex flex-col items-center gap-1.5">
-                    <MessageSquare size={20} />
+                    <MessageSquare size={24} />
                     <span className="text-[8px] uppercase tracking-tighter font-bold">Connect</span>
                 </div>
                 <div className="flex flex-col items-center gap-1.5">
-                    <ImageIcon size={20} />
-                    <span className="text-[8px] uppercase tracking-tighter font-bold">Share</span>
+                    <ImageIcon size={24} />
+                    <span className="text-[8px] uppercase tracking-tighter font-bold">Create</span>
                 </div>
             </div>
         </div>
