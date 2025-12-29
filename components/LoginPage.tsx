@@ -1,5 +1,4 @@
 import React, { useState } from 'react';
-// Added missing icon imports: Code, Image as ImageIcon, and MessageSquare
 import { Podcast, ArrowRight, ShieldCheck, Loader2, AlertCircle, Rocket, Shield, Code, Image as ImageIcon, MessageSquare } from 'lucide-react';
 import { signInWithGoogle } from '../services/authService';
 import { logUserActivity } from '../services/firestoreService';
@@ -19,7 +18,6 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onPrivacyClick, onMissionC
     try {
       const user = await signInWithGoogle();
       if (user) {
-        // Success handled by App.tsx listener
         logUserActivity('login', { method: 'google', email: user.email });
       }
     } catch (e: any) {
@@ -55,20 +53,27 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onPrivacyClick, onMissionC
       <div className="relative z-10 w-full max-w-md">
         <div className="bg-slate-900/80 backdrop-blur-xl border border-slate-800 rounded-3xl shadow-2xl p-8 text-center animate-fade-in-up">
           
-          {/* Branded Super App Icon */}
+          {/* Branded 'Digital Core' App Icon */}
           <div className="w-24 h-24 mx-auto mb-6 relative group">
              <div className="absolute inset-0 bg-gradient-to-tr from-indigo-600 to-purple-600 rounded-2xl shadow-lg shadow-indigo-500/40 group-hover:scale-105 transition-transform duration-500"></div>
-             <svg viewBox="0 0 512 512" className="relative z-10 w-full h-full p-2" fill="white">
-                {/* Central Voice Icon */}
-                <path d="M256 100c-35.3 0-64 28.7-64 64v100c0 35.3 28.7 64 64 64s64-28.7 64-64V164c0-35.3-28.7-64-64-64zm-100 164c0 55.2 44.8 100 100 100s100-44.8 100-100h24c0 64.4-49.2 117.5-112 123.5V432h64v24H192v-24h64v-44.5c-62.8-6-112-59.1-112-123.5h24z" />
-                
-                {/* Suite corner icons (Code, Calendar, Chat, Board) */}
-                <g opacity="0.6" stroke="white" strokeWidth="12" fill="none">
-                    <path d="M80 80l-20 20 20 20M120 80l20 20-20 20" /> {/* Top Left: Code */}
-                    <rect x="392" y="80" width="40" height="40" rx="4" /> {/* Top Right: Calendar */}
-                    <path d="M80 392h40v30l-30-30H80z" fill="white" stroke="none" /> {/* Bottom Left: Chat */}
-                    <circle cx="412" cy="412" r="18" strokeWidth="8" /> {/* Bottom Right: Whiteboard */}
-                </g>
+             <svg viewBox="0 0 512 512" className="relative z-10 w-full h-full p-2">
+                {/* Diamond Core */}
+                <path d="M256 60 L452 256 L256 452 L60 256 Z" fill="white" />
+                {/* Pulse Wave */}
+                <path 
+                    d="M140 256 h40 l15 -30 l20 60 l30 -90 l25 60 l15 -30 h80" 
+                    stroke="url(#pulseGrad)" 
+                    strokeWidth="18" 
+                    strokeLinecap="round" 
+                    strokeLinejoin="round" 
+                    fill="none" 
+                />
+                <defs>
+                    <linearGradient id="pulseGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+                        <stop offset="0%" stopColor="#4338ca" />
+                        <stop offset="100%" stopColor="#7e22ce" />
+                    </linearGradient>
+                </defs>
              </svg>
              {/* Glow effect */}
              <div className="absolute -inset-1 bg-gradient-to-tr from-indigo-500 to-purple-500 rounded-2xl blur opacity-20 group-hover:opacity-40 transition-opacity"></div>
