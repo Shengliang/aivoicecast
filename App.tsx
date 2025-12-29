@@ -5,7 +5,7 @@ import {
   Podcast, Mic, Layout, Search, Sparkles, LogOut, 
   Settings, Menu, X, Plus, Github, Database, Cloud, Globe, 
   Calendar, Briefcase, Users, Disc, FileText, AlertTriangle, List, BookOpen, ChevronDown, Table as TableIcon, LayoutGrid, Rocket, Code, Wand2, PenTool, Rss, Loader2, MessageSquare,
-  Home, Video as VideoIcon, Inbox, User, PlusSquare, ArrowLeft, Play, Book, Gift, Square, Shield
+  Home, Video as VideoIcon, Inbox, User, PlusSquare, ArrowLeft, Play, Book, Gift, Square, Shield, RefreshCw
 } from 'lucide-react';
 import { LiveSession } from './components/LiveSession';
 import { PodcastDetail } from './components/PodcastDetail';
@@ -607,7 +607,7 @@ const App: React.FC = () => {
       setActiveChannelId(channel.id);
       setLiveConfig({
           context,
-          bookingId: bookingId,
+          bookingId: bookingId, 
           recording: recordingEnabled,
           video: videoEnabled,
           camera: cameraEnabled
@@ -827,8 +827,11 @@ const App: React.FC = () => {
       return (
           <div className="md:hidden fixed top-0 left-0 w-full z-40 bg-gradient-to-b from-black/80 to-transparent p-4 flex items-center justify-between pointer-events-none">
               <div className="flex items-center gap-3 pointer-events-auto">
-                  <button onClick={handleMobileQuickStart} className="text-white/80 hover:text-white">
+                  <button onClick={handleMobileQuickStart} className="text-white/80 hover:text-white" title="Quick Session">
                       <VideoIcon size={24} />
+                  </button>
+                  <button onClick={() => window.location.reload()} className="text-white/80 hover:text-white" title="Reload App">
+                      <RefreshCw size={22} />
                   </button>
                   {audioIsPlaying && (
                     <button 
@@ -977,6 +980,13 @@ const App: React.FC = () => {
             <div className="flex items-center space-x-2 sm:space-x-4">
               
               <div className="hidden lg:flex items-center space-x-2 mr-2">
+                  <button 
+                      onClick={() => window.location.reload()}
+                      className="p-2 rounded-lg bg-slate-800/50 hover:bg-slate-800 text-slate-400 hover:text-white transition-colors"
+                      title="Reload Page"
+                  >
+                      <RefreshCw size={18} />
+                  </button>
                   <button
                       onClick={() => setIsCreateModalOpen(true)}
                       className="flex items-center space-x-2 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-lg transition-colors shadow-sm"
