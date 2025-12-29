@@ -8,8 +8,9 @@ export interface Invitation {
   groupName: string;
   status: 'pending' | 'accepted' | 'rejected';
   createdAt: number;
-  type?: 'group' | 'session';
+  type?: 'group' | 'session' | 'system';
   link?: string;
+  message?: string;
 }
 
 export interface Booking {
@@ -186,6 +187,7 @@ export interface UserProfile {
   likedChannelIds?: string[];
   preferredAiProvider?: 'gemini' | 'openai';
   preferredMobileQuickApp?: string;
+  availability?: Record<string, string[]>; // { "2025-01-20": ["09:05", "09:35"] }
 }
 
 export interface RecordingSession {
