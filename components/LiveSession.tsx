@@ -1,4 +1,3 @@
-
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { Channel, TranscriptItem, GeneratedLecture, CommunityDiscussion, RecordingSession, Attachment } from '../types';
 import { GeminiLiveService } from '../services/geminiLive';
@@ -595,10 +594,11 @@ export const LiveSession: React.FC<LiveSessionProps> = ({
               }
           }
         },
-        toolsToUse // Pass tools config
+        toolsToUse,
+        { title: channel.title, author: channel.author, imageUrl: channel.imageUrl } // Pass context for Media Session
       );
     } catch (e) { stopWaitingMusic(); setIsRetrying(false); setError("Failed to initialize audio session"); }
-  }, [channel.id, channel.voiceName, channel.systemInstruction, initialContext, recordingEnabled, videoEnabled, cameraEnabled, initialTranscript, customTools, onCustomToolCall]);
+  }, [channel, initialContext, recordingEnabled, videoEnabled, cameraEnabled, initialTranscript, customTools, onCustomToolCall]);
 
   // Context Update Handling (Seamless)
   // Instead of reconnecting, we send a text message to the AI
