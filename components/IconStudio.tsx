@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import { GoogleGenAI } from '@google/genai';
-import { ArrowLeft, Sparkles, Wand2, Download, Loader2, RefreshCw, Smartphone, Monitor, LayoutGrid, Check, Info, ShieldCheck } from 'lucide-react';
+import { ArrowLeft, Sparkles, Wand2, Download, Loader2, RefreshCw, Smartphone, Monitor, LayoutGrid, Check, Info, ShieldCheck, Cpu } from 'lucide-react';
 
 interface IconStudioProps {
   onBack: () => void;
@@ -9,9 +9,9 @@ interface IconStudioProps {
 
 const PRESETS = [
   { 
-    id: 'official-brand', 
-    name: 'AIVoiceCast Official', 
-    prompt: 'A premium professional app icon for "AIVoiceCast". A stylized minimalist microphone silhouette integrated with neural network connections and sound wave pulses. Electric indigo and deep purple gradient background. High-gloss 3D depth, metallic accents, soft cinematic shadows. Designed for iOS and Android high-density screens.' 
+    id: 'platform-hub', 
+    name: 'Neural Platform Hub', 
+    prompt: 'A premium professional app icon for a comprehensive AI platform called "AIVoiceCast". Centered composition. The icon features a glowing neural soundwave core that branches out into four subtle metaphoric nodes representing code, design, writing, and community. High-gloss 3D glassmorphic effect. Mesh gradient background of deep indigo, electric purple, and soft teal. Metallic accents, cinematic soft-shadows, 8k resolution, App Store quality.' 
   },
   { 
     id: '3d-glass', 
@@ -51,7 +51,7 @@ export const IconStudio: React.FC<IconStudioProps> = ({ onBack }) => {
       const response = await ai.models.generateContent({
         model: 'gemini-2.5-flash-image',
         contents: {
-          parts: [{ text: `High-fidelity app icon design for AIVoiceCast platform. Centered composition. No text. Square format. App store aesthetic. ${prompt}` }]
+          parts: [{ text: `High-fidelity professional mobile app icon design. Centered composition. No text. Square format. App store aesthetic. ${prompt}` }]
         },
         config: {
           imageConfig: {
@@ -78,7 +78,7 @@ export const IconStudio: React.FC<IconStudioProps> = ({ onBack }) => {
     if (!generatedIcon) return;
     const a = document.createElement('a');
     a.href = generatedIcon;
-    a.download = 'AIVoiceCast_Icon.png';
+    a.download = 'AIVoiceCast_Platform_Icon.png';
     a.click();
   };
 
@@ -92,10 +92,10 @@ export const IconStudio: React.FC<IconStudioProps> = ({ onBack }) => {
           </button>
           <div>
             <h1 className="text-xl font-bold text-white flex items-center gap-2">
-              <Sparkles size={20} className="text-cyan-400" />
-              App Icon Designer
+              <Cpu size={20} className="text-indigo-400" />
+              Platform Branding
             </h1>
-            <p className="text-xs text-slate-500">Generate professional identity for AIVoiceCast</p>
+            <p className="text-xs text-slate-500">Design the face of the AIVoiceCast Ecosystem</p>
           </div>
         </div>
         <div className="flex bg-slate-800 p-1 rounded-lg border border-slate-700">
@@ -125,19 +125,19 @@ export const IconStudio: React.FC<IconStudioProps> = ({ onBack }) => {
 
           <div className="relative z-10 group">
             {previewMode === 'icon' ? (
-              <div className="w-64 h-64 md:w-80 md:h-80 bg-slate-900 rounded-[22.5%] overflow-hidden shadow-2xl border-4 border-slate-800 relative group transition-all duration-700 hover:rotate-3">
+              <div className="w-64 h-64 md:w-80 md:h-80 bg-slate-900 rounded-[22.5%] overflow-hidden shadow-2xl border-4 border-slate-800 relative group transition-all duration-700 hover:rotate-3 hover:scale-105">
                 {generatedIcon ? (
                   <img src={generatedIcon} className="w-full h-full object-cover" alt="Generated Icon" />
                 ) : (
                   <div className="w-full h-full flex flex-col items-center justify-center text-slate-700 gap-4">
                     <Wand2 size={64} className="opacity-20 animate-pulse" />
-                    <p className="text-sm font-bold uppercase tracking-widest opacity-40">Ready to Render</p>
+                    <p className="text-sm font-bold uppercase tracking-widest opacity-40 text-center">Ready to Synthesize<br/>Brand Identity</p>
                   </div>
                 )}
                 {isGenerating && (
                   <div className="absolute inset-0 bg-slate-900/80 backdrop-blur-sm flex flex-col items-center justify-center gap-4">
                     <Loader2 size={48} className="animate-spin text-indigo-400" />
-                    <p className="text-sm font-bold text-indigo-200 animate-pulse uppercase tracking-widest">Synthesizing Pixels</p>
+                    <p className="text-sm font-bold text-indigo-200 animate-pulse uppercase tracking-widest">Rendering Pixels...</p>
                   </div>
                 )}
               </div>
@@ -150,7 +150,7 @@ export const IconStudio: React.FC<IconStudioProps> = ({ onBack }) => {
                   {Array.from({ length: 11 }).map((_, i) => (
                     <div key={i} className="aspect-square bg-white/10 rounded-2xl"></div>
                   ))}
-                  <div className="aspect-square bg-slate-900 rounded-[22.5%] overflow-hidden shadow-lg border border-white/10 animate-fade-in">
+                  <div className="aspect-square bg-slate-900 rounded-[22.5%] overflow-hidden shadow-lg border border-white/10 animate-fade-in ring-2 ring-indigo-500/50">
                     {generatedIcon ? (
                       <img src={generatedIcon} className="w-full h-full object-cover" />
                     ) : (
@@ -162,7 +162,7 @@ export const IconStudio: React.FC<IconStudioProps> = ({ onBack }) => {
                 </div>
 
                 <div className="mt-4 text-center">
-                    <p className="text-[10px] font-bold text-white/50 tracking-widest uppercase">AIVoiceCast</p>
+                    <p className="text-[10px] font-bold text-white/50 tracking-widest uppercase">AIVoiceCast Hub</p>
                 </div>
 
                 {/* Dock Mockup */}
@@ -183,7 +183,7 @@ export const IconStudio: React.FC<IconStudioProps> = ({ onBack }) => {
                 className="flex items-center gap-2 px-6 py-3 bg-slate-800 hover:bg-slate-700 text-white rounded-xl font-bold transition-all border border-slate-700 shadow-lg"
               >
                 <Download size={18} />
-                Export PNG
+                Download PNG
               </button>
             )}
             <button 
@@ -192,7 +192,7 @@ export const IconStudio: React.FC<IconStudioProps> = ({ onBack }) => {
               className="flex items-center gap-2 px-8 py-3 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white rounded-xl font-bold transition-all shadow-xl shadow-indigo-500/30 active:scale-95"
             >
               {isGenerating ? <Loader2 size={18} className="animate-spin" /> : <RefreshCw size={18} />}
-              {generatedIcon ? 'Redraw' : 'Generate App Identity'}
+              {generatedIcon ? 'Regenerate Identity' : 'Generate Platform Icon'}
             </button>
           </div>
         </div>
@@ -202,14 +202,14 @@ export const IconStudio: React.FC<IconStudioProps> = ({ onBack }) => {
           <section>
             <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-4 flex items-center gap-2">
               <LayoutGrid size={14} />
-              Concept Presets
+              Platform Presets
             </h3>
             <div className="grid grid-cols-1 gap-3">
               {PRESETS.map(preset => (
                 <button
                   key={preset.id}
                   onClick={() => { setActivePreset(preset); setCustomPrompt(''); }}
-                  className={`text-left p-4 rounded-xl border transition-all ${activePreset.id === preset.id && !customPrompt ? 'bg-indigo-900/30 border-indigo-500 ring-1 ring-indigo-500/50' : 'bg-slate-800 border-slate-700 hover:border-slate-500'}`}
+                  className={`text-left p-4 rounded-xl border transition-all ${activePreset.id === preset.id && !customPrompt ? 'bg-indigo-900/30 border-indigo-500 ring-1 ring-indigo-500/50 shadow-[0_0_15px_rgba(99,102,241,0.2)]' : 'bg-slate-800 border-slate-700 hover:border-slate-500'}`}
                 >
                   <div className="flex items-center justify-between mb-1">
                     <p className="font-bold text-sm text-white">{preset.name}</p>
@@ -230,7 +230,7 @@ export const IconStudio: React.FC<IconStudioProps> = ({ onBack }) => {
                 <textarea
                 value={customPrompt}
                 onChange={e => setCustomPrompt(e.target.value)}
-                placeholder="Describe specific visuals, colors, or mood (e.g. 'Matte gold microphone on black marble')..."
+                placeholder="Describe specific visuals, colors, or mood (e.g. 'Matte black minimalist soundwave')..."
                 className="w-full flex-1 bg-transparent p-4 text-sm text-slate-300 outline-none resize-none"
                 />
                 <div className="p-2 border-t border-slate-800 flex justify-end">
@@ -242,7 +242,7 @@ export const IconStudio: React.FC<IconStudioProps> = ({ onBack }) => {
           <div className="bg-indigo-900/20 border border-indigo-500/30 p-4 rounded-xl flex gap-3 shadow-inner">
             <ShieldCheck size={18} className="text-indigo-400 shrink-0 mt-0.5" />
             <p className="text-[10px] text-indigo-200 leading-relaxed font-medium">
-              AIVoiceCast automatically optimizes these prompts for the Gemini 2.5 Flash vision engine to ensure pixel-perfect legibility at small sizes.
+              These prompts are optimized for the Gemini 2.5 Flash Vision engine to create distinctive, high-fidelity app store assets.
             </p>
           </div>
         </div>
