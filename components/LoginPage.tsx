@@ -47,60 +47,64 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onPrivacyClick, onMissionC
       {/* Background Ambience */}
       <div className="absolute top-0 left-0 w-full h-full overflow-hidden pointer-events-none">
         <div className="absolute top-[-20%] left-[-10%] w-[50%] h-[50%] bg-indigo-600/10 rounded-full blur-[120px]"></div>
-        <div className="absolute bottom-[-20%] right-[-10%] w-[50%] h-[50%] bg-purple-600/10 rounded-full blur-[120px]"></div>
+        <div className="absolute bottom-[-20%] right-[-10%] w-[50%] h-[50%] bg-cyan-600/10 rounded-full blur-[120px]"></div>
       </div>
 
       <div className="relative z-10 w-full max-w-md">
         <div className="bg-slate-900/80 backdrop-blur-xl border border-slate-800 rounded-3xl shadow-2xl p-8 text-center animate-fade-in-up">
           
-          {/* Branded 'Cognitive Nexus' App Icon */}
-          <div className="w-28 h-28 mx-auto mb-6 relative group">
+          {/* Branded 'Luminous Mind' App Icon */}
+          <div className="w-32 h-32 mx-auto mb-6 relative group">
              <div className="absolute inset-0 bg-slate-950 rounded-3xl border border-slate-800 group-hover:border-indigo-500/50 transition-colors"></div>
-             <svg viewBox="0 0 512 512" className="relative z-10 w-full h-full p-4">
+             <svg viewBox="0 0 512 512" className="relative z-10 w-full h-full p-2">
                 <defs>
-                    <linearGradient id="nexusGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-                        <stop offset="0%" stopColor="#6366f1" />
-                        <stop offset="100%" stopColor="#a855f7" />
+                    <linearGradient id="luminousA" x1="0%" y1="0%" x2="100%" y2="100%">
+                        <stop offset="0%" stopColor="#4f46e5" />
+                        <stop offset="100%" stopColor="#06b6d4" />
+                    </linearGradient>
+                    <linearGradient id="luminousB" x1="0%" y1="0%" x2="100%" y2="100%">
+                        <stop offset="0%" stopColor="#ec4899" />
+                        <stop offset="100%" stopColor="#8b5cf6" />
                     </linearGradient>
                 </defs>
-                {/* Structural Frame */}
-                <path d="M256 60 L452 256 L256 452 L60 256 Z" fill="none" stroke="url(#nexusGrad)" strokeWidth="16" strokeOpacity="0.2" />
+                {/* Massive Energy Ring */}
+                <circle cx="256" cy="256" r="210" fill="url(#luminousB)" opacity="0.15" />
+                <path d="M256 30 L482 256 L256 482 L30 256 Z" fill="url(#luminousA)" opacity="0.2" />
                 
-                {/* Connection Nodes */}
-                <g stroke="white" strokeWidth="4" strokeOpacity="0.1" strokeDasharray="10 10">
-                    <line x1="256" y1="60" x2="256" y2="452" />
-                    <line x1="60" y1="256" x2="452" y2="256" />
-                </g>
-
-                {/* The "Me" Core - Pulsing Human Extension */}
-                <circle cx="256" cy="256" r="95" fill="white" className="drop-shadow-[0_0_25px_rgba(255,255,255,0.6)]" />
+                {/* The "Me" Core - Large & Central */}
+                <circle cx="256" cy="256" r="115" fill="white" className="drop-shadow-[0_0_30px_rgba(255,255,255,0.6)]" />
                 
                 {/* Voice & Intelligence Pulse */}
                 <path 
-                    d="M186 256 h20 l5 -30 l15 60 l15 -90 l15 90 l15 -60 l5 30 h20" 
-                    stroke="url(#nexusGrad)" 
-                    strokeWidth="12" 
+                    d="M180 256 h25 l10 -50 l15 100 l15 -130 l15 130 l15 -100 l10 50 h25" 
+                    stroke="url(#luminousA)" 
+                    strokeWidth="16" 
                     fill="none" 
                     strokeLinecap="round" 
                     strokeLinejoin="round" 
                 />
                 
-                {/* Pillar Iconography */}
-                <path d="M256 90 l10 -15 l10 15 l15 10 l-15 10 l-10 15 l-10 -15 l-15 -10 z" fill="#6366f1" /> {/* LEARN */}
-                <path d="M420 240 l15 16 l-15 16 M400 240 l-15 16 l 15 16" fill="none" stroke="#a855f7" strokeWidth="8" strokeLinecap="round" /> {/* WORK */}
-                <path d="M240 430 h32 v18 l-12 -18 h-20 z" fill="#6366f1" /> {/* SHARE */}
-                <path d="M75 256 a15 15 0 1 0 30 0 a15 15 0 1 0 -30 0" fill="#a855f7" /> {/* GROW */}
+                {/* Extension Symbols (2x Size) */}
+                <g fill="white">
+                   <circle cx="256" cy="70" r="30" /> {/* Learn */}
+                   <rect x="420" y="226" width="60" height="60" rx="10" /> {/* Work */}
+                   <path d="M60 226 l60 30 l-60 30 z" /> {/* Share */}
+                   <circle cx="256" cy="442" r="30" /> {/* Growth */}
+                </g>
+                {/* Nested Inner Symbols */}
+                <path d="M245 60 h22 l-11 18 z" fill="#4f46e5" />
+                <path d="M435 240 l12 12 l-12 12 M455 240 l-12 12 l 12 12" fill="none" stroke="#8b5cf6" strokeWidth="8" strokeLinecap="round" />
              </svg>
              {/* Outer Glow */}
-             <div className="absolute -inset-2 bg-gradient-to-tr from-indigo-500/10 to-purple-500/10 rounded-3xl blur-xl opacity-0 group-hover:opacity-100 transition-opacity"></div>
+             <div className="absolute -inset-4 bg-gradient-to-tr from-indigo-500/10 to-cyan-500/10 rounded-3xl blur-2xl opacity-0 group-hover:opacity-100 transition-opacity"></div>
           </div>
 
           <h1 className="text-3xl font-black text-white mb-2 tracking-tight">AIVoiceCast</h1>
           <p className="text-slate-400 text-sm mb-8 font-medium tracking-wide leading-relaxed">
             The AI extension for your <br/> 
             <span className="text-indigo-400 font-bold">Mind</span> • 
-            <span className="text-purple-400 font-bold">Work</span> • 
-            <span className="text-emerald-400 font-bold">Voice</span>
+            <span className="text-cyan-400 font-bold">Work</span> • 
+            <span className="text-pink-400 font-bold">Voice</span>
           </p>
 
           <div className="space-y-6">
@@ -170,7 +174,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onPrivacyClick, onMissionC
         
         <div className="mt-8 flex flex-col items-center gap-4 animate-fade-in [animation-delay:400ms]">
             <p className="text-center text-slate-600 text-[10px] uppercase font-bold tracking-widest flex items-center gap-2">
-              <Sparkles size={10} /> Unified Intelligence Hub
+              <Sparkles size={10} /> Knowledge Operating System
             </p>
             <div className="flex gap-10 text-slate-700">
                 <div className="flex flex-col items-center gap-1.5">
