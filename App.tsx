@@ -5,7 +5,7 @@ import {
   Podcast, Mic, Layout, Search, Sparkles, LogOut, 
   Settings, Menu, X, Plus, Github, Database, Cloud, Globe, 
   Calendar, Briefcase, Users, Disc, FileText, AlertTriangle, List, BookOpen, ChevronDown, Table as TableIcon, LayoutGrid, Rocket, Code, Wand2, PenTool, Rss, Loader2, MessageSquare,
-  Home, Video as VideoIcon, Inbox, User, PlusSquare, ArrowLeft, Play, Book, Gift, Square, Shield, RefreshCw
+  Home, Video as VideoIcon, Inbox, User, PlusSquare, ArrowLeft, Play, Book, Gift, Square, Shield, RefreshCw, AppWindow
 } from 'lucide-react';
 import { LiveSession } from './components/LiveSession';
 import { PodcastDetail } from './components/PodcastDetail';
@@ -45,6 +45,7 @@ import { PrivacyPolicy } from './components/PrivacyPolicy';
 import { NotebookViewer } from './components/NotebookViewer'; 
 import { CardWorkshop } from './components/CardWorkshop';
 import { CardExplorer } from './components/CardExplorer';
+import { IconGenerator } from './components/IconGenerator';
 
 import { auth, isFirebaseConfigured } from './services/firebaseConfig';
 import { 
@@ -87,7 +88,8 @@ const UI_TEXT = {
     chat: "Team Chat",
     careers: "Careers",
     notebooks: "LLM Notebooks",
-    cards: "Card Workshop"
+    cards: "Card Workshop",
+    icons: "Icon Lab"
   },
   zh: {
     appTitle: "AI 播客",
@@ -115,7 +117,8 @@ const UI_TEXT = {
     chat: "团队聊天",
     careers: "职业发展",
     notebooks: "LLM 笔记本",
-    cards: "贺卡工坊"
+    cards: "贺卡工坊",
+    icons: "图标生成器"
   }
 };
 
@@ -203,6 +206,7 @@ const App: React.FC = () => {
 
   const allApps = [
     { id: 'podcasts', label: t.podcasts, icon: Podcast, action: () => { handleSetViewState('directory'); setActiveTab('categories'); }, color: 'text-indigo-400' },
+    { id: 'icon_lab', label: t.icons, icon: AppWindow, action: () => handleSetViewState('icon_generator'), color: 'text-cyan-400' },
     { id: 'mission', label: t.mission, icon: Rocket, action: () => handleSetViewState('mission'), color: 'text-orange-500' },
     { id: 'code_studio', label: t.code, icon: Code, action: () => handleSetViewState('code_studio'), color: 'text-blue-400' },
     { id: 'notebook_viewer', label: t.notebooks, icon: Book, action: () => handleSetViewState('notebook_viewer'), color: 'text-orange-300' },
@@ -288,6 +292,8 @@ const App: React.FC = () => {
         handleSetViewState('mission');
     } else if (view === 'notebooks') {
         handleSetViewState('notebook_viewer');
+    } else if (view === 'icons') {
+        handleSetViewState('icon_generator');
     } else if (view === 'podcast' && id) {
         setActiveChannelId(id);
         handleSetViewState('podcast_detail');
@@ -384,6 +390,7 @@ const App: React.FC = () => {
               case 'card_workshop': viewParam = 'card_workshop'; break;
               case 'card_explorer': viewParam = 'card_explorer'; break;
               case 'card_viewer': viewParam = 'card'; break;
+              case 'icon_generator': viewParam = 'icons'; break;
               case 'podcast_detail': viewParam = 'podcast'; break;
               case 'debug': viewParam = 'debug_local'; break;
               case 'firestore_debug': viewParam = 'debug_firestore'; break;
@@ -1094,6 +1101,13 @@ const App: React.FC = () => {
                 onSessionStart={handleSessionStart} 
                 onSessionStop={handleSessionStop} 
                 onStartLiveSession={(channel, context) => handleStartLiveSession(channel, context)} 
+            />
+        )}
+
+        {viewState === 'icon_generator' && (
+            <IconGenerator 
+                onBack={() => { handleSetViewState('directory'); }}
+                currentUser={currentUser}
             />
         )}
         

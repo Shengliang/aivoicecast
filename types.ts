@@ -1,5 +1,4 @@
 
-
 export interface Invitation {
   id: string;
   fromUserId: string;
@@ -151,7 +150,8 @@ export type ViewState =
   | 'notebook_viewer' 
   | 'card_workshop' 
   | 'card_explorer' 
-  | 'card_viewer';
+  | 'card_viewer'
+  | 'icon_generator';
 
 export interface AudioState {
   isConnected: boolean;
@@ -387,6 +387,11 @@ export interface CloudItem {
   size?: number;
   timeCreated?: string;
   contentType?: string;
+}
+
+export interface GlobalStats {
+  totalLogins: number;
+  uniqueUsers: number;
 }
 
 export interface GlobalStats {
