@@ -68,6 +68,11 @@ export function stopAllPlatformAudio(sourceCaller: string = "Global") {
         }
     }
     
+    // Clear Media Session state
+    if ('mediaSession' in navigator) {
+        navigator.mediaSession.playbackState = 'none';
+    }
+
     currentOwnerToken = null;
     logAudioEvent(sourceCaller, 'STOP', `Gen INC to ${globalAudioGeneration}. Global audio cleared.`);
 }
@@ -109,6 +114,8 @@ export function getGlobalAudioContext(sampleRate: number = 24000): AudioContext 
       audioBridgeElement.volume = 1.0;
       audioBridgeElement.setAttribute('playsinline', 'true');
       audioBridgeElement.setAttribute('autoplay', 'true');
+      // Set a title for the bridge element to help OS identify it
+      audioBridgeElement.title = "AIVoiceCast Audio Bridge";
       document.body.appendChild(audioBridgeElement);
   }
 
@@ -174,9 +181,11 @@ export async function warmUpAudioContext(ctx: AudioContext) {
     
     if (!silentLoopElement) {
         silentLoopElement = new Audio();
+        // A short silent wav file
         silentLoopElement.src = 'data:audio/wav;base64,UklGRigAAABXQVZFRm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQQAAAAAAAAA';
         silentLoopElement.loop = true;
         silentLoopElement.setAttribute('playsinline', 'true');
+        silentLoopElement.id = 'background-audio-keepalive';
     }
     
     try {

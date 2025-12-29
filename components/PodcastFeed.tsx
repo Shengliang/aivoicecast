@@ -1,3 +1,4 @@
+
 import React, { useMemo, useRef, useState, useEffect, useCallback } from 'react';
 import { Channel, UserProfile, GeneratedLecture } from '../types';
 import { Play, MessageSquare, Heart, Share2, Bookmark, Music, Plus, Pause, Loader2, Volume2, VolumeX, GraduationCap, ChevronRight, Mic, AlignLeft, BarChart3, User, AlertCircle, Zap, Radio, Square, Sparkles } from 'lucide-react';
@@ -10,7 +11,7 @@ import { getCachedLectureScript, cacheLectureScript, getUserChannels } from '../
 import { GEMINI_API_KEY, OPENAI_API_KEY } from '../services/private_keys';
 import { SPOTLIGHT_DATA } from '../utils/spotlightContent';
 import { OFFLINE_CHANNEL_ID, OFFLINE_CURRICULUM, OFFLINE_LECTURES } from '../utils/offlineContent';
-import { warmUpAudioContext, getGlobalAudioContext, stopAllPlatformAudio, registerAudioOwner, logAudioEvent, isAudioOwner, getGlobalAudioGeneration } from '../utils/audioUtils';
+import { warmUpAudioContext, getGlobalAudioContext, stopAllPlatformAudio, registerAudioOwner, logAudioEvent, isAudioOwner, getGlobalAudioGeneration, connectOutput } from '../utils/audioUtils';
 
 interface PodcastFeedProps {
   channels: Channel[];
@@ -73,44 +74,7 @@ const MobileFeedCard = ({
 
     const isBusy = playbackState === 'playing' || playbackState === 'buffering' || statusMessage !== "";
 
-    useEffect(() => { isActiveRef.current = isActive; }, [isActive]);
-
-    useEffect(() => {
-        if (transcriptScrollRef.current) {
-            const container = transcriptScrollRef.current;
-            container.scrollTo({
-                top: container.scrollHeight,
-                behavior: 'smooth'
-            });
-        }
-    }, [transcriptHistory]);
-
-    /**
-     * CLEAN STOP - Completely resets local and global state
-     */
-    const stopAudioInternal = useCallback((source: string = "Local") => {
-        localSessionIdRef.current++; 
-        isLoopingRef.current = false;
-        
-        if (typeof window !== 'undefined' && window.speechSynthesis) {
-            window.speechSynthesis.cancel();
-        }
-        
-        activeSourcesRef.current.forEach(source => {
-            try { source.stop(); source.disconnect(); } catch(e) {}
-        });
-        activeSourcesRef.current.clear();
-        
-        setPlaybackState('idle');
-        setStatusMessage("");
-        logAudioEvent(MY_TOKEN, 'STOP', `Session Reset to ${localSessionIdRef.current} via ${source}`);
-    }, [MY_TOKEN]);
-
-    // External wrapper that informs the global manager
-    const stopAudioGlobal = useCallback(() => {
-        stopAllPlatformAudio(`CardAction:${channel.id}`);
-    }, [channel.id]);
-
+    // Reordered: flatCurriculum and totalLessons moved up as they are used by functions below
     const flatCurriculum = useMemo(() => {
         let chapters = channel.chapters;
         if (!chapters || chapters.length === 0) {
@@ -131,111 +95,51 @@ const MobileFeedCard = ({
 
     const totalLessons = flatCurriculum.length;
 
-    useEffect(() => {
-        mountedRef.current = true;
-        return () => { 
-            mountedRef.current = false;
-            if (isAudioOwner(MY_TOKEN)) {
-                stopAllPlatformAudio(`MobileFeedUnmount:${channel.id}`);
-            } else {
-                stopAudioInternal("Unmount");
-            }
-        };
-    }, [stopAudioInternal, MY_TOKEN, channel.id]);
-
-    useEffect(() => {
-        if (isActive) {
-            const introText = channel.welcomeMessage || channel.description || `Welcome to ${channel.title}.`;
-            setTranscriptHistory([{ speaker: 'Host', text: introText, id: 'intro' }]);
-            setActiveTranscriptId('intro');
-            setTrackIndex(-1);
-            
-            const ctx = getGlobalAudioContext();
-            if (ctx.state === 'suspended' || (ctx.state as any) === 'interrupted') {
-                setIsAutoplayBlocked(true);
-            } else {
-                const timer = setTimeout(() => { 
-                    if (isActiveRef.current && mountedRef.current) attemptAutoPlay(); 
-                }, 400); 
-                return () => {
-                    clearTimeout(timer);
-                    stopAudioInternal("Deactivation");
-                };
-            }
-        } else {
-            stopAudioInternal("Inactive");
-            preloadedScriptRef.current = null;
-            setIsAutoplayBlocked(false);
-        }
-    }, [isActive, channel.id, stopAudioInternal]);
-
-    const attemptAutoPlay = async () => {
-        if (!isActiveRef.current || isLoopingRef.current || !mountedRef.current) return;
+    /**
+     * CLEAN STOP - Completely resets local and global state
+     */
+    const stopAudioInternal = useCallback((source: string = "Local") => {
+        localSessionIdRef.current++; 
+        isLoopingRef.current = false;
         
-        const ctx = getGlobalAudioContext();
-        if (provider !== 'system' && (ctx.state === 'suspended' || (ctx.state as any) === 'interrupted')) {
-            setIsAutoplayBlocked(true);
-            return;
-        }
-
-        const localSessionId = ++localSessionIdRef.current;
-        const targetGen = registerAudioOwner(MY_TOKEN, () => stopAudioInternal("GlobalReset"));
-        
-        runTrackSequence(-1, localSessionId, targetGen);
-    };
-
-    const handleTogglePlay = async (e: React.MouseEvent) => {
-        e.stopPropagation();
-        
-        // Navigation case
-        if (!isActive) { 
-            stopAllPlatformAudio(`NavigationTransition:${channel.id}`);
-            onChannelClick(channel.id); 
-            return; 
+        if (typeof window !== 'undefined' && window.speechSynthesis) {
+            window.speechSynthesis.cancel();
         }
         
-        const ctx = getGlobalAudioContext();
+        activeSourcesRef.current.forEach(source => {
+            try { source.stop(); source.disconnect(); } catch(e) {}
+        });
+        activeSourcesRef.current.clear();
         
-        // Critical for iPhone: Resume on user gesture
-        if (ctx.state === 'suspended' || (ctx.state as any) === 'interrupted' || isAutoplayBlocked) {
-            try {
-                await warmUpAudioContext(ctx);
-                setIsAutoplayBlocked(false);
-            } catch(err) {
-                console.error("Context activation failed", err);
+        if ('mediaSession' in navigator) {
+            navigator.mediaSession.playbackState = 'paused';
+        }
+
+        setPlaybackState('idle');
+        setStatusMessage("");
+        logAudioEvent(MY_TOKEN, 'STOP', `Session Reset to ${localSessionIdRef.current} via ${source}`);
+    }, [MY_TOKEN]);
+
+    // External wrapper that informs the global manager
+    // Fixed: Moved stopAudioGlobal before its usage in updateMediaMetadata
+    const stopAudioGlobal = useCallback(() => {
+        stopAllPlatformAudio(`CardAction:${channel.id}`);
+    }, [channel.id]);
+
+    const fetchLectureData = async (meta: any) => {
+        if (OFFLINE_LECTURES[meta.title]) return OFFLINE_LECTURES[meta.title];
+        if (SPOTLIGHT_DATA[channel.id]?.lectures?.[meta.title]) return SPOTLIGHT_DATA[channel.id].lectures[meta.title];
+        
+        const cacheKey = `lecture_${channel.id}_${meta.id}_en`;
+        let data = await getCachedLectureScript(cacheKey);
+        if (!data) {
+            const apiKey = localStorage.getItem('gemini_api_key') || process.env.API_KEY;
+            if (apiKey) {
+                data = await generateLectureScript(meta.title, `Podcast: ${channel.title}. ${channel.description}`, 'en');
+                if (data) await cacheLectureScript(cacheKey, data);
             }
         }
-
-        // Logical Toggle
-        if (isBusy || isLoopingRef.current) { 
-            stopAudioGlobal(); // Reset global lock and increment gen
-            return; 
-        }
-        
-        const localSessionId = ++localSessionIdRef.current;
-        const targetGen = registerAudioOwner(MY_TOKEN, () => stopAudioInternal("GlobalReset"));
-        runTrackSequence(trackIndex >= totalLessons ? -1 : trackIndex, localSessionId, targetGen);
-    };
-
-    const toggleTtsMode = (e: React.MouseEvent) => {
-        e.stopPropagation();
-        let newMode: 'system' | 'gemini' | 'openai' = 'system';
-        if (provider === 'gemini') newMode = 'openai';
-        else if (provider === 'openai') newMode = 'system';
-        else newMode = 'gemini';
-        
-        setProvider(newMode);
-        
-        if (isLoopingRef.current) {
-            stopAudioGlobal();
-            setTimeout(() => { 
-                if (isActiveRef.current && mountedRef.current) {
-                    const localSessionId = ++localSessionIdRef.current;
-                    const targetGen = registerAudioOwner(MY_TOKEN, () => stopAudioInternal("GlobalReset"));
-                    runTrackSequence(trackIndex === -1 ? -1 : trackIndex, localSessionId, targetGen); 
-                }
-            }, 150);
-        }
+        return data;
     };
 
     const playAudioBuffer = (buffer: AudioBuffer, localSessionId: number, targetGen: number): Promise<void> => {
@@ -251,13 +155,19 @@ const MobileFeedCard = ({
 
             const source = ctx.createBufferSource();
             source.buffer = buffer;
-            source.connect(ctx.destination);
+            // Bridge to bridge element and destination
+            connectOutput(source, ctx);
+            
             activeSourcesRef.current.add(source);
             source.onended = () => { 
                 activeSourcesRef.current.delete(source);
                 resolve(); 
             };
             source.start(0);
+            
+            if ('mediaSession' in navigator) {
+                navigator.mediaSession.playbackState = 'playing';
+            }
         });
     };
 
@@ -276,8 +186,35 @@ const MobileFeedCard = ({
             utterance.onend = () => resolve();
             utterance.onerror = () => resolve();
             window.speechSynthesis.speak(utterance);
+            
+            if ('mediaSession' in navigator) {
+                navigator.mediaSession.playbackState = 'playing';
+            }
         });
     };
+
+    /**
+     * Updates System Media Session Metadata
+     * Fixed: Added stopAudioGlobal to dependencies and ensured declaration order
+     */
+    const updateMediaMetadata = useCallback((lessonTitle: string = "Intro") => {
+        if (!('mediaSession' in navigator)) return;
+
+        navigator.mediaSession.metadata = new MediaMetadata({
+            title: lessonTitle,
+            artist: channel.author,
+            album: channel.title,
+            artwork: [
+                { src: channel.imageUrl, sizes: '512x512', type: 'image/jpeg' }
+            ]
+        });
+
+        // Set action handlers for headphones/lockscreen
+        // handleTogglePlay is used in a closure which is safe at runtime even if declared below
+        navigator.mediaSession.setActionHandler('play', () => handleTogglePlay({ stopPropagation: () => {} } as any));
+        navigator.mediaSession.setActionHandler('pause', () => stopAudioGlobal());
+        navigator.mediaSession.setActionHandler('stop', () => stopAudioGlobal());
+    }, [channel, stopAudioGlobal]);
 
     const runTrackSequence = async (startIndex: number, localSessionId: number, targetGen: number) => {
         const isAborted = () => !mountedRef.current || !isActiveRef.current || localSessionId !== localSessionIdRef.current || targetGen !== getGlobalAudioGeneration() || !isAudioOwner(MY_TOKEN);
@@ -299,6 +236,7 @@ const MobileFeedCard = ({
                 if (provider === 'openai') { hostVoice = 'Alloy'; studentVoice = 'Echo'; }
 
                 if (currentIndex === -1) {
+                    updateMediaMetadata("Introduction");
                     const introText = channel.welcomeMessage || channel.description || `Welcome to ${channel.title}.`;
                     textParts = [{ speaker: 'Host', text: introText, voice: hostVoice, id: 'intro' }];
                     if (flatCurriculum.length > 0) preloadedScriptRef.current = fetchLectureData(flatCurriculum[0]);
@@ -311,6 +249,8 @@ const MobileFeedCard = ({
                     }
                     
                     const lessonMeta = flatCurriculum[currentIndex];
+                    updateMediaMetadata(lessonMeta.title);
+                    
                     let lecture = null;
                     
                     if (preloadedScriptRef.current) { 
@@ -383,26 +323,124 @@ const MobileFeedCard = ({
         }
     };
 
-    const fetchLectureData = async (meta: any) => {
-        if (OFFLINE_LECTURES[meta.title]) return OFFLINE_LECTURES[meta.title];
-        if (SPOTLIGHT_DATA[channel.id]?.lectures?.[meta.title]) return SPOTLIGHT_DATA[channel.id].lectures[meta.title];
+    const handleTogglePlay = async (e: React.MouseEvent) => {
+        e.stopPropagation();
         
-        const cacheKey = `lecture_${channel.id}_${meta.id}_en`;
-        let data = await getCachedLectureScript(cacheKey);
-        if (!data) {
-            const apiKey = localStorage.getItem('gemini_api_key') || process.env.API_KEY;
-            if (apiKey) {
-                data = await generateLectureScript(meta.title, `Podcast: ${channel.title}. ${channel.description}`, 'en');
-                if (data) await cacheLectureScript(cacheKey, data);
-            }
+        // Navigation case
+        if (!isActive) { 
+            stopAllPlatformAudio(`NavigationTransition:${channel.id}`);
+            onChannelClick(channel.id); 
+            return; 
         }
-        return data;
+        
+        const ctx = getGlobalAudioContext();
+        
+        // Critical for background stability: Warm up bridge elements
+        await warmUpAudioContext(ctx);
+        setIsAutoplayBlocked(false);
+
+        // Logical Toggle
+        if (isBusy || isLoopingRef.current) { 
+            stopAudioGlobal(); // Reset global lock and increment gen
+            return; 
+        }
+        
+        const localSessionId = ++localSessionIdRef.current;
+        const targetGen = registerAudioOwner(MY_TOKEN, () => stopAudioInternal("GlobalReset"));
+        runTrackSequence(trackIndex >= totalLessons ? -1 : trackIndex, localSessionId, targetGen);
+    };
+
+    const attemptAutoPlay = async () => {
+        if (!isActiveRef.current || isLoopingRef.current || !mountedRef.current) return;
+        
+        const ctx = getGlobalAudioContext();
+        if (provider !== 'system' && (ctx.state === 'suspended' || (ctx.state as any) === 'interrupted')) {
+            setIsAutoplayBlocked(true);
+            return;
+        }
+
+        const localSessionId = ++localSessionIdRef.current;
+        const targetGen = registerAudioOwner(MY_TOKEN, () => stopAudioInternal("GlobalReset"));
+        
+        runTrackSequence(-1, localSessionId, targetGen);
+    };
+
+    const toggleTtsMode = (e: React.MouseEvent) => {
+        e.stopPropagation();
+        let newMode: 'system' | 'gemini' | 'openai' = 'system';
+        if (provider === 'gemini') newMode = 'openai';
+        else if (provider === 'openai') newMode = 'system';
+        else newMode = 'gemini';
+        
+        setProvider(newMode);
+        
+        if (isLoopingRef.current) {
+            stopAudioGlobal();
+            setTimeout(() => { 
+                if (isActiveRef.current && mountedRef.current) {
+                    const localSessionId = ++localSessionIdRef.current;
+                    const targetGen = registerAudioOwner(MY_TOKEN, () => stopAudioInternal("GlobalReset"));
+                    runTrackSequence(trackIndex === -1 ? -1 : trackIndex, localSessionId, targetGen); 
+                }
+            }, 150);
+        }
     };
 
     const handleCardClick = (e: React.MouseEvent) => {
         stopAudioGlobal();
         onChannelClick(channel.id);
     };
+
+    // Reordered effects to the bottom of the component for better readability and safety
+    useEffect(() => { isActiveRef.current = isActive; }, [isActive]);
+
+    useEffect(() => {
+        if (transcriptScrollRef.current) {
+            const container = transcriptScrollRef.current;
+            container.scrollTo({
+                top: container.scrollHeight,
+                behavior: 'smooth'
+            });
+        }
+    }, [transcriptHistory]);
+
+    useEffect(() => {
+        mountedRef.current = true;
+        return () => { 
+            mountedRef.current = false;
+            if (isAudioOwner(MY_TOKEN)) {
+                stopAllPlatformAudio(`MobileFeedUnmount:${channel.id}`);
+            } else {
+                stopAudioInternal("Unmount");
+            }
+        };
+    }, [stopAudioInternal, MY_TOKEN, channel.id]);
+
+    useEffect(() => {
+        if (isActive) {
+            const introText = channel.welcomeMessage || channel.description || `Welcome to ${channel.title}.`;
+            setTranscriptHistory([{ speaker: 'Host', text: introText, id: 'intro' }]);
+            setActiveTranscriptId('intro');
+            setTrackIndex(-1);
+            
+            const ctx = getGlobalAudioContext();
+            if (ctx.state === 'suspended' || (ctx.state as any) === 'interrupted') {
+                setIsAutoplayBlocked(true);
+            } else {
+                const timer = setTimeout(() => { 
+                    if (isActiveRef.current && mountedRef.current) attemptAutoPlay(); 
+                }, 400); 
+                return () => {
+                    clearTimeout(timer);
+                    stopAudioInternal("Deactivation");
+                };
+            }
+        } else {
+            stopAudioInternal("Inactive");
+            preloadedScriptRef.current = null;
+            setIsAutoplayBlocked(false);
+        }
+    }, [isActive, channel.id, stopAudioInternal]);
 
     return (
         <div className="h-full w-full snap-start relative flex flex-col justify-center bg-slate-900 border-b border-slate-800 overflow-hidden">
