@@ -1,7 +1,6 @@
-
-import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { CodeProject, CodeFile, UserProfile, Channel, CursorPosition, CloudItem } from '../types';
-import { ArrowLeft, Save, Plus, Github, Cloud, HardDrive, Code, X, ChevronRight, ChevronDown, File, Folder, DownloadCloud, Loader2, CheckCircle, AlertTriangle, Info, FolderPlus, FileCode, RefreshCw, LogIn, CloudUpload, Trash2, ArrowUp, Edit2, FolderOpen, MoreVertical, Send, MessageSquare, Bot, Mic, Sparkles, SidebarClose, SidebarOpen, Users, Eye, FileText as FileTextIcon, Image as ImageIcon, StopCircle, Minus, Maximize2, Minimize2, Lock, Unlock, Share2, Terminal, Copy, WifiOff, PanelRightClose, PanelRightOpen, PanelLeftClose, PanelLeftOpen, Monitor, Laptop, PenTool, Edit3, ShieldAlert, ZoomIn, ZoomOut, Columns, Rows, Grid2X2, Square as SquareIcon, GripVertical, GripHorizontal, FileSearch, Indent, Wand2, Check } from 'lucide-react';
+import { ArrowLeft, Save, Plus, Github, Cloud, HardDrive, Code, X, ChevronRight, ChevronDown, File, Folder, DownloadCloud, Loader2, CheckCircle, AlertTriangle, Info, FolderPlus, FileCode, RefreshCw, LogIn, CloudUpload, Trash2, ArrowUp, Edit2, FolderOpen, MoreVertical, Send, MessageSquare, Bot, Mic, Sparkles, SidebarClose, SidebarOpen, Users, Eye, FileText as FileTextIcon, Image as ImageIcon, StopCircle, Minus, Maximize2, Minimize2, Lock, Unlock, Share2, Terminal, Copy, WifiOff, PanelRightClose, PanelRightOpen, PanelLeftClose, PanelLeftOpen, Monitor, Laptop, PenTool, Edit3, ShieldAlert, ZoomIn, ZoomOut, Columns, Rows, Grid2X2, Square as SquareIcon, GripVertical, GripHorizontal, FileSearch, Indent, Wand2, Check, UserCheck, Briefcase, FileUser, Trophy, Star, Play } from 'lucide-react';
 import { listCloudDirectory, saveProjectToCloud, deleteCloudItem, createCloudFolder, subscribeToCodeProject, saveCodeProject, updateCodeFile, updateCursor, claimCodeProjectLock, updateProjectActiveFile, deleteCodeFile, moveCloudFile, updateProjectAccess, sendShareNotification, deleteCloudFolderRecursive } from '../services/firestoreService';
 import { ensureCodeStudioFolder, listDriveFiles, readDriveFile, saveToDrive, deleteDriveFile, createDriveFolder, DriveFile, moveDriveFile } from '../services/googleDriveService';
 import { connectGoogleDrive, signInWithGitHub } from '../services/authService';
@@ -37,14 +36,6 @@ interface CodeStudioProps {
   onSessionStop: () => void;
   onStartLiveSession: (channel: Channel, context?: string) => void;
 }
-
-const PRESET_REPOS = [
-  { label: 'React (Facebook)', path: 'facebook/react' },
-  { label: 'Vue (Evan You)', path: 'vuejs/core' },
-  { label: 'VS Code', path: 'microsoft/vscode' },
-  { label: 'Linux', path: 'torvalds/linux' },
-  { label: 'Python', path: 'python/cpython' }
-];
 
 function getLanguageFromExt(filename: string): any {
     if (!filename) return 'text';
@@ -271,6 +262,16 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
   const [isDraggingLeft, setIsDraggingLeft] = useState(false);
   const [isDraggingRight, setIsDraggingRight] = useState(false);
 
+  // --- MOCK INTERVIEW STATE ---
+  const [isInterviewMode, setIsInterviewMode] = useState(false);
+  const [interviewStep, setInterviewStep] = useState<'setup' | 'active' | 'feedback'>('setup');
+  const [resumeText, setResumeText] = useState('');
+  const [jobDescription, setJobDescription] = useState('');
+  const [interviewFeedback, setInterviewFeedback] = useState<string | null>(null);
+  const [interviewScore, setInterviewScore] = useState<number | null>(null);
+  const [interviewTimer, setInterviewTimer] = useState(0);
+  const timerRef = useRef<any>(null);
+
   const centerContainerRef = useRef<HTMLDivElement>(null);
 
   const activeFile = activeSlots[focusedSlot];
@@ -293,6 +294,21 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
       },
       required: ["new_content"]
     }
+  };
+
+  const submitFeedbackTool: FunctionDeclaration = {
+      name: "submit_interview_feedback",
+      description: "Submit final feedback and scoring for the mock interview. Use this only when the interview is naturally concluded or requested by the user.",
+      parameters: {
+          type: Type.OBJECT,
+          properties: {
+              score: { type: Type.NUMBER, description: "Overall score from 0-100" },
+              strengths: { type: Type.ARRAY, items: { type: Type.STRING }, description: "Key positive points" },
+              weaknesses: { type: Type.ARRAY, items: { type: Type.STRING }, description: "Areas for improvement" },
+              summary: { type: Type.STRING, description: "Detailed narrative feedback in Markdown" }
+          },
+          required: ["score", "summary"]
+      }
   };
 
   const handleSetLayout = (mode: LayoutMode) => {
@@ -459,7 +475,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
 
   const handleCloudToggle = async (node: TreeNode) => { const isExpanded = expandedFolders[node.id]; setExpandedFolders(prev => ({ ...prev, [node.id]: !isExpanded })); if (!isExpanded) { setLoadingFolders(prev => ({ ...prev, [node.id]: true })); try { await refreshCloudPath(node.id); } catch(e) { console.error(e); } finally { setLoadingFolders(prev => ({ ...prev, [node.id]: false })); } } };
   const handleDriveToggle = async (node: TreeNode) => { const driveFile = node.data as DriveFile; const isExpanded = expandedFolders[node.id]; setExpandedFolders(prev => ({ ...prev, [node.id]: !isExpanded })); if (!isExpanded && driveToken && (!node.children || node.children.length === 0)) { setLoadingFolders(prev => ({ ...prev, [node.id]: true })); try { const files = await listDriveFiles(driveToken, driveFile.id); setDriveItems(prev => { const newItems = files.map(f => ({ ...f, parentId: node.id, isLoaded: false })); return Array.from(new Map([...prev, ...newItems].map(item => [item.id, item])).values()); }); } catch(e) { console.error(e); } finally { setLoadingFolders(prev => ({ ...prev, [node.id]: false })); } } };
-  const handleConnectDrive = async () => { try { const token = await connectGoogleDrive(); setDriveToken(token); const rootId = await ensureCodeStudioFolder(token); setDriveRootId(rootId); const files = await listDriveFiles(token, rootId); setDriveItems([{ id: rootId, name: 'CodeStudio', mimeType: 'application/vnd.google-apps.folder', isLoaded: true }, ...files.map(f => ({ ...f, parentId: rootId, isLoaded: false }))]); setActiveTab('drive'); } catch(e: any) { console.error(e); } };
+  const handleConnectDrive = async () => { try { const token = await connectGoogleDrive(); setDriveToken(token); const rootId = await ensureCodeStudioFolder(token); setDriveRootId(rootId); const files = await listDriveFiles(token, rootId); setDriveItems([{ id: rootId, name: 'CodeStudio', mimeType: 'application/vnd.google-apps.folder', isLoaded: true }, ...files.map(f => ({ ...f, parentId: driveRootId, isLoaded: false }))]); setActiveTab('drive'); } catch(e: any) { console.error(e); } };
 
   const handleCreateFile = async () => { const name = prompt("File Name:"); if (!name) return;
       try {
@@ -495,7 +511,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
           const activeFile = activeSlots[focusedSlot];
           const contextFiles = activeSlots.filter(f => f !== null).map(f => `File: ${f?.name}\nLanguage: ${f?.language}\nContent:\n${f?.content}`).join('\n\n---\n\n');
           
-          const prompt = `You are a Senior Software Engineer helping a user in Code Studio.
+          let systemPrompt = `You are a Senior Software Engineer helping a user in Code Studio.
           Current Focused File: ${activeFile?.name || "None"}
           Workspace Context:\n${contextFiles}\n\n
           User Request: "${input}"
@@ -503,12 +519,36 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
           If the user asks for code changes, use the 'update_active_file' tool to apply them directly. 
           When providing code in your conversational response, ensure you use proper Markdown code blocks.`;
 
+          if (isInterviewMode) {
+              systemPrompt = `You are a Human Interviewer (e.g., Lead Engineer from a Top Tech Co).
+              You are conducting a Mock Interview for a ${activeFile?.language || 'software'} position.
+              
+              CANDIDATE RESUME:
+              ${resumeText || "Not provided"}
+              
+              TARGET JOB DESCRIPTION:
+              ${jobDescription || "Standard Senior Dev role"}
+              
+              WORKSPACE CONTEXT:
+              ${contextFiles}
+              
+              YOUR GOAL:
+              1. Conduct a realistic technical interview. 
+              2. Ask probing questions based on the resume and JD.
+              3. If they are coding, review their logic and suggest edge cases.
+              4. Maintain a professional, realistic interviewer persona. 
+              5. DO NOT be too helpful; you are evaluating them.
+              
+              When finished, use 'submit_interview_feedback' to score and end the session.`;
+          }
+
+          const tools: any[] = [{ functionDeclarations: [updateFileTool] }];
+          if (isInterviewMode) tools[0].functionDeclarations.push(submitFeedbackTool);
+
           const resp = await ai.models.generateContent({ 
               model: 'gemini-3-flash-preview', 
-              contents: prompt,
-              config: {
-                  tools: [{ functionDeclarations: [updateFileTool] }]
-              }
+              contents: systemPrompt,
+              config: { tools }
           });
 
           // Handle Tool Calls
@@ -522,13 +562,14 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
                       } else {
                           setChatMessages(prev => [...prev, { role: 'ai', text: "⚠️ No file is currently focused to apply edits to." }]);
                       }
-                      
-                      // Report back to AI
-                      await ai.models.generateContent({
-                          model: 'gemini-3-flash-preview',
-                          contents: `Tool update_active_file completed successfully.`,
-                          config: { tools: [{ functionDeclarations: [updateFileTool] }] }
-                      });
+                      await ai.models.generateContent({ model: 'gemini-3-flash-preview', contents: `Tool update_active_file completed successfully.`, config: { tools: [{ functionDeclarations: [updateFileTool] }] } });
+                  } else if (fc.name === 'submit_interview_feedback') {
+                      const { score, strengths, weaknesses, summary } = fc.args;
+                      setInterviewScore(score);
+                      setInterviewFeedback(summary);
+                      setInterviewStep('feedback');
+                      if (timerRef.current) clearInterval(timerRef.current);
+                      setChatMessages(prev => [...prev, { role: 'ai', text: `### 🏆 Interview Concluded\n\n**Score: ${score}/100**\n\nReview the feedback report in the main panel.` }]);
                   }
               }
           } else {
@@ -538,6 +579,29 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
       } catch (e: any) { setChatMessages(prev => [...prev, { role: 'ai', text: `Error: ${e.message}` }]); } finally { setIsChatThinking(false); }
   };
 
+  const handleStartInterview = () => {
+      setInterviewStep('active');
+      setInterviewTimer(0);
+      setChatMessages([{ role: 'ai', text: "Welcome to your mock interview. I've reviewed your resume and the job description. Let's start with a brief introduction of your most significant project." }]);
+      timerRef.current = setInterval(() => setInterviewTimer(t => t + 1), 1000);
+      setIsRightOpen(true);
+  };
+
+  const handleResetInterview = () => {
+      setIsInterviewMode(false);
+      setInterviewStep('setup');
+      setInterviewFeedback(null);
+      setInterviewScore(null);
+      if (timerRef.current) clearInterval(timerRef.current);
+  };
+
+  const formatTime = (seconds: number) => {
+      const m = Math.floor(seconds / 60);
+      const s = seconds % 60;
+      return `${m}:${s.toString().padStart(2, '0')}`;
+  };
+
+  /* Fixed Error: Added missing useMemo import above and used it here */
   const cloudTree = useMemo(() => {
       const freshRoot: TreeNode[] = [];
       const freshMap = new Map<string, TreeNode>();
@@ -546,6 +610,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
       return freshRoot;
   }, [cloudItems]);
 
+  /* Fixed Error: Added missing useMemo import above and used it here */
   const workspaceTree = useMemo(() => {
       const root: TreeNode[] = [];
       const map = new Map<string, TreeNode>();
@@ -555,6 +620,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
       return root;
   }, [project.files]);
 
+  /* Fixed Error: Added missing useMemo import above and used it here */
   const driveTree = useMemo(() => {
       const root: TreeNode[] = [];
       const map = new Map<string, TreeNode>();
@@ -716,7 +782,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
   };
 
   return (
-    <div className="flex flex-col h-full bg-slate-950 text-slate-100 overflow-hidden relative">
+    <div className="flex flex-col h-full bg-slate-950 text-slate-100 overflow-hidden relative font-sans">
       <header className="h-14 bg-slate-950 border-b border-slate-800 flex items-center justify-between px-4 shrink-0 z-20">
          <div className="flex items-center space-x-4">
             <button onClick={onBack} className="p-2 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white"><ArrowLeft size={20} /></button>
@@ -724,16 +790,42 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
             {/* Sidebar Toggle: Explorer */}
             <button 
                 onClick={() => setIsLeftOpen(!isLeftOpen)} 
-                className={`p-2 rounded-lg transition-colors ${isLeftOpen ? 'bg-slate-800 text-white' : 'text-slate-500 hover:text-white'}`}
+                className={`p-2 rounded-lg transition-colors ${isLeftOpen ? 'bg-slate-800 text-white' : 'text-slate-400 hover:text-white'}`}
                 title={isLeftOpen ? "Hide Explorer" : "Show Explorer"}
             >
                 {isLeftOpen ? <PanelLeftClose size={20} /> : <PanelLeftOpen size={20} />}
             </button>
 
-            <h1 className="font-bold text-white text-sm flex items-center gap-2">{project.name}</h1>
+            <h1 className="font-bold text-white text-sm flex items-center gap-2">
+                {isInterviewMode ? <UserCheck className="text-emerald-400" size={18}/> : <Code className="text-indigo-400" size={18}/>}
+                {isInterviewMode ? 'Interview Studio' : project.name}
+            </h1>
          </div>
 
          <div className="flex items-center space-x-2">
+            {!isInterviewMode ? (
+                <button 
+                    onClick={() => setIsInterviewMode(true)}
+                    className="flex items-center space-x-2 px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold shadow-md mr-4 animate-pulse"
+                >
+                    <UserCheck size={14}/>
+                    <span>Mock Interview</span>
+                </button>
+            ) : (
+                <div className="flex items-center gap-4 mr-4">
+                    <div className="flex items-center gap-2 bg-slate-900 px-3 py-1 rounded-full border border-slate-800">
+                        <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse"></div>
+                        <span className="text-xs font-mono text-red-400">{formatTime(interviewTimer)}</span>
+                    </div>
+                    <button 
+                        onClick={handleResetInterview}
+                        className="text-xs text-slate-400 hover:text-white font-bold"
+                    >
+                        Exit Mode
+                    </button>
+                </div>
+            )}
+
             <div className="flex items-center gap-1 bg-slate-900 p-1 rounded-lg border border-slate-800 mr-4">
                 <button onClick={() => handleSetLayout('single')} className={`p-1.5 rounded transition-colors ${layoutMode === 'single' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-500 hover:text-white'}`} title="Single Frame"><SquareIcon size={16}/></button>
                 <button onClick={() => handleSetLayout('split-v')} className={`p-1.5 rounded transition-colors ${layoutMode === 'split-v' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-500 hover:text-white'}`} title="Vertical Split"><Columns size={16}/></button>
@@ -794,6 +886,105 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
 
           {/* MAIN EDITOR AREA: DYNAMIC GRID/FLEX LAYOUT */}
           <div ref={centerContainerRef} className={`flex-1 bg-slate-950 flex min-w-0 relative ${layoutMode === 'quad' ? 'grid grid-cols-2 grid-rows-2' : layoutMode === 'split-v' ? 'flex-row' : layoutMode === 'split-h' ? 'flex-col' : 'flex-col'}`}>
+              {/* Interview Setup View Overlay */}
+              {isInterviewMode && interviewStep === 'setup' && (
+                  <div className="absolute inset-0 z-50 bg-slate-950 flex items-center justify-center p-8 overflow-y-auto">
+                      <div className="max-w-2xl w-full bg-slate-900 border border-slate-800 rounded-[2rem] p-10 shadow-2xl space-y-8 animate-fade-in-up">
+                          <div className="flex items-center gap-4">
+                              <div className="p-3 bg-emerald-500/20 rounded-2xl text-emerald-400">
+                                  <UserCheck size={32} />
+                              </div>
+                              <div>
+                                  <h2 className="text-2xl font-black text-white">Interview Prep</h2>
+                                  <p className="text-slate-400 text-sm">Upload your profile to tailor the mock interview.</p>
+                              </div>
+                          </div>
+                          
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                              <div className="space-y-2">
+                                  <label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-2"><FileUser size={14}/> Your Resume / Profile</label>
+                                  <textarea 
+                                    value={resumeText}
+                                    onChange={e => setResumeText(e.target.value)}
+                                    placeholder="Paste your resume or bio here..."
+                                    className="w-full h-48 bg-slate-950 border border-slate-800 rounded-xl p-4 text-sm text-slate-300 outline-none focus:border-emerald-500 resize-none transition-all"
+                                  />
+                              </div>
+                              <div className="space-y-2">
+                                  <label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-2"><Briefcase size={14}/> Target Job Description</label>
+                                  <textarea 
+                                    value={jobDescription}
+                                    onChange={e => setJobDescription(e.target.value)}
+                                    placeholder="Paste the role details here..."
+                                    className="w-full h-48 bg-slate-950 border border-slate-800 rounded-xl p-4 text-sm text-slate-300 outline-none focus:border-indigo-500 resize-none transition-all"
+                                  />
+                              </div>
+                          </div>
+
+                          <div className="flex gap-4">
+                              <button 
+                                onClick={handleResetInterview}
+                                className="flex-1 py-4 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-2xl transition-all"
+                              >
+                                Cancel
+                              </button>
+                              <button 
+                                onClick={handleStartInterview}
+                                className="flex-[2] py-4 bg-emerald-600 hover:bg-emerald-500 text-white font-black rounded-2xl shadow-xl shadow-emerald-900/20 transition-all flex items-center justify-center gap-2"
+                              >
+                                <Play size={20} fill="currentColor"/>
+                                <span>Start Live Mock Interview</span>
+                              </button>
+                          </div>
+                      </div>
+                  </div>
+              )}
+
+              {/* Interview Feedback View Overlay */}
+              {isInterviewMode && interviewStep === 'feedback' && (
+                  <div className="absolute inset-0 z-50 bg-slate-950 flex items-center justify-center p-8 overflow-y-auto">
+                      <div className="max-w-3xl w-full bg-slate-900 border border-slate-800 rounded-[2rem] p-10 shadow-2xl space-y-8 animate-fade-in-up relative overflow-hidden">
+                          <div className="absolute top-0 right-0 p-12 bg-emerald-500/5 blur-[100px] rounded-full pointer-events-none"></div>
+                          
+                          <div className="flex justify-between items-start relative z-10">
+                              <div className="flex items-center gap-4">
+                                  <div className="p-4 bg-emerald-500 text-white rounded-3xl shadow-xl shadow-emerald-500/20">
+                                      <Trophy size={32} />
+                                  </div>
+                                  <div>
+                                      <h2 className="text-3xl font-black text-white">Interview Performance</h2>
+                                      <p className="text-slate-400">Detailed feedback and growth analysis.</p>
+                                  </div>
+                              </div>
+                              <div className="text-right">
+                                  <div className="text-5xl font-black text-emerald-400">{interviewScore}</div>
+                                  <div className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em]">Final Score</div>
+                              </div>
+                          </div>
+
+                          <div className="bg-slate-950/50 rounded-2xl p-8 border border-slate-800 prose prose-invert max-w-none shadow-inner">
+                              <MarkdownView content={interviewFeedback || "No feedback generated."} />
+                          </div>
+
+                          <div className="flex gap-4">
+                              <button 
+                                onClick={handleResetInterview}
+                                className="flex-1 py-4 bg-indigo-600 hover:bg-indigo-500 text-white font-black rounded-2xl shadow-xl shadow-indigo-900/20 transition-all flex items-center justify-center gap-2"
+                              >
+                                <RefreshCw size={20} />
+                                <span>Try Another Round</span>
+                              </button>
+                              <button 
+                                onClick={() => setIsInterviewMode(false)}
+                                className="px-8 py-4 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-2xl transition-all"
+                              >
+                                Done
+                              </button>
+                          </div>
+                      </div>
+                  </div>
+              )}
+
               {layoutMode === 'single' && renderSlot(0)}
               
               {layoutMode === 'split-v' && (
