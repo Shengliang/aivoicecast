@@ -1,6 +1,7 @@
+
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { CodeProject, CodeFile, UserProfile, Channel, CursorPosition, CloudItem } from '../types';
-import { ArrowLeft, Save, Plus, Github, Cloud, HardDrive, Code, X, ChevronRight, ChevronDown, File, Folder, DownloadCloud, Loader2, CheckCircle, AlertTriangle, Info, FolderPlus, FileCode, RefreshCw, LogIn, CloudUpload, Trash2, ArrowUp, Edit2, FolderOpen, MoreVertical, Send, MessageSquare, Bot, Mic, Sparkles, SidebarClose, SidebarOpen, Users, Eye, FileText as FileTextIcon, Image as ImageIcon, StopCircle, Minus, Maximize2, Minimize2, Lock, Unlock, Share2, Terminal, Copy, WifiOff, PanelRightClose, PanelRightOpen, PanelLeftClose, PanelLeftOpen, Monitor, Laptop, PenTool, Edit3, ShieldAlert, ZoomIn, ZoomOut, Columns, Rows, Grid2X2, Square as SquareIcon, GripVertical, GripHorizontal, FileSearch, Indent, Wand2, Check, UserCheck, Briefcase, FileUser, Trophy, Star, Play, Camera, History, Search, FileUp } from 'lucide-react';
+import { ArrowLeft, Save, Plus, Github, Cloud, HardDrive, Code, X, ChevronRight, ChevronDown, File, Folder, DownloadCloud, Loader2, CheckCircle, AlertTriangle, Info, FolderPlus, FileCode, RefreshCw, LogIn, CloudUpload, Trash2, ArrowUp, Edit2, FolderOpen, MoreVertical, Send, MessageSquare, Bot, Mic, Sparkles, SidebarClose, SidebarOpen, Users, Eye, FileText as FileTextIcon, Image as ImageIcon, StopCircle, Minus, Maximize2, Minimize2, Lock, Unlock, Share2, Terminal, Copy, WifiOff, PanelRightClose, PanelRightOpen, PanelLeftClose, PanelLeftOpen, Monitor, Laptop, PenTool, Edit3, ShieldAlert, ZoomIn, ZoomOut, Columns, Rows, Grid2X2, Square as SquareIcon, GripVertical, GripHorizontal, FileSearch, Indent, Wand2, Check, UserCheck, Briefcase, FileUser, Trophy, Star, Play, Camera } from 'lucide-react';
 import { listCloudDirectory, saveProjectToCloud, deleteCloudItem, createCloudFolder, subscribeToCodeProject, saveCodeProject, updateCodeFile, updateCursor, claimCodeProjectLock, updateProjectActiveFile, deleteCodeFile, moveCloudFile, updateProjectAccess, sendShareNotification, deleteCloudFolderRecursive } from '../services/firestoreService';
 import { ensureCodeStudioFolder, listDriveFiles, readDriveFile, saveToDrive, deleteDriveFile, createDriveFolder, DriveFile, moveDriveFile } from '../services/googleDriveService';
 import { connectGoogleDrive, signInWithGitHub } from '../services/authService';
@@ -9,6 +10,7 @@ import { MarkdownView } from './MarkdownView';
 import { encodePlantUML } from '../utils/plantuml';
 import { Whiteboard } from './Whiteboard';
 import { GoogleGenAI, FunctionDeclaration, Type } from '@google/genai';
+import { ShareModal } from './ShareModal';
 
 // --- Interfaces & Constants ---
 
@@ -24,7 +26,6 @@ interface TreeNode {
 
 type LayoutMode = 'single' | 'split-v' | 'split-h' | 'quad';
 type IndentMode = 'tabs' | 'spaces';
-type InterviewType = 'coding' | 'system-design' | 'behavior';
 
 interface CodeStudioProps {
   onBack: () => void;
@@ -147,6 +148,7 @@ const RichCodeEditor = ({ code, onChange, onCursorMove, language, readOnly, font
             const updatedValue = value.substring(0, start) + tabStr + value.substring(end);
             onChange(updatedValue);
 
+            // Sync the cursor position after the DOM update
             requestAnimationFrame(() => {
                 target.selectionStart = target.selectionEnd = start + tabStr.length;
             });
@@ -232,7 +234,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
   const [focusedSlot, setFocusedSlot] = useState<number>(0);
   const [slotViewModes, setSlotViewModes] = useState<Record<number, 'code' | 'preview'>>({});
   
-  const [innerSplitRatio, setInnerSplitRatio] = useState(50); 
+  const [innerSplitRatio, setInnerSplitRatio] = useState(50); // Percent for splits
   const [isDraggingInner, setIsDraggingInner] = useState(false);
   
   const [project, setProject] = useState<CodeProject>({ id: 'init', name: 'New Project', files: [defaultFile], lastModified: Date.now() });
@@ -263,15 +265,12 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
 
   // --- MOCK INTERVIEW STATE ---
   const [isInterviewMode, setIsInterviewMode] = useState(false);
-  const [interviewStep, setInterviewStep] = useState<'setup' | 'active' | 'feedback' | 'archive'>('setup');
-  const [resumeText, setResumeText] = useState(userProfile?.interests?.join(', ') || '');
+  const [interviewStep, setInterviewStep] = useState<'setup' | 'active' | 'feedback'>('setup');
+  const [resumeText, setResumeText] = useState('');
   const [jobDescription, setJobDescription] = useState('');
-  const [interviewType, setInterviewType] = useState<InterviewType>('coding');
   const [interviewFeedback, setInterviewFeedback] = useState<string | null>(null);
   const [interviewScore, setInterviewScore] = useState<number | null>(null);
-  const [interviewTimer, setInterviewTimer] = useState(1800); 
-  const [pastInterviews, setPastInterviews] = useState<any[]>([]);
-  const [archiveSearch, setArchiveSearch] = useState('');
+  const [interviewTimer, setInterviewTimer] = useState(1800); // 30 minutes in seconds
   const timerRef = useRef<any>(null);
 
   // Recording State
@@ -281,16 +280,8 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
   const animationFrameRef = useRef<number | null>(null);
 
   const centerContainerRef = useRef<HTMLDivElement>(null);
-  const activeFile = activeSlots[focusedSlot];
 
-  // Load Past Interviews
-  useEffect(() => {
-    if (currentUser) {
-        listDriveFiles(driveToken || '', driveRootId || '').then(files => {
-            setPastInterviews(files.filter(f => f.name.includes('Mock_Interview')));
-        }).catch(() => {});
-    }
-  }, [currentUser, driveToken, driveRootId]);
+  const activeFile = activeSlots[focusedSlot];
 
   // Tool for In-Place Editing
   const updateFileTool: FunctionDeclaration = {
@@ -301,11 +292,11 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
       properties: {
         new_content: {
           type: Type.STRING,
-          description: "The complete new content of the file."
+          description: "The complete new content of the file. Ensure you maintain proper indentation (spaces/tabs) and formatting. Do not truncate the file unless requested."
         },
         summary: {
           type: Type.STRING,
-          description: "A brief summary of what you changed."
+          description: "A href brief summary of what you changed."
         }
       },
       required: ["new_content"]
@@ -361,6 +352,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
           draw();
 
           const mixedStream = canvas.captureStream(30);
+          // Add audio tracks from both
           screenStream.getAudioTracks().forEach(t => mixedStream.addTrack(t));
           cameraStream.getAudioTracks().forEach(t => mixedStream.addTrack(t));
           
@@ -390,6 +382,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
       if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
       if (recordingStreamRef.current) recordingStreamRef.current.getTracks().forEach(t => t.stop());
 
+      // Save to Google Drive
       if (recorderChunksRef.current.length > 0) {
           try {
               let token = driveToken;
@@ -398,36 +391,19 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
               if (!rootId) rootId = await ensureCodeStudioFolder(token);
               
               const videoBlob = new Blob(recorderChunksRef.current, { type: 'video/webm' });
-              const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-              const fileName = `Mock_Interview_${interviewType.toUpperCase()}_${timestamp}.webm`;
-              const reportName = `Mock_Interview_REPORT_${interviewType.toUpperCase()}_${timestamp}.md`;
+              const fileName = `Mock_Interview_${new Date().toISOString().replace(/[:.]/g, '-')}.webm`;
               
               const reader = new FileReader();
               reader.onload = async () => {
                   const content = reader.result as string;
                   await saveToDrive(token!, rootId!, fileName, content, 'video/webm');
-                  if (interviewFeedback) {
-                      await saveToDrive(token!, rootId!, reportName, `## Interview Score: ${interviewScore}/100\n\n${interviewFeedback}`, 'text/markdown');
-                  }
-                  console.log("Interview recording and report saved to Google Drive.");
+                  console.log("Interview recording saved to Google Drive.");
               };
               reader.readAsArrayBuffer(videoBlob);
           } catch(e) {
               console.error("Failed to save recording to Drive", e);
           }
       }
-  };
-
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>, target: 'resume' | 'jd') => {
-      const file = e.target.files?.[0];
-      if (!file) return;
-      const reader = new FileReader();
-      reader.onload = (event) => {
-          const text = event.target?.result as string;
-          if (target === 'resume') setResumeText(text);
-          else setJobDescription(text);
-      };
-      reader.readAsText(file);
   };
 
   const handleSetLayout = (mode: LayoutMode) => {
@@ -463,7 +439,10 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
       setIsFormattingSlots(prev => ({ ...prev, [slotIdx]: true }));
       try {
           const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-          const prompt = `You are an expert code formatter. Reformat the following ${file.language} code. Respond ONLY with the reformatted code.
+          const prompt = `You are an expert code formatter. Reformat the following ${file.language} code to follow standard industry best practices. 
+          Maintain all logic, comments, and structure. 
+          Respond ONLY with the reformatted code. No markdown formatting, no backticks.
+          
           CODE:
           ${file.content}`;
 
@@ -485,9 +464,12 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
       const newSlots = [...activeSlots];
       newSlots[slotIndex] = file;
       setActiveSlots(newSlots);
+      
+      // Default to preview mode if it's a markdown/puml file being opened for the first time
       if (file && isPreviewable(file.name)) {
           setSlotViewModes(prev => ({ ...prev, [slotIndex]: 'code' }));
       }
+
       if (file && isSharedSession && sessionId) {
           updateProjectActiveFile(sessionId, file.path || file.name);
           updateCodeFile(sessionId, file);
@@ -500,7 +482,10 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
   };
 
   const toggleSlotViewMode = (idx: number) => {
-      setSlotViewModes(prev => ({ ...prev, [idx]: prev[idx] === 'preview' ? 'code' : 'preview' }));
+      setSlotViewModes(prev => ({
+          ...prev,
+          [idx]: prev[idx] === 'preview' ? 'code' : 'preview'
+      }));
   };
 
   const handleExplorerSelect = async (node: TreeNode) => {
@@ -528,7 +513,10 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
           } else {
               fileData = node.data;
           }
-          if (fileData) updateSlotFile(fileData, focusedSlot);
+
+          if (fileData) {
+              updateSlotFile(fileData, focusedSlot);
+          }
       } else {
           if (activeTab === 'cloud') handleCloudToggle(node);
           else if (activeTab === 'drive') handleDriveToggle(node);
@@ -619,15 +607,34 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
           const contextFiles = activeSlots.filter(f => f !== null).map(f => `File: ${f?.name}\nLanguage: ${f?.language}\nContent:\n${f?.content}`).join('\n\n---\n\n');
           
           let systemPrompt = `You are a Senior Software Engineer helping a user in Code Studio.
-          Focused File: ${activeFile?.name || "None"}
-          Context:\n${contextFiles}\n
-          User: "${input}"`;
+          Current Focused File: ${activeFile?.name || "None"}
+          Workspace Context:\n${contextFiles}\n\n
+          User Request: "${input}"
+          
+          If the user asks for code changes, use the 'update_active_file' tool to apply them directly. 
+          When providing code in your conversational response, ensure you use proper Markdown code blocks.`;
 
           if (isInterviewMode) {
-              systemPrompt = `You are a Lead Engineer conducting a ${interviewType.toUpperCase()} Mock Interview.
-              RESUME: ${resumeText}
-              JD: ${jobDescription}
-              CONTEXT: ${contextFiles}`;
+              systemPrompt = `You are a Human Interviewer (e.g., Lead Engineer from a Top Tech Co).
+              You are conducting a Mock Interview for a ${activeFile?.language || 'software'} position.
+              
+              CANDIDATE RESUME:
+              ${resumeText || "Not provided"}
+              
+              TARGET JOB DESCRIPTION:
+              ${jobDescription || "Standard Senior Dev role"}
+              
+              WORKSPACE CONTEXT:
+              ${contextFiles}
+              
+              YOUR GOAL:
+              1. Conduct a realistic technical interview. 
+              2. Ask probing questions based on the resume and JD.
+              3. If they are coding, review their logic and suggest edge cases.
+              4. Maintain a professional, realistic interviewer persona. 
+              5. DO NOT be too helpful; you are evaluating them.
+              
+              When finished, use 'submit_interview_feedback' to score and end the session.`;
           }
 
           const tools: any[] = [{ functionDeclarations: [updateFileTool] }];
@@ -639,32 +646,51 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
               config: { tools }
           });
 
+          // Handle Tool Calls
           if (resp.functionCalls) {
               for (const fc of resp.functionCalls) {
                   if (fc.name === 'update_active_file') {
-                      handleCodeChangeInSlot(fc.args.new_content, focusedSlot);
-                      setChatMessages(prev => [...prev, { role: 'ai', text: `✨ Edits applied to ${activeFile?.name}` }]);
+                      const { new_content, summary } = fc.args;
+                      if (activeFile) {
+                          handleCodeChangeInSlot(new_content, focusedSlot);
+                          setChatMessages(prev => [...prev, { role: 'ai', text: `✨ **In-place Edit Applied to ${activeFile.name}**\n\n${summary || "Code updated successfully."}` }]);
+                      } else {
+                          setChatMessages(prev => [...prev, { role: 'ai', text: "⚠️ No file is currently focused to apply edits to." }]);
+                      }
+                      await ai.models.generateContent({ model: 'gemini-3-flash-preview', contents: `Tool update_active_file completed successfully.`, config: { tools: [{ functionDeclarations: [updateFileTool] }] } });
                   } else if (fc.name === 'submit_interview_feedback') {
-                      setInterviewScore(fc.args.score);
-                      setInterviewFeedback(fc.args.summary);
+                      const { score, strengths, weaknesses, summary } = fc.args;
+                      setInterviewScore(score);
+                      setInterviewFeedback(summary);
                       setInterviewStep('feedback');
                       if (timerRef.current) clearInterval(timerRef.current);
                       stopInterviewRecordingAndSave();
+                      setChatMessages(prev => [...prev, { role: 'ai', text: `### 🏆 Interview Concluded\n\n**Score: ${score}/100**\n\nReview the feedback report in the main panel.` }]);
                   }
               }
           } else {
-              setChatMessages(prev => [...prev, { role: 'ai', text: resp.text || "" }]);
+              setChatMessages(prev => [...prev, { role: 'ai', text: resp.text || "I couldn't generate a response." }]);
           }
+
       } catch (e: any) { setChatMessages(prev => [...prev, { role: 'ai', text: `Error: ${e.message}` }]); } finally { setIsChatThinking(false); }
   };
 
   const handleStartInterview = async () => {
       setInterviewStep('active');
-      setInterviewTimer(1800); 
-      setChatMessages([{ role: 'ai', text: `Welcome. I've analyzed your background and the ${interviewType} role requirements. Let's begin the evaluation.` }]);
+      setInterviewTimer(1800); // 30 minutes
+      setChatMessages([{ role: 'ai', text: "Welcome to your mock interview. I've reviewed your resume and the job description. Let's start with a brief introduction of your most significant project." }]);
+      
       await setupInterviewRecording();
+      
       timerRef.current = setInterval(() => {
-          setInterviewTimer(t => { if (t <= 1) { clearInterval(timerRef.current); handleSendMessage("Time is up."); return 0; } return t - 1; });
+          setInterviewTimer(t => {
+              if (t <= 1) {
+                  clearInterval(timerRef.current);
+                  handleSendMessage("The time is up. Please wrap up and provide feedback.");
+                  return 0;
+              }
+              return t - 1;
+          });
       }, 1000);
       setIsRightOpen(true);
   };
@@ -675,6 +701,9 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
       setInterviewFeedback(null);
       setInterviewScore(null);
       if (timerRef.current) clearInterval(timerRef.current);
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+          stopInterviewRecordingAndSave();
+      }
   };
 
   const formatTime = (seconds: number) => {
@@ -715,15 +744,19 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
       });
       driveItems.forEach(item => {
           const node = map.get(item.id)!;
-          if (item.parentId && map.has(item.parentId)) map.get(item.parentId)!.children.push(node);
-          else if (!item.parentId) root.push(node);
+          if (item.parentId && map.has(item.parentId)) {
+              map.get(item.parentId)!.children.push(node);
+          } else if (!item.parentId) {
+              root.push(node);
+          }
       });
       return root;
   }, [driveItems]);
 
   const refreshExplorer = async () => {
-      if (activeTab === 'cloud' && currentUser) await refreshCloudPath(`projects/${currentUser.uid}`);
-      else if (activeTab === 'drive' && driveToken && driveRootId) {
+      if (activeTab === 'cloud' && currentUser) {
+          await refreshCloudPath(`projects/${currentUser.uid}`);
+      } else if (activeTab === 'drive' && driveToken && driveRootId) {
           const files = await listDriveFiles(driveToken, driveRootId);
           setDriveItems([{ id: driveRootId, name: 'CodeStudio', mimeType: 'application/vnd.google-apps.folder', isLoaded: true }, ...files.map(f => ({ ...f, parentId: driveRootId, isLoaded: false }))]);
       }
@@ -731,214 +764,367 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
 
   const handleOpenRepo = async (repoPath?: string) => {
     const path = repoPath || userProfile?.defaultRepoUrl;
-    if (!path) return alert("No default repository set.");
+    if (!path) {
+        alert("No default repository set in your profile settings.");
+        return;
+    }
     const [owner, repo] = path.split('/');
-    if (!owner || !repo) return alert("Invalid repository format.");
+    if (!owner || !repo) {
+        alert("Invalid repository format in profile. Expected 'owner/repo'.");
+        return;
+    }
+    
     setLoadingFolders(prev => ({ ...prev, github_root: true }));
     try {
         const info = await fetchRepoInfo(owner, repo, githubToken);
         const { files, latestSha } = await fetchRepoContents(githubToken, owner, repo, info.default_branch);
-        setProject({ id: `gh-${info.id}`, name: info.full_name, files: files, lastModified: Date.now(), github: { owner, repo, branch: info.default_branch, sha: latestSha } });
+        
+        setProject({
+            id: `gh-${info.id}`,
+            name: info.full_name,
+            files: files,
+            lastModified: Date.now(),
+            github: {
+                owner,
+                repo,
+                branch: info.default_branch,
+                sha: latestSha
+            }
+        });
         setActiveTab('github');
-    } catch (e: any) { alert(e.message); } finally { setLoadingFolders(prev => ({ ...prev, github_root: false })); }
+    } catch (e: any) {
+        alert(e.message);
+    } finally {
+        setLoadingFolders(prev => ({ ...prev, github_root: false }));
+    }
   };
 
-  useEffect(() => { if (activeTab === 'cloud' && currentUser) refreshExplorer(); }, [activeTab, currentUser]);
+  useEffect(() => {
+    if (activeTab === 'cloud' && currentUser) {
+        refreshExplorer();
+    }
+  }, [activeTab, currentUser]);
 
   const renderSlot = (idx: number) => {
       const file = activeSlots[idx];
       const isFocused = focusedSlot === idx;
       const viewMode = slotViewModes[idx] || 'code';
+      const isFormatting = isFormattingSlots[idx];
+      
       const isVisible = layoutMode === 'single' ? idx === 0 : (layoutMode === 'quad' ? true : idx < 2);
       if (!isVisible) return null;
+
       const slotStyle: React.CSSProperties = {};
       if (layoutMode === 'split-v' || layoutMode === 'split-h') {
           const size = idx === 0 ? `${innerSplitRatio}%` : `${100 - innerSplitRatio}%`;
-          if (layoutMode === 'split-v') slotStyle.width = size; else slotStyle.height = size;
+          if (layoutMode === 'split-v') slotStyle.width = size;
+          else slotStyle.height = size;
           slotStyle.flex = 'none';
       }
+
       return (
-          <div key={idx} onClick={() => setFocusedSlot(idx)} style={slotStyle} className={`flex flex-col min-w-0 border ${isFocused ? 'border-indigo-500 z-10 shadow-lg' : 'border-slate-800'} relative transition-all overflow-hidden bg-slate-950 flex-1`}>
+          <div 
+            key={idx} 
+            onClick={() => setFocusedSlot(idx)}
+            style={slotStyle}
+            className={`flex flex-col min-w-0 border ${isFocused ? 'border-indigo-500 z-10 shadow-[inset_0_0_10px_rgba(79,70,229,0.1)]' : 'border-slate-800'} relative transition-all overflow-hidden bg-slate-950 flex-1`}
+          >
               {file ? (
                   <>
-                    <div className={`px-4 py-2 flex items-center justify-between shrink-0 border-b ${isFocused ? 'bg-indigo-900/20' : 'bg-slate-900'}`}>
+                    <div className={`px-4 py-2 flex items-center justify-between shrink-0 border-b ${isFocused ? 'bg-indigo-900/20 border-indigo-500/30' : 'bg-slate-900 border-slate-800'}`}>
                         <div className="flex items-center gap-2 overflow-hidden">
                             <FileIcon filename={file.name} />
                             <span className={`text-xs font-bold truncate ${isFocused ? 'text-indigo-200' : 'text-slate-400'}`}>{file.name}</span>
                         </div>
                         <div className="flex items-center gap-1">
-                            {isPreviewable(file.name) && (
-                                <button onClick={(e) => { e.stopPropagation(); toggleSlotViewMode(idx); }} className={`p-1.5 rounded ${viewMode === 'preview' ? 'bg-indigo-600 text-white' : 'text-slate-500'}`}><Code size={14}/></button>
+                            {viewMode === 'code' && !['whiteboard', 'markdown', 'plantuml'].includes(getLanguageFromExt(file.name)) && (
+                                <button 
+                                    onClick={(e) => { e.stopPropagation(); handleFormatCode(idx); }}
+                                    disabled={isFormatting}
+                                    className={`p-1.5 rounded transition-colors ${isFormatting ? 'text-indigo-400' : 'text-slate-500 hover:text-indigo-400'}`}
+                                    title="Auto-Reformat Code (AI)"
+                                >
+                                    {isFormatting ? <Loader2 size={14} className="animate-spin"/> : <Wand2 size={14}/>}
+                                </button>
                             )}
-                            <button onClick={(e) => { e.stopPropagation(); updateSlotFile(null, idx); }} className="p-1.5 text-slate-500 hover:text-white"><X size={14}/></button>
+                            {isPreviewable(file.name) && (
+                                <button 
+                                    onClick={(e) => { e.stopPropagation(); toggleSlotViewMode(idx); }} 
+                                    className={`p-1.5 rounded transition-colors ${viewMode === 'preview' ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:text-white'}`}
+                                    title={viewMode === 'preview' ? 'Show Code' : 'Show Preview'}
+                                >
+                                    {viewMode === 'preview' ? <Code size={14}/> : <Eye size={14}/>}
+                                </button>
+                            )}
+                            <button onClick={(e) => { e.stopPropagation(); updateSlotFile(null, idx); }} className="p-1.5 hover:bg-slate-800 rounded text-slate-500 hover:text-white transition-colors" title="Close Panel"><X size={14}/></button>
                         </div>
                     </div>
-                    <div className="flex-1 overflow-hidden">
-                        {viewMode === 'preview' ? <MarkdownView content={file.content} /> : <RichCodeEditor code={file.content} onChange={(code: string) => handleCodeChangeInSlot(code, idx)} language={file.language} fontSize={fontSize} indentMode={indentMode} />}
+                    <div className="flex-1 overflow-hidden relative">
+                        {getLanguageFromExt(file.name) === 'whiteboard' ? (
+                            <Whiteboard initialData={file.content} onDataChange={(code) => handleCodeChangeInSlot(code, idx)} disableAI={true} />
+                        ) : viewMode === 'preview' ? (
+                            <div className="h-full overflow-y-auto p-8 bg-slate-950 text-slate-300 selection:bg-indigo-500/30">
+                                <MarkdownView content={file.name.endsWith('.puml') || file.name.endsWith('.plantuml') ? `\`\`\`plantuml\n${file.content}\n\`\`\`` : file.content} />
+                            </div>
+                        ) : (
+                            <RichCodeEditor 
+                                code={file.content} 
+                                onChange={(code: string) => handleCodeChangeInSlot(code, idx)} 
+                                language={file.language} 
+                                fontSize={fontSize} 
+                                indentMode={indentMode}
+                            />
+                        )}
                     </div>
                   </>
               ) : (
-                  <div className="flex-1 flex flex-col items-center justify-center text-slate-700 bg-slate-950/50 border-2 border-dashed border-slate-800 m-4 rounded-xl cursor-pointer hover:border-slate-600">
-                      <Plus size={32} className="opacity-20 mb-2" />
-                      <p className="text-xs font-bold uppercase">Pane {idx + 1}</p>
+                  <div className="flex-1 flex flex-col items-center justify-center text-slate-700 bg-slate-950/50 border-2 border-dashed border-slate-800 m-4 rounded-xl group cursor-pointer hover:border-slate-600 transition-colors">
+                      <Plus size={32} className="opacity-20 group-hover:opacity-40 transition-opacity mb-2" />
+                      <p className="text-xs font-bold uppercase tracking-widest">Pane {idx + 1}</p>
+                      <p className="text-[10px] opacity-50 mt-1">Select from Explorer</p>
                   </div>
               )}
+              {isFocused && <div className="absolute top-0 left-0 w-1 h-full bg-indigo-500"></div>}
           </div>
       );
   };
 
   return (
-    <div className="flex flex-col h-full bg-slate-950 text-slate-100 overflow-hidden relative">
+    <div className="flex flex-col h-full bg-slate-950 text-slate-100 overflow-hidden relative font-sans">
       <header className="h-14 bg-slate-950 border-b border-slate-800 flex items-center justify-between px-4 shrink-0 z-20">
          <div className="flex items-center space-x-4">
-            <button onClick={onBack} className="p-2 hover:bg-slate-800 rounded-lg text-slate-400"><ArrowLeft size={20} /></button>
-            <button onClick={() => setIsLeftOpen(!isLeftOpen)} className={`p-2 rounded-lg ${isLeftOpen ? 'bg-slate-800 text-white' : 'text-slate-400'}`}><PanelLeftClose size={20} /></button>
+            <button onClick={onBack} className="p-2 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white"><ArrowLeft size={20} /></button>
+            
+            {/* Sidebar Toggle: Explorer */}
+            <button 
+                onClick={() => setIsLeftOpen(!isLeftOpen)} 
+                className={`p-2 rounded-lg transition-colors ${isLeftOpen ? 'bg-slate-800 text-white' : 'text-slate-400 hover:text-white'}`}
+                title={isLeftOpen ? "Hide Explorer" : "Show Explorer"}
+            >
+                {isLeftOpen ? <PanelLeftClose size={20} /> : <PanelLeftOpen size={20} />}
+            </button>
+
             <h1 className="font-bold text-white text-sm flex items-center gap-2">
                 {isInterviewMode ? <UserCheck className="text-emerald-400" size={18}/> : <Code className="text-indigo-400" size={18}/>}
                 {isInterviewMode ? 'Interview Studio' : project.name}
             </h1>
          </div>
+
          <div className="flex items-center space-x-2">
             {!isInterviewMode ? (
-                <button onClick={() => setIsInterviewMode(true)} className="flex items-center space-x-2 px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold shadow-md mr-4 animate-pulse"><UserCheck size={14}/><span>Mock Interview</span></button>
+                <button 
+                    onClick={() => setIsInterviewMode(true)}
+                    className="flex items-center space-x-2 px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold shadow-md mr-4 animate-pulse"
+                >
+                    <UserCheck size={14}/>
+                    <span>Mock Interview</span>
+                </button>
             ) : (
                 <div className="flex items-center gap-4 mr-4">
                     <div className="flex items-center gap-2 bg-slate-900 px-3 py-1 rounded-full border border-slate-800">
                         <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse"></div>
                         <span className="text-xs font-mono text-red-400">{formatTime(interviewTimer)}</span>
                     </div>
-                    <button onClick={() => setInterviewStep('archive')} className="p-2 hover:bg-slate-800 rounded text-slate-400"><History size={16}/></button>
-                    <button onClick={handleResetInterview} className="text-xs text-slate-400 hover:text-white font-bold">Exit</button>
+                    <button 
+                        onClick={handleResetInterview}
+                        className="text-xs text-slate-400 hover:text-white font-bold"
+                    >
+                        Exit Mode
+                    </button>
                 </div>
             )}
-            <button onClick={() => handleSmartSave()} className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold shadow-md mr-2"><Save size={14}/><span>Save</span></button>
-            <button onClick={() => setIsRightOpen(!isRightOpen)} className={`p-2 rounded-lg ${isRightOpen ? 'bg-slate-800 text-white' : 'text-slate-400'}`}><PanelRightClose size={20} /></button>
+
+            <div className="flex items-center gap-1 bg-slate-900 p-1 rounded-lg border border-slate-800 mr-4">
+                <button onClick={() => handleSetLayout('single')} className={`p-1.5 rounded transition-colors ${layoutMode === 'single' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-500 hover:text-white'}`} title="Single Frame"><SquareIcon size={16}/></button>
+                <button onClick={() => handleSetLayout('split-v')} className={`p-1.5 rounded transition-colors ${layoutMode === 'split-v' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-500 hover:text-white'}`} title="Vertical Split"><Columns size={16}/></button>
+                <button onClick={() => handleSetLayout('split-h')} className={`p-1.5 rounded transition-colors ${layoutMode === 'split-h' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-500 hover:text-white'}`} title="Horizontal Split"><Rows size={16}/></button>
+                <button onClick={() => handleSetLayout('quad')} className={`p-1.5 rounded transition-colors ${layoutMode === 'quad' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-500 hover:text-white'}`} title="4 Frame Mode"><Grid2X2 size={16}/></button>
+            </div>
+
+            <div className="flex items-center gap-1 bg-slate-800/50 p-1 rounded-lg border border-slate-700 mr-2">
+                <button 
+                    onClick={() => setIndentMode(prev => prev === 'spaces' ? 'tabs' : 'spaces')} 
+                    className={`p-1.5 rounded transition-colors flex items-center gap-1.5 px-2.5 ${indentMode === 'tabs' ? 'bg-indigo-600 text-white' : 'bg-slate-700 text-slate-400 hover:text-white'}`}
+                    title={indentMode === 'tabs' ? "Using Real Tabs" : "Using 4 Spaces"}
+                >
+                    <Indent size={14} />
+                    <span className="text-[10px] font-bold uppercase">{indentMode}</span>
+                </button>
+                <div className="w-px h-4 bg-slate-700 mx-1"></div>
+                <button onClick={() => setFontSize(f => Math.max(10, f - 2))} className="p-1.5 hover:bg-slate-700 rounded text-slate-400"><ZoomOut size={16}/></button>
+                <button onClick={() => setFontSize(f => Math.min(48, f + 2))} className="p-1.5 hover:bg-slate-700 rounded text-slate-400"><ZoomIn size={16}/></button>
+            </div>
+
+            <button onClick={() => handleSmartSave()} className="flex items-center space-x-2 px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold shadow-md mr-2"><Save size={14}/><span>Save</span></button>
+
+            {/* Sidebar Toggle: AI Assistant */}
+            <button 
+                onClick={() => setIsRightOpen(!isRightOpen)} 
+                className={`p-2 rounded-lg transition-colors ${isRightOpen ? 'bg-slate-800 text-white' : 'text-slate-500 hover:text-white'}`}
+                title={isRightOpen ? "Hide AI Assistant" : "Show AI Assistant"}
+            >
+                {isRightOpen ? <PanelRightClose size={20} /> : <PanelRightOpen size={20} />}
+            </button>
          </div>
       </header>
 
       <div className="flex-1 flex overflow-hidden relative">
-          <div className={`${isLeftOpen ? '' : 'hidden'} bg-slate-900 border-r border-slate-800 flex flex-col shrink-0 overflow-hidden`} style={{ width: `${leftWidth}px` }}>
+          {/* EXPLORER PANEL */}
+          <div className={`${isZenMode ? 'hidden' : (isLeftOpen ? '' : 'hidden')} bg-slate-900 border-r border-slate-800 flex flex-col shrink-0 overflow-hidden`} style={{ width: `${leftWidth}px` }}>
               <div className="flex border-b border-slate-800 bg-slate-900">
-                  <button onClick={() => setActiveTab('cloud')} className={`flex-1 py-3 flex justify-center border-b-2 transition-colors ${activeTab === 'cloud' ? 'border-indigo-500 text-white' : 'border-transparent text-slate-500'}`}><Cloud size={16}/></button>
-                  <button onClick={() => setActiveTab('drive')} className={`flex-1 py-3 flex justify-center border-b-2 transition-colors ${activeTab === 'drive' ? 'border-indigo-500 text-white' : 'border-transparent text-slate-500'}`}><HardDrive size={16}/></button>
-                  <button onClick={() => setActiveTab('github')} className={`flex-1 py-3 flex justify-center border-b-2 transition-colors ${activeTab === 'github' ? 'border-indigo-500 text-white' : 'border-transparent text-slate-500'}`}><Github size={16}/></button>
+                  <button onClick={() => setActiveTab('cloud')} className={`flex-1 py-3 flex justify-center border-b-2 transition-colors ${activeTab === 'cloud' ? 'border-indigo-500 text-white' : 'border-transparent text-slate-500 hover:text-slate-300'}`}><Cloud size={16}/></button>
+                  <button onClick={() => setActiveTab('drive')} className={`flex-1 py-3 flex justify-center border-b-2 transition-colors ${activeTab === 'drive' ? 'border-indigo-500 text-white' : 'border-transparent text-slate-500 hover:text-slate-300'}`}><HardDrive size={16}/></button>
+                  <button onClick={() => setActiveTab('github')} className={`flex-1 py-3 flex justify-center border-b-2 transition-colors ${activeTab === 'github' ? 'border-indigo-500 text-white' : 'border-transparent text-slate-500 hover:text-slate-300'}`}><Github size={16}/></button>
+              </div>
+              <div className="p-3 border-b border-slate-800 flex flex-wrap gap-2 bg-slate-900 justify-center">
+                  <button onClick={handleCreateFile} className="flex-1 flex items-center justify-center gap-1 bg-indigo-600 hover:bg-indigo-500 text-white py-1.5 px-2 rounded text-xs font-bold shadow-md transition-colors whitespace-nowrap"><FileCode size={14}/> <span>New File</span></button>
+                  <button onClick={handleCreateWhiteboard} className="flex-1 flex items-center justify-center gap-1 bg-pink-600 hover:bg-pink-500 text-white py-1.5 px-2 rounded text-xs font-bold shadow-md transition-colors whitespace-nowrap"><PenTool size={14}/> <span>New Board</span></button>
+                  <button onClick={refreshExplorer} className="p-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded border border-slate-700 transition-colors"><RefreshCw size={16}/></button>
               </div>
               <div className="flex-1 overflow-y-auto">
-                  {activeTab === 'cloud' && cloudTree.map(node => <FileTreeItem key={node.id} node={node} depth={0} activeId={activeFile?.path} onSelect={handleExplorerSelect} onToggle={handleCloudToggle} expandedIds={expandedFolders} loadingIds={loadingFolders} />)}
-                  {activeTab === 'drive' && (driveToken ? driveTree.map(node => <FileTreeItem key={node.id} node={node} depth={0} activeId={activeFile?.path} onSelect={handleExplorerSelect} onToggle={handleDriveToggle} expandedIds={expandedFolders} loadingIds={loadingFolders} />) : <div className="p-4 text-center"><button onClick={handleConnectDrive} className="px-4 py-2 bg-slate-800 text-white text-xs font-bold rounded-lg border border-slate-700">Connect Drive</button></div>)}
+                  {activeTab === 'cloud' && cloudTree.map(node => <FileTreeItem key={node.id} node={node} depth={0} activeId={activeFile?.path} onSelect={handleExplorerSelect} onToggle={handleCloudToggle} onDelete={()=>{}} onShare={()=>{}} expandedIds={expandedFolders} loadingIds={loadingFolders} onDragStart={()=>{}} onDrop={()=>{}}/>)}
+                  {activeTab === 'drive' && (driveToken ? driveTree.map(node => <FileTreeItem key={node.id} node={node} depth={0} activeId={activeFile?.path} onSelect={handleExplorerSelect} onToggle={handleDriveToggle} onDelete={()=>{}} expandedIds={expandedFolders} loadingIds={loadingFolders} onDragStart={()=>{}} onDrop={()=>{}}/>) : <div className="p-4 text-center"><button onClick={handleConnectDrive} className="px-4 py-2 bg-slate-800 text-white text-xs font-bold rounded-lg border border-slate-700 hover:bg-slate-700">Connect Drive</button></div>)}
+                  {activeTab === 'github' && (project.github ? workspaceTree.map(node => <FileTreeItem key={node.id} node={node} depth={0} activeId={activeFile?.path} onSelect={handleExplorerSelect} onToggle={()=>{}} onDelete={()=>{}} onRename={()=>{}} expandedIds={expandedFolders} loadingIds={loadingFolders} onDragStart={()=>{}} onDrop={()=>{}}/>) : <div className="p-4 text-center"><button onClick={() => handleOpenRepo()} className="px-4 py-2 bg-slate-800 text-white text-xs font-bold rounded-lg border border-slate-700 hover:bg-slate-700">Open Default Repo</button></div>)}
               </div>
           </div>
 
-          <div onMouseDown={() => setIsDraggingLeft(true)} className="w-1 cursor-col-resize hover:bg-indigo-500/50 shrink-0 bg-slate-800/20"></div>
+          <div onMouseDown={() => setIsDraggingLeft(true)} className="w-1 cursor-col-resize hover:bg-indigo-500/50 transition-colors z-30 shrink-0 bg-slate-800/20 group relative">
+             <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 bg-indigo-500 p-0.5 rounded-full pointer-events-none"><GripVertical size={10}/></div>
+          </div>
 
-          <div ref={centerContainerRef} className={`flex-1 bg-slate-950 flex min-w-0 relative ${layoutMode === 'quad' ? 'grid grid-cols-2 grid-rows-2' : layoutMode === 'split-v' ? 'flex-row' : 'flex-col'}`}>
-              
+          {/* MAIN EDITOR AREA: DYNAMIC GRID/FLEX LAYOUT */}
+          <div ref={centerContainerRef} className={`flex-1 bg-slate-950 flex min-w-0 relative ${layoutMode === 'quad' ? 'grid grid-cols-2 grid-rows-2' : layoutMode === 'split-v' ? 'flex-row' : layoutMode === 'split-h' ? 'flex-col' : 'flex-col'}`}>
+              {/* Interview Setup View Overlay */}
               {isInterviewMode && interviewStep === 'setup' && (
                   <div className="absolute inset-0 z-50 bg-slate-950 flex items-center justify-center p-8 overflow-y-auto">
                       <div className="max-w-2xl w-full bg-slate-900 border border-slate-800 rounded-[2rem] p-10 shadow-2xl space-y-8 animate-fade-in-up">
-                          <div className="flex items-center justify-between">
-                              <div className="flex items-center gap-4">
-                                  <div className="p-3 bg-emerald-500/20 rounded-2xl text-emerald-400"><UserCheck size={32} /></div>
-                                  <div><h2 className="text-2xl font-black text-white">Interview Prep</h2><p className="text-slate-400 text-sm">Configure your tailored mock interview session.</p></div>
+                          <div className="flex items-center gap-4">
+                              <div className="p-3 bg-emerald-500/20 rounded-2xl text-emerald-400">
+                                  <UserCheck size={32} />
                               </div>
-                              <button onClick={() => setInterviewStep('archive')} className="p-2 bg-slate-800 hover:bg-slate-700 rounded-lg text-slate-300 flex items-center gap-2 text-xs font-bold"><History size={16}/> Archive</button>
+                              <div>
+                                  <h2 className="text-2xl font-black text-white">Interview Prep</h2>
+                                  <p className="text-slate-400 text-sm">Upload your profile to tailor the mock interview.</p>
+                              </div>
                           </div>
                           
-                          <div className="space-y-4">
-                              <label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-2"><Sparkles size={14}/> Interview Type</label>
-                              <div className="grid grid-cols-3 gap-2">
-                                  {['coding', 'system-design', 'behavior'].map(t => (
-                                      <button key={t} onClick={() => setInterviewType(t as InterviewType)} className={`py-3 rounded-xl border text-xs font-bold capitalize transition-all ${interviewType === t ? 'bg-indigo-600 border-indigo-500 text-white shadow-lg' : 'bg-slate-800 border-slate-700 text-slate-400'}`}>{t.replace('-', ' ')}</button>
-                                  ))}
-                              </div>
-                          </div>
-
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                              <div className="space-y-3">
-                                  <div className="flex justify-between items-center"><label className="text-xs font-bold text-slate-500 uppercase">Your Resume</label><label className="text-[10px] text-indigo-400 hover:underline cursor-pointer flex items-center gap-1"><FileUp size={10}/> Upload PDF/TXT <input type="file" className="hidden" onChange={e => handleFileUpload(e, 'resume')}/></label></div>
-                                  <textarea value={resumeText} onChange={e => setResumeText(e.target.value)} placeholder="Paste resume or upload file..." className="w-full h-40 bg-slate-950 border border-slate-800 rounded-xl p-4 text-sm text-slate-300 outline-none focus:border-emerald-500 resize-none"/>
+                              <div className="space-y-2">
+                                  <label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-2"><FileUser size={14}/> Your Resume / Profile</label>
+                                  <textarea 
+                                    value={resumeText}
+                                    onChange={e => setResumeText(e.target.value)}
+                                    placeholder="Paste your resume or bio here..."
+                                    className="w-full h-48 bg-slate-950 border border-slate-800 rounded-xl p-4 text-sm text-slate-300 outline-none focus:border-emerald-500 resize-none transition-all"
+                                  />
                               </div>
-                              <div className="space-y-3">
-                                  <div className="flex justify-between items-center"><label className="text-xs font-bold text-slate-500 uppercase">Job Description</label><label className="text-[10px] text-indigo-400 hover:underline cursor-pointer flex items-center gap-1"><FileUp size={10}/> Upload <input type="file" className="hidden" onChange={e => handleFileUpload(e, 'jd')}/></label></div>
-                                  <textarea value={jobDescription} onChange={e => setJobDescription(e.target.value)} placeholder="Paste job details..." className="w-full h-40 bg-slate-950 border border-slate-800 rounded-xl p-4 text-sm text-slate-300 outline-none focus:border-indigo-500 resize-none"/>
+                              <div className="space-y-2">
+                                  <label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-2"><Briefcase size={14}/> Target Job Description</label>
+                                  <textarea 
+                                    value={jobDescription}
+                                    onChange={e => setJobDescription(e.target.value)}
+                                    placeholder="Paste the role details here..."
+                                    className="w-full h-48 bg-slate-950 border border-slate-800 rounded-xl p-4 text-sm text-slate-300 outline-none focus:border-indigo-500 resize-none transition-all"
+                                  />
                               </div>
                           </div>
 
                           <div className="flex gap-4">
-                              <button onClick={handleResetInterview} className="flex-1 py-4 bg-slate-800 text-slate-300 font-bold rounded-2xl">Cancel</button>
-                              <button onClick={handleStartInterview} className="flex-[2] py-4 bg-emerald-600 hover:bg-emerald-500 text-white font-black rounded-2xl shadow-xl flex items-center justify-center gap-2"><Play size={20} fill="currentColor"/><span>Start Session</span></button>
+                              <button 
+                                onClick={handleResetInterview}
+                                className="flex-1 py-4 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-2xl transition-all"
+                              >
+                                Cancel
+                              </button>
+                              <button 
+                                onClick={handleStartInterview}
+                                className="flex-[2] py-4 bg-emerald-600 hover:bg-emerald-500 text-white font-black rounded-2xl shadow-xl shadow-emerald-900/20 transition-all flex items-center justify-center gap-2"
+                              >
+                                <Play size={20} fill="currentColor"/>
+                                <span>Start 30-Min Live Interview</span>
+                              </button>
                           </div>
+                          <p className="text-[10px] text-slate-500 text-center uppercase tracking-widest">Screen & Camera Recording Enabled Automatically</p>
                       </div>
                   </div>
               )}
 
-              {isInterviewMode && interviewStep === 'archive' && (
-                  <div className="absolute inset-0 z-50 bg-slate-950 flex items-center justify-center p-8 overflow-y-auto">
-                      <div className="max-w-4xl w-full bg-slate-900 border border-slate-800 rounded-[2rem] p-10 shadow-2xl flex flex-col max-h-[80vh]">
-                          <div className="flex justify-between items-center mb-6">
-                              <h2 className="text-2xl font-black text-white flex items-center gap-2"><History className="text-indigo-400"/> Interview History</h2>
-                              <button onClick={() => setInterviewStep('setup')} className="p-2 text-slate-400 hover:text-white"><X/></button>
-                          </div>
-                          <div className="relative mb-6">
-                              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={16}/>
-                              <input type="text" value={archiveSearch} onChange={e => setArchiveSearch(e.target.value)} placeholder="Search reports..." className="w-full bg-slate-950 border border-slate-800 rounded-xl py-3 pl-10 pr-4 text-sm text-white focus:border-indigo-500 outline-none"/>
-                          </div>
-                          <div className="flex-1 overflow-y-auto space-y-2 pr-2 scrollbar-thin">
-                              {pastInterviews.filter(i => i.name.toLowerCase().includes(archiveSearch.toLowerCase())).map(i => (
-                                  <div key={i.id} className="bg-slate-800/50 border border-slate-700 p-4 rounded-xl flex items-center justify-between hover:bg-slate-800 transition-colors cursor-pointer group">
-                                      <div className="flex items-center gap-4">
-                                          <div className="p-2 bg-indigo-500/10 text-indigo-400 rounded-lg"><FileTextIcon size={20}/></div>
-                                          <div>
-                                              <p className="text-sm font-bold text-slate-200">{i.name.replace('Mock_Interview_', '').replace('.webm', '').replace('.md', '')}</p>
-                                              <p className="text-[10px] text-slate-500 uppercase tracking-widest">Recorded Session</p>
-                                          </div>
-                                      </div>
-                                      <button className="p-2 bg-slate-900 rounded-lg text-indigo-400 opacity-0 group-hover:opacity-100 transition-opacity"><Play size={16}/></button>
-                                  </div>
-                              ))}
-                              {pastInterviews.length === 0 && <div className="text-center py-20 text-slate-600 italic">No past sessions found in your Drive.</div>}
-                          </div>
-                      </div>
-                  </div>
-              )}
-
+              {/* Interview Feedback View Overlay */}
               {isInterviewMode && interviewStep === 'feedback' && (
                   <div className="absolute inset-0 z-50 bg-slate-950 flex items-center justify-center p-8 overflow-y-auto">
-                      <div className="max-w-3xl w-full bg-slate-900 border border-slate-800 rounded-[2rem] p-10 shadow-2xl space-y-8 animate-fade-in-up">
-                          <div className="flex justify-between items-start">
+                      <div className="max-w-3xl w-full bg-slate-900 border border-slate-800 rounded-[2rem] p-10 shadow-2xl space-y-8 animate-fade-in-up relative overflow-hidden">
+                          <div className="absolute top-0 right-0 p-12 bg-emerald-500/5 blur-[100px] rounded-full pointer-events-none"></div>
+                          
+                          <div className="flex justify-between items-start relative z-10">
                               <div className="flex items-center gap-4">
-                                  <div className="p-4 bg-emerald-500 text-white rounded-3xl"><Trophy size={32} /></div>
-                                  <div><h2 className="text-3xl font-black text-white">Evaluation Report</h2><p className="text-slate-400">Generated by Neural Interviewer.</p></div>
+                                  <div className="p-4 bg-emerald-500 text-white rounded-3xl shadow-xl shadow-emerald-500/20">
+                                      <Trophy size={32} />
+                                  </div>
+                                  <div>
+                                      <h2 className="text-3xl font-black text-white">Interview Performance</h2>
+                                      <p className="text-slate-400">Detailed feedback and growth analysis.</p>
+                                  </div>
                               </div>
-                              <div className="text-right"><div className="text-5xl font-black text-emerald-400">{interviewScore}</div><div className="text-[10px] font-bold text-slate-500 uppercase">Score</div></div>
+                              <div className="text-right">
+                                  <div className="text-5xl font-black text-emerald-400">{interviewScore}</div>
+                                  <div className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em]">Final Score</div>
+                              </div>
                           </div>
-                          <div className="bg-slate-950/50 rounded-2xl p-8 border border-slate-800 prose prose-invert max-w-none"><MarkdownView content={interviewFeedback || ""} /></div>
-                          <div className="flex gap-4"><button onClick={handleResetInterview} className="flex-1 py-4 bg-indigo-600 text-white font-black rounded-2xl">Start New Round</button></div>
+
+                          <div className="bg-slate-950/50 rounded-2xl p-8 border border-slate-800 prose prose-invert max-w-none shadow-inner">
+                              <MarkdownView content={interviewFeedback || "No feedback generated."} />
+                          </div>
+
+                          <div className="flex gap-4">
+                              <button 
+                                onClick={handleResetInterview}
+                                className="flex-1 py-4 bg-indigo-600 hover:bg-indigo-500 text-white font-black rounded-2xl shadow-xl shadow-indigo-900/20 transition-all flex items-center justify-center gap-2"
+                              >
+                                <RefreshCw size={20} />
+                                <span>Try Another Round</span>
+                              </button>
+                              <button 
+                                onClick={() => setIsInterviewMode(false)}
+                                className="px-8 py-4 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-2xl transition-all"
+                              >
+                                Done
+                              </button>
+                          </div>
                       </div>
                   </div>
               )}
 
               {layoutMode === 'single' && renderSlot(0)}
+              
               {layoutMode === 'split-v' && (
                   <>
                     {renderSlot(0)}
-                    <div onMouseDown={() => setIsDraggingInner(true)} className="w-1.5 cursor-col-resize hover:bg-indigo-500/50 z-40 bg-slate-800 group relative flex-shrink-0"><div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 bg-indigo-500 p-1 rounded-full"><GripVertical size={12}/></div></div>
+                    <div onMouseDown={() => setIsDraggingInner(true)} className="w-1.5 cursor-col-resize hover:bg-indigo-500/50 transition-colors z-40 bg-slate-800 group relative flex-shrink-0">
+                        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 bg-indigo-500 p-1 rounded-full shadow-lg pointer-events-none transition-opacity duration-200"><GripVertical size={12}/></div>
+                    </div>
                     {renderSlot(1)}
                   </>
               )}
+
               {layoutMode === 'split-h' && (
                   <>
                     {renderSlot(0)}
-                    <div onMouseDown={() => setIsDraggingInner(true)} className="h-1.5 cursor-row-resize hover:bg-indigo-500/50 z-40 bg-slate-800 group relative flex-shrink-0"><div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 bg-indigo-500 p-1 rounded-full"><GripHorizontal size={12}/></div></div>
+                    <div onMouseDown={() => setIsDraggingInner(true)} className="h-1.5 cursor-row-resize hover:bg-indigo-500/50 transition-colors z-40 bg-slate-800 group relative flex-shrink-0">
+                        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 bg-indigo-500 p-1 rounded-full shadow-lg pointer-events-none transition-opacity duration-200"><GripHorizontal size={12}/></div>
+                    </div>
                     {renderSlot(1)}
                   </>
               )}
+
               {layoutMode === 'quad' && [0,1,2,3].map(i => renderSlot(i))}
           </div>
 
-          <div onMouseDown={() => setIsDraggingRight(true)} className="w-1 cursor-col-resize hover:bg-indigo-500/50 shrink-0 bg-slate-800/20"></div>
+          <div onMouseDown={() => setIsDraggingRight(true)} className="w-1 cursor-col-resize hover:bg-indigo-500/50 transition-colors z-30 shrink-0 bg-slate-800/20 group relative">
+              <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 bg-indigo-500 p-0.5 rounded-full pointer-events-none"><GripVertical size={10}/></div>
+          </div>
 
-          <div className={`${isRightOpen ? '' : 'hidden'} bg-slate-950 flex flex-col shrink-0 overflow-hidden`} style={{ width: `${rightWidth}px` }}>
+          {/* AI PANEL */}
+          <div className={`${isZenMode ? 'hidden' : (isRightOpen ? '' : 'hidden')} bg-slate-950 flex flex-col shrink-0 overflow-hidden`} style={{ width: `${rightWidth}px` }}>
               <AIChatPanel isOpen={true} onClose={() => setIsRightOpen(false)} messages={chatMessages} onSendMessage={handleSendMessage} isThinking={isChatThinking} />
           </div>
       </div>
