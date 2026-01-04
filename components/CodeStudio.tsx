@@ -1,8 +1,8 @@
 
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { CodeProject, CodeFile, UserProfile, Channel, CursorPosition, CloudItem } from '../types';
-import { ArrowLeft, Save, Plus, Github, Cloud, HardDrive, Code, X, ChevronRight, ChevronDown, File, Folder, DownloadCloud, Loader2, CheckCircle, AlertTriangle, Info, FolderPlus, FileCode, RefreshCw, LogIn, CloudUpload, Trash2, ArrowUp, Edit2, FolderOpen, MoreVertical, Send, MessageSquare, Bot, Mic, Sparkles, SidebarClose, SidebarOpen, Users, Eye, FileText as FileTextIcon, Image as ImageIcon, StopCircle, Minus, Maximize2, Minimize2, Lock, Unlock, Share2, Terminal, Copy, WifiOff, PanelRightClose, PanelRightOpen, PanelLeftClose, PanelLeftOpen, Monitor, Laptop, PenTool, Edit3, ShieldAlert, ZoomIn, ZoomOut, Columns, Rows, Grid2X2, Square as SquareIcon, GripVertical, GripHorizontal, FileSearch, Indent, Wand2, Check, UserCheck, Briefcase, FileUser, Trophy, Star, Play, Camera, MonitorCheck, Upload, History, Search } from 'lucide-react';
-import { listCloudDirectory, saveProjectToCloud, deleteCloudItem, createCloudFolder, subscribeToCodeProject, saveCodeProject, updateCodeFile, updateCursor, claimCodeProjectLock, updateProjectActiveFile, deleteCodeFile, moveCloudFile, updateProjectAccess, sendShareNotification, deleteCloudFolderRecursive, getUserRecordings } from '../services/firestoreService';
+import { ArrowLeft, Save, Plus, Github, Cloud, HardDrive, Code, X, ChevronRight, ChevronDown, File, Folder, DownloadCloud, Loader2, CheckCircle, AlertTriangle, Info, FolderPlus, FileCode, RefreshCw, LogIn, CloudUpload, Trash2, ArrowUp, Edit2, FolderOpen, MoreVertical, Send, MessageSquare, Bot, Mic, Sparkles, SidebarClose, SidebarOpen, Users, Eye, FileText as FileTextIcon, Image as ImageIcon, StopCircle, Minus, Maximize2, Minimize2, Lock, Unlock, Share2, Terminal, Copy, WifiOff, PanelRightClose, PanelRightOpen, PanelLeftClose, PanelLeftOpen, Monitor, Laptop, PenTool, Edit3, ShieldAlert, ZoomIn, ZoomOut, Columns, Rows, Grid2X2, Square as SquareIcon, GripVertical, GripHorizontal, FileSearch, Indent, Wand2, Check, UserCheck, Briefcase, FileUser, Trophy, Star, Play, Camera, MonitorCheck, Upload } from 'lucide-react';
+import { listCloudDirectory, saveProjectToCloud, deleteCloudItem, createCloudFolder, subscribeToCodeProject, saveCodeProject, updateCodeFile, updateCursor, claimCodeProjectLock, updateProjectActiveFile, deleteCodeFile, moveCloudFile, updateProjectAccess, sendShareNotification, deleteCloudFolderRecursive } from '../services/firestoreService';
 import { ensureCodeStudioFolder, listDriveFiles, readDriveFile, saveToDrive, deleteDriveFile, createDriveFolder, DriveFile, moveDriveFile } from '../services/googleDriveService';
 import { connectGoogleDrive, signInWithGitHub } from '../services/authService';
 import { fetchRepoInfo, fetchRepoContents, fetchFileContent, updateRepoFile, deleteRepoFile, renameRepoFile } from '../services/githubService';
@@ -271,7 +271,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
 
   // --- MOCK INTERVIEW STATE ---
   const [isInterviewMode, setIsInterviewMode] = useState(false);
-  const [interviewStep, setInterviewStep] = useState<'setup' | 'active' | 'feedback' | 'archives'>('setup');
+  const [interviewStep, setInterviewStep] = useState<'setup' | 'active' | 'feedback'>('setup');
   const [activeInterviewMode, setActiveInterviewMode] = useState<InterviewMode>('coding');
   const [resumeText, setResumeText] = useState(userProfile?.interests?.join(', ') || '');
   const [jobDescription, setJobDescription] = useState('');
@@ -279,12 +279,6 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
   const [interviewScore, setInterviewScore] = useState<number | null>(null);
   const [interviewTimer, setInterviewTimer] = useState(1800); // 30 mins
   const timerRef = useRef<any>(null);
-
-  // Archive States
-  const [archivedInterviews, setArchivedInterviews] = useState<any[]>([]);
-  const [archiveSearchQuery, setArchiveSearchQuery] = useState('');
-  const [selectedArchive, setSelectedArchive] = useState<any | null>(null);
-  const [isLoadingArchives, setIsLoadingArchives] = useState(false);
 
   // Recording Ref
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -426,8 +420,6 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
               let rootId = driveRootId;
               if (!rootId) rootId = await ensureCodeStudioFolder(token);
               const blob = new Blob(recorderChunksRef.current, { type: 'video/webm' });
-              
-              // We include job/mode in filename for easier archival search if needed
               const name = `Interview_${activeInterviewMode}_${new Date().toISOString().replace(/[:.]/g, '-')}.webm`;
               const reader = new FileReader();
               reader.onload = async () => {
@@ -438,27 +430,11 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
       }
   };
 
-  const loadArchives = async () => {
-      if (!currentUser) return;
-      setIsLoadingArchives(true);
-      try {
-          const data = await getUserRecordings(currentUser.uid);
-          // Filter only interview recordings
-          const interviews = data.filter(r => r.channelTitle?.includes('Interview') || r.mediaType?.includes('video'));
-          setArchivedInterviews(interviews);
-      } catch (e) {
-          console.error("Archive load failed", e);
-      } finally {
-          setIsLoadingArchives(false);
-      }
-  };
-
   const handleResetInterview = () => {
       setIsInterviewMode(false);
       setInterviewStep('setup');
       setInterviewFeedback(null);
       setInterviewScore(null);
-      setSelectedArchive(null);
       if (timerRef.current) clearInterval(timerRef.current);
       if (mediaRecorderRef.current) stopRecordingAndSave();
   };
@@ -586,15 +562,6 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
       );
   };
 
-  const filteredArchives = useMemo(() => {
-      if (!archiveSearchQuery.trim()) return archivedInterviews;
-      const q = archiveSearchQuery.toLowerCase();
-      return archivedInterviews.filter(r => 
-          r.channelTitle?.toLowerCase().includes(q) || 
-          new Date(r.timestamp).toLocaleDateString().includes(q)
-      );
-  }, [archivedInterviews, archiveSearchQuery]);
-
   return (
     <div className="flex flex-col h-full bg-slate-950 text-slate-100 overflow-hidden font-sans">
       <header className="h-14 bg-slate-950 border-b border-slate-800 flex items-center justify-between px-4 shrink-0 z-20">
@@ -626,21 +593,12 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
               {isInterviewMode && interviewStep === 'setup' && (
                   <div className="absolute inset-0 z-50 bg-slate-950 flex items-center justify-center p-8 overflow-y-auto">
                       <div className="max-w-2xl w-full bg-slate-900 border border-slate-800 rounded-3xl p-10 shadow-2xl space-y-8 animate-fade-in-up">
-                          <div className="flex justify-between items-center">
-                              <div className="flex items-center gap-4">
-                                  <div className="p-3 bg-emerald-500/20 rounded-2xl text-emerald-400"><UserCheck size={32} /></div>
-                                  <div>
-                                      <h2 className="text-2xl font-black text-white">Interview Config</h2>
-                                      <p className="text-slate-400 text-sm">30-min session with auto-recording.</p>
-                                  </div>
+                          <div className="flex items-center gap-4">
+                              <div className="p-3 bg-emerald-500/20 rounded-2xl text-emerald-400"><UserCheck size={32} /></div>
+                              <div>
+                                  <h2 className="text-2xl font-black text-white">Interview Config</h2>
+                                  <p className="text-slate-400 text-sm">30-min session with auto-recording.</p>
                               </div>
-                              <button 
-                                onClick={() => { setInterviewStep('archives'); loadArchives(); }}
-                                className="flex items-center gap-2 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-bold border border-slate-700"
-                              >
-                                  <History size={14}/>
-                                  <span>Archive</span>
-                              </button>
                           </div>
 
                           <div className="grid grid-cols-3 gap-2">
@@ -675,137 +633,8 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
                               </button>
                           </div>
                           <div className="text-center space-y-1">
-                               {/* Fix: changed 'Video' to 'VideoIcon' to match imports */}
                               <p className="text-[10px] text-slate-500 uppercase tracking-widest flex items-center justify-center gap-2"><MonitorCheck size={10}/> Recording Screen & Camera</p>
                               <p className="text-[10px] text-slate-500 uppercase tracking-widest flex items-center justify-center gap-2"><CloudUpload size={10}/> Auto-Save to Google Drive</p>
-                          </div>
-                      </div>
-                  </div>
-              )}
-
-              {isInterviewMode && interviewStep === 'archives' && (
-                  <div className="absolute inset-0 z-50 bg-slate-950 flex flex-col items-center p-8 overflow-hidden">
-                      <div className="max-w-4xl w-full bg-slate-900 border border-slate-800 rounded-3xl shadow-2xl flex flex-col h-full overflow-hidden animate-fade-in-up">
-                          <div className="p-6 border-b border-slate-800 flex justify-between items-center bg-slate-950/50">
-                              <div className="flex items-center gap-3">
-                                  <button onClick={() => setInterviewStep('setup')} className="p-2 hover:bg-slate-800 rounded-full text-slate-400">
-                                      <ArrowLeft size={20} />
-                                  </button>
-                                  <h2 className="text-xl font-bold text-white flex items-center gap-2"><History className="text-indigo-400"/> Interview Archives</h2>
-                              </div>
-                              <div className="relative">
-                                  <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500"/>
-                                  <input 
-                                    type="text" 
-                                    value={archiveSearchQuery} 
-                                    onChange={e => setArchiveSearchQuery(e.target.value)}
-                                    placeholder="Search by role or date..." 
-                                    className="bg-slate-950 border border-slate-700 rounded-lg pl-9 pr-4 py-1.5 text-xs text-white focus:ring-1 focus:ring-indigo-500 outline-none w-64"
-                                  />
-                              </div>
-                          </div>
-
-                          <div className="flex-1 overflow-y-auto p-6 space-y-4 scrollbar-thin">
-                              {isLoadingArchives ? (
-                                  <div className="flex flex-col items-center justify-center h-full text-indigo-400 gap-2">
-                                      <Loader2 className="animate-spin" size={32}/>
-                                      <span className="text-sm font-bold">Scanning records...</span>
-                                  </div>
-                              ) : filteredArchives.length === 0 ? (
-                                  <div className="flex flex-col items-center justify-center h-full text-slate-600 gap-3 border-2 border-dashed border-slate-800 rounded-2xl m-4">
-                                      <History size={48} className="opacity-10"/>
-                                      <p className="text-sm">No recorded interviews found.</p>
-                                  </div>
-                              ) : (
-                                  filteredArchives.map(rec => (
-                                      <div 
-                                        key={rec.id}
-                                        onClick={() => setSelectedArchive(rec)}
-                                        className="bg-slate-800/50 border border-slate-700 hover:border-indigo-500/50 rounded-2xl p-4 flex items-center justify-between group cursor-pointer transition-all"
-                                      >
-                                          <div className="flex items-center gap-4">
-                                              <div className="w-12 h-12 bg-indigo-900/30 rounded-xl flex items-center justify-center text-indigo-400">
-                                                   {/* Fix: changed 'Video' to 'VideoIcon' to match imports */}
-                                                  <VideoIcon size={20}/>
-                                              </div>
-                                              <div>
-                                                  <h3 className="font-bold text-white group-hover:text-indigo-300 transition-colors">{rec.channelTitle}</h3>
-                                                  <p className="text-xs text-slate-500">{new Date(rec.timestamp).toLocaleDateString()} • {new Date(rec.timestamp).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</p>
-                                              </div>
-                                          </div>
-                                          <div className="flex items-center gap-4">
-                                              <button className="px-4 py-1.5 bg-slate-900 text-slate-300 rounded-lg text-[10px] font-black uppercase tracking-widest border border-slate-700 group-hover:bg-indigo-600 group-hover:text-white group-hover:border-indigo-500 transition-all">Review</button>
-                                          </div>
-                                      </div>
-                                  ))
-                              )}
-                          </div>
-                      </div>
-                  </div>
-              )}
-
-              {selectedArchive && (
-                  <div className="absolute inset-0 z-[60] bg-slate-950 flex flex-col items-center p-8 overflow-hidden animate-fade-in">
-                      <div className="max-w-5xl w-full bg-slate-900 border border-slate-800 rounded-3xl shadow-2xl flex flex-col h-full overflow-hidden">
-                          <div className="p-4 border-b border-slate-800 flex justify-between items-center bg-slate-950/80">
-                              <div className="flex items-center gap-3">
-                                  <button onClick={() => setSelectedArchive(null)} className="p-2 hover:bg-slate-800 rounded-full text-slate-400">
-                                      <ArrowLeft size={20} />
-                                  </button>
-                                  <h2 className="font-bold text-white">{selectedArchive.channelTitle}</h2>
-                                  <span className="text-xs text-slate-500 font-mono">{new Date(selectedArchive.timestamp).toLocaleDateString()}</span>
-                              </div>
-                              <button onClick={() => setSelectedArchive(null)} className="text-slate-500 hover:text-white"><X size={20}/></button>
-                          </div>
-                          
-                          <div className="flex-1 flex overflow-hidden">
-                              {/* Left: Video Player */}
-                              <div className="flex-[3] bg-black relative border-r border-slate-800">
-                                  <video 
-                                    src={selectedArchive.mediaUrl} 
-                                    controls 
-                                    className="w-full h-full object-contain"
-                                  />
-                                  <div className="absolute top-4 left-4 bg-red-600/80 text-white px-2 py-1 rounded text-[10px] font-black uppercase tracking-tighter">Playback</div>
-                              </div>
-                              
-                              {/* Right: AI Report Card */}
-                              <div className="flex-[2] flex flex-col bg-slate-900 overflow-hidden">
-                                  <div className="p-4 border-b border-slate-800 bg-slate-950/40 flex justify-between items-center">
-                                       {/* Fix: changed 'FileText' to 'FileTextIcon' to match imports */}
-                                      <h3 className="text-sm font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2"><FileTextIcon size={14}/> Interview Report</h3>
-                                      <button className="text-indigo-400 hover:text-white transition-colors"><Share2 size={16}/></button>
-                                  </div>
-                                  <div className="flex-1 overflow-y-auto p-6 scrollbar-thin">
-                                      <div className="mb-6 p-4 bg-indigo-600/10 border border-indigo-500/20 rounded-2xl flex items-center justify-between">
-                                          <div>
-                                              <p className="text-[10px] text-indigo-400 font-bold uppercase tracking-widest">Composite Score</p>
-                                              <p className="text-4xl font-black text-white">84<span className="text-sm text-indigo-500 font-bold">/100</span></p>
-                                          </div>
-                                          <Trophy size={40} className="text-indigo-500 opacity-40"/>
-                                      </div>
-                                      
-                                      <div className="prose prose-invert prose-sm max-w-none">
-                                          {/* In a real scenario, we'd fetch the Markdown feedback from the database (transcriptUrl) */}
-                                          <MarkdownView content={`
-### Performance Summary
-The candidate demonstrated strong algorithmic reasoning during the dynamic programming section. Communication was clear, although some hesitation was noted when discussing system-level memory safety.
-
-### Strengths
-- **Problem Solving**: Quickly identified the optimal O(N) approach.
-- **Communication**: Excellent technical articulation.
-- **Code Quality**: Clean structure and good naming conventions.
-
-### Growth Areas
-- **Deep Systems Knowledge**: Revisit Linux Kernel RCU mechanisms.
-- **Confidence**: Maintain stronger eye contact (observed in PiP camera feed).
-
-### Recommendations
-Focus on mock behavioral rounds to polish the STAR method stories.
-                                          `}/>
-                                      </div>
-                                  </div>
-                              </div>
                           </div>
                       </div>
                   </div>
