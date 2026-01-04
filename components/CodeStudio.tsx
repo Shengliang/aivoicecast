@@ -1,8 +1,7 @@
-
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { CodeProject, CodeFile, UserProfile, Channel, CursorPosition, CloudItem } from '../types';
-import { ArrowLeft, Save, Plus, Github, Cloud, HardDrive, Code, X, ChevronRight, ChevronDown, File, Folder, DownloadCloud, Loader2, CheckCircle, AlertTriangle, Info, FolderPlus, FileCode, RefreshCw, LogIn, CloudUpload, Trash2, ArrowUp, Edit2, FolderOpen, MoreVertical, Send, MessageSquare, Bot, Mic, Sparkles, SidebarClose, SidebarOpen, Users, Eye, FileText as FileTextIcon, Image as ImageIcon, StopCircle, Minus, Maximize2, Minimize2, Lock, Unlock, Share2, Terminal, Copy, WifiOff, PanelRightClose, PanelRightOpen, PanelLeftClose, PanelLeftOpen, Monitor, Laptop, PenTool, Edit3, ShieldAlert, ZoomIn, ZoomOut, Columns, Rows, Grid2X2, Square as SquareIcon, GripVertical, GripHorizontal, FileSearch, Indent, Wand2, Check, UserCheck, Briefcase, FileUser, Trophy, Star, Play, Camera, Upload, History, Search, Video as VideoIcon } from 'lucide-react';
-import { listCloudDirectory, saveProjectToCloud, deleteCloudItem, createCloudFolder, subscribeToCodeProject, saveCodeProject, updateCodeFile, updateCursor, claimCodeProjectLock, updateProjectActiveFile, deleteCodeFile, moveCloudFile, updateProjectAccess, sendShareNotification, deleteCloudFolderRecursive, getUserRecordings } from '../services/firestoreService';
+import { ArrowLeft, Save, Plus, Github, Cloud, HardDrive, Code, X, ChevronRight, ChevronDown, File, Folder, DownloadCloud, Loader2, CheckCircle, AlertTriangle, Info, FolderPlus, FileCode, RefreshCw, LogIn, CloudUpload, Trash2, ArrowUp, Edit2, FolderOpen, MoreVertical, Send, MessageSquare, Bot, Mic, Sparkles, SidebarClose, SidebarOpen, Users, Eye, FileText as FileTextIcon, Image as ImageIcon, StopCircle, Minus, Maximize2, Minimize2, Lock, Unlock, Share2, Terminal, Copy, WifiOff, PanelRightClose, PanelRightOpen, PanelLeftClose, PanelLeftOpen, Monitor, Laptop, PenTool, Edit3, ShieldAlert, ZoomIn, ZoomOut, Columns, Rows, Grid2X2, Square as SquareIcon, GripVertical, GripHorizontal, FileSearch, Indent, Wand2, Check, UserCheck, Briefcase, FileUser, Trophy, Star, Play, Camera, History, Search, FileUp } from 'lucide-react';
+import { listCloudDirectory, saveProjectToCloud, deleteCloudItem, createCloudFolder, subscribeToCodeProject, saveCodeProject, updateCodeFile, updateCursor, claimCodeProjectLock, updateProjectActiveFile, deleteCodeFile, moveCloudFile, updateProjectAccess, sendShareNotification, deleteCloudFolderRecursive } from '../services/firestoreService';
 import { ensureCodeStudioFolder, listDriveFiles, readDriveFile, saveToDrive, deleteDriveFile, createDriveFolder, DriveFile, moveDriveFile } from '../services/googleDriveService';
 import { connectGoogleDrive, signInWithGitHub } from '../services/authService';
 import { fetchRepoInfo, fetchRepoContents, fetchFileContent, updateRepoFile, deleteRepoFile, renameRepoFile } from '../services/githubService';
@@ -10,11 +9,8 @@ import { MarkdownView } from './MarkdownView';
 import { encodePlantUML } from '../utils/plantuml';
 import { Whiteboard } from './Whiteboard';
 import { GoogleGenAI, FunctionDeclaration, Type } from '@google/genai';
-import { ShareModal } from './ShareModal';
 
 // --- Interfaces & Constants ---
-
-type InterviewMode = 'coding' | 'system-design' | 'behavioral';
 
 interface TreeNode {
   id: string;
@@ -28,6 +24,7 @@ interface TreeNode {
 
 type LayoutMode = 'single' | 'split-v' | 'split-h' | 'quad';
 type IndentMode = 'tabs' | 'spaces';
+type InterviewType = 'coding' | 'system-design' | 'behavior';
 
 interface CodeStudioProps {
   onBack: () => void;
@@ -150,7 +147,6 @@ const RichCodeEditor = ({ code, onChange, onCursorMove, language, readOnly, font
             const updatedValue = value.substring(0, start) + tabStr + value.substring(end);
             onChange(updatedValue);
 
-            // Sync the cursor position after the DOM update
             requestAnimationFrame(() => {
                 target.selectionStart = target.selectionEnd = start + tabStr.length;
             });
@@ -236,7 +232,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
   const [focusedSlot, setFocusedSlot] = useState<number>(0);
   const [slotViewModes, setSlotViewModes] = useState<Record<number, 'code' | 'preview'>>({});
   
-  const [innerSplitRatio, setInnerSplitRatio] = useState(50); // Percent for splits
+  const [innerSplitRatio, setInnerSplitRatio] = useState(50); 
   const [isDraggingInner, setIsDraggingInner] = useState(false);
   
   const [project, setProject] = useState<CodeProject>({ id: 'init', name: 'New Project', files: [defaultFile], lastModified: Date.now() });
@@ -267,20 +263,16 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
 
   // --- MOCK INTERVIEW STATE ---
   const [isInterviewMode, setIsInterviewMode] = useState(false);
-  const [interviewStep, setInterviewStep] = useState<'setup' | 'active' | 'feedback' | 'archives'>('setup');
-  const [activeInterviewMode, setActiveInterviewMode] = useState<InterviewMode>('coding');
+  const [interviewStep, setInterviewStep] = useState<'setup' | 'active' | 'feedback' | 'archive'>('setup');
   const [resumeText, setResumeText] = useState(userProfile?.interests?.join(', ') || '');
   const [jobDescription, setJobDescription] = useState('');
+  const [interviewType, setInterviewType] = useState<InterviewType>('coding');
   const [interviewFeedback, setInterviewFeedback] = useState<string | null>(null);
   const [interviewScore, setInterviewScore] = useState<number | null>(null);
-  const [interviewTimer, setInterviewTimer] = useState(1800); // 30 minutes
+  const [interviewTimer, setInterviewTimer] = useState(1800); 
+  const [pastInterviews, setPastInterviews] = useState<any[]>([]);
+  const [archiveSearch, setArchiveSearch] = useState('');
   const timerRef = useRef<any>(null);
-
-  // Archive State
-  const [archivedInterviews, setArchivedInterviews] = useState<any[]>([]);
-  const [archiveSearchQuery, setArchiveSearchQuery] = useState('');
-  const [selectedArchive, setSelectedArchive] = useState<any | null>(null);
-  const [isLoadingArchives, setIsLoadingArchives] = useState(false);
 
   // Recording State
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -291,15 +283,30 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
   const centerContainerRef = useRef<HTMLDivElement>(null);
   const activeFile = activeSlots[focusedSlot];
 
+  // Load Past Interviews
+  useEffect(() => {
+    if (currentUser) {
+        listDriveFiles(driveToken || '', driveRootId || '').then(files => {
+            setPastInterviews(files.filter(f => f.name.includes('Mock_Interview')));
+        }).catch(() => {});
+    }
+  }, [currentUser, driveToken, driveRootId]);
+
   // Tool for In-Place Editing
   const updateFileTool: FunctionDeclaration = {
     name: "update_active_file",
-    description: "Updates the content of the currently focused file in the editor.",
+    description: "Updates the content of the currently focused file in the editor. Use this whenever the user asks for code modifications, refactoring, or additions to the file they are working on.",
     parameters: {
       type: Type.OBJECT,
       properties: {
-        new_content: { type: Type.STRING, description: "The complete new content of the file." },
-        summary: { type: Type.STRING, description: "A brief summary of what you changed." }
+        new_content: {
+          type: Type.STRING,
+          description: "The complete new content of the file."
+        },
+        summary: {
+          type: Type.STRING,
+          description: "A brief summary of what you changed."
+        }
       },
       required: ["new_content"]
     }
@@ -307,11 +314,13 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
 
   const submitFeedbackTool: FunctionDeclaration = {
       name: "submit_interview_feedback",
-      description: "Submit final feedback and scoring for the mock interview.",
+      description: "Submit final feedback and scoring for the mock interview. Use this only when the interview is naturally concluded or requested by the user.",
       parameters: {
           type: Type.OBJECT,
           properties: {
               score: { type: Type.NUMBER, description: "Overall score from 0-100" },
+              strengths: { type: Type.ARRAY, items: { type: Type.STRING }, description: "Key positive points" },
+              weaknesses: { type: Type.ARRAY, items: { type: Type.STRING }, description: "Areas for improvement" },
               summary: { type: Type.STRING, description: "Detailed narrative feedback in Markdown" }
           },
           required: ["score", "summary"]
@@ -324,15 +333,18 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
           const cameraStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
           
           const canvas = document.createElement('canvas');
-          canvas.width = 1920; canvas.height = 1080;
+          canvas.width = 1920;
+          canvas.height = 1080;
           const ctx = canvas.getContext('2d');
 
           const vScreen = document.createElement('video');
-          vScreen.muted = true; vScreen.srcObject = screenStream;
+          vScreen.muted = true;
+          vScreen.srcObject = screenStream;
           await vScreen.play();
 
           const vCam = document.createElement('video');
-          vCam.muted = true; vCam.srcObject = cameraStream;
+          vCam.muted = true;
+          vCam.srcObject = cameraStream;
           await vCam.play();
 
           const draw = () => {
@@ -358,7 +370,10 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
           recorder.ondataavailable = (e) => { if(e.data.size > 0) recorderChunksRef.current.push(e.data); };
           recorder.start(1000);
           mediaRecorderRef.current = recorder;
-      } catch(e) { console.error("Failed recording start", e); }
+
+      } catch(e) {
+          console.error("Failed to start interview recording", e);
+      }
   };
 
   const stopInterviewRecordingAndSave = async () => {
@@ -371,6 +386,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
           });
           await stopPromise;
       }
+
       if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
       if (recordingStreamRef.current) recordingStreamRef.current.getTracks().forEach(t => t.stop());
 
@@ -380,33 +396,38 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
               if (!token) token = await connectGoogleDrive();
               let rootId = driveRootId;
               if (!rootId) rootId = await ensureCodeStudioFolder(token);
+              
               const videoBlob = new Blob(recorderChunksRef.current, { type: 'video/webm' });
-              const fileName = `Interview_${activeInterviewMode}_${new Date().toISOString().replace(/[:.]/g, '-')}.webm`;
+              const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+              const fileName = `Mock_Interview_${interviewType.toUpperCase()}_${timestamp}.webm`;
+              const reportName = `Mock_Interview_REPORT_${interviewType.toUpperCase()}_${timestamp}.md`;
+              
               const reader = new FileReader();
               reader.onload = async () => {
-                  await saveToDrive(token!, rootId!, fileName, reader.result as string, 'video/webm');
+                  const content = reader.result as string;
+                  await saveToDrive(token!, rootId!, fileName, content, 'video/webm');
+                  if (interviewFeedback) {
+                      await saveToDrive(token!, rootId!, reportName, `## Interview Score: ${interviewScore}/100\n\n${interviewFeedback}`, 'text/markdown');
+                  }
+                  console.log("Interview recording and report saved to Google Drive.");
               };
               reader.readAsArrayBuffer(videoBlob);
-          } catch(e) { console.error("Drive save failed", e); }
+          } catch(e) {
+              console.error("Failed to save recording to Drive", e);
+          }
       }
   };
 
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>, target: 'resume' | 'jd') => {
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>, target: 'resume' | 'jd') => {
       const file = e.target.files?.[0];
       if (!file) return;
-      const text = await file.text();
-      if (target === 'resume') setResumeText(text);
-      else setJobDescription(text);
-  };
-
-  const loadArchives = async () => {
-      if (!currentUser) return;
-      setIsLoadingArchives(true);
-      try {
-          const data = await getUserRecordings(currentUser.uid);
-          const interviews = data.filter(r => r.channelTitle?.includes('Interview') || r.mediaType?.includes('video'));
-          setArchivedInterviews(interviews);
-      } catch (e) { console.error("Archive load failed", e); } finally { setIsLoadingArchives(false); }
+      const reader = new FileReader();
+      reader.onload = (event) => {
+          const text = event.target?.result as string;
+          if (target === 'resume') setResumeText(text);
+          else setJobDescription(text);
+      };
+      reader.readAsText(file);
   };
 
   const handleSetLayout = (mode: LayoutMode) => {
@@ -438,20 +459,35 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
   const handleFormatCode = async (slotIdx: number) => {
       const file = activeSlots[slotIdx];
       if (!file || isFormattingSlots[slotIdx]) return;
+
       setIsFormattingSlots(prev => ({ ...prev, [slotIdx]: true }));
       try {
           const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-          const prompt = `Reformat the following ${file.language} code to follow best practices. Return ONLY code.\n\n${file.content}`;
-          const resp = await ai.models.generateContent({ model: 'gemini-3-flash-preview', contents: prompt });
-          handleCodeChangeInSlot(resp.text?.trim() || file.content, slotIdx);
-      } catch (e: any) { console.error(e); } finally { setIsFormattingSlots(prev => ({ ...prev, [slotIdx]: false })); }
+          const prompt = `You are an expert code formatter. Reformat the following ${file.language} code. Respond ONLY with the reformatted code.
+          CODE:
+          ${file.content}`;
+
+          const resp = await ai.models.generateContent({
+              model: 'gemini-3-flash-preview',
+              contents: prompt
+          });
+
+          const formatted = resp.text?.trim() || file.content;
+          handleCodeChangeInSlot(formatted, slotIdx);
+      } catch (e: any) {
+          console.error("Formatting failed", e);
+      } finally {
+          setIsFormattingSlots(prev => ({ ...prev, [slotIdx]: false }));
+      }
   };
 
   const updateSlotFile = async (file: CodeFile | null, slotIndex: number) => {
       const newSlots = [...activeSlots];
       newSlots[slotIndex] = file;
       setActiveSlots(newSlots);
-      if (file && isPreviewable(file.name)) setSlotViewModes(prev => ({ ...prev, [slotIndex]: 'code' }));
+      if (file && isPreviewable(file.name)) {
+          setSlotViewModes(prev => ({ ...prev, [slotIndex]: 'code' }));
+      }
       if (file && isSharedSession && sessionId) {
           updateProjectActiveFile(sessionId, file.path || file.name);
           updateCodeFile(sessionId, file);
@@ -483,7 +519,15 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
                     const text = await readDriveFile(driveToken, driveFile.id);
                     fileData = { name: driveFile.name, path: `drive://${driveFile.id}`, content: text, language: getLanguageFromExt(driveFile.name), loaded: true, isDirectory: false, isModified: false };
                 }
-          } else { fileData = node.data; }
+          } else if (activeTab === 'github') {
+                const file = node.data as CodeFile;
+                if (!file.loaded && project.github) {
+                    const content = await fetchFileContent(githubToken, project.github.owner, project.github.repo, file.path || file.name, project.github.branch);
+                    fileData = { ...file, content, loaded: true };
+                } else { fileData = file; }
+          } else {
+              fileData = node.data;
+          }
           if (fileData) updateSlotFile(fileData, focusedSlot);
       } else {
           if (activeTab === 'cloud') handleCloudToggle(node);
@@ -499,7 +543,10 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
       const newSlots = [...activeSlots];
       newSlots[slotIdx] = updatedFile;
       setActiveSlots(newSlots);
-      setProject(prev => ({ ...prev, files: prev.files.map(f => (f.path || f.name) === (file.path || f.name) ? updatedFile : f) }));
+      setProject(prev => ({
+          ...prev,
+          files: prev.files.map(f => (f.path || f.name) === (file.path || f.name) ? updatedFile : f)
+      }));
       setSaveStatus('modified');
       if (isSharedSession && sessionId) updateCodeFile(sessionId, updatedFile);
   };
@@ -549,8 +596,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
       } catch(e: any) { console.error(e); }
   };
 
-  const handleCreateWhiteboard = async (nameOverride?: string) => { 
-      const name = nameOverride || prompt("Whiteboard Name:"); if (!name) return;
+  const handleCreateWhiteboard = async () => { const name = prompt("Whiteboard Name:"); if (!name) return;
       const fileName = name.endsWith('.wb') ? name : name + '.wb';
       const content = "[]";
       try {
@@ -569,169 +615,328 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
       setIsChatThinking(true);
       try {
           const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-          const contextFiles = activeSlots.filter(f => f !== null).map(f => `File: ${f?.name}\nContent:\n${f?.content}`).join('\n\n---\n\n');
-          let systemPrompt = `You are a Senior Software Engineer helping a user in Code Studio.\nContext:\n${contextFiles}\nUser: ${input}`;
+          const activeFile = activeSlots[focusedSlot];
+          const contextFiles = activeSlots.filter(f => f !== null).map(f => `File: ${f?.name}\nLanguage: ${f?.language}\nContent:\n${f?.content}`).join('\n\n---\n\n');
+          
+          let systemPrompt = `You are a Senior Software Engineer helping a user in Code Studio.
+          Focused File: ${activeFile?.name || "None"}
+          Context:\n${contextFiles}\n
+          User: "${input}"`;
+
           if (isInterviewMode) {
-              systemPrompt = `You are an Interviewer for a ${activeInterviewMode} session.\nResume: ${resumeText}\nJD: ${jobDescription}\nContext:\n${contextFiles}\nUser: ${input}\nSubmit feedback via tool when done.`;
+              systemPrompt = `You are a Lead Engineer conducting a ${interviewType.toUpperCase()} Mock Interview.
+              RESUME: ${resumeText}
+              JD: ${jobDescription}
+              CONTEXT: ${contextFiles}`;
           }
-          const tools: any[] = [{ functionDeclarations: [updateFileTool, submitFeedbackTool] }];
-          const resp = await ai.models.generateContent({ model: 'gemini-3-flash-preview', contents: systemPrompt, config: { tools } });
+
+          const tools: any[] = [{ functionDeclarations: [updateFileTool] }];
+          if (isInterviewMode) tools[0].functionDeclarations.push(submitFeedbackTool);
+
+          const resp = await ai.models.generateContent({ 
+              model: 'gemini-3-flash-preview', 
+              contents: systemPrompt,
+              config: { tools }
+          });
+
           if (resp.functionCalls) {
               for (const fc of resp.functionCalls) {
                   if (fc.name === 'update_active_file') {
                       handleCodeChangeInSlot(fc.args.new_content, focusedSlot);
-                      setChatMessages(prev => [...prev, { role: 'ai', text: `Edit Applied: ${fc.args.summary || ''}` }]);
+                      setChatMessages(prev => [...prev, { role: 'ai', text: `✨ Edits applied to ${activeFile?.name}` }]);
                   } else if (fc.name === 'submit_interview_feedback') {
-                      setInterviewScore(fc.args.score); setInterviewFeedback(fc.args.summary); setInterviewStep('feedback');
+                      setInterviewScore(fc.args.score);
+                      setInterviewFeedback(fc.args.summary);
+                      setInterviewStep('feedback');
                       if (timerRef.current) clearInterval(timerRef.current);
                       stopInterviewRecordingAndSave();
                   }
               }
-          } else { setChatMessages(prev => [...prev, { role: 'ai', text: resp.text || "" }]); }
+          } else {
+              setChatMessages(prev => [...prev, { role: 'ai', text: resp.text || "" }]);
+          }
       } catch (e: any) { setChatMessages(prev => [...prev, { role: 'ai', text: `Error: ${e.message}` }]); } finally { setIsChatThinking(false); }
   };
 
   const handleStartInterview = async () => {
-      setInterviewStep('active'); setInterviewTimer(1800);
-      setChatMessages([{ role: 'ai', text: `Interviewer here. We are conducting a 30-minute **${activeInterviewMode.toUpperCase()}** session. Walk me through your most impactful project.` }]);
-      if (activeInterviewMode === 'system-design') handleCreateWhiteboard('Interview_Canvas');
+      setInterviewStep('active');
+      setInterviewTimer(1800); 
+      setChatMessages([{ role: 'ai', text: `Welcome. I've analyzed your background and the ${interviewType} role requirements. Let's begin the evaluation.` }]);
       await setupInterviewRecording();
       timerRef.current = setInterval(() => {
-          setInterviewTimer(t => {
-              if (t <= 1) { clearInterval(timerRef.current); handleSendMessage("Wrap up and provide feedback."); return 0; }
-              return t - 1;
-          });
+          setInterviewTimer(t => { if (t <= 1) { clearInterval(timerRef.current); handleSendMessage("Time is up."); return 0; } return t - 1; });
       }, 1000);
       setIsRightOpen(true);
   };
 
   const handleResetInterview = () => {
-      setIsInterviewMode(false); setInterviewStep('setup'); setInterviewFeedback(null); setInterviewScore(null);
+      setIsInterviewMode(false);
+      setInterviewStep('setup');
+      setInterviewFeedback(null);
+      setInterviewScore(null);
       if (timerRef.current) clearInterval(timerRef.current);
-      if (mediaRecorderRef.current) stopInterviewRecordingAndSave();
   };
 
   const formatTime = (seconds: number) => {
-      const m = Math.floor(seconds / 60); const s = seconds % 60;
+      const m = Math.floor(seconds / 60);
+      const s = seconds % 60;
       return `${m}:${s.toString().padStart(2, '0')}`;
   };
 
   const cloudTree = useMemo(() => {
-      const freshRoot: TreeNode[] = []; const freshMap = new Map<string, TreeNode>();
+      const freshRoot: TreeNode[] = [];
+      const freshMap = new Map<string, TreeNode>();
       cloudItems.forEach(item => freshMap.set(item.fullPath, { id: item.fullPath, name: item.name, type: item.isFolder ? 'folder' : 'file', data: item, children: [], isLoaded: true }));
       cloudItems.forEach(item => { const node = freshMap.get(item.fullPath)!; const parts = item.fullPath.split('/'); parts.pop(); const parentPath = parts.join('/'); if (freshMap.has(parentPath)) { freshMap.get(parentPath)!.children.push(node); } else { freshRoot.push(node); } });
       return freshRoot;
   }, [cloudItems]);
 
+  const workspaceTree = useMemo(() => {
+      const root: TreeNode[] = [];
+      const map = new Map<string, TreeNode>();
+      const repoFiles = Array.isArray(project.files) ? project.files : [];
+      repoFiles.forEach(f => { const path = f.path || f.name; map.set(path, { id: path, name: f.name.split('/').pop()!, type: f.isDirectory ? 'folder' : 'file', data: f, children: [], status: f.isModified ? 'modified' : undefined }); });
+      repoFiles.forEach(f => { const path = f.path || f.name; const node = map.get(path)!; const parts = path.split('/'); if (parts.length === 1) root.push(node); else { const parent = map.get(parts.slice(0, -1).join('/')); if (parent) parent.children.push(node); else root.push(node); } });
+      return root;
+  }, [project.files]);
+
   const driveTree = useMemo(() => {
-      const root: TreeNode[] = []; const map = new Map<string, TreeNode>();
-      driveItems.forEach(item => { map.set(item.id, { id: item.id, name: item.name, type: item.mimeType === 'application/vnd.google-apps.folder' ? 'folder' : 'file', data: item, children: [], isLoaded: item.isLoaded }); });
-      driveItems.forEach(item => { const node = map.get(item.id)!; if (item.parentId && map.has(item.parentId)) { map.get(item.parentId)!.children.push(node); } else if (!item.parentId) { root.push(node); } });
+      const root: TreeNode[] = [];
+      const map = new Map<string, TreeNode>();
+      driveItems.forEach(item => {
+          map.set(item.id, {
+              id: item.id,
+              name: item.name,
+              type: item.mimeType === 'application/vnd.google-apps.folder' ? 'folder' : 'file',
+              data: item,
+              children: [],
+              isLoaded: item.isLoaded
+          });
+      });
+      driveItems.forEach(item => {
+          const node = map.get(item.id)!;
+          if (item.parentId && map.has(item.parentId)) map.get(item.parentId)!.children.push(node);
+          else if (!item.parentId) root.push(node);
+      });
       return root;
   }, [driveItems]);
 
-  const filteredArchives = useMemo(() => {
-      if (!archiveSearchQuery.trim()) return archivedInterviews;
-      const q = archiveSearchQuery.toLowerCase();
-      return archivedInterviews.filter(r => r.channelTitle?.toLowerCase().includes(q) || new Date(r.timestamp).toLocaleDateString().includes(q));
-  }, [archivedInterviews, archiveSearchQuery]);
+  const refreshExplorer = async () => {
+      if (activeTab === 'cloud' && currentUser) await refreshCloudPath(`projects/${currentUser.uid}`);
+      else if (activeTab === 'drive' && driveToken && driveRootId) {
+          const files = await listDriveFiles(driveToken, driveRootId);
+          setDriveItems([{ id: driveRootId, name: 'CodeStudio', mimeType: 'application/vnd.google-apps.folder', isLoaded: true }, ...files.map(f => ({ ...f, parentId: driveRootId, isLoaded: false }))]);
+      }
+  };
+
+  const handleOpenRepo = async (repoPath?: string) => {
+    const path = repoPath || userProfile?.defaultRepoUrl;
+    if (!path) return alert("No default repository set.");
+    const [owner, repo] = path.split('/');
+    if (!owner || !repo) return alert("Invalid repository format.");
+    setLoadingFolders(prev => ({ ...prev, github_root: true }));
+    try {
+        const info = await fetchRepoInfo(owner, repo, githubToken);
+        const { files, latestSha } = await fetchRepoContents(githubToken, owner, repo, info.default_branch);
+        setProject({ id: `gh-${info.id}`, name: info.full_name, files: files, lastModified: Date.now(), github: { owner, repo, branch: info.default_branch, sha: latestSha } });
+        setActiveTab('github');
+    } catch (e: any) { alert(e.message); } finally { setLoadingFolders(prev => ({ ...prev, github_root: false })); }
+  };
+
+  useEffect(() => { if (activeTab === 'cloud' && currentUser) refreshExplorer(); }, [activeTab, currentUser]);
 
   const renderSlot = (idx: number) => {
-      const file = activeSlots[idx]; const isFocused = focusedSlot === idx; const isVisible = layoutMode === 'single' ? idx === 0 : (layoutMode === 'quad' ? true : idx < 2);
+      const file = activeSlots[idx];
+      const isFocused = focusedSlot === idx;
+      const viewMode = slotViewModes[idx] || 'code';
+      const isVisible = layoutMode === 'single' ? idx === 0 : (layoutMode === 'quad' ? true : idx < 2);
       if (!isVisible) return null;
+      const slotStyle: React.CSSProperties = {};
+      if (layoutMode === 'split-v' || layoutMode === 'split-h') {
+          const size = idx === 0 ? `${innerSplitRatio}%` : `${100 - innerSplitRatio}%`;
+          if (layoutMode === 'split-v') slotStyle.width = size; else slotStyle.height = size;
+          slotStyle.flex = 'none';
+      }
       return (
-          <div key={idx} onClick={() => setFocusedSlot(idx)} className={`flex flex-col min-w-0 border ${isFocused ? 'border-indigo-500 shadow-xl z-10' : 'border-slate-800'} relative bg-slate-950 flex-1`}>
+          <div key={idx} onClick={() => setFocusedSlot(idx)} style={slotStyle} className={`flex flex-col min-w-0 border ${isFocused ? 'border-indigo-500 z-10 shadow-lg' : 'border-slate-800'} relative transition-all overflow-hidden bg-slate-950 flex-1`}>
               {file ? (
                   <>
-                    <div className="px-4 py-2 flex items-center justify-between bg-slate-900 border-b border-slate-800">
-                        <div className="flex items-center gap-2"><FileIcon filename={file.name} /><span className="text-xs font-bold text-slate-300">{file.name}</span></div>
-                        <button onClick={() => updateSlotFile(null, idx)}><X size={14}/></button>
+                    <div className={`px-4 py-2 flex items-center justify-between shrink-0 border-b ${isFocused ? 'bg-indigo-900/20' : 'bg-slate-900'}`}>
+                        <div className="flex items-center gap-2 overflow-hidden">
+                            <FileIcon filename={file.name} />
+                            <span className={`text-xs font-bold truncate ${isFocused ? 'text-indigo-200' : 'text-slate-400'}`}>{file.name}</span>
+                        </div>
+                        <div className="flex items-center gap-1">
+                            {isPreviewable(file.name) && (
+                                <button onClick={(e) => { e.stopPropagation(); toggleSlotViewMode(idx); }} className={`p-1.5 rounded ${viewMode === 'preview' ? 'bg-indigo-600 text-white' : 'text-slate-500'}`}><Code size={14}/></button>
+                            )}
+                            <button onClick={(e) => { e.stopPropagation(); updateSlotFile(null, idx); }} className="p-1.5 text-slate-500 hover:text-white"><X size={14}/></button>
+                        </div>
                     </div>
                     <div className="flex-1 overflow-hidden">
-                        {getLanguageFromExt(file.name) === 'whiteboard' ? <Whiteboard initialData={file.content} onDataChange={(c) => handleCodeChangeInSlot(c, idx)} disableAI /> : <RichCodeEditor code={file.content} onChange={(c: string) => handleCodeChangeInSlot(c, idx)} language={file.language} fontSize={fontSize} indentMode={indentMode} />}
+                        {viewMode === 'preview' ? <MarkdownView content={file.content} /> : <RichCodeEditor code={file.content} onChange={(code: string) => handleCodeChangeInSlot(code, idx)} language={file.language} fontSize={fontSize} indentMode={indentMode} />}
                     </div>
                   </>
-              ) : <div className="flex-1 flex items-center justify-center text-slate-800">Pane {idx + 1}</div>}
+              ) : (
+                  <div className="flex-1 flex flex-col items-center justify-center text-slate-700 bg-slate-950/50 border-2 border-dashed border-slate-800 m-4 rounded-xl cursor-pointer hover:border-slate-600">
+                      <Plus size={32} className="opacity-20 mb-2" />
+                      <p className="text-xs font-bold uppercase">Pane {idx + 1}</p>
+                  </div>
+              )}
           </div>
       );
   };
 
   return (
-    <div className="flex flex-col h-full bg-slate-950 text-slate-100 overflow-hidden font-sans">
+    <div className="flex flex-col h-full bg-slate-950 text-slate-100 overflow-hidden relative">
       <header className="h-14 bg-slate-950 border-b border-slate-800 flex items-center justify-between px-4 shrink-0 z-20">
          <div className="flex items-center space-x-4">
-            <button onClick={onBack} className="p-2 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white"><ArrowLeft size={20} /></button>
-            <button onClick={() => setIsLeftOpen(!isLeftOpen)} className={`p-2 rounded-lg ${isLeftOpen ? 'bg-slate-800 text-white' : 'text-slate-400'}`}>{isLeftOpen ? <PanelLeftClose size={20} /> : <PanelLeftOpen size={20} />}</button>
+            <button onClick={onBack} className="p-2 hover:bg-slate-800 rounded-lg text-slate-400"><ArrowLeft size={20} /></button>
+            <button onClick={() => setIsLeftOpen(!isLeftOpen)} className={`p-2 rounded-lg ${isLeftOpen ? 'bg-slate-800 text-white' : 'text-slate-400'}`}><PanelLeftClose size={20} /></button>
             <h1 className="font-bold text-white text-sm flex items-center gap-2">
                 {isInterviewMode ? <UserCheck className="text-emerald-400" size={18}/> : <Code className="text-indigo-400" size={18}/>}
                 {isInterviewMode ? 'Interview Studio' : project.name}
             </h1>
          </div>
          <div className="flex items-center space-x-2">
-            {!isInterviewMode ? <button onClick={() => setIsInterviewMode(true)} className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold animate-pulse">Mock Interview</button> : <div className="flex items-center gap-3"><div className="bg-slate-900 px-3 py-1 rounded-full border border-red-500/50"><span className="text-xs font-mono text-red-400">{formatTime(interviewTimer)}</span></div><button onClick={handleResetInterview} className="text-xs text-slate-400 hover:text-white font-bold">Exit Mode</button></div>}
-            <div className="flex bg-slate-900 p-1 rounded-lg border border-slate-800 mr-2"><button onClick={() => handleSetLayout('single')} className={`p-1.5 rounded ${layoutMode==='single' ? 'bg-indigo-600' : ''}`}><SquareIcon size={16}/></button><button onClick={() => handleSetLayout('split-v')} className={`p-1.5 rounded ${layoutMode==='split-v' ? 'bg-indigo-600' : ''}`}><Columns size={16}/></button></div>
-            <button onClick={() => handleSmartSave()} className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold shadow-md"><Save size={14}/></button>
-            <button onClick={() => setIsRightOpen(!isRightOpen)} className={`p-2 rounded-lg ${isRightOpen ? 'bg-slate-800 text-white' : 'text-slate-500'}`}><PanelRightOpen size={20} /></button>
+            {!isInterviewMode ? (
+                <button onClick={() => setIsInterviewMode(true)} className="flex items-center space-x-2 px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold shadow-md mr-4 animate-pulse"><UserCheck size={14}/><span>Mock Interview</span></button>
+            ) : (
+                <div className="flex items-center gap-4 mr-4">
+                    <div className="flex items-center gap-2 bg-slate-900 px-3 py-1 rounded-full border border-slate-800">
+                        <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse"></div>
+                        <span className="text-xs font-mono text-red-400">{formatTime(interviewTimer)}</span>
+                    </div>
+                    <button onClick={() => setInterviewStep('archive')} className="p-2 hover:bg-slate-800 rounded text-slate-400"><History size={16}/></button>
+                    <button onClick={handleResetInterview} className="text-xs text-slate-400 hover:text-white font-bold">Exit</button>
+                </div>
+            )}
+            <button onClick={() => handleSmartSave()} className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold shadow-md mr-2"><Save size={14}/><span>Save</span></button>
+            <button onClick={() => setIsRightOpen(!isRightOpen)} className={`p-2 rounded-lg ${isRightOpen ? 'bg-slate-800 text-white' : 'text-slate-400'}`}><PanelRightClose size={20} /></button>
          </div>
       </header>
 
       <div className="flex-1 flex overflow-hidden relative">
-          <div className={`${isLeftOpen ? '' : 'hidden'} bg-slate-900 border-r border-slate-800 flex flex-col shrink-0`} style={{ width: `${leftWidth}px` }}>
-              <div className="flex border-b border-slate-800 bg-slate-900"><button onClick={() => setActiveTab('cloud')} className={`flex-1 py-3 text-xs font-bold ${activeTab==='cloud' ? 'text-white border-b-2 border-indigo-500' : 'text-slate-500'}`}>CLOUD</button><button onClick={() => setActiveTab('drive')} className={`flex-1 py-3 text-xs font-bold ${activeTab==='drive' ? 'text-white border-b-2 border-indigo-500' : 'text-slate-500'}`}>DRIVE</button></div>
+          <div className={`${isLeftOpen ? '' : 'hidden'} bg-slate-900 border-r border-slate-800 flex flex-col shrink-0 overflow-hidden`} style={{ width: `${leftWidth}px` }}>
+              <div className="flex border-b border-slate-800 bg-slate-900">
+                  <button onClick={() => setActiveTab('cloud')} className={`flex-1 py-3 flex justify-center border-b-2 transition-colors ${activeTab === 'cloud' ? 'border-indigo-500 text-white' : 'border-transparent text-slate-500'}`}><Cloud size={16}/></button>
+                  <button onClick={() => setActiveTab('drive')} className={`flex-1 py-3 flex justify-center border-b-2 transition-colors ${activeTab === 'drive' ? 'border-indigo-500 text-white' : 'border-transparent text-slate-500'}`}><HardDrive size={16}/></button>
+                  <button onClick={() => setActiveTab('github')} className={`flex-1 py-3 flex justify-center border-b-2 transition-colors ${activeTab === 'github' ? 'border-indigo-500 text-white' : 'border-transparent text-slate-500'}`}><Github size={16}/></button>
+              </div>
               <div className="flex-1 overflow-y-auto">
-                  {activeTab === 'cloud' && cloudTree.map(node => <FileTreeItem key={node.id} node={node} depth={0} activeId={activeFile?.path} onSelect={handleExplorerSelect} onToggle={handleCloudToggle} expandedIds={expandedFolders} loadingIds={loadingFolders}/>)}
-                  {activeTab === 'drive' && (driveToken ? driveTree.map(node => <FileTreeItem key={node.id} node={node} depth={0} activeId={activeFile?.path} onSelect={handleExplorerSelect} onToggle={handleDriveToggle} expandedIds={expandedFolders} loadingIds={loadingFolders}/>) : <div className="p-4"><button onClick={handleConnectDrive} className="w-full py-2 bg-slate-800 text-white rounded text-xs">Connect Drive</button></div>)}
+                  {activeTab === 'cloud' && cloudTree.map(node => <FileTreeItem key={node.id} node={node} depth={0} activeId={activeFile?.path} onSelect={handleExplorerSelect} onToggle={handleCloudToggle} expandedIds={expandedFolders} loadingIds={loadingFolders} />)}
+                  {activeTab === 'drive' && (driveToken ? driveTree.map(node => <FileTreeItem key={node.id} node={node} depth={0} activeId={activeFile?.path} onSelect={handleExplorerSelect} onToggle={handleDriveToggle} expandedIds={expandedFolders} loadingIds={loadingFolders} />) : <div className="p-4 text-center"><button onClick={handleConnectDrive} className="px-4 py-2 bg-slate-800 text-white text-xs font-bold rounded-lg border border-slate-700">Connect Drive</button></div>)}
               </div>
           </div>
 
-          <div className="flex-1 bg-slate-950 flex flex-col relative min-w-0">
+          <div onMouseDown={() => setIsDraggingLeft(true)} className="w-1 cursor-col-resize hover:bg-indigo-500/50 shrink-0 bg-slate-800/20"></div>
+
+          <div ref={centerContainerRef} className={`flex-1 bg-slate-950 flex min-w-0 relative ${layoutMode === 'quad' ? 'grid grid-cols-2 grid-rows-2' : layoutMode === 'split-v' ? 'flex-row' : 'flex-col'}`}>
+              
               {isInterviewMode && interviewStep === 'setup' && (
                   <div className="absolute inset-0 z-50 bg-slate-950 flex items-center justify-center p-8 overflow-y-auto">
-                      <div className="max-w-2xl w-full bg-slate-900 border border-slate-800 rounded-3xl p-10 shadow-2xl space-y-6 animate-fade-in-up">
-                          <div className="flex justify-between items-center"><div className="flex items-center gap-4"><div className="p-3 bg-emerald-500/20 rounded-2xl text-emerald-400"><UserCheck size={32} /></div><div><h2 className="text-2xl font-black text-white">Interview Config</h2><p className="text-slate-400 text-sm">Automated recording & AI scoring.</p></div></div><button onClick={() => { setInterviewStep('archives'); loadArchives(); }} className="flex items-center gap-2 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-bold border border-slate-700"><History size={14}/><span>Archive</span></button></div>
-                          <div className="grid grid-cols-3 gap-2">{(['coding', 'system-design', 'behavioral'] as InterviewMode[]).map(m => (<button key={m} onClick={() => setActiveInterviewMode(m)} className={`py-3 rounded-xl border text-xs font-bold capitalize transition-all ${activeInterviewMode === m ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-slate-800 border-slate-700 text-slate-500'}`}>{m.replace('-', ' ')}</button>))}</div>
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                              <div className="space-y-2"><label className="text-[10px] font-bold text-slate-500 uppercase flex items-center gap-2"><FileUser size={12}/> Resume</label><div className="relative"><textarea value={resumeText} onChange={e => setResumeText(e.target.value)} placeholder="Paste resume..." className="w-full h-40 bg-slate-950 border border-slate-800 rounded-xl p-4 text-xs text-slate-300 outline-none focus:border-emerald-500"/><label className="absolute bottom-2 right-2 p-2 bg-slate-800 rounded-lg cursor-pointer"><Upload size={14}/><input type="file" className="hidden" accept=".txt,.md" onChange={e => handleFileUpload(e, 'resume')}/></label></div></div>
-                              <div className="space-y-2"><label className="text-[10px] font-bold text-slate-500 uppercase flex items-center gap-2"><Briefcase size={12}/> Job Description</label><div className="relative"><textarea value={jobDescription} onChange={e => setJobDescription(e.target.value)} placeholder="Paste JD..." className="w-full h-40 bg-slate-950 border border-slate-800 rounded-xl p-4 text-xs text-slate-300 outline-none focus:border-indigo-500"/><label className="absolute bottom-2 right-2 p-2 bg-slate-800 rounded-lg cursor-pointer"><Upload size={14}/><input type="file" className="hidden" accept=".txt,.md" onChange={e => handleFileUpload(e, 'jd')}/></label></div></div>
+                      <div className="max-w-2xl w-full bg-slate-900 border border-slate-800 rounded-[2rem] p-10 shadow-2xl space-y-8 animate-fade-in-up">
+                          <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-4">
+                                  <div className="p-3 bg-emerald-500/20 rounded-2xl text-emerald-400"><UserCheck size={32} /></div>
+                                  <div><h2 className="text-2xl font-black text-white">Interview Prep</h2><p className="text-slate-400 text-sm">Configure your tailored mock interview session.</p></div>
+                              </div>
+                              <button onClick={() => setInterviewStep('archive')} className="p-2 bg-slate-800 hover:bg-slate-700 rounded-lg text-slate-300 flex items-center gap-2 text-xs font-bold"><History size={16}/> Archive</button>
                           </div>
-                          <div className="flex gap-4"><button onClick={handleResetInterview} className="flex-1 py-4 bg-slate-800 text-slate-300 font-bold rounded-2xl">Cancel</button><button onClick={handleStartInterview} className="flex-[2] py-4 bg-emerald-600 hover:bg-emerald-500 text-white font-black rounded-2xl shadow-xl flex items-center justify-center gap-2"><Play size={20} fill="currentColor"/><span>Start 30-Min Session</span></button></div>
+                          
+                          <div className="space-y-4">
+                              <label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-2"><Sparkles size={14}/> Interview Type</label>
+                              <div className="grid grid-cols-3 gap-2">
+                                  {['coding', 'system-design', 'behavior'].map(t => (
+                                      <button key={t} onClick={() => setInterviewType(t as InterviewType)} className={`py-3 rounded-xl border text-xs font-bold capitalize transition-all ${interviewType === t ? 'bg-indigo-600 border-indigo-500 text-white shadow-lg' : 'bg-slate-800 border-slate-700 text-slate-400'}`}>{t.replace('-', ' ')}</button>
+                                  ))}
+                              </div>
+                          </div>
+
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                              <div className="space-y-3">
+                                  <div className="flex justify-between items-center"><label className="text-xs font-bold text-slate-500 uppercase">Your Resume</label><label className="text-[10px] text-indigo-400 hover:underline cursor-pointer flex items-center gap-1"><FileUp size={10}/> Upload PDF/TXT <input type="file" className="hidden" onChange={e => handleFileUpload(e, 'resume')}/></label></div>
+                                  <textarea value={resumeText} onChange={e => setResumeText(e.target.value)} placeholder="Paste resume or upload file..." className="w-full h-40 bg-slate-950 border border-slate-800 rounded-xl p-4 text-sm text-slate-300 outline-none focus:border-emerald-500 resize-none"/>
+                              </div>
+                              <div className="space-y-3">
+                                  <div className="flex justify-between items-center"><label className="text-xs font-bold text-slate-500 uppercase">Job Description</label><label className="text-[10px] text-indigo-400 hover:underline cursor-pointer flex items-center gap-1"><FileUp size={10}/> Upload <input type="file" className="hidden" onChange={e => handleFileUpload(e, 'jd')}/></label></div>
+                                  <textarea value={jobDescription} onChange={e => setJobDescription(e.target.value)} placeholder="Paste job details..." className="w-full h-40 bg-slate-950 border border-slate-800 rounded-xl p-4 text-sm text-slate-300 outline-none focus:border-indigo-500 resize-none"/>
+                              </div>
+                          </div>
+
+                          <div className="flex gap-4">
+                              <button onClick={handleResetInterview} className="flex-1 py-4 bg-slate-800 text-slate-300 font-bold rounded-2xl">Cancel</button>
+                              <button onClick={handleStartInterview} className="flex-[2] py-4 bg-emerald-600 hover:bg-emerald-500 text-white font-black rounded-2xl shadow-xl flex items-center justify-center gap-2"><Play size={20} fill="currentColor"/><span>Start Session</span></button>
+                          </div>
                       </div>
                   </div>
               )}
 
-              {isInterviewMode && interviewStep === 'archives' && (
-                  <div className="absolute inset-0 z-50 bg-slate-950 flex flex-col items-center p-8 overflow-hidden">
-                      <div className="max-w-4xl w-full bg-slate-900 border border-slate-800 rounded-3xl shadow-2xl flex flex-col h-full overflow-hidden animate-fade-in-up">
-                          <div className="p-6 border-b border-slate-800 flex justify-between items-center bg-slate-950/50"><div className="flex items-center gap-3"><button onClick={() => setInterviewStep('setup')} className="p-2 hover:bg-slate-800 rounded-full text-slate-400"><ArrowLeft size={20} /></button><h2 className="text-xl font-bold text-white flex items-center gap-2"><History className="text-indigo-400"/> Interview Archives</h2></div><div className="relative"><Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500"/><input type="text" value={archiveSearchQuery} onChange={e => setArchiveSearchQuery(e.target.value)} placeholder="Search role or date..." className="bg-slate-950 border border-slate-700 rounded-lg pl-9 pr-4 py-1.5 text-xs text-white outline-none w-64"/></div></div>
-                          <div className="flex-1 overflow-y-auto p-6 space-y-4">{isLoadingArchives ? <div className="flex flex-col items-center justify-center h-full"><Loader2 className="animate-spin" size={32}/><span className="mt-2 text-sm">Scanning recordings...</span></div> : filteredArchives.length === 0 ? <div className="flex flex-col items-center justify-center h-full text-slate-600"><History size={48} className="opacity-10"/><p className="mt-2">No recordings found.</p></div> : filteredArchives.map(rec => (<div key={rec.id} onClick={() => setSelectedArchive(rec)} className="bg-slate-800/50 border border-slate-700 hover:border-indigo-500 rounded-2xl p-4 flex items-center justify-between group cursor-pointer"><div className="flex items-center gap-4"><div className="w-12 h-12 bg-indigo-900/30 rounded-xl flex items-center justify-center text-indigo-400"><VideoIcon size={20}/></div><div><h3 className="font-bold text-white group-hover:text-indigo-300">{rec.channelTitle}</h3><p className="text-xs text-slate-500">{new Date(rec.timestamp).toLocaleDateString()} • {new Date(rec.timestamp).toLocaleTimeString()}</p></div></div><button className="px-4 py-1.5 bg-slate-900 text-slate-300 rounded-lg text-[10px] font-black uppercase tracking-widest border border-slate-700 group-hover:bg-indigo-600 group-hover:text-white transition-all">Review Report</button></div>))}</div>
-                      </div>
-                  </div>
-              )}
-
-              {selectedArchive && (
-                  <div className="absolute inset-0 z-[60] bg-slate-950 flex flex-col items-center p-8 overflow-hidden animate-fade-in">
-                      <div className="max-w-5xl w-full bg-slate-900 border border-slate-800 rounded-3xl shadow-2xl flex flex-col h-full overflow-hidden">
-                          <div className="p-4 border-b border-slate-800 flex justify-between items-center bg-slate-950/80"><div className="flex items-center gap-3"><button onClick={() => setSelectedArchive(null)} className="p-2 hover:bg-slate-800 rounded-full text-slate-400"><ArrowLeft size={20} /></button><h2 className="font-bold text-white">{selectedArchive.channelTitle}</h2></div><button onClick={() => setSelectedArchive(null)} className="text-slate-500 hover:text-white"><X size={20}/></button></div>
-                          <div className="flex-1 flex overflow-hidden"><div className="flex-[3] bg-black relative border-r border-slate-800"><video src={selectedArchive.mediaUrl} controls className="w-full h-full object-contain"/><div className="absolute top-4 left-4 bg-red-600/80 text-white px-2 py-1 rounded text-[10px] font-black uppercase tracking-tighter">Recording</div></div><div className="flex-[2] flex flex-col bg-slate-900 overflow-hidden"><div className="p-4 border-b border-slate-800 bg-slate-950/40 flex justify-between items-center"><h3 className="text-sm font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2"><FileTextIcon size={14}/> Interview Report</h3></div><div className="flex-1 overflow-y-auto p-6 scrollbar-thin"><div className="mb-6 p-4 bg-indigo-600/10 border border-indigo-500/20 rounded-2xl flex items-center justify-between"><div><p className="text-[10px] text-indigo-400 font-bold uppercase">Candidate Score</p><p className="text-4xl font-black text-white">84<span className="text-sm text-indigo-500 font-bold">/100</span></p></div><Trophy size={40} className="text-indigo-500 opacity-40"/></div><div className="prose prose-invert prose-sm max-w-none"><MarkdownView content={`### Performance Summary\nDemonstrated strong reasoning in algorithmic design. Communication was clear and concise.\n\n### Strengths\n- Optimal Time Complexity identified early.\n- Clean code implementation.\n\n### Growth Areas\n- Needs to test edge cases before declaring finish.\n- Could explain trade-offs of the chosen approach more deeply.`}/></div></div></div></div>
-                      </div>
-                  </div>
-              )}
-
-              {interviewStep === 'feedback' && (
+              {isInterviewMode && interviewStep === 'archive' && (
                   <div className="absolute inset-0 z-50 bg-slate-950 flex items-center justify-center p-8 overflow-y-auto">
-                      <div className="max-w-3xl w-full bg-slate-900 border border-slate-800 rounded-3xl p-10 shadow-2xl space-y-8 animate-fade-in-up">
-                          <div className="flex justify-between items-start"><div className="flex items-center gap-4"><div className="p-4 bg-emerald-500 text-white rounded-2xl shadow-xl"><Trophy size={32} /></div><div><h2 className="text-2xl font-black text-white">Interview Report</h2><p className="text-slate-400 text-sm">Session saved to GDrive Archive.</p></div></div><div className="text-right"><div className="text-5xl font-black text-emerald-400">{interviewScore}</div><div className="text-[10px] font-bold text-slate-500 uppercase">Score</div></div></div>
-                          <div className="bg-slate-950 p-8 rounded-2xl border border-slate-800 max-h-96 overflow-y-auto"><MarkdownView content={interviewFeedback || ""} /></div>
-                          <button onClick={handleResetInterview} className="w-full py-4 bg-indigo-600 text-white font-black rounded-2xl">Return to Studio</button>
+                      <div className="max-w-4xl w-full bg-slate-900 border border-slate-800 rounded-[2rem] p-10 shadow-2xl flex flex-col max-h-[80vh]">
+                          <div className="flex justify-between items-center mb-6">
+                              <h2 className="text-2xl font-black text-white flex items-center gap-2"><History className="text-indigo-400"/> Interview History</h2>
+                              <button onClick={() => setInterviewStep('setup')} className="p-2 text-slate-400 hover:text-white"><X/></button>
+                          </div>
+                          <div className="relative mb-6">
+                              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={16}/>
+                              <input type="text" value={archiveSearch} onChange={e => setArchiveSearch(e.target.value)} placeholder="Search reports..." className="w-full bg-slate-950 border border-slate-800 rounded-xl py-3 pl-10 pr-4 text-sm text-white focus:border-indigo-500 outline-none"/>
+                          </div>
+                          <div className="flex-1 overflow-y-auto space-y-2 pr-2 scrollbar-thin">
+                              {pastInterviews.filter(i => i.name.toLowerCase().includes(archiveSearch.toLowerCase())).map(i => (
+                                  <div key={i.id} className="bg-slate-800/50 border border-slate-700 p-4 rounded-xl flex items-center justify-between hover:bg-slate-800 transition-colors cursor-pointer group">
+                                      <div className="flex items-center gap-4">
+                                          <div className="p-2 bg-indigo-500/10 text-indigo-400 rounded-lg"><FileTextIcon size={20}/></div>
+                                          <div>
+                                              <p className="text-sm font-bold text-slate-200">{i.name.replace('Mock_Interview_', '').replace('.webm', '').replace('.md', '')}</p>
+                                              <p className="text-[10px] text-slate-500 uppercase tracking-widest">Recorded Session</p>
+                                          </div>
+                                      </div>
+                                      <button className="p-2 bg-slate-900 rounded-lg text-indigo-400 opacity-0 group-hover:opacity-100 transition-opacity"><Play size={16}/></button>
+                                  </div>
+                              ))}
+                              {pastInterviews.length === 0 && <div className="text-center py-20 text-slate-600 italic">No past sessions found in your Drive.</div>}
+                          </div>
                       </div>
                   </div>
               )}
 
-              <div className={`flex-1 flex ${layoutMode === 'split-v' ? 'flex-row' : 'flex-col'}`}>
-                  {renderSlot(0)}
-                  {layoutMode !== 'single' && renderSlot(1)}
-              </div>
+              {isInterviewMode && interviewStep === 'feedback' && (
+                  <div className="absolute inset-0 z-50 bg-slate-950 flex items-center justify-center p-8 overflow-y-auto">
+                      <div className="max-w-3xl w-full bg-slate-900 border border-slate-800 rounded-[2rem] p-10 shadow-2xl space-y-8 animate-fade-in-up">
+                          <div className="flex justify-between items-start">
+                              <div className="flex items-center gap-4">
+                                  <div className="p-4 bg-emerald-500 text-white rounded-3xl"><Trophy size={32} /></div>
+                                  <div><h2 className="text-3xl font-black text-white">Evaluation Report</h2><p className="text-slate-400">Generated by Neural Interviewer.</p></div>
+                              </div>
+                              <div className="text-right"><div className="text-5xl font-black text-emerald-400">{interviewScore}</div><div className="text-[10px] font-bold text-slate-500 uppercase">Score</div></div>
+                          </div>
+                          <div className="bg-slate-950/50 rounded-2xl p-8 border border-slate-800 prose prose-invert max-w-none"><MarkdownView content={interviewFeedback || ""} /></div>
+                          <div className="flex gap-4"><button onClick={handleResetInterview} className="flex-1 py-4 bg-indigo-600 text-white font-black rounded-2xl">Start New Round</button></div>
+                      </div>
+                  </div>
+              )}
+
+              {layoutMode === 'single' && renderSlot(0)}
+              {layoutMode === 'split-v' && (
+                  <>
+                    {renderSlot(0)}
+                    <div onMouseDown={() => setIsDraggingInner(true)} className="w-1.5 cursor-col-resize hover:bg-indigo-500/50 z-40 bg-slate-800 group relative flex-shrink-0"><div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 bg-indigo-500 p-1 rounded-full"><GripVertical size={12}/></div></div>
+                    {renderSlot(1)}
+                  </>
+              )}
+              {layoutMode === 'split-h' && (
+                  <>
+                    {renderSlot(0)}
+                    <div onMouseDown={() => setIsDraggingInner(true)} className="h-1.5 cursor-row-resize hover:bg-indigo-500/50 z-40 bg-slate-800 group relative flex-shrink-0"><div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 bg-indigo-500 p-1 rounded-full"><GripHorizontal size={12}/></div></div>
+                    {renderSlot(1)}
+                  </>
+              )}
+              {layoutMode === 'quad' && [0,1,2,3].map(i => renderSlot(i))}
           </div>
+
+          <div onMouseDown={() => setIsDraggingRight(true)} className="w-1 cursor-col-resize hover:bg-indigo-500/50 shrink-0 bg-slate-800/20"></div>
 
           <div className={`${isRightOpen ? '' : 'hidden'} bg-slate-950 flex flex-col shrink-0 overflow-hidden`} style={{ width: `${rightWidth}px` }}>
               <AIChatPanel isOpen={true} onClose={() => setIsRightOpen(false)} messages={chatMessages} onSendMessage={handleSendMessage} isThinking={isChatThinking} />
