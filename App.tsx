@@ -1,11 +1,10 @@
-
 import React, { useState, useEffect, useMemo } from 'react';
 import { Channel, ViewState, UserProfile, TranscriptItem, SubscriptionTier } from './types';
 import { 
   Podcast, Mic, Layout, Search, Sparkles, LogOut, 
   Settings, Menu, X, Plus, Github, Database, Cloud, Globe, 
   Calendar, Briefcase, Users, Disc, FileText, AlertTriangle, List, BookOpen, ChevronDown, Table as TableIcon, LayoutGrid, Rocket, Code, Wand2, PenTool, Rss, Loader2, MessageSquare,
-  Home, Video as VideoIcon, Inbox, User, PlusSquare, ArrowLeft, Play, Book, Gift, Square, Shield, RefreshCw, AppWindow
+  Home, Video as VideoIcon, Inbox, User, PlusSquare, ArrowLeft, Play, Book, Gift, Square, Shield, RefreshCw, AppWindow, Smartphone
 } from 'lucide-react';
 import { LiveSession } from './components/LiveSession';
 import { PodcastDetail } from './components/PodcastDetail';
@@ -146,6 +145,10 @@ const App: React.FC = () => {
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
 
+  // Install Prompt State
+  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+  const [showInstallBanner, setShowInstallBanner] = useState(false);
+
   // Privacy Policy Public View
   const [isPrivacyOpen, setIsPrivacyOpen] = useState(false);
 
@@ -225,6 +228,53 @@ const App: React.FC = () => {
   const handleSetViewState = (newState: ExtendedViewState) => {
     stopAllPlatformAudio(`Navigation:${viewState}->${newState}`);
     setViewState(newState);
+  };
+
+  useEffect(() => {
+    // PWA Install Prompt handling
+    const handleBeforeInstallPrompt = (e: any) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+      // Only show banner if on mobile and not already installed
+      if (window.innerWidth < 768 && !window.matchMedia('(display-mode: standalone)').matches) {
+        setShowInstallBanner(true);
+      }
+    };
+
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    
+    // Check if running as PWA
+    if (window.matchMedia('(display-mode: standalone)').matches) {
+      setShowInstallBanner(false);
+    } else if (window.innerWidth < 768) {
+      // For iOS which doesn't support beforeinstallprompt, we show instructions
+      const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
+      if (isIOS) {
+        const hasDismissed = localStorage.getItem('pwa_banner_dismissed');
+        if (!hasDismissed) setShowInstallBanner(true);
+      }
+    }
+
+    return () => window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+  }, []);
+
+  const handleInstallApp = async () => {
+    if (deferredPrompt) {
+      deferredPrompt.prompt();
+      const { outcome } = await deferredPrompt.userChoice;
+      if (outcome === 'accepted') {
+        setShowInstallBanner(false);
+      }
+      setDeferredPrompt(null);
+    } else {
+      // iOS Instructions
+      alert("To open in app: Tap the 'Share' icon in your browser bottom bar, then select 'Add to Home Screen' and launch AIVoiceCast from your home screen.");
+    }
+  };
+
+  const dismissInstallBanner = () => {
+    setShowInstallBanner(false);
+    localStorage.setItem('pwa_banner_dismissed', 'true');
   };
 
   useEffect(() => {
@@ -952,9 +1002,41 @@ const App: React.FC = () => {
       );
   };
 
+  const InstallBanner = () => {
+    if (!showInstallBanner) return null;
+    return (
+      <div className="fixed top-0 left-0 w-full z-[70] p-4 animate-fade-in-up md:hidden">
+        <div className="bg-indigo-600 rounded-2xl p-4 shadow-2xl flex items-center justify-between border border-indigo-400">
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 bg-white/10 rounded-xl flex items-center justify-center border border-white/20">
+               <Smartphone className="text-white" size={24} />
+            </div>
+            <div>
+              <h4 className="text-white font-bold text-sm">Experience AIVoiceCast in full</h4>
+              <p className="text-indigo-100 text-[10px] uppercase font-bold tracking-wider">Open in App for better audio</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <button 
+              onClick={handleInstallApp}
+              className="bg-white text-indigo-600 px-4 py-2 rounded-lg text-xs font-black shadow-lg active:scale-95 transition-transform"
+            >
+              OPEN
+            </button>
+            <button onClick={dismissInstallBanner} className="p-1 text-indigo-200">
+              <X size={18} />
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="min-h-screen supports-[min-height:100dvh]:min-h-[100dvh] bg-slate-950 text-slate-100 font-sans overflow-hidden">
       
+      <InstallBanner />
+
       {viewState !== 'live_session' && (
       <nav className="hidden md:block sticky top-0 z-50 bg-slate-900/90 backdrop-blur-md border-b border-slate-800">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
