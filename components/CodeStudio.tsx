@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { CodeProject, CodeFile, UserProfile, Channel, CursorPosition, CloudItem } from '../types';
 import { ArrowLeft, Save, Plus, Github, Cloud, HardDrive, Code, X, ChevronRight, ChevronDown, File, Folder, DownloadCloud, Loader2, CheckCircle, AlertTriangle, Info, FolderPlus, FileCode, RefreshCw, LogIn, CloudUpload, Trash2, ArrowUp, Edit2, FolderOpen, MoreVertical, Send, MessageSquare, Bot, Mic, Sparkles, SidebarClose, SidebarOpen, Users, Eye, FileText as FileTextIcon, Image as ImageIcon, StopCircle, Minus, Maximize2, Minimize2, Lock, Unlock, Share2, Terminal, Copy, WifiOff, PanelRightClose, PanelRightOpen, PanelLeftClose, PanelLeftOpen, Monitor, Laptop, PenTool, Edit3, ShieldAlert, ZoomIn, ZoomOut, Columns, Rows, Grid2X2, Square as SquareIcon, GripVertical, GripHorizontal, FileSearch, Indent, Wand2, Check, UserCheck, Briefcase, FileUser, Trophy, Star, Play, Camera } from 'lucide-react';
@@ -106,7 +105,7 @@ const FileTreeItem = ({ node, depth, activeId, onSelect, onToggle, onDelete, onR
                             node={child} 
                             depth={depth + 1} 
                             activeId={activeId} 
-                            onSelect={onSelect} 
+                            onSelect={node.data ? (n: any) => onSelect(n) : onSelect} 
                             onToggle={onToggle} 
                             onDelete={onDelete} 
                             onRename={onRename}
@@ -263,6 +262,13 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
   const [isDraggingLeft, setIsDraggingLeft] = useState(false);
   const [isDraggingRight, setIsDraggingRight] = useState(false);
 
+  // --- COLLABORATION STATE ---
+  const [showShareModal, setShowShareModal] = useState(false);
+  const [writeToken, setWriteToken] = useState<string | undefined>(accessKey);
+  const [isReadOnly, setIsReadOnly] = useState(!!sessionId && !accessKey);
+  const [activeClients, setActiveClients] = useState<Record<string, CursorPosition>>({});
+  const [clientId] = useState(() => crypto.randomUUID());
+
   // --- MOCK INTERVIEW STATE ---
   const [isInterviewMode, setIsInterviewMode] = useState(false);
   const [interviewStep, setInterviewStep] = useState<'setup' | 'active' | 'feedback'>('setup');
@@ -307,15 +313,90 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
       name: "submit_interview_feedback",
       description: "Submit final feedback and scoring for the mock interview. Use this only when the interview is naturally concluded or requested by the user.",
       parameters: {
+          // Fixed: Changed GenType to Type
           type: Type.OBJECT,
           properties: {
+              // Fixed: Changed GenType to Type
               score: { type: Type.NUMBER, description: "Overall score from 0-100" },
+              // Fixed: Changed GenType to Type
               strengths: { type: Type.ARRAY, items: { type: Type.STRING }, description: "Key positive points" },
+              // Fixed: Changed GenType to Type
               weaknesses: { type: Type.ARRAY, items: { type: Type.STRING }, description: "Areas for improvement" },
+              // Fixed: Changed GenType to Type
               summary: { type: Type.STRING, description: "Detailed narrative feedback in Markdown" }
           },
           required: ["score", "summary"]
       }
+  };
+
+  // --- Real-time Collaboration Logic ---
+  useEffect(() => {
+    if (sessionId) {
+        setIsSharedSession(true);
+        setActiveTab('session');
+        const unsubscribe = subscribeToCodeProject(sessionId, (remoteProject) => {
+            setProject(prev => {
+                const mergedFiles = [...prev.files];
+                remoteProject.files.forEach(rf => {
+                    const idx = mergedFiles.findIndex(f => (f.path || f.name) === (rf.path || rf.name));
+                    if (idx > -1) {
+                        if (rf.content !== mergedFiles[idx].content) mergedFiles[idx] = rf;
+                    } else {
+                        mergedFiles.push(rf);
+                    }
+                });
+                return { ...remoteProject, files: mergedFiles };
+            });
+            
+            if (remoteProject.cursors) setActiveClients(remoteProject.cursors);
+            
+            if (remoteProject.activeFilePath && remoteProject.activeClientId !== clientId) {
+                const remoteFile = remoteProject.files.find(f => (f.path || f.name) === remoteProject.activeFilePath);
+                if (remoteFile && (!activeFile || (activeFile.path || activeFile.name) !== remoteProject.activeFilePath)) {
+                    updateSlotFile(remoteFile, 0);
+                }
+            }
+        });
+        return () => unsubscribe();
+    }
+  }, [sessionId, clientId]);
+
+  const handleShare = async (uids: string[], isPublic: boolean) => {
+      let sid = sessionId;
+      let token = writeToken;
+      
+      if (!sid) {
+          sid = crypto.randomUUID();
+          token = crypto.randomUUID();
+          setWriteToken(token);
+          
+          const newProject: CodeProject = {
+              ...project,
+              id: sid,
+              ownerId: currentUser?.uid,
+              accessLevel: isPublic ? 'public' : 'restricted',
+              allowedUserIds: uids
+          };
+          await saveCodeProject(newProject);
+          onSessionStart(sid);
+      } else {
+          await updateProjectAccess(sid, isPublic ? 'public' : 'restricted', uids);
+      }
+      
+      if (uids.length > 0) {
+          const shareUrl = new URL(window.location.href);
+          shareUrl.searchParams.set('session', sid);
+          shareUrl.searchParams.set('key', token || '');
+          uids.forEach(uid => sendShareNotification(uid, 'Code Studio', shareUrl.toString(), currentUser?.displayName || 'A member'));
+      }
+      setIsSharedSession(true);
+  };
+
+  const handleStopSession = () => {
+      onSessionStop();
+      setIsSharedSession(false);
+      setIsReadOnly(false);
+      setWriteToken(undefined);
   };
 
   const setupInterviewRecording = async () => {
@@ -889,6 +970,15 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
       );
   };
 
+  const getShareLink = () => {
+    const url = new URL(window.location.href);
+    if (sessionId) url.searchParams.set('session', sessionId);
+    if (writeToken) url.searchParams.set('key', writeToken);
+    url.searchParams.delete('view');
+    url.searchParams.delete('id');
+    return url.toString();
+  };
+
   return (
     <div className="flex flex-col h-full bg-slate-950 text-slate-100 overflow-hidden relative font-sans">
       <header className="h-14 bg-slate-950 border-b border-slate-800 flex items-center justify-between px-4 shrink-0 z-20">
@@ -908,6 +998,14 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
                 {isInterviewMode ? <UserCheck className="text-emerald-400" size={18}/> : <Code className="text-indigo-400" size={18}/>}
                 {isInterviewMode ? 'Interview Studio' : project.name}
             </h1>
+
+            {isSharedSession && (
+                <div className="flex items-center gap-2 px-3 py-1 bg-indigo-900/40 rounded-full border border-indigo-500/30">
+                    <div className="w-1.5 h-1.5 rounded-full bg-indigo-400 animate-pulse"></div>
+                    <span className="text-[10px] font-bold text-indigo-300 uppercase tracking-widest">Live Session</span>
+                    {isReadOnly && <Lock size={10} className="text-amber-400 ml-1" title="Read Only Mode"/>}
+                </div>
+            )}
          </div>
 
          <div className="flex items-center space-x-2">
@@ -955,6 +1053,14 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
                 <button onClick={() => setFontSize(f => Math.min(48, f + 2))} className="p-1.5 hover:bg-slate-700 rounded text-slate-400"><ZoomIn size={16}/></button>
             </div>
 
+            <button 
+                onClick={() => setShowShareModal(true)} 
+                className={`flex items-center space-x-2 px-4 py-1.5 rounded-lg text-xs font-bold shadow-md mr-2 transition-all ${isSharedSession ? 'bg-indigo-600 hover:bg-indigo-500 text-white' : 'bg-slate-800 hover:bg-slate-700 text-slate-300'}`}
+            >
+                <Share2 size={14}/>
+                <span>{isSharedSession ? 'Share' : 'Share'}</span>
+            </button>
+
             <button onClick={() => handleSmartSave()} className="flex items-center space-x-2 px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold shadow-md mr-2"><Save size={14}/><span>Save</span></button>
 
             {/* Sidebar Toggle: AI Assistant */}
@@ -975,6 +1081,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
                   <button onClick={() => setActiveTab('cloud')} className={`flex-1 py-3 flex justify-center border-b-2 transition-colors ${activeTab === 'cloud' ? 'border-indigo-500 text-white' : 'border-transparent text-slate-500 hover:text-slate-300'}`}><Cloud size={16}/></button>
                   <button onClick={() => setActiveTab('drive')} className={`flex-1 py-3 flex justify-center border-b-2 transition-colors ${activeTab === 'drive' ? 'border-indigo-500 text-white' : 'border-transparent text-slate-500 hover:text-slate-300'}`}><HardDrive size={16}/></button>
                   <button onClick={() => setActiveTab('github')} className={`flex-1 py-3 flex justify-center border-b-2 transition-colors ${activeTab === 'github' ? 'border-indigo-500 text-white' : 'border-transparent text-slate-500 hover:text-slate-300'}`}><Github size={16}/></button>
+                  {isSharedSession && <button onClick={() => setActiveTab('session')} className={`flex-1 py-3 flex justify-center border-b-2 transition-colors ${activeTab === 'session' ? 'border-indigo-500 text-white' : 'border-transparent text-slate-500 hover:text-slate-300'}`}><Users size={16}/></button>}
               </div>
               <div className="p-3 border-b border-slate-800 flex flex-wrap gap-2 bg-slate-900 justify-center">
                   <button onClick={handleCreateFile} className="flex-1 flex items-center justify-center gap-1 bg-indigo-600 hover:bg-indigo-500 text-white py-1.5 px-2 rounded text-xs font-bold shadow-md transition-colors whitespace-nowrap"><FileCode size={14}/> <span>New File</span></button>
@@ -982,10 +1089,30 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
                   <button onClick={refreshExplorer} className="p-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded border border-slate-700 transition-colors"><RefreshCw size={16}/></button>
               </div>
               <div className="flex-1 overflow-y-auto">
-                  {activeTab === 'cloud' && cloudTree.map(node => <FileTreeItem key={node.id} node={node} depth={0} activeId={activeFile?.path} onSelect={handleExplorerSelect} onToggle={handleCloudToggle} onDelete={()=>{}} onShare={()=>{}} expandedIds={expandedFolders} loadingIds={loadingFolders} onDragStart={()=>{}} onDrop={()=>{}}/>)}
+                  {(activeTab === 'cloud' || activeTab === 'session') && (activeTab === 'session' ? workspaceTree : cloudTree).map(node => <FileTreeItem key={node.id} node={node} depth={0} activeId={activeFile?.path} onSelect={handleExplorerSelect} onToggle={handleCloudToggle} onDelete={()=>{}} onShare={()=>{}} expandedIds={expandedFolders} loadingIds={loadingFolders} onDragStart={()=>{}} onDrop={()=>{}}/>)}
                   {activeTab === 'drive' && (driveToken ? driveTree.map(node => <FileTreeItem key={node.id} node={node} depth={0} activeId={activeFile?.path} onSelect={handleExplorerSelect} onToggle={handleDriveToggle} onDelete={()=>{}} expandedIds={expandedFolders} loadingIds={loadingFolders} onDragStart={()=>{}} onDrop={()=>{}}/>) : <div className="p-4 text-center"><button onClick={handleConnectDrive} className="px-4 py-2 bg-slate-800 text-white text-xs font-bold rounded-lg border border-slate-700 hover:bg-slate-700">Connect Drive</button></div>)}
                   {activeTab === 'github' && (project.github ? workspaceTree.map(node => <FileTreeItem key={node.id} node={node} depth={0} activeId={activeFile?.path} onSelect={handleExplorerSelect} onToggle={()=>{}} onDelete={()=>{}} onRename={()=>{}} expandedIds={expandedFolders} loadingIds={loadingFolders} onDragStart={()=>{}} onDrop={()=>{}}/>) : <div className="p-4 text-center"><button onClick={() => handleOpenRepo()} className="px-4 py-2 bg-slate-800 text-white text-xs font-bold rounded-lg border border-slate-700 hover:bg-slate-700">Open Default Repo</button></div>)}
               </div>
+              
+              {isSharedSession && (
+                  <div className="p-3 border-t border-slate-800 bg-slate-950">
+                      <div className="flex justify-between items-center mb-2">
+                        <p className="text-[10px] font-bold text-slate-500 uppercase">Active Users</p>
+                        <button onClick={handleStopSession} className="text-[9px] text-red-400 hover:text-red-300 font-bold uppercase">End Session</button>
+                      </div>
+                      <div className="flex flex-wrap gap-1.5">
+                          {Object.values(activeClients).map(client => {
+                              // Fixed: Explicitly cast to CursorPosition to fix 'unknown' type error
+                              const c = client as CursorPosition;
+                              return (
+                                <div key={c.clientId} className="w-7 h-7 rounded-full border-2 flex items-center justify-center text-[10px] font-bold shadow-sm" style={{ borderColor: c.color, backgroundColor: `${c.color}30`, color: c.color }} title={`${c.userName} - ${c.fileName}`}>
+                                    {c.userName[0].toUpperCase()}
+                                </div>
+                              );
+                          })}
+                      </div>
+                  </div>
+              )}
           </div>
 
           <div onMouseDown={() => setIsDraggingLeft(true)} className="w-1 cursor-col-resize hover:bg-indigo-500/50 transition-colors z-30 shrink-0 bg-slate-800/20 group relative">
@@ -1128,6 +1255,17 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
               <AIChatPanel isOpen={true} onClose={() => setIsRightOpen(false)} messages={chatMessages} onSendMessage={handleSendMessage} isThinking={isChatThinking} />
           </div>
       </div>
+
+      <ShareModal 
+        isOpen={showShareModal} 
+        onClose={() => setShowShareModal(false)} 
+        onShare={handleShare} 
+        link={getShareLink()} 
+        title={project.name}
+        currentAccess={project.accessLevel}
+        currentAllowedUsers={project.allowedUserIds}
+        currentUserUid={currentUser?.uid}
+      />
     </div>
   );
 };
