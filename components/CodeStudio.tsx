@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { CodeProject, CodeFile, UserProfile, Channel, CursorPosition, CloudItem } from '../types';
 import { ArrowLeft, Save, Plus, Github, Cloud, HardDrive, Code, X, ChevronRight, ChevronDown, File, Folder, DownloadCloud, Loader2, CheckCircle, AlertTriangle, Info, FolderPlus, FileCode, RefreshCw, LogIn, CloudUpload, Trash2, ArrowUp, Edit2, FolderOpen, MoreVertical, Send, MessageSquare, Bot, Mic, Sparkles, SidebarClose, SidebarOpen, Users, Eye, FileText as FileTextIcon, Image as ImageIcon, StopCircle, Minus, Maximize2, Minimize2, Lock, Unlock, Share2, Terminal, Copy, WifiOff, PanelRightClose, PanelRightOpen, PanelLeftClose, PanelLeftOpen, Monitor, Laptop, PenTool, Edit3, ShieldAlert, ZoomIn, ZoomOut, Columns, Rows, Grid2X2, Square as SquareIcon, GripVertical, GripHorizontal, FileSearch, Indent, Wand2, Check, UserCheck, Briefcase, FileUser, Trophy, Star, Play, Camera } from 'lucide-react';
@@ -313,20 +314,23 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
       name: "submit_interview_feedback",
       description: "Submit final feedback and scoring for the mock interview. Use this only when the interview is naturally concluded or requested by the user.",
       parameters: {
-          // Fixed: Changed GenType to Type
           type: Type.OBJECT,
           properties: {
-              // Fixed: Changed GenType to Type
               score: { type: Type.NUMBER, description: "Overall score from 0-100" },
-              // Fixed: Changed GenType to Type
               strengths: { type: Type.ARRAY, items: { type: Type.STRING }, description: "Key positive points" },
-              // Fixed: Changed GenType to Type
               weaknesses: { type: Type.ARRAY, items: { type: Type.STRING }, description: "Areas for improvement" },
-              // Fixed: Changed GenType to Type
               summary: { type: Type.STRING, description: "Detailed narrative feedback in Markdown" }
           },
           required: ["score", "summary"]
       }
+  };
+
+  // Helper to generate 44-character UUID-like string
+  const generateLargeUUID = () => {
+    const base = crypto.randomUUID();
+    const extra = Array.from(crypto.getRandomValues(new Uint8Array(4)))
+        .map(b => b.toString(16).padStart(2, '0')).join('');
+    return (base + extra).substring(0, 44);
   };
 
   // --- Real-time Collaboration Logic ---
@@ -334,10 +338,10 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
     if (sessionId) {
         setIsSharedSession(true);
         setActiveTab('session');
-        const unsubscribe = subscribeToCodeProject(sessionId, (remoteProject) => {
+        const unsubscribe = subscribeToCodeProject(sessionId, (remoteProject: any) => {
             setProject(prev => {
                 const mergedFiles = [...prev.files];
-                remoteProject.files.forEach(rf => {
+                remoteProject.files.forEach((rf: any) => {
                     const idx = mergedFiles.findIndex(f => (f.path || f.name) === (rf.path || rf.name));
                     if (idx > -1) {
                         if (rf.content !== mergedFiles[idx].content) mergedFiles[idx] = rf;
@@ -348,10 +352,19 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
                 return { ...remoteProject, files: mergedFiles };
             });
             
+            // Sync Open Slots (Metadata) if available
+            if (remoteProject.activeSlots && remoteProject.activeClientId !== clientId) {
+                setActiveSlots(remoteProject.activeSlots);
+            }
+
+            if (remoteProject.layoutMode) {
+                setLayoutMode(remoteProject.layoutMode);
+            }
+
             if (remoteProject.cursors) setActiveClients(remoteProject.cursors);
             
             if (remoteProject.activeFilePath && remoteProject.activeClientId !== clientId) {
-                const remoteFile = remoteProject.files.find(f => (f.path || f.name) === remoteProject.activeFilePath);
+                const remoteFile = remoteProject.files.find((f: any) => (f.path || f.name) === remoteProject.activeFilePath);
                 if (remoteFile && (!activeFile || (activeFile.path || activeFile.name) !== remoteProject.activeFilePath)) {
                     updateSlotFile(remoteFile, 0);
                 }
@@ -366,8 +379,9 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
       let token = writeToken;
       
       if (!sid) {
-          sid = crypto.randomUUID();
-          token = crypto.randomUUID();
+          // Robust 44-character UUID
+          sid = generateLargeUUID();
+          token = generateLargeUUID();
           setWriteToken(token);
           
           const newProject: CodeProject = {
@@ -375,12 +389,25 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
               id: sid,
               ownerId: currentUser?.uid,
               accessLevel: isPublic ? 'public' : 'restricted',
-              allowedUserIds: uids
+              allowedUserIds: uids,
+              // Persist current session workspace metadata
+              // @ts-ignore
+              activeSlots: activeSlots,
+              layoutMode: layoutMode,
+              activeClientId: clientId
           };
           await saveCodeProject(newProject);
           onSessionStart(sid);
       } else {
           await updateProjectAccess(sid, isPublic ? 'public' : 'restricted', uids);
+          // Sync current session layout and open files across collaborative users
+          await saveCodeProject({
+              ...project,
+              // @ts-ignore
+              activeSlots: activeSlots,
+              layoutMode: layoutMode,
+              activeClientId: clientId
+          });
       }
       
       if (uids.length > 0) {
@@ -490,6 +517,9 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
   const handleSetLayout = (mode: LayoutMode) => {
       setLayoutMode(mode);
       if (mode === 'single' && focusedSlot !== 0) setFocusedSlot(0);
+      if (isSharedSession && sessionId) {
+          saveCodeProject({ ...project, layoutMode: mode, activeClientId: clientId });
+      }
   };
 
   const handleSmartSave = async (targetFileOverride?: CodeFile) => {
@@ -551,9 +581,16 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
           setSlotViewModes(prev => ({ ...prev, [slotIndex]: 'code' }));
       }
 
-      if (file && isSharedSession && sessionId) {
-          updateProjectActiveFile(sessionId, file.path || file.name);
-          updateCodeFile(sessionId, file);
+      if (isSharedSession && sessionId) {
+          if (file) updateProjectActiveFile(sessionId, file.path || file.name);
+          // Sync all open slots across all participants
+          saveCodeProject({
+              ...project,
+              // @ts-ignore
+              activeSlots: newSlots,
+              activeClientId: clientId
+          });
+          if (file) await updateCodeFile(sessionId, file);
       }
   };
 
@@ -1102,7 +1139,7 @@ export const CodeStudio: React.FC<CodeStudioProps> = ({ onBack, currentUser, use
                       </div>
                       <div className="flex flex-wrap gap-1.5">
                           {Object.values(activeClients).map(client => {
-                              // Fixed: Explicitly cast to CursorPosition to fix 'unknown' type error
+                              // Explicitly cast to CursorPosition to fix 'unknown' type error
                               const c = client as CursorPosition;
                               return (
                                 <div key={c.clientId} className="w-7 h-7 rounded-full border-2 flex items-center justify-center text-[10px] font-bold shadow-sm" style={{ borderColor: c.color, backgroundColor: `${c.color}30`, color: c.color }} title={`${c.userName} - ${c.fileName}`}>
