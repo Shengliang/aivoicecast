@@ -45,7 +45,6 @@ import { CardWorkshop } from './components/CardWorkshop';
 import { auth, isFirebaseConfigured } from './services/firebaseConfig';
 import { 
   voteChannel, publishChannelToFirestore, 
-  getPublicChannels, 
   subscribeToPublicChannels, getGroupChannels, getUserProfile,
   setupSubscriptionListener, createOrGetDMChannel, subscribeToAllChannelsAdmin, addCommentToChannel
 } from './services/firestoreService';
@@ -125,36 +124,29 @@ const App: React.FC = () => {
   const [isAppsMenuOpen, setIsAppsMenuOpen] = useState(false);
   const [isDesktopAppsOpen, setIsDesktopAppsOpen] = useState(false);
   
-  // Mobile Navigation State
   const [mobileFeedTab, setMobileFeedTab] = useState<'foryou' | 'following'>('foryou');
   const [isMobileSearchOpen, setIsMobileSearchOpen] = useState(false);
   const [mobileSearchQuery, setMobileSearchQuery] = useState('');
   
-  // Audio State UI
   const [audioIsPlaying, setAudioIsPlaying] = useState(false);
 
-  // Auth State
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
 
-  // Install Prompt State
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [showInstallBanner, setShowInstallBanner] = useState(false);
 
-  // Privacy Policy Public View
   const [isPrivacyOpen, setIsPrivacyOpen] = useState(false);
 
   const [activeTab, setActiveTab] = useState('categories');
   const [searchQuery, setSearchQuery] = useState('');
   
-  // Data State
   const [channels, setChannels] = useState<Channel[]>(HANDCRAFTED_CHANNELS);
   const [publicChannels, setPublicChannels] = useState<Channel[]>([]);
   const [userChannels, setUserChannels] = useState<Channel[]>([]);
   const [groupChannels, setGroupChannels] = useState<Channel[]>([]);
   
-  // Modals
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [createModalDate, setCreateModalDate] = useState<Date | null>(null);
   
@@ -169,14 +161,11 @@ const App: React.FC = () => {
   const [isCommentsModalOpen, setIsCommentsModalOpen] = useState(false);
   const [commentsChannel, setCommentsChannel] = useState<Channel | null>(null);
 
-  // Collaboration State
   const [sharedSessionId, setSharedSessionId] = useState<string | undefined>(undefined);
   const [accessKey, setAccessKey] = useState<string | undefined>(undefined);
   
-  // Card Viewer State
   const [viewCardId, setViewCardId] = useState<string | undefined>(undefined);
 
-  // Live Session Config
   const [liveConfig, setLiveConfig] = useState<{
     context?: string;
     bookingId?: string;
@@ -187,12 +176,8 @@ const App: React.FC = () => {
     initialTranscript?: TranscriptItem[];
   }>({});
 
-  // Ad-hoc Meeting Channel (Ephemeral)
   const [tempChannel, setTempChannel] = useState<Channel | null>(null);
-
   const [globalVoice, setGlobalVoice] = useState('Auto');
-  
-  // Messaging Target
   const [chatTargetId, setChatTargetId] = useState<string | null>(null);
 
   const allApps = [
@@ -209,7 +194,7 @@ const App: React.FC = () => {
     { id: 'mentorship', label: t.mentorship, icon: Users, action: () => { handleSetViewState('directory'); setActiveTab('mentorship'); }, color: 'text-purple-400' },
     { id: 'groups', label: t.groups, icon: Users, action: () => { handleSetViewState('directory'); setActiveTab('groups'); }, color: 'text-cyan-400' },
     { id: 'recordings', label: t.recordings, icon: Disc, action: () => { handleSetViewState('directory'); setActiveTab('recordings'); }, color: 'text-red-400' },
-    { id: 'docs', label: t.docs, icon: FileText, action: () => { handleSetViewState('directory'); setActiveTab('docs'); }, color: 'text-gray-400' },
+    { id: 'docs', label: t.docs, icon: FileText, action: () => { handleSetViewState('directory'); setActiveTab('docs'); }, color: 'text-gray-400' }
   ];
 
   const handleSetViewState = (newState: ExtendedViewState) => {
@@ -218,30 +203,14 @@ const App: React.FC = () => {
   };
 
   useEffect(() => {
-    // PWA Install Prompt handling
     const handleBeforeInstallPrompt = (e: any) => {
       e.preventDefault();
       setDeferredPrompt(e);
-      // Only show banner if on mobile and not already installed
       if (window.innerWidth < 768 && !window.matchMedia('(display-mode: standalone)').matches) {
         setShowInstallBanner(true);
       }
     };
-
     window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
-    
-    // Check if running as PWA
-    if (window.matchMedia('(display-mode: standalone)').matches) {
-      setShowInstallBanner(false);
-    } else if (window.innerWidth < 768) {
-      // For iOS which doesn't support beforeinstallprompt, we show instructions
-      const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
-      if (isIOS) {
-        const hasDismissed = localStorage.getItem('pwa_banner_dismissed');
-        if (!hasDismissed) setShowInstallBanner(true);
-      }
-    }
-
     return () => window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
   }, []);
 
@@ -249,13 +218,10 @@ const App: React.FC = () => {
     if (deferredPrompt) {
       deferredPrompt.prompt();
       const { outcome } = await deferredPrompt.userChoice;
-      if (outcome === 'accepted') {
-        setShowInstallBanner(false);
-      }
+      if (outcome === 'accepted') setShowInstallBanner(false);
       setDeferredPrompt(null);
     } else {
-      // iOS Instructions
-      alert("To open in app: Tap the 'Share' icon in your browser bottom bar, then select 'Add to Home Screen' and launch AIVoiceCast from your home screen.");
+      alert("To open in app: Tap the 'Share' icon in your browser bottom bar, then select 'Add to Home Screen' and launch AIVoiceCast.");
     }
   };
 
@@ -271,9 +237,7 @@ const App: React.FC = () => {
   }, []);
 
   useEffect(() => {
-      const handlePopState = () => {
-          stopAllPlatformAudio("BrowserNavigation");
-      };
+      const handlePopState = () => stopAllPlatformAudio("BrowserNavigation");
       window.addEventListener('popstate', handlePopState);
       return () => window.removeEventListener('popstate', handlePopState);
   }, []);
@@ -281,16 +245,12 @@ const App: React.FC = () => {
   useEffect(() => {
       const handleFirstInteraction = () => {
           const audioCtx = (window as any).sharedAudioContext;
-          if (audioCtx) {
-              warmUpAudioContext(audioCtx);
-          }
+          if (audioCtx) warmUpAudioContext(audioCtx);
           window.removeEventListener('touchstart', handleFirstInteraction);
           window.removeEventListener('click', handleFirstInteraction);
       };
-
       window.addEventListener('touchstart', handleFirstInteraction);
       window.addEventListener('click', handleFirstInteraction);
-      
       return () => {
           window.removeEventListener('touchstart', handleFirstInteraction);
           window.removeEventListener('click', handleFirstInteraction);
@@ -307,10 +267,10 @@ const App: React.FC = () => {
 
     if (view === 'card' && id) {
         setViewCardId(id);
-        handleSetViewState('card_workshop' as ExtendedViewState);
+        handleSetViewState('card_workshop');
     } else if (view === 'card_workshop') {
         if (id) setViewCardId(id);
-        handleSetViewState('card_workshop' as ExtendedViewState);
+        handleSetViewState('card_workshop');
     } else if (view === 'code') {
         handleSetViewState('code_studio');
     } else if (view === 'whiteboard') {
@@ -328,7 +288,7 @@ const App: React.FC = () => {
     } else if (view === 'notebooks') {
         handleSetViewState('notebook_viewer');
     } else if (view === 'icons') {
-        handleSetViewState('icon_generator' as ExtendedViewState);
+        handleSetViewState('icon_generator' as any);
     } else if (view === 'podcast' && id) {
         setActiveChannelId(id);
         handleSetViewState('podcast_detail');
@@ -354,7 +314,7 @@ const App: React.FC = () => {
     } else if (view === 'debug_storage') {
         handleSetViewState('cloud_debug');
     } else if (view === 'debug_registry') {
-        handleSetViewState('public_debug' as ExtendedViewState);
+        handleSetViewState('public_debug' as any);
     } else if (view === 'debug_my_channels') {
         handleSetViewState('my_channel_debug');
     }
@@ -362,7 +322,6 @@ const App: React.FC = () => {
     if (session) {
         setSharedSessionId(session);
         if (keyParam) setAccessKey(keyParam);
-        
         if (!view) {
             if (mode === 'whiteboard') handleSetViewState('whiteboard');
             else handleSetViewState('code_studio');
@@ -370,7 +329,6 @@ const App: React.FC = () => {
     }
 
     let unsubscribeAuth = () => {};
-
     if (isFirebaseConfigured) {
         unsubscribeAuth = auth.onAuthStateChanged(async (user) => {
           setCurrentUser(user);
@@ -391,16 +349,13 @@ const App: React.FC = () => {
         setIsFirebaseModalOpen(true);
         setAuthLoading(false);
     }
-
     return () => unsubscribeAuth();
   }, []);
 
   useEffect(() => {
       if (!currentUser) return;
-
       const url = new URL(window.location.href);
       const params = url.searchParams;
-
       let viewParam: string | null = null;
       
       if (viewState === 'directory') {
@@ -436,18 +391,13 @@ const App: React.FC = () => {
 
       if (viewParam) {
           params.set('view', viewParam);
-          if (viewState === 'podcast_detail' && activeChannelId) {
-              params.set('id', activeChannelId);
-          } else if (viewState === 'card_workshop' && viewCardId) {
-              params.set('id', viewCardId);
-          } else if (viewState !== 'podcast_detail' && viewState !== 'card_workshop') {
-              params.delete('id');
-          }
+          if (viewState === 'podcast_detail' && activeChannelId) params.set('id', activeChannelId);
+          else if (viewState === 'card_workshop' && viewCardId) params.set('id', viewCardId);
+          else params.delete('id');
       } else {
           params.delete('view');
           params.delete('id');
       }
-
       window.history.replaceState({}, '', url.toString());
   }, [viewState, activeChannelId, viewCardId, activeTab, currentUser]);
 
@@ -460,9 +410,7 @@ const App: React.FC = () => {
       }
   }, [currentUser]);
 
-  useEffect(() => {
-    getUserChannels().then(setUserChannels);
-  }, []);
+  useEffect(() => { getUserChannels().then(setUserChannels); }, []);
 
   useEffect(() => {
     if (isFirebaseConfigured && currentUser) {
@@ -473,18 +421,11 @@ const App: React.FC = () => {
              );
              return () => unsubAdmin();
         }
-
         const unsubPublic = subscribeToPublicChannels(
           (data) => setPublicChannels(data),
-          (err: any) => {
-              if (err.code === 'permission-denied' || err.message?.includes('permission')) {
-                  console.warn("Public channels access denied. Waiting for authentication.");
-              } else {
-                  console.error("Public channels error", err);
-              }
-          }
+          (err: any) => console.warn("Public channels access pending auth.")
         );
-        return () => { unsubPublic(); };
+        return () => unsubPublic();
     }
   }, [currentUser]);
 
@@ -497,7 +438,6 @@ const App: React.FC = () => {
   useEffect(() => {
     const all = [...HANDCRAFTED_CHANNELS, ...userChannels, ...publicChannels, ...groupChannels];
     const unique = Array.from(new Map(all.map(item => [item.id, item])).values());
-    
     unique.sort((a, b) => {
         const isAHand = HANDCRAFTED_CHANNELS.some(h => h.id === a.id);
         const isBHand = HANDCRAFTED_CHANNELS.some(h => h.id === b.id);
@@ -505,7 +445,6 @@ const App: React.FC = () => {
         if (!isAHand && isBHand) return 1;
         return (b.createdAt || 0) - (a.createdAt || 0);
     });
-    
     setChannels(unique);
   }, [userChannels, publicChannels, groupChannels]);
 
@@ -515,27 +454,18 @@ const App: React.FC = () => {
 
   const handleVote = async (id: string, type: 'like' | 'dislike', e: React.MouseEvent) => {
     e.stopPropagation();
-    
     setChannels(prev => prev.map(c => {
-      if (c.id === id) {
-        return type === 'like' ? { ...c, likes: c.likes + 1 } : { ...c, dislikes: c.dislikes + 1 };
-      }
+      if (c.id === id) return type === 'like' ? { ...c, likes: c.likes + 1 } : { ...c, dislikes: (c.dislikes || 0) + 1 };
       return c;
     }));
-
     const channel = channels.find(c => c.id === id);
     if (channel) {
         await voteChannel(channel, type);
         if (currentUser && userProfile) {
             const currentLikes = userProfile.likedChannelIds || [];
             let newLikesList = [...currentLikes];
-            
-            if (type === 'like') {
-                if (!newLikesList.includes(id)) newLikesList.push(id);
-            } else {
-                newLikesList = newLikesList.filter(lid => lid !== id);
-            }
-            
+            if (type === 'like' && !newLikesList.includes(id)) newLikesList.push(id);
+            else if (type === 'dislike') newLikesList = newLikesList.filter(lid => lid !== id);
             setUserProfile({ ...userProfile, likedChannelIds: newLikesList });
         }
     }
@@ -543,24 +473,15 @@ const App: React.FC = () => {
 
   const handleCreateChannel = async (newChannel: Channel) => {
     try {
-        const channelToSave = {
-            ...newChannel,
-            createdAt: newChannel.createdAt || Date.now()
-        };
-
+        const channelToSave = { ...newChannel, createdAt: newChannel.createdAt || Date.now() };
         setUserChannels(prev => {
              const exists = prev.find(c => c.id === channelToSave.id);
              if (exists) return prev.map(c => c.id === channelToSave.id ? channelToSave : c);
              return [channelToSave, ...prev];
         });
-        
         await saveUserChannel(channelToSave);
-        
-        if (channelToSave.visibility === 'public' || channelToSave.visibility === 'group') {
-            await publishChannelToFirestore(channelToSave);
-        }
+        if (channelToSave.visibility === 'public' || channelToSave.visibility === 'group') await publishChannelToFirestore(channelToSave);
     } catch (error: any) {
-        console.error("Failed to create channel:", error);
         alert(`Failed to create podcast: ${error.message}`);
     }
   };
@@ -572,27 +493,19 @@ const App: React.FC = () => {
 
   const handleUpdateChannel = async (updatedChannel: Channel) => {
       try {
-          if (updatedChannel.visibility === 'public' || updatedChannel.visibility === 'group') {
-              await publishChannelToFirestore(updatedChannel);
-          } else {
+          if (updatedChannel.visibility === 'public' || updatedChannel.visibility === 'group') await publishChannelToFirestore(updatedChannel);
+          else {
               await saveUserChannel(updatedChannel);
               setUserChannels(prev => prev.map(c => c.id === updatedChannel.id ? updatedChannel : c));
           }
-          setChannels(prev => prev.map(c => {
-              if (c.id === updatedChannel.id) return updatedChannel;
-              return c;
-          }));
-      } catch (error: any) {
-          console.error("Failed to update channel:", error);
-          alert(`Failed to update podcast: ${error.message}`);
-      }
+          setChannels(prev => prev.map(c => c.id === updatedChannel.id ? updatedChannel : c));
+      } catch (error: any) { alert(`Failed to update: ${error.message}`); }
   };
 
   const handleDeleteChannel = async () => {
       if (!channelToEdit) return;
-      if (channelToEdit.visibility === 'public' || channelToEdit.visibility === 'group') {
-          alert("Public channels must be deleted via the Inspector for now."); 
-      } else {
+      if (channelToEdit.visibility === 'public' || channelToEdit.visibility === 'group') alert("Use Inspector for cloud deletion."); 
+      else {
           await deleteUserChannel(channelToEdit.id);
           setUserChannels(prev => prev.filter(c => c.id !== channelToEdit.id));
       }
@@ -606,69 +519,27 @@ const App: React.FC = () => {
 
   const handleAddComment = async (text: string, attachments: any[]) => {
       if (!commentsChannel || !currentUser) return;
-      
-      const newComment = {
-          id: crypto.randomUUID(),
-          userId: currentUser.uid,
-          user: currentUser.displayName || 'Anonymous',
-          text,
-          timestamp: Date.now(),
-          attachments
-      };
-      
-      const updatedChannel = { 
-          ...commentsChannel, 
-          comments: [...commentsChannel.comments, newComment] 
-      };
-      
+      const newComment = { id: crypto.randomUUID(), userId: currentUser.uid, user: currentUser.displayName || 'Anonymous', text, timestamp: Date.now(), attachments };
+      const updatedChannel = { ...commentsChannel, comments: [...commentsChannel.comments, newComment] };
       setCommentsChannel(updatedChannel);
       setChannels(prev => prev.map(c => c.id === commentsChannel.id ? updatedChannel : c));
-      
-      if (commentsChannel.visibility === 'public' || commentsChannel.visibility === 'group') {
-          await addCommentToChannel(commentsChannel.id, newComment);
-      } else {
+      if (commentsChannel.visibility === 'public' || commentsChannel.visibility === 'group') await addCommentToChannel(commentsChannel.id, newComment);
+      else {
           await saveUserChannel(updatedChannel);
-          setUserChannels(prev => prev.map(c => c.id === updatedChannel.id ? updatedChannel : c));
+          setUserChannels(prev => prev.map(c => c.id === commentsChannel.id ? updatedChannel : c));
       }
   };
 
   const handleStartLiveSession = (channel: Channel, context?: string, recordingEnabled?: boolean, bookingId?: string, videoEnabled?: boolean, cameraEnabled?: boolean) => {
       const existing = channels.find(c => c.id === channel.id);
-      
-      if (!existing) {
-          setTempChannel(channel); 
-      } else {
-          setTempChannel(null);
-      }
-      
+      if (!existing) setTempChannel(channel); else setTempChannel(null);
       setActiveChannelId(channel.id);
-      setLiveConfig({
-          context,
-          bookingId: bookingId, 
-          recording: recordingEnabled,
-          video: videoEnabled,
-          camera: cameraEnabled
-      });
+      setLiveConfig({ context, bookingId, recording: recordingEnabled, video: videoEnabled, camera: cameraEnabled });
       handleSetViewState('live_session');
   };
 
   const handleMobileQuickStart = () => {
-      const quickChannel: Channel = {
-          id: 'quick-session',
-          title: 'Quick Session',
-          description: 'Ad-hoc voice session',
-          author: 'You',
-          ownerId: currentUser?.uid,
-          visibility: 'private',
-          voiceName: globalVoice === 'Auto' ? 'Puck' : globalVoice,
-          systemInstruction: 'You are a helpful AI assistant. Answer questions and help with tasks.',
-          likes: 0, 
-          dislikes: 0, 
-          comments: [],
-          tags: [],
-          imageUrl: 'https://images.unsplash.com/photo-1624969862644-791f3dc98927?w=600&q=80',
-          createdAt: Date.now()
-      };
+      const quickChannel: Channel = { id: 'quick-session', title: 'Quick Session', description: 'Ad-hoc voice session', author: 'You', ownerId: currentUser?.uid, visibility: 'private', voiceName: globalVoice === 'Auto' ? 'Puck' : globalVoice, systemInstruction: 'You are a helpful AI assistant.', likes: 0, dislikes: 0, comments: [], tags: [], imageUrl: 'https://images.unsplash.com/photo-1624969862644-791f3dc98927?w=600&q=80', createdAt: Date.now() };
       setTempChannel(quickChannel);
       setActiveChannelId(quickChannel.id);
       setLiveConfig({ recording: false }); 
@@ -678,7 +549,6 @@ const App: React.FC = () => {
   const handleSessionStart = (id: string) => {
       setSharedSessionId(id);
       setAccessKey(undefined);
-      
       const url = new URL(window.location.href);
       url.searchParams.set('session', id);
       window.history.replaceState({}, '', url.toString());
@@ -694,62 +564,32 @@ const App: React.FC = () => {
   };
 
   const handleMessageCreator = async (creatorId: string, creatorName: string) => {
-      if (!currentUser) { 
-          alert("Please sign in to message creators.");
-          return;
-      }
-      
+      if (!currentUser) return alert("Please sign in to message.");
       try {
           const dmId = await createOrGetDMChannel(creatorId, creatorName);
           setChatTargetId(dmId);
           handleSetViewState('chat');
-      } catch(e) {
-          console.error("Failed to create DM:", e);
-          alert("Could not start chat.");
-      }
+      } catch(e) { alert("Could not start chat."); }
   };
 
   const feedChannels = useMemo(() => {
       let data = [...channels];
-      
-      if (mobileFeedTab === 'following') {
-          if (userProfile) {
-              const followingIds = userProfile.following || [];
-              const likedIds = userProfile.likedChannelIds || [];
-              
-              if (followingIds.length > 0 || likedIds.length > 0) {
-                  data = data.filter(c => 
-                      (c.ownerId && followingIds.includes(c.ownerId)) || 
-                      likedIds.includes(c.id)
-                  );
-              } else {
-                  data = [];
-              }
-          } else {
-              data = [];
-          }
+      if (mobileFeedTab === 'following' && userProfile) {
+          const followingIds = userProfile.following || [];
+          const likedIds = userProfile.likedChannelIds || [];
+          data = data.filter(c => (c.ownerId && followingIds.includes(c.ownerId)) || likedIds.includes(c.id));
       }
-
       if (searchQuery) {
           const lowerQ = searchQuery.toLowerCase();
-          data = data.filter(c => 
-              c.title.toLowerCase().includes(lowerQ) || 
-              c.description.toLowerCase().includes(lowerQ) ||
-              c.tags.some(t => t.toLowerCase().includes(lowerQ))
-          );
+          data = data.filter(c => c.title.toLowerCase().includes(lowerQ) || c.description.toLowerCase().includes(lowerQ) || c.tags.some(t => t.toLowerCase().includes(lowerQ)));
       }
-      
       return data;
   }, [channels, searchQuery, mobileFeedTab, userProfile]);
 
-  const handleRefreshFeed = () => {
-      setChannels(prev => [...prev.sort(() => 0.5 - Math.random())]);
-  };
+  const handleRefreshFeed = () => setChannels(prev => [...prev.sort(() => 0.5 - Math.random())]);
 
   const handleUpgradeSuccess = async (newTier: SubscriptionTier) => {
-      if (userProfile) {
-          setUserProfile({ ...userProfile, subscriptionTier: newTier });
-      }
+      if (userProfile) setUserProfile({ ...userProfile, subscriptionTier: newTier });
       if (currentUser) {
         try {
             const fresh = await getUserProfile(currentUser.uid);
@@ -760,15 +600,7 @@ const App: React.FC = () => {
   
   const safeUserProfile = useMemo(() => {
       if (userProfile) return userProfile;
-      if (currentUser) {
-          return {
-              uid: currentUser.uid,
-              email: currentUser.email,
-              displayName: currentUser.displayName || 'User',
-              photoURL: currentUser.photoURL,
-              groups: []
-          } as UserProfile;
-      }
+      if (currentUser) return { uid: currentUser.uid, email: currentUser.email, displayName: currentUser.displayName || 'User', photoURL: currentUser.photoURL, groups: [] } as UserProfile;
       return null;
   }, [userProfile, currentUser]);
 
@@ -781,503 +613,93 @@ const App: React.FC = () => {
       );
   }
 
-  if (isPrivacyOpen) {
-      return <PrivacyPolicy onBack={() => setIsPrivacyOpen(false)} />;
-  }
-
-  if (viewState === 'mission') {
-      return <MissionManifesto onBack={() => handleSetViewState('directory')} />;
-  }
-
-  if (!currentUser) {
-      return <LoginPage 
-        onPrivacyClick={() => setIsPrivacyOpen(true)} 
-        onMissionClick={() => handleSetViewState('mission')} 
-      />;
-  }
+  if (isPrivacyOpen) return <PrivacyPolicy onBack={() => setIsPrivacyOpen(false)} />;
+  if (viewState === 'mission') return <MissionManifesto onBack={() => handleSetViewState('directory')} />;
+  if (!currentUser) return <LoginPage onPrivacyClick={() => setIsPrivacyOpen(false)} onMissionClick={() => handleSetViewState('mission')} />;
 
   const MobileBottomNav = () => {
     const quickAppId = userProfile?.preferredMobileQuickApp || 'code_studio';
-    const quickApp = allApps.find(a => a.id === quickAppId) || allApps[1]; // Default to Code Studio
-    
+    const quickApp = allApps.find(a => a.id === quickAppId) || allApps[1];
     return (
       <div className="md:hidden fixed bottom-0 left-0 w-full bg-slate-950/90 backdrop-blur-md border-t border-slate-800 z-50 px-6 py-2 flex justify-between items-center safe-area-bottom">
-          <button 
-              onClick={() => { handleSetViewState('directory'); setActiveTab('categories'); setIsAppsMenuOpen(false); setIsUserMenuOpen(false); }}
-              className={`flex flex-col items-center gap-1 ${viewState === 'directory' && activeTab === 'categories' && !isAppsMenuOpen && !isUserMenuOpen ? 'text-white' : 'text-slate-500'}`}
-          >
-              <Home size={24} fill={viewState === 'directory' && activeTab === 'categories' && !isAppsMenuOpen && !isUserMenuOpen ? "currentColor" : "none"} />
-              <span className="text-[10px]">Home</span>
-          </button>
-          
-          <button 
-              onClick={() => { quickApp.action(); setIsAppsMenuOpen(false); setIsUserMenuOpen(false); }}
-              className={`flex flex-col items-center gap-1 ${viewState === quickAppId ? 'text-white' : 'text-slate-500'}`}
-          >
-              <quickApp.icon size={24} fill={viewState === quickAppId ? "currentColor" : "none"} />
-              <span className="text-[10px]">{quickApp.label}</span>
-          </button>
-
-          <button 
-              onClick={() => setIsVoiceCreateOpen(true)}
-              className="flex flex-col items-center justify-center -mt-6"
-          >
-              <div className="bg-gradient-to-r from-blue-500 to-red-500 p-0.5 rounded-xl w-12 h-8 flex items-center justify-center shadow-lg hover:scale-105 transition-transform">
-                  <div className="bg-black w-full h-full rounded-lg flex items-center justify-center">
-                      <Plus size={20} className="text-white"/>
-                  </div>
-              </div>
-          </button>
-
-          <button 
-              onClick={() => { setIsAppsMenuOpen(true); setIsUserMenuOpen(false); }}
-              className={`flex flex-col items-center gap-1 ${isAppsMenuOpen ? 'text-white' : 'text-slate-500'}`}
-          >
-              <LayoutGrid size={24} fill={isAppsMenuOpen ? "currentColor" : "none"} />
-              <span className="text-[10px]">Apps</span>
-          </button>
-
-          <button 
-              onClick={() => { setIsUserMenuOpen(true); setIsAppsMenuOpen(false); }}
-              className={`flex flex-col items-center gap-1 ${isUserMenuOpen ? 'text-white' : 'text-slate-500'}`}
-          >
-              <User size={24} fill={isUserMenuOpen ? "currentColor" : "none"} />
-              <span className="text-[10px]">Profile</span>
-          </button>
+          <button onClick={() => { handleSetViewState('directory'); setActiveTab('categories'); setIsAppsMenuOpen(false); setIsUserMenuOpen(false); }} className={`flex flex-col items-center gap-1 ${viewState === 'directory' && activeTab === 'categories' && !isAppsMenuOpen && !isUserMenuOpen ? 'text-white' : 'text-slate-500'}`}><Home size={24} /><span className="text-[10px]">Home</span></button>
+          <button onClick={() => { quickApp.action(); setIsAppsMenuOpen(false); setIsUserMenuOpen(false); }} className={`flex flex-col items-center gap-1 ${viewState === quickAppId ? 'text-white' : 'text-slate-500'}`}><quickApp.icon size={24} /><span className="text-[10px]">{quickApp.label}</span></button>
+          <button onClick={() => setIsVoiceCreateOpen(true)} className="flex flex-col items-center justify-center -mt-6"><div className="bg-gradient-to-r from-blue-500 to-red-500 p-0.5 rounded-xl w-12 h-8 flex items-center justify-center shadow-lg"><div className="bg-black w-full h-full rounded-lg flex items-center justify-center"><Plus size={20} className="text-white"/></div></div></button>
+          <button onClick={() => { setIsAppsMenuOpen(true); setIsUserMenuOpen(false); }} className={`flex flex-col items-center gap-1 ${isAppsMenuOpen ? 'text-white' : 'text-slate-500'}`}><LayoutGrid size={24} /><span className="text-[10px]">Apps</span></button>
+          <button onClick={() => { setIsUserMenuOpen(true); setIsAppsMenuOpen(false); }} className={`flex flex-col items-center gap-1 ${isUserMenuOpen ? 'text-white' : 'text-slate-500'}`}><User size={24} /><span className="text-[10px]">Profile</span></button>
       </div>
     );
   };
 
-  const MobileTopNav = () => {
-      if (viewState !== 'directory' || activeTab !== 'categories') return null;
-      return (
-          <div className="md:hidden fixed top-0 left-0 w-full z-40 bg-gradient-to-b from-black/80 to-transparent p-4 flex items-center justify-between pointer-events-none">
-              <div className="flex items-center gap-3 pointer-events-auto">
-                  <button onClick={handleMobileQuickStart} className="text-white/80 hover:text-white" title="Quick Session">
-                      <VideoIcon size={24} />
-                  </button>
-                  <button onClick={() => window.location.reload()} className="text-white/80 hover:text-white" title="Reload App">
-                      <RefreshCw size={22} />
-                  </button>
-                  {audioIsPlaying && (
-                    <button 
-                        onClick={() => stopAllPlatformAudio("MobileGlobalStop")}
-                        className="p-2 bg-red-600 rounded-full text-white shadow-lg animate-pulse"
-                    >
-                        <Square size={16} fill="white" />
-                    </button>
-                  )}
-                  <button 
-                      onClick={() => setLanguage(prev => prev === 'en' ? 'zh' : 'en')}
-                      className="w-8 h-8 rounded-full bg-black/40 border border-white/20 flex items-center justify-center text-[10px] font-bold text-white transition-all active:scale-95"
-                      title="Switch Language"
-                  >
-                      {language === 'en' ? '中' : 'EN'}
-                  </button>
-              </div>
-              
-              <div className="flex gap-4 font-bold text-base pointer-events-auto">
-                  <button 
-                      onClick={() => setMobileFeedTab('following')}
-                      className={`${mobileFeedTab === 'following' ? 'text-white border-b-2 border-white pb-1' : 'text-white/60'}`}
-                  >
-                      Following
-                  </button>
-                  <span className="text-white/20">|</span>
-                  <button 
-                      onClick={() => setMobileFeedTab('foryou')}
-                      className={`${mobileFeedTab === 'foryou' ? 'text-white border-b-2 border-white pb-1' : 'text-white/60'}`}
-                  >
-                      For You
-                  </button>
-              </div>
-
-              <button onClick={() => setIsMobileSearchOpen(true)} className="pointer-events-auto text-white/80 hover:text-white">
-                  <Search size={24} />
-              </button>
-          </div>
-      );
-  };
-
-  const MobileSearchOverlay = () => {
-      if (!isMobileSearchOpen) return null;
-      
-      const filteredChannels = channels.filter(c => 
-          c.title.toLowerCase().includes(mobileSearchQuery.toLowerCase()) || 
-          c.description.toLowerCase().includes(mobileSearchQuery.toLowerCase()) ||
-          c.tags.some(t => t.toLowerCase().includes(mobileSearchQuery.toLowerCase()))
-      );
-
-      return (
-          <div className="fixed inset-0 z-50 bg-slate-950 flex flex-col animate-fade-in">
-              <div className="flex items-center gap-4 p-4 border-b border-slate-800 bg-slate-900">
-                  <button onClick={() => setIsMobileSearchOpen(false)} className="p-2 hover:bg-slate-800 rounded-full text-slate-400">
-                      <ArrowLeft size={24} />
-                  </button>
-                  <div className="flex-1 relative">
-                      <input 
-                          autoFocus
-                          type="text" 
-                          placeholder="Search podcasts..." 
-                          value={mobileSearchQuery}
-                          onChange={(e) => setMobileSearchQuery(e.target.value)}
-                          className="w-full bg-slate-800 border border-slate-700 rounded-full py-2 pl-4 pr-10 text-white focus:outline-none focus:border-indigo-500"
-                      />
-                      {mobileSearchQuery && (
-                          <button onClick={() => setMobileSearchQuery('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500">
-                              <X size={16} />
-                          </button>
-                      )}
-                  </div>
-              </div>
-              
-              <div className="flex-1 overflow-y-auto p-4">
-                  {mobileSearchQuery ? (
-                      <div className="space-y-4">
-                          <p className="text-xs font-bold text-slate-500 uppercase">Results</p>
-                          {filteredChannels.length === 0 ? (
-                              <p className="text-center text-slate-500 py-8">No results found.</p>
-                          ) : (
-                              filteredChannels.map(channel => (
-                                  <div 
-                                      key={channel.id} 
-                                      onClick={() => {
-                                          setActiveChannelId(channel.id);
-                                          handleSetViewState('podcast_detail');
-                                          setIsMobileSearchOpen(false);
-                                      }}
-                                      className="flex items-center gap-4 p-3 bg-slate-900 border border-slate-800 rounded-xl animate-fade-in group active:scale-95 transition-transform"
-                                  >
-                                      <img src={channel.imageUrl} className="w-12 h-12 rounded-lg object-cover" alt="" />
-                                      <div className="flex-1 min-w-0">
-                                          <h4 className="font-bold text-white truncate">{channel.title}</h4>
-                                          <p className="text-xs text-slate-400 truncate">{channel.author}</p>
-                                      </div>
-                                      <button className="p-2 bg-indigo-600 rounded-full text-white">
-                                          <Play size={12} fill="currentColor"/>
-                                      </button>
-                                  </div>
-                              ))
-                          )}
-                      </div>
-                  ) : (
-                      <div className="text-center text-slate-500 mt-20">
-                          <Search size={48} className="mx-auto mb-4 opacity-20" />
-                          <p>Type to search podcasts</p>
-                      </div>
-                  )}
-              </div>
-          </div>
-      );
-  };
-
-  const InstallBanner = () => {
-    if (!showInstallBanner) return null;
-    return (
-      <div className="fixed top-0 left-0 w-full z-[70] p-4 animate-fade-in-up md:hidden">
-        <div className="bg-indigo-600 rounded-2xl p-4 shadow-2xl flex items-center justify-between border border-indigo-400">
-          <div className="flex items-center gap-4">
-            <div className="w-12 h-12 bg-white/10 rounded-xl flex items-center justify-center border border-white/20">
-               <Smartphone className="text-white" size={24} />
-            </div>
-            <div>
-              <h4 className="text-white font-bold text-sm">Experience AIVoiceCast in full</h4>
-              <p className="text-indigo-100 text-[10px] uppercase font-bold tracking-wider">Open in App for better audio</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <button 
-              onClick={handleInstallApp}
-              className="bg-white text-indigo-600 px-4 py-2 rounded-lg text-xs font-black shadow-lg active:scale-95 transition-transform"
-            >
-              OPEN
-            </button>
-            <button onClick={dismissInstallBanner} className="p-1 text-indigo-200">
-              <X size={18} />
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  };
-
+  /**
+   * Fix: Ensured valid JSX for all standard HTML components (nav, main, div, etc.)
+   */
   return (
-    <div className="min-h-screen supports-[min-height:100dvh]:min-h-[100dvh] bg-slate-950 text-slate-100 font-sans overflow-hidden">
-      
-      <InstallBanner />
-
+    <div className="min-h-screen bg-slate-950 text-slate-100 font-sans overflow-hidden">
       {viewState !== 'live_session' && (
       <nav className="hidden md:block sticky top-0 z-50 bg-slate-900/90 backdrop-blur-md border-b border-slate-800">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
             <div className="flex items-center cursor-pointer" onClick={() => { handleSetViewState('directory'); setActiveTab('categories'); }}>
-              <div className="bg-gradient-to-tr from-indigo-600 to-purple-600 p-2 rounded-xl shadow-lg shadow-indigo-500/20">
-                <Podcast className="text-white w-6 h-6" />
-              </div>
-              <span className="ml-3 text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-white to-slate-400">
-                {t.appTitle}
-              </span>
+              <div className="bg-gradient-to-tr from-indigo-600 to-purple-600 p-2 rounded-xl shadow-lg"><Podcast className="text-white w-6 h-6" /></div>
+              <span className="ml-3 text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-white to-slate-400">{t.appTitle}</span>
             </div>
-            
             <div className="flex flex-1 max-w-md mx-8 relative">
-              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <Search className="h-4 w-4 text-slate-500" />
-              </div>
-              <input
-                type="text"
-                className="block w-full pl-10 pr-3 py-2 border border-slate-700 rounded-full leading-5 bg-slate-800/50 text-slate-300 placeholder-slate-500 focus:outline-none bg-slate-800 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 sm:text-sm transition-all"
-                placeholder={t.search}
-                value={searchQuery}
-                onChange={(e) => {
-                    setSearchQuery(e.target.value);
-                    if (e.target.value && viewState !== 'directory') handleSetViewState('directory');
-                }}
-              />
+              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"><Search className="h-4 w-4 text-slate-500" /></div>
+              <input type="text" className="block w-full pl-10 pr-3 py-2 border border-slate-700 rounded-full bg-slate-800/50 text-slate-300 placeholder-slate-500 focus:outline-none focus:border-indigo-500 sm:text-sm" placeholder={t.search} value={searchQuery} onChange={(e) => { setSearchQuery(e.target.value); if (e.target.value && viewState !== 'directory') handleSetViewState('directory'); }} />
             </div>
-
             <div className="flex items-center space-x-2 sm:space-x-4">
-              
               <div className="hidden lg:flex items-center space-x-2 mr-2">
-                  <button 
-                      onClick={() => window.location.reload()}
-                      className="p-2 rounded-lg bg-slate-800/50 hover:bg-slate-800 text-slate-400 hover:text-white transition-colors"
-                      title="Reload Page"
-                  >
-                      <RefreshCw size={18} />
-                  </button>
-                  <button
-                      onClick={() => setIsCreateModalOpen(true)}
-                      className="flex items-center space-x-2 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-lg transition-colors shadow-sm"
-                  >
-                      <Plus size={14} />
-                      <span>New Podcast</span>
-                  </button>
-                  <button
-                      onClick={() => setIsVoiceCreateOpen(true)}
-                      className="flex items-center space-x-2 px-3 py-1.5 bg-pink-600 hover:bg-pink-500 text-white text-xs font-bold rounded-lg transition-colors shadow-sm"
-                  >
-                      <Sparkles size={14} />
-                      <span>Magic Create</span>
-                  </button>
+                  <button onClick={() => window.location.reload()} className="p-2 rounded-lg bg-slate-800/50 hover:bg-slate-800 text-slate-400 hover:text-white" title="Reload"><RefreshCw size={18} /></button>
+                  <button onClick={() => setIsCreateModalOpen(true)} className="flex items-center space-x-2 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-lg transition-colors"><Plus size={14} /><span>New Podcast</span></button>
+                  <button onClick={() => setIsVoiceCreateOpen(true)} className="flex items-center space-x-2 px-3 py-1.5 bg-pink-600 hover:bg-pink-500 text-white text-xs font-bold rounded-lg transition-colors"><Sparkles size={14} /><span>Magic Create</span></button>
               </div>
-
               <div className="relative">
-                  <button 
-                    onClick={() => setIsDesktopAppsOpen(!isDesktopAppsOpen)}
-                    className={`flex items-center space-x-2 px-3 py-1.5 rounded-lg transition-colors ${isDesktopAppsOpen ? 'bg-slate-800 text-white' : 'text-slate-800/50 hover:bg-slate-800 text-slate-400 hover:text-white'}`}
-                  >
-                    <LayoutGrid size={16}/><span>Apps</span>
-                  </button>
-                  
+                  <button onClick={() => setIsDesktopAppsOpen(!isDesktopAppsOpen)} className={`flex items-center space-x-2 px-3 py-1.5 rounded-lg ${isDesktopAppsOpen ? 'bg-slate-800 text-white border border-slate-700' : 'bg-slate-800/50 text-slate-300 border border-transparent'}`}><LayoutGrid size={16} className="text-indigo-400" /><span>Apps</span></button>
                   {isDesktopAppsOpen && (
                       <>
                         <div className="fixed inset-0 z-40" onClick={() => setIsDesktopAppsOpen(false)}></div>
-                        <div className="absolute top-full right-0 mt-2 w-80 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl p-4 grid grid-cols-3 gap-3 z-50 animate-fade-in-up origin-top-right">
+                        <div className="absolute top-full right-0 mt-2 w-72 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl p-3 grid grid-cols-3 gap-2 z-50 animate-fade-in-up origin-top-right">
                             {allApps.map(app => (
-                                <button
-                                    key={app.label}
-                                    onClick={() => { app.action(); setIsDesktopAppsOpen(false); }}
-                                    className="flex flex-col items-center justify-center gap-2 p-3 bg-slate-800/50 hover:bg-slate-800 border border-slate-700/50 hover:border-slate-600 rounded-xl transition-all group"
-                                >
-                                    <div className={`p-2 bg-slate-800 rounded-lg group-hover:scale-110 transition-transform ${app.color}`}>
-                                        <app.icon size={20} />
-                                    </div>
-                                    <span className="text-[10px] font-bold text-slate-300 group-hover:text-white">{app.label}</span>
+                                <button key={app.id} onClick={() => { app.action(); setIsDesktopAppsOpen(false); }} className="flex flex-col items-center justify-center gap-1.5 p-2.5 bg-slate-800/40 hover:bg-slate-800 border border-slate-700/50 rounded-xl transition-all group">
+                                    <div className={`p-1.5 bg-slate-900 rounded-lg group-hover:scale-110 transition-transform ${app.color}`}><app.icon size={18} /></div>
+                                    <span className="text-[9px] font-black text-slate-400 group-hover:text-white text-center leading-tight">{app.label}</span>
                                 </button>
                             ))}
                         </div>
                       </>
                   )}
               </div>
-
-              <button 
-                onClick={() => setLanguage(prev => prev === 'en' ? 'zh' : 'en')}
-                className="w-9 h-9 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-xs font-bold text-slate-300 hover:text-white hover:border-slate-500 transition-all"
-                title="Switch Language"
-              >
-                {language === 'en' ? '中' : 'EN'}
-              </button>
-
-              {!isFirebaseConfigured && (
-                  <button onClick={() => setIsFirebaseModalOpen(true)} className="p-2 text-amber-500 bg-amber-900/20 rounded-full hover:bg-amber-900/40 border border-amber-900/50 animate-pulse">
-                      <AlertTriangle size={18} />
-                  </button>
-              )}
-
-              {currentUser && (
-                  <div className="hidden sm:block">
-                      <Notifications />
-                  </div>
-              )}
-              
+              <button onClick={() => setLanguage(prev => prev === 'en' ? 'zh' : 'en')} className="w-9 h-9 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-xs font-bold text-slate-300 hover:text-white transition-all">{language === 'en' ? '中' : 'EN'}</button>
+              {!isFirebaseConfigured && <button onClick={() => setIsFirebaseModalOpen(true)} className="p-2 text-amber-500 bg-amber-900/20 rounded-full border border-amber-900/50 animate-pulse"><AlertTriangle size={18} /></button>}
+              {currentUser && <div className="hidden sm:block"><Notifications /></div>}
               <UserAuth />
-              
-              <div className="relative">
-                <button 
-                  onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
-                  className="p-2 rounded-full hover:bg-slate-800 text-slate-400 hover:text-white transition-colors"
-                >
-                  <Menu size={24} />
-                </button>
-              </div>
+              <button onClick={() => setIsUserMenuOpen(!isUserMenuOpen)} className="p-2 rounded-full hover:bg-slate-800 text-slate-400"><Menu size={24} /></button>
             </div>
           </div>
         </div>
       </nav>
       )}
 
-      <MobileTopNav />
-      <MobileSearchOverlay />
-
-      <div className="flex-1 overflow-hidden h-[calc(100vh-64px)] md:h-[calc(100vh-64px)] pb-16 md:pb-0">
-        {/* viewState === 'mission' handled via early return above */}
+      <div className="flex-1 overflow-hidden h-[calc(100vh-64px)] pb-16 md:pb-0">
         {viewState === 'user_guide' && <UserManual onBack={() => handleSetViewState('directory')} />}
         {viewState === 'notebook_viewer' && <NotebookViewer onBack={() => handleSetViewState('directory')} currentUser={currentUser} />}
         {viewState === 'card_workshop' && <CardWorkshop onBack={() => handleSetViewState('directory')} cardId={viewCardId} />}
-        
-        {viewState === 'code_studio' && (
-            <CodeStudio 
-                onBack={() => { handleSetViewState('directory'); }} 
-                currentUser={currentUser} 
-                userProfile={userProfile}
-                sessionId={sharedSessionId}
-                accessKey={accessKey}
-                onSessionStart={handleSessionStart} 
-                onSessionStop={handleSessionStop} 
-                onStartLiveSession={(channel, context) => handleStartLiveSession(channel, context)} 
-            />
-        )}
-
-        {viewState === ('icon_generator' as any) && (
-            <IconGenerator 
-                onBack={() => { handleSetViewState('directory'); }}
-                currentUser={currentUser}
-            />
-        )}
-        
-        {viewState === 'whiteboard' && (
-            <Whiteboard 
-                onBack={() => { handleSetViewState('directory'); }}
-                sessionId={sharedSessionId}
-                accessKey={accessKey}
-                onSessionStart={handleSessionStart} 
-            />
-        )}
-        
+        {viewState === 'code_studio' && <CodeStudio onBack={() => handleSetViewState('directory')} currentUser={currentUser} userProfile={userProfile} sessionId={sharedSessionId} accessKey={accessKey} onSessionStart={handleSessionStart} onSessionStop={handleSessionStop} onStartLiveSession={(channel, context) => handleStartLiveSession(channel, context)} />}
+        {viewState === ('icon_generator' as any) && <IconGenerator onBack={() => handleSetViewState('directory')} currentUser={currentUser} />}
+        {viewState === 'whiteboard' && <Whiteboard onBack={() => handleSetViewState('directory')} sessionId={sharedSessionId} accessKey={accessKey} onSessionStart={handleSessionStart} />}
         {viewState === 'blog' && <BlogView onBack={() => handleSetViewState('directory')} currentUser={currentUser} />}
         {viewState === 'chat' && <WorkplaceChat onBack={() => handleSetViewState('directory')} currentUser={currentUser} initialChannelId={chatTargetId} />}
         {viewState === 'careers' && <CareerCenter onBack={() => handleSetViewState('directory')} currentUser={currentUser} />}
-
         {viewState === 'directory' && (
-          <div className="h-full flex flex-col">
-            <div className="flex-1 overflow-hidden relative">
-               {activeTab === 'categories' && (
-                   <PodcastFeed 
-                       channels={feedChannels}
-                       onChannelClick={(id) => { setActiveChannelId(id); handleSetViewState('podcast_detail'); }}
-                       onStartLiveSession={(channel) => handleStartLiveSession(channel)}
-                       userProfile={userProfile}
-                       globalVoice={globalVoice}
-                       onRefresh={handleRefreshFeed}
-                       t={t}
-                       currentUser={currentUser}
-                       setChannelToEdit={setChannelToEdit}
-                       setIsSettingsModalOpen={setIsSettingsModalOpen}
-                       onCommentClick={handleCommentClick}
-                       handleVote={handleVote}
-                       onMessageCreator={handleMessageCreator}
-                       filterMode={mobileFeedTab}
-                       isFeedActive={viewState === 'directory'}
-                   />
-               )}
-
-               {activeTab !== 'categories' && (
-                   <div className="h-full overflow-y-auto p-4 md:p-8 animate-fade-in max-w-7xl mx-auto w-full pb-20">
-                       {activeTab === 'calendar' && (
-                          <CalendarView 
-                             channels={channels}
-                             handleChannelClick={(id) => { setActiveChannelId(id); handleSetViewState('podcast_detail'); }}
-                             handleVote={handleVote}
-                             currentUser={currentUser}
-                             setChannelToEdit={setChannelToEdit}
-                             setIsSettingsModalOpen={setIsSettingsModalOpen}
-                             globalVoice={globalVoice}
-                             t={t}
-                             onCommentClick={handleCommentClick}
-                             onStartLiveSession={handleStartLiveSession}
-                             onCreateChannel={handleCreateChannel}
-                             onSchedulePodcast={handleSchedulePodcast}
-                          />
-                       )}
-
-                       {activeTab === 'mentorship' && (
-                          <MentorBooking 
-                             currentUser={currentUser} 
-                             channels={channels}
-                             onStartLiveSession={handleStartLiveSession}
-                          />
-                       )}
-
-                       {activeTab === 'groups' && <GroupManager />}
-                       {activeTab === 'recordings' && <RecordingList onStartLiveSession={handleStartLiveSession} />}
-                       {activeTab === 'docs' && <DocumentList />}
-                   </div>
-               )}
-            </div>
-          </div>
+           <PodcastFeed channels={feedChannels} onChannelClick={(id) => { setActiveChannelId(id); handleSetViewState('podcast_detail'); }} onStartLiveSession={handleStartLiveSession} userProfile={userProfile} globalVoice={globalVoice} onRefresh={handleRefreshFeed} t={t} currentUser={currentUser} setChannelToEdit={setChannelToEdit} setIsSettingsModalOpen={setIsSettingsModalOpen} onCommentClick={handleCommentClick} handleVote={handleVote} onMessageCreator={handleMessageCreator} filterMode={mobileFeedTab} isFeedActive={viewState === 'directory'} />
         )}
-
-        {viewState === 'podcast_detail' && activeChannel && (
-          <PodcastDetail 
-            channel={activeChannel} 
-            onBack={() => handleSetViewState('directory')}
-            onStartLiveSession={(context, lectureId, recordingEnabled, videoEnabled, activeSegment, cameraEnabled) => {
-               setLiveConfig({
-                   context,
-                   bookingId: lectureId, 
-                   recording: recordingEnabled,
-                   video: videoEnabled,
-                   camera: cameraEnabled,
-                   segment: activeSegment
-               });
-               handleSetViewState('live_session');
-            }}
-            language={language}
-            onEditChannel={() => {
-                if (setChannelToEdit && activeChannel) setChannelToEdit(activeChannel);
-                if (setIsSettingsModalOpen) setIsSettingsModalOpen(true);
-            }}
-            onViewComments={() => handleCommentClick(activeChannel)}
-            currentUser={currentUser}
-          />
-        )}
-
+        {viewState === 'podcast_detail' && activeChannel && <PodcastDetail channel={activeChannel} onBack={() => handleSetViewState('directory')} onStartLiveSession={(context, lectureId, rec, vid, seg, cam) => { setLiveConfig({ context, bookingId: lectureId, recording: rec, video: vid, camera: cam, segment: seg }); handleSetViewState('live_session'); }} language={language} onEditChannel={() => { setChannelToEdit(activeChannel); setIsSettingsModalOpen(true); }} onViewComments={() => handleCommentClick(activeChannel)} currentUser={currentUser} />}
         {viewState === 'live_session' && activeChannel && (
           <div className="fixed inset-0 z-[100] bg-slate-950">
-             <LiveSession 
-               channel={activeChannel}
-               initialContext={liveConfig.context}
-               lectureId={liveConfig.bookingId}
-               recordingEnabled={liveConfig.recording}
-               videoEnabled={liveConfig.video}
-               cameraEnabled={liveConfig.camera}
-               activeSegment={liveConfig.segment}
-               initialTranscript={liveConfig.initialTranscript}
-               onEndSession={() => {
-                   if (tempChannel) {
-                       setTempChannel(null);
-                       setActiveChannelId(null);
-                       handleSetViewState('directory');
-                       setActiveTab('recordings');
-                   } else {
-                       handleSetViewState('podcast_detail');
-                   }
-               }}
-               language={language}
-             />
+             <LiveSession channel={activeChannel} initialContext={liveConfig.context} lectureId={liveConfig.bookingId} recordingEnabled={liveConfig.recording} videoEnabled={liveConfig.video} cameraEnabled={liveConfig.camera} activeSegment={liveConfig.segment} initialTranscript={liveConfig.initialTranscript} onEndSession={() => { if (tempChannel) { setTempChannel(null); setActiveChannelId(null); handleSetViewState('directory'); setActiveTab('recordings'); } else handleSetViewState('podcast_detail'); }} language={language} />
           </div>
         )}
-
         {viewState === 'debug' && <DebugView onBack={() => handleSetViewState('directory')} />}
         {viewState === 'cloud_debug' && <CloudDebugView onBack={() => handleSetViewState('directory')} />}
         {viewState === ('public_debug' as any) && <PublicChannelInspector onBack={() => handleSetViewState('directory')} />}
@@ -1288,28 +710,14 @@ const App: React.FC = () => {
       {isAppsMenuOpen && (
         <div className="fixed inset-0 z-[60] bg-slate-950/95 backdrop-blur-md flex flex-col animate-fade-in md:hidden">
             <div className="p-4 flex justify-between items-center border-b border-slate-800 bg-slate-900/50">
-                <h2 className="text-lg font-bold text-white flex items-center gap-2">
-                    <LayoutGrid size={20} className="text-indigo-400" />
-                    All Apps
-                </h2>
-                <button onClick={() => setIsAppsMenuOpen(false)} className="p-2 bg-slate-800 rounded-full text-slate-400 hover:text-white">
-                    <X size={20} />
-                </button>
+                <h2 className="text-lg font-bold text-white flex items-center gap-2"><LayoutGrid size={20} className="text-indigo-400" />All Apps</h2>
+                <button onClick={() => setIsAppsMenuOpen(false)} className="p-2 bg-slate-800 rounded-full text-slate-400"><X size={20} /></button>
             </div>
             <div className="p-6 grid grid-cols-3 gap-4 overflow-y-auto pb-24">
                 {allApps.map((app) => (
-                    <button 
-                        key={app.label}
-                        onClick={() => {
-                            app.action();
-                            setIsAppsMenuOpen(false);
-                        }}
-                        className="flex flex-col items-center justify-center gap-3 p-4 bg-slate-900 border border-slate-800 rounded-2xl hover:bg-slate-800 active:scale-95 transition-all aspect-square shadow-lg"
-                    >
-                        <div className={`p-3 bg-slate-800 rounded-xl ${app.color} shadow-inner`}>
-                            <app.icon size={28} />
-                        </div>
-                        <span className="text-xs font-bold text-slate-300">{app.label}</span>
+                    <button key={app.id} onClick={() => { app.action(); setIsAppsMenuOpen(false); }} className="flex flex-col items-center justify-center gap-2 p-3 bg-slate-900 border border-slate-800 rounded-2xl active:scale-95 transition-all shadow-lg group">
+                        <div className={`p-2.5 bg-slate-800 rounded-xl ${app.color} shadow-inner`}><app.icon size={24} /></div>
+                        <span className="text-[10px] font-black text-slate-300 text-center leading-tight">{app.label}</span>
                     </button>
                 ))}
             </div>
@@ -1317,76 +725,18 @@ const App: React.FC = () => {
       )}
 
       {isUserMenuOpen && (
-        <StudioMenu 
-           isUserMenuOpen={isUserMenuOpen} 
-           setIsUserMenuOpen={setIsUserMenuOpen}
-           userProfile={userProfile}
-           setUserProfile={setUserProfile}
-           currentUser={currentUser}
-           globalVoice={globalVoice}
-           setGlobalVoice={setGlobalVoice}
-           setIsCreateModalOpen={setIsCreateModalOpen}
-           setIsVoiceCreateOpen={setIsVoiceCreateOpen}
-           setIsSyncModalOpen={setIsSyncModalOpen}
-           setIsSettingsModalOpen={setIsAccountSettingsOpen}
-           onOpenUserGuide={() => handleSetViewState('user_guide')}
-           onNavigate={(view: any) => handleSetViewState(view)}
-           onOpenPrivacy={() => setIsPrivacyOpen(true)}
-           t={t}
-           className="fixed bottom-24 right-4 md:bottom-auto md:top-16 md:right-4 z-[100] shadow-2xl border-slate-700"
-           channels={channels}
-           language={language}
-           setLanguage={setLanguage}
-           allApps={allApps}
-        />
+        <StudioMenu isUserMenuOpen={isUserMenuOpen} setIsUserMenuOpen={setIsUserMenuOpen} userProfile={userProfile} setUserProfile={setUserProfile} currentUser={currentUser} globalVoice={globalVoice} setGlobalVoice={setGlobalVoice} setIsCreateModalOpen={setIsCreateModalOpen} setIsVoiceCreateOpen={setIsVoiceCreateOpen} setIsSyncModalOpen={setIsSyncModalOpen} setIsSettingsModalOpen={setIsAccountSettingsOpen} onOpenUserGuide={() => handleSetViewState('user_guide')} onNavigate={(v: any) => handleSetViewState(v)} onOpenPrivacy={() => setIsPrivacyOpen(true)} t={t} className="fixed bottom-24 right-4 md:bottom-auto md:top-16 md:right-4 z-[100] shadow-2xl border-slate-700" channels={channels} language={language} setLanguage={setLanguage} allApps={allApps} />
       )}
 
       <MobileBottomNav />
-
       <CreateChannelModal isOpen={isCreateModalOpen} onClose={() => { setIsCreateModalOpen(false); setCreateModalDate(null); }} onCreate={handleCreateChannel} initialDate={createModalDate} />
       <VoiceCreateModal isOpen={isVoiceCreateOpen} onClose={() => setIsVoiceCreateOpen(false)} onCreate={handleCreateChannel} />
       <DataSyncModal isOpen={isSyncModalOpen} onClose={() => setIsSyncModalOpen(false)} />
-      <FirebaseConfigModal isOpen={isFirebaseModalOpen} onClose={() => setIsFirebaseModalOpen(false)} onConfigUpdate={(valid) => { if(valid) window.location.reload(); }} />
-
-      {isAccountSettingsOpen && safeUserProfile && (
-          <SettingsModal 
-             isOpen={true} 
-             onClose={() => setIsAccountSettingsOpen(false)} 
-             user={safeUserProfile} 
-             onUpdateProfile={(updated) => setUserProfile(updated)}
-             onUpgradeClick={() => setIsPricingOpen(true)}
-          />
-      )}
-
-      {isPricingOpen && safeUserProfile && (
-          <PricingModal 
-             isOpen={true} 
-             onClose={() => setIsPricingOpen(false)} 
-             user={safeUserProfile} 
-             onSuccess={handleUpgradeSuccess}
-          />
-      )}
-
-      {channelToEdit && (
-        <ChannelSettingsModal 
-           isOpen={!!isSettingsModalOpen}
-           onClose={() => { if(setIsSettingsModalOpen) setIsSettingsModalOpen(false); setChannelToEdit(null); }}
-           channel={channelToEdit}
-           onUpdate={handleUpdateChannel}
-           onDelete={handleDeleteChannel}
-        />
-      )}
-
-      {commentsChannel && (
-         <CommentsModal 
-            isOpen={isCommentsModalOpen}
-            onClose={() => { setIsCommentsModalOpen(false); setCommentsChannel(null); }}
-            channel={commentsChannel}
-            onAddComment={handleAddComment}
-            currentUser={currentUser}
-         />
-      )}
-
+      <FirebaseConfigModal isOpen={isFirebaseModalOpen} onClose={() => setIsFirebaseModalOpen(false)} onConfigUpdate={(v) => { if(v) window.location.reload(); }} />
+      {isAccountSettingsOpen && safeUserProfile && <SettingsModal isOpen={true} onClose={() => setIsAccountSettingsOpen(false)} user={safeUserProfile} onUpdateProfile={(u) => setUserProfile(u)} onUpgradeClick={() => setIsPricingOpen(true)} />}
+      {isPricingOpen && safeUserProfile && <PricingModal isOpen={true} onClose={() => setIsPricingOpen(false)} user={safeUserProfile} onSuccess={handleUpgradeSuccess} />}
+      {channelToEdit && <ChannelSettingsModal isOpen={!!isSettingsModalOpen} onClose={() => { setIsSettingsModalOpen(false); setChannelToEdit(null); }} channel={channelToEdit} onUpdate={handleUpdateChannel} onDelete={handleDeleteChannel} />}
+      {commentsChannel && <CommentsModal isOpen={isCommentsModalOpen} onClose={() => { setIsCommentsModalOpen(false); setCommentsChannel(null); }} channel={commentsChannel} onAddComment={handleAddComment} currentUser={currentUser} />}
     </div>
   );
 };

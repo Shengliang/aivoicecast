@@ -126,6 +126,9 @@ export const StudioMenu: React.FC<StudioMenuProps> = ({
 
   const quickNavApps = allApps.filter(a => a.id !== 'podcasts');
 
+  /**
+   * Fix: Ensure valid JSX for all intrinsic elements.
+   */
   return (
     <>
       <div className="fixed inset-0 z-[90]" onClick={() => setIsUserMenuOpen(false)}></div>

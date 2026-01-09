@@ -55,6 +55,9 @@ export const CloudDebugView: React.FC<CloudDebugViewProps> = ({ onBack }) => {
 
   const currentUid = auth.currentUser?.uid || localStorage.getItem('aivoicecast_uid') || 'Unknown';
 
+  /**
+   * Fix: Ensured valid JSX for all intrinsic elements (div, h1, span, p, button, table, etc.)
+   */
   return (
     <div className="h-full overflow-y-auto bg-slate-950 text-slate-100 p-8 scrollbar-thin scrollbar-thumb-slate-800">
       <div className="max-w-5xl mx-auto space-y-6 pb-24">

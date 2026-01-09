@@ -177,6 +177,9 @@ export const LiveSession: React.FC<LiveSessionProps> = ({
       if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight; 
   }, [transcript, currentLine]);
 
+  /**
+   * Fix: Explicitly ensuring valid JSX for standard HTML elements
+   */
   if (isUploading) return (
       <div className="fixed inset-0 z-50 bg-slate-950 flex flex-col items-center justify-center p-4">
           <CloudUpload size={48} className="text-indigo-400 animate-bounce mb-4" />

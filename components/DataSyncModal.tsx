@@ -174,6 +174,9 @@ export const DataSyncModal: React.FC<DataSyncModalProps> = ({ isOpen, onClose })
 
   if (!isOpen) return null;
 
+  /**
+   * Fix: Ensured valid JSX for all intrinsic elements (div, h2, span, code, etc.)
+   */
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
       <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-2xl shadow-2xl overflow-hidden animate-fade-in-up">

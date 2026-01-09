@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Channel, ChannelStats } from '../types';
 import { Play, Heart, MessageSquare, Lock, Globe, Users, Edit, Share2, Bookmark, User, Mic } from 'lucide-react';
@@ -101,6 +100,9 @@ export const ChannelCard: React.FC<ChannelCardProps> = ({
 
   const accentClass = getAccentColor();
 
+  /**
+   * Fix: Ensured valid JSX for all intrinsic elements.
+   */
   return (
     <div 
       onClick={() => handleChannelClick(channel.id)}

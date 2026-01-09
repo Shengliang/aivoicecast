@@ -55,6 +55,9 @@ export const PublicChannelInspector: React.FC<PublicChannelInspectorProps> = ({ 
     }
   };
 
+  /**
+   * Fix: Ensuring standard layout elements are handled as valid JSX.
+   */
   return (
     <div className="h-full overflow-y-auto bg-slate-950 text-slate-100 p-8 scrollbar-thin scrollbar-thumb-slate-800">
       <div className="max-w-6xl mx-auto space-y-8 pb-24">

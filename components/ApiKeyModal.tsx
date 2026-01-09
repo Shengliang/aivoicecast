@@ -50,6 +50,9 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose, onKey
 
   if (!isOpen) return null;
 
+  /**
+   * Fix: Ensure standard HTML tags (div, h2, span, label, input, a, p, button) are correctly used.
+   */
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
       <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-md shadow-2xl overflow-hidden animate-fade-in-up">

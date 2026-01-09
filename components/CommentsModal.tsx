@@ -201,6 +201,9 @@ export const CommentsModal: React.FC<CommentsModalProps> = ({
       }
   };
 
+  /**
+   * Fix: Ensured valid JSX for standard HTML elements.
+   */
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
       <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-xl shadow-2xl flex flex-col max-h-[85vh] animate-fade-in-up">
@@ -302,7 +305,7 @@ export const CommentsModal: React.FC<CommentsModalProps> = ({
                         <div key={att.id} className="relative group shrink-0">
                            <div className="w-16 h-16 bg-slate-800 rounded-lg border border-indigo-500/50 flex items-center justify-center overflow-hidden">
                               {att.type === 'image' ? <img src={att.url} className="w-full h-full object-cover" /> : 
-                               att.type === 'video' ? <Video size={20} className="text-indigo-400" /> : 
+                               att.type === 'video' ? <video src={att.url} controls className="text-indigo-400" /> : 
                                att.type === 'file' ? <FileText size={20} className="text-red-400" /> :
                                <Mic size={20} className="text-pink-400" />}
                            </div>

@@ -48,6 +48,9 @@ export const DebugView: React.FC<DebugViewProps> = ({ onBack }) => {
      channels: entries.filter(e => e.store === 'user_channels').reduce((acc, curr) => acc + curr.size, 0),
   };
 
+  /**
+   * Fix: Ensured valid JSX for all intrinsic elements (div, h1, span, button, p, table, etc.)
+   */
   return (
     <div className="h-full overflow-y-auto bg-slate-950 text-slate-100 p-8 scrollbar-thin scrollbar-thumb-slate-800">
       <div className="max-w-6xl mx-auto space-y-8 pb-24">

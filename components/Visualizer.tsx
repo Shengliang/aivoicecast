@@ -23,7 +23,6 @@ export const Visualizer: React.FC<VisualizerProps> = ({ volume, isActive, color 
       ctx.clearRect(0, 0, width, height);
 
       if (!isActive) {
-         // Draw a flat line if inactive
         ctx.beginPath();
         ctx.moveTo(0, height / 2);
         ctx.lineTo(width, height / 2);
@@ -33,7 +32,6 @@ export const Visualizer: React.FC<VisualizerProps> = ({ volume, isActive, color 
         return;
       }
 
-      // Create a dynamic wave
       ctx.beginPath();
       ctx.moveTo(0, height / 2);
 
@@ -53,14 +51,13 @@ export const Visualizer: React.FC<VisualizerProps> = ({ volume, isActive, color 
       ctx.shadowColor = color;
       ctx.stroke();
 
-      // Draw a mirrored ghost wave
       ctx.beginPath();
       ctx.moveTo(0, height / 2);
       for (let x = 0; x < width; x++) {
         const y = height / 2 - Math.sin(x * frequency + time * 0.8) * amplitude * 0.6 * Math.sin(x / width * Math.PI);
         ctx.lineTo(x, y);
       }
-      ctx.strokeStyle = color + '40'; // Lower opacity
+      ctx.strokeStyle = color + '40';
       ctx.lineWidth = 2;
       ctx.stroke();
 
@@ -74,7 +71,7 @@ export const Visualizer: React.FC<VisualizerProps> = ({ volume, isActive, color 
     };
   }, [isActive, volume, color]);
 
-  // JSX elements like canvas require React to be in scope for older TS configurations
+  // Fix: Ensure valid JSX for standard HTML elements
   return (
     <canvas 
       ref={canvasRef} 

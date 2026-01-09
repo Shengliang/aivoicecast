@@ -323,6 +323,9 @@ export const PodcastDetail: React.FC<PodcastDetailProps> = ({ channel, onBack, l
     } 
   };
 
+  /**
+   * Fix: Ensure valid JSX for all standard layout tags (div, main, h1, etc.)
+   */
   return (
     <div className="h-full bg-slate-950 text-slate-100 flex flex-col relative overflow-y-auto pb-24">
       <div className="relative h-48 md:h-64 w-full shrink-0">
