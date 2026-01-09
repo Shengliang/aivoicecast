@@ -632,8 +632,25 @@ const App: React.FC = () => {
   };
 
   /**
-   * Fix: Ensured valid JSX for all standard HTML components (nav, main, div, etc.)
+   * Fix: Correct conditional routing for directory activeTab
    */
+  const renderDirectoryContent = () => {
+    switch (activeTab) {
+      case 'calendar':
+        return <CalendarView channels={channels} handleChannelClick={(id) => { setActiveChannelId(id); handleSetViewState('podcast_detail'); }} handleVote={handleVote} currentUser={currentUser} setChannelToEdit={setChannelToEdit!} setIsSettingsModalOpen={setIsSettingsModalOpen!} globalVoice={globalVoice} t={t} onCommentClick={handleCommentClick} onStartLiveSession={handleStartLiveSession} onCreateChannel={handleCreateChannel} onSchedulePodcast={handleSchedulePodcast} />;
+      case 'mentorship':
+        return <MentorBooking currentUser={currentUser} channels={channels} onStartLiveSession={handleStartLiveSession} />;
+      case 'groups':
+        return <div className="p-8 max-w-4xl mx-auto"><GroupManager /></div>;
+      case 'recordings':
+        return <div className="p-8 max-w-5xl mx-auto"><RecordingList onStartLiveSession={handleStartLiveSession} /></div>;
+      case 'docs':
+        return <div className="p-8 max-w-5xl mx-auto"><DocumentList /></div>;
+      default:
+        return <PodcastFeed channels={feedChannels} onChannelClick={(id) => { setActiveChannelId(id); handleSetViewState('podcast_detail'); }} onStartLiveSession={handleStartLiveSession} userProfile={userProfile} globalVoice={globalVoice} onRefresh={handleRefreshFeed} t={t} currentUser={currentUser} setChannelToEdit={setChannelToEdit} setIsSettingsModalOpen={setIsSettingsModalOpen} onCommentClick={handleCommentClick} handleVote={handleVote} onMessageCreator={handleMessageCreator} filterMode={mobileFeedTab} isFeedActive={viewState === 'directory'} />;
+    }
+  };
+
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 font-sans overflow-hidden">
       {viewState !== 'live_session' && (
@@ -691,9 +708,7 @@ const App: React.FC = () => {
         {viewState === 'blog' && <BlogView onBack={() => handleSetViewState('directory')} currentUser={currentUser} />}
         {viewState === 'chat' && <WorkplaceChat onBack={() => handleSetViewState('directory')} currentUser={currentUser} initialChannelId={chatTargetId} />}
         {viewState === 'careers' && <CareerCenter onBack={() => handleSetViewState('directory')} currentUser={currentUser} />}
-        {viewState === 'directory' && (
-           <PodcastFeed channels={feedChannels} onChannelClick={(id) => { setActiveChannelId(id); handleSetViewState('podcast_detail'); }} onStartLiveSession={handleStartLiveSession} userProfile={userProfile} globalVoice={globalVoice} onRefresh={handleRefreshFeed} t={t} currentUser={currentUser} setChannelToEdit={setChannelToEdit} setIsSettingsModalOpen={setIsSettingsModalOpen} onCommentClick={handleCommentClick} handleVote={handleVote} onMessageCreator={handleMessageCreator} filterMode={mobileFeedTab} isFeedActive={viewState === 'directory'} />
-        )}
+        {viewState === 'directory' && renderDirectoryContent()}
         {viewState === 'podcast_detail' && activeChannel && <PodcastDetail channel={activeChannel} onBack={() => handleSetViewState('directory')} onStartLiveSession={(context, lectureId, rec, vid, seg, cam) => { setLiveConfig({ context, bookingId: lectureId, recording: rec, video: vid, camera: cam, segment: seg }); handleSetViewState('live_session'); }} language={language} onEditChannel={() => { setChannelToEdit(activeChannel); setIsSettingsModalOpen(true); }} onViewComments={() => handleCommentClick(activeChannel)} currentUser={currentUser} />}
         {viewState === 'live_session' && activeChannel && (
           <div className="fixed inset-0 z-[100] bg-slate-950">
