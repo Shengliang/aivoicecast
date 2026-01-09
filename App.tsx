@@ -58,7 +58,7 @@ import { HANDCRAFTED_CHANNELS, CATEGORY_STYLES, TOPIC_CATEGORIES } from './utils
 import { OFFLINE_CHANNEL_ID } from './utils/offlineContent';
 import { warmUpAudioContext, stopAllPlatformAudio, isAnyAudioPlaying } from './utils/audioUtils';
 
-const APP_VERSION = "v3.85.1"; 
+const APP_VERSION = "v3.85.2"; 
 
 const UI_TEXT = {
   en: {
@@ -870,7 +870,7 @@ const App: React.FC = () => {
 
           <button 
               onClick={() => { setIsUserMenuOpen(true); setIsAppsMenuOpen(false); }}
-              className={`flex-col items-center gap-1 ${isUserMenuOpen ? 'text-white' : 'text-slate-500'} flex`}
+              className={`flex flex-col items-center gap-1 ${isUserMenuOpen ? 'text-white' : 'text-slate-500'}`}
           >
               <User size={24} fill={isUserMenuOpen ? "currentColor" : "none"} />
               <span className="text-[10px]">Profile</span>
@@ -1282,8 +1282,8 @@ const App: React.FC = () => {
             }}
             language={language}
             onEditChannel={() => {
-                setChannelToEdit(activeChannel);
-                setIsSettingsModalOpen(true);
+                if (setChannelToEdit && activeChannel) setChannelToEdit(activeChannel);
+                if (setIsSettingsModalOpen) setIsSettingsModalOpen(true);
             }}
             onViewComments={() => handleCommentClick(activeChannel)}
             currentUser={currentUser}
@@ -1407,8 +1407,8 @@ const App: React.FC = () => {
 
       {channelToEdit && (
         <ChannelSettingsModal 
-           isOpen={isSettingsModalOpen}
-           onClose={() => { setIsSettingsModalOpen(false); setChannelToEdit(null); }}
+           isOpen={!!isSettingsModalOpen}
+           onClose={() => { if(setIsSettingsModalOpen) setIsSettingsModalOpen(false); setChannelToEdit(null); }}
            channel={channelToEdit}
            onUpdate={handleUpdateChannel}
            onDelete={handleDeleteChannel}

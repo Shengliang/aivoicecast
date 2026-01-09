@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Channel, Group, Chapter } from '../types';
 import { X, Podcast, Sparkles, Lock, Globe, Users, FileText, Loader2, Clipboard, Crown, Calendar } from 'lucide-react';

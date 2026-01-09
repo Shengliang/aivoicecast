@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Channel, ChannelStats } from '../types';
 import { Play, Heart, MessageSquare, Lock, Globe, Users, Edit, Share2, Bookmark, User } from 'lucide-react';

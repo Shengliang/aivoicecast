@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { listUserBackups, deleteCloudFile, CloudFileEntry } from '../services/cloudService';
 import { ArrowLeft, Trash2, RefreshCw, Cloud, FileJson, Folder, CornerLeftUp, FileAudio } from 'lucide-react';

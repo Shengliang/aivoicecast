@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Bell, Check, X, Loader2, Users, Calendar, Link, ExternalLink } from 'lucide-react';
 import { getPendingInvitations, respondToInvitation, getPendingBookings, respondToBooking } from '../services/firestoreService';

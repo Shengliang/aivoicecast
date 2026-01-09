@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { getPublicChannels, deleteChannelFromFirestore, seedDatabase } from '../services/firestoreService';
 import { Channel } from '../types';

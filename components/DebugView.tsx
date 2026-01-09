@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { getAllDebugEntries, deleteDebugEntry, clearDebugStore, DebugEntry } from '../utils/db';
 import { ArrowLeft, Trash2, RefreshCw, HardDrive, FileText, Mic2 } from 'lucide-react';

@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { createGroup, getUserGroups, sendInvitation, getGroupMembers, removeMemberFromGroup, deleteGroup, renameGroup } from '../services/firestoreService';
 import { Group, UserProfile } from '../types';
@@ -107,7 +106,7 @@ export const GroupManager: React.FC = () => {
           await removeMemberFromGroup(groupId, memberId);
           // Update local state
           const updatedMembers = groupMembers[groupId].filter(m => m.uid !== memberId);
-          setGroupMembers(prev => ({ ...prev, [groupId]: updatedMembers }));
+          setGroupMembers(prev => ({ ...prev, [group.id]: updatedMembers }));
           // Update group object locally
           setGroups(prev => prev.map(g => {
               if (g.id === groupId) {

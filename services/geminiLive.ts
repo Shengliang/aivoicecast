@@ -1,14 +1,31 @@
-
 import { GoogleGenAI, LiveServerMessage, Modality } from '@google/genai';
-import { base64ToBytes, decodeRawPcm, createPcmBlob, getGlobalAudioContext, warmUpAudioContext, coolDownAudioContext, registerAudioOwner } from '../utils/audioUtils';
+import { base64ToBytes, decodeRawPcm, createPcmBlob, getGlobalAudioContext, warmUpAudioContext, registerAudioOwner } from '../utils/audioUtils';
 
 export interface LiveConnectionCallbacks {
   onOpen: () => void;
   onClose: () => void;
   onError: (error: Error) => void;
   onVolumeUpdate: (volume: number) => void;
-  onTranscript: (text: string, isUser: boolean) => void;
+  onTranscript: (text: string, isUser: boolean, rawRole?: string) => void;
   onToolCall?: (toolCall: any) => void;
+}
+
+/**
+ * Maps technical project IDs or human strings to valid Gemini Live voice names.
+ * Prebuilt voices: 'Puck', 'Charon', 'Kore', 'Fenrir', 'Zephyr'
+ */
+function getValidLiveVoice(voiceName: string): string {
+    const name = voiceName.toLowerCase();
+    
+    // Technical Persona Mappings
+    if (name.includes('0648937375') || name.includes('software interview')) return 'Fenrir';
+    if (name.includes('0375218270') || name.includes('linux kernel')) return 'Fenrir';
+    
+    if (name === 'default gem' || name === 'default-gem' || name === 'zephyr') return 'Zephyr';
+    
+    const validVoices = ['Puck', 'Charon', 'Kore', 'Fenrir', 'Zephyr'];
+    const match = validVoices.find(v => v.toLowerCase() === name);
+    return match || 'Zephyr';
 }
 
 export class GeminiLiveService {
@@ -25,175 +42,189 @@ export class GeminiLiveService {
   private outputDestination: MediaStreamAudioDestinationNode | null = null;
   private isPlayingResponse: boolean = false;
   private speakingTimer: any = null;
+  private currentTurnRole: string = 'ai';
 
   constructor() {
       if (typeof window !== 'undefined') {
-          const resumeAudio = () => {
-              this.outputAudioContext?.resume().catch(() => {});
-              this.inputAudioContext?.resume().catch(() => {});
+          const resume = () => { 
+              this.outputAudioContext?.resume(); 
+              this.inputAudioContext?.resume(); 
           };
-          window.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') resumeAudio(); });
-          window.addEventListener('pageshow', resumeAudio);
+          window.addEventListener('visibilitychange', () => { 
+              if (document.visibilityState === 'visible') resume(); 
+          });
       }
   }
 
   public initializeAudio() {
     this.inputAudioContext = getGlobalAudioContext(16000);
     this.outputAudioContext = getGlobalAudioContext(24000);
-    
     if (this.outputAudioContext) {
         this.outputDestination = this.outputAudioContext.createMediaStreamDestination();
     }
-
     warmUpAudioContext(this.inputAudioContext).catch(() => {});
     warmUpAudioContext(this.outputAudioContext).catch(() => {});
   }
 
-  public getOutputMediaStream(): MediaStream | null {
-      return this.outputDestination ? this.outputDestination.stream : null;
+  public getOutputMediaStream(): MediaStream | null { 
+      return this.outputDestination ? this.outputDestination.stream : null; 
   }
 
   public sendVideo(base64Data: string, mimeType: string = 'image/jpeg') {
-      this.sessionPromise?.then((session) => {
-          if (session) {
-              try { session.sendRealtimeInput({ media: { mimeType, data: base64Data } }); } catch(e) {}
-          }
-      });
+      this.sessionPromise?.then((s) => s?.sendRealtimeInput({ 
+          media: { mimeType, data: base64Data } 
+      }));
   }
 
-  async connect(
-    voiceName: string, 
-    systemInstruction: string, 
-    callbacks: LiveConnectionCallbacks,
-    tools?: any[]
-  ) {
+  async connect(voiceName: string, systemInstruction: string, callbacks: LiveConnectionCallbacks, tools?: any[]) {
     try {
-      // 1. REGISTER OWNER TO KILL OTHER AUDIO
-      // Fixed: Added source name "GeminiLive" as the first argument to registerAudioOwner
       registerAudioOwner("GeminiLive", () => this.disconnect());
-
+      
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+      
       if (!this.inputAudioContext) this.initializeAudio();
 
       this.stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const validVoice = voiceName || 'Puck';
+      
+      const validVoice = getValidLiveVoice(voiceName);
 
-      const connectionPromise = ai.live.connect({
-        model: 'gemini-2.5-flash-native-audio-preview-09-2025',
+      this.sessionPromise = ai.live.connect({
+        model: 'gemini-2.5-flash-native-audio-preview-12-2025',
         config: {
-          responseModalities: [Modality.AUDIO], 
-          speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: validVoice } } },
-          systemInstruction: systemInstruction,
+          responseModalalities: [Modality.AUDIO], 
+          speechConfig: { 
+              voiceConfig: { prebuiltVoiceConfig: { voiceName: validVoice } } 
+          },
+          systemInstruction, 
           inputAudioTranscription: {}, 
-          outputAudioTranscription: {},
-          tools: tools,
+          outputAudioTranscription: {}, 
+          tools,
         },
         callbacks: {
-          onopen: () => {
-            this.startAudioInput(callbacks.onVolumeUpdate);
-            this.outputAudioContext?.resume();
-            callbacks.onOpen();
+          onopen: () => { 
+            this.startAudioInput(callbacks.onVolumeUpdate); 
+            callbacks.onOpen(); 
           },
           onmessage: async (message: LiveServerMessage) => {
             if (message.toolCall) callbacks.onToolCall?.(message.toolCall);
 
-            const base64Audio = message.serverContent?.modelTurn?.parts?.[0]?.inlineData?.data;
-            if (base64Audio && this.outputAudioContext) {
-              try {
-                this.isPlayingResponse = true;
-                if (this.speakingTimer) clearTimeout(this.speakingTimer);
-                
-                const bytes = base64ToBytes(base64Audio);
-                let sum = 0; for (let i=0; i<bytes.length; i++) sum += Math.abs(bytes[i] - 128);
-                callbacks.onVolumeUpdate((sum / bytes.length) * 0.5);
-
-                this.nextStartTime = Math.max(this.nextStartTime, this.outputAudioContext.currentTime);
-                const audioBuffer = await decodeRawPcm(bytes, this.outputAudioContext, 24000, 1);
-                const source = this.outputAudioContext.createBufferSource();
-                source.buffer = audioBuffer;
-                source.connect(this.outputAudioContext.destination);
-                if (this.outputDestination) source.connect(this.outputDestination);
-                source.addEventListener('ended', () => {
-                  this.sources.delete(source);
-                  if (this.sources.size === 0) this.speakingTimer = setTimeout(() => { this.isPlayingResponse = false; }, 500);
-                });
-                source.start(this.nextStartTime);
-                this.sources.add(source);
-                this.nextStartTime += audioBuffer.duration;
-              } catch (e) {}
+            if (message.serverContent?.modelTurn) {
+                // Resolution mapping for technical roles
+                this.currentTurnRole = (message.serverContent.modelTurn as any).role || 'ai';
             }
 
-            const outputText = message.serverContent?.outputTranscription?.text;
-            if (outputText) callbacks.onTranscript(outputText, false);
-            const inputText = message.serverContent?.inputTranscription?.text;
-            if (inputText) callbacks.onTranscript(inputText, true);
-            const interrupted = message.serverContent?.interrupted;
-            if (interrupted) { this.stopAllSources(); this.nextStartTime = 0; this.isPlayingResponse = false; }
+            const modelParts = message.serverContent?.modelTurn?.parts;
+            if (modelParts && this.outputAudioContext) {
+                for (const part of modelParts) {
+                    if (part.inlineData?.data) {
+                        try {
+                            this.isPlayingResponse = true;
+                            if (this.speakingTimer) clearTimeout(this.speakingTimer);
+                            
+                            const bytes = base64ToBytes(part.inlineData.data);
+                            this.nextStartTime = Math.max(this.nextStartTime, this.outputAudioContext.currentTime);
+                            const audioBuffer = await decodeRawPcm(bytes, this.outputAudioContext, 24000, 1);
+                            const source = this.outputAudioContext.createBufferSource();
+                            source.buffer = audioBuffer;
+                            source.connect(this.outputAudioContext.destination);
+                            if (this.outputDestination) source.connect(this.outputDestination);
+                            
+                            source.addEventListener('ended', () => {
+                              this.sources.delete(source);
+                              if (this.sources.size === 0) {
+                                  this.speakingTimer = setTimeout(() => { this.isPlayingResponse = false; }, 500);
+                              }
+                            });
+                            
+                            source.start(this.nextStartTime);
+                            this.sources.add(source);
+                            this.nextStartTime += audioBuffer.duration;
+                        } catch (e) {
+                            console.error("Audio playback error", e);
+                        }
+                    }
+                }
+            }
+
+            if (message.serverContent?.outputTranscription?.text) {
+                callbacks.onTranscript(message.serverContent.outputTranscription.text, false, this.currentTurnRole);
+            }
+            if (message.serverContent?.inputTranscription?.text) {
+                callbacks.onTranscript(message.serverContent.inputTranscription.text, true, 'user');
+            }
+
+            if (message.serverContent?.interrupted || message.serverContent?.turnComplete) { 
+              if (message.serverContent?.interrupted) {
+                this.stopAllSources(); 
+                this.nextStartTime = 0; 
+              }
+              this.isPlayingResponse = false; 
+              if (this.speakingTimer) clearTimeout(this.speakingTimer);
+            }
           },
           onclose: () => { this.cleanup(); callbacks.onClose(); },
-          onerror: (e: any) => { this.cleanup(); callbacks.onError(new Error(e.message || "Connection failed")); }
+          onerror: (e: any) => { 
+              const errorText = e.message || e.reason || "Connection failed";
+              callbacks.onError(new Error(errorText));
+              this.cleanup(); 
+          }
         }
       });
-
-      this.sessionPromise = Promise.race([connectionPromise, new Promise((_, r) => setTimeout(() => r(new Error("Timeout")), 15000))]);
-      this.session = await this.sessionPromise;
-    } catch (error) {
-      callbacks.onError(error instanceof Error ? error : new Error("Failed to connect"));
-      this.cleanup();
+      await this.sessionPromise;
+    } catch (error: any) { 
+        callbacks.onError(error); 
+        this.cleanup(); 
     }
   }
 
-  public sendText(text: string) {
-    this.sessionPromise?.then((session) => {
-        if (session) {
-            try { session.send({ clientContent: { turns: [{ role: 'user', parts: [{ text }] }], turnComplete: true } }); } catch (e) {}
-        }
-    });
-  }
-
-  public sendToolResponse(functionResponses: any) {
-      this.sessionPromise?.then((session) => {
-          if (session) {
-              try { session.sendToolResponse({ functionResponses }); } catch(e) {}
-          }
-      });
+  public sendToolResponse(functionResponses: any) { 
+      this.sessionPromise?.then((s) => s?.sendToolResponse({ functionResponses })); 
   }
 
   private startAudioInput(onVolume: (v: number) => void) {
-    if (!this.inputAudioContext || !this.stream || !this.sessionPromise) return;
+    if (!this.inputAudioContext || !this.stream) return;
     this.source = this.inputAudioContext.createMediaStreamSource(this.stream);
     this.processor = this.inputAudioContext.createScriptProcessor(4096, 1, 1);
     this.processor.onaudioprocess = (e) => {
-      if (!this.inputAudioContext || !this.processor) return;
       const inputData = e.inputBuffer.getChannelData(0);
-      if (this.isPlayingResponse) { onVolume(0); return; }
-      let sum = 0; for(let i = 0; i < inputData.length; i++) sum += inputData[i] * inputData[i];
+      
+      // Stop streaming if we are currently listening to the AI
+      if (this.isPlayingResponse) { 
+          onVolume(0); 
+          return; 
+      }
+
+      let sum = 0; 
+      for(let i = 0; i < inputData.length; i++) sum += inputData[i] * inputData[i];
       onVolume(Math.sqrt(sum / inputData.length) * 5);
+      
       const pcmBlob = createPcmBlob(inputData);
-      this.sessionPromise?.then(session => { if (session) try { session.sendRealtimeInput({ media: pcmBlob }); } catch(err) {} });
+      this.sessionPromise?.then(s => s?.sendRealtimeInput({ media: pcmBlob }));
     };
     this.source.connect(this.processor);
     this.processor.connect(this.inputAudioContext.destination);
   }
 
-  private stopAllSources() {
-    for (const source of this.sources) { try { source.stop(); source.disconnect(); } catch (e) {} }
-    this.sources.clear();
+  private stopAllSources() { 
+      this.sources.forEach(s => { try { s.stop(); s.disconnect(); } catch(e) {} }); 
+      this.sources.clear(); 
   }
 
-  async disconnect() {
-    if (this.session) try { (this.session as any).close?.(); } catch(e) {}
-    this.cleanup();
+  async disconnect() { 
+      if (this.session) try { this.session.close(); } catch(e) {} 
+      this.cleanup(); 
   }
 
   private cleanup() {
     this.stopAllSources();
     this.isPlayingResponse = false;
-    coolDownAudioContext();
     if (this.speakingTimer) clearTimeout(this.speakingTimer);
-    if (this.processor) { try { this.processor.disconnect(); this.processor.onaudioprocess = null; } catch(e) {} }
-    if (this.source) try { this.source.disconnect(); } catch(e) {}
-    this.stream?.getTracks().forEach(track => track.stop());
+    if (this.processor) { 
+        this.processor.disconnect(); 
+        this.processor.onaudioprocess = null; 
+    }
+    if (this.source) this.source.disconnect();
+    this.stream?.getTracks().forEach(t => t.stop());
     this.session = null;
     this.sessionPromise = null;
     this.inputAudioContext = null;

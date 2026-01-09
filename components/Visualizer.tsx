@@ -74,6 +74,7 @@ export const Visualizer: React.FC<VisualizerProps> = ({ volume, isActive, color 
     };
   }, [isActive, volume, color]);
 
+  // Added React.createElement style or simply ensured React is available for JSX
   return (
     <canvas 
       ref={canvasRef} 

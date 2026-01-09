@@ -1,4 +1,3 @@
-
 import { Blob as GeminiBlob } from '@google/genai';
 
 let mainAudioContext: AudioContext | null = null;
@@ -44,46 +43,24 @@ export function isAnyAudioPlaying(): boolean {
     return !!currentOwnerToken;
 }
 
-/**
- * Hard kill for all platform audio.
- * Resets the global lock and increments the Atomic Generation.
- */
 export function stopAllPlatformAudio(sourceCaller: string = "Global") {
-    // 1. Increment Generation - This invalidates all pending async blocks globally
     globalAudioGeneration++;
-    
-    // 2. Purge System Voice Aggressively
     if (typeof window !== 'undefined' && window.speechSynthesis) {
         window.speechSynthesis.cancel();
     }
-
-    // 3. Trigger the specific stop logic of the registered owner
     if (currentStopFn) {
         const fn = currentStopFn;
         currentStopFn = null; 
-        try { 
-            fn(); 
-        } catch (e) {
-            console.warn("Error during audio owner cleanup", e);
-        }
+        try { fn(); } catch (e) { console.warn("Cleanup error", e); }
     }
-    
     currentOwnerToken = null;
-    logAudioEvent(sourceCaller, 'STOP', `Gen INC to ${globalAudioGeneration}. Global audio cleared.`);
+    logAudioEvent(sourceCaller, 'STOP', `Gen INC to ${globalAudioGeneration}`);
 }
 
-/**
- * Register a unique ownership token.
- * Kills everyone else and returns the current valid generation.
- */
 export function registerAudioOwner(uniqueToken: string, stopFn: () => void): number {
-    // 1. Clear everything (Increments globalAudioGeneration)
     stopAllPlatformAudio(`Reg:${uniqueToken}`);
-    
-    // 2. Set new owner
     currentOwnerToken = uniqueToken;
     currentStopFn = stopFn;
-    
     logAudioEvent(uniqueToken, 'REGISTER', `Lock Acquired @ Gen ${globalAudioGeneration}`);
     return globalAudioGeneration;
 }
@@ -98,10 +75,8 @@ export function getGlobalAudioContext(sampleRate: number = 24000): AudioContext 
         sampleRate,
         latencyHint: 'playback' 
     });
-    
     mediaStreamDest = mainAudioContext.createMediaStreamDestination();
   }
-  
   if (!audioBridgeElement) {
       audioBridgeElement = new Audio();
       audioBridgeElement.id = 'web-audio-bg-bridge';
@@ -111,22 +86,10 @@ export function getGlobalAudioContext(sampleRate: number = 24000): AudioContext 
       audioBridgeElement.setAttribute('autoplay', 'true');
       document.body.appendChild(audioBridgeElement);
   }
-
   if (mediaStreamDest && audioBridgeElement.srcObject !== mediaStreamDest.stream) {
       audioBridgeElement.srcObject = mediaStreamDest.stream;
   }
-
   return mainAudioContext;
-}
-
-export function connectOutput(source: AudioNode, ctx: AudioContext) {
-    source.connect(ctx.destination);
-    if (mediaStreamDest) {
-        source.connect(mediaStreamDest);
-    }
-    if (audioBridgeElement && audioBridgeElement.paused) {
-        audioBridgeElement.play().catch(() => {});
-    }
 }
 
 export function base64ToBytes(base64: string): Uint8Array {
@@ -148,13 +111,22 @@ export function bytesToBase64(bytes: Uint8Array): string {
   return btoa(binary);
 }
 
+/**
+ * Decodes raw PCM data into an AudioBuffer.
+ * CRITICAL FIX: Uint8Array.slice() creates a new ArrayBuffer starting at offset 0.
+ * This guarantees alignment for Int16Array regardless of the original data's offset.
+ */
 export async function decodeRawPcm(
   data: Uint8Array,
   ctx: AudioContext,
   sampleRate: number = 24000,
   numChannels: number = 1
 ): Promise<AudioBuffer> {
-  const dataInt16 = new Int16Array(data.buffer);
+  const bytes = data.slice(); 
+  const wordCount = Math.floor(bytes.byteLength / 2);
+  if (wordCount <= 0) return ctx.createBuffer(numChannels, 1, sampleRate);
+
+  const dataInt16 = new Int16Array(bytes.buffer, 0, wordCount);
   const frameCount = dataInt16.length / numChannels;
   const buffer = ctx.createBuffer(numChannels, frameCount, sampleRate);
 
@@ -171,37 +143,15 @@ export async function warmUpAudioContext(ctx: AudioContext) {
     if (ctx.state === 'suspended' || (ctx.state as any) === 'interrupted') {
         await ctx.resume();
     }
-    
     if (!silentLoopElement) {
         silentLoopElement = new Audio();
         silentLoopElement.src = 'data:audio/wav;base64,UklGRigAAABXQVZFRm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQQAAAAAAAAA';
         silentLoopElement.loop = true;
         silentLoopElement.setAttribute('playsinline', 'true');
     }
-    
     try {
         await silentLoopElement.play();
-        if (audioBridgeElement) {
-            if (mediaStreamDest && audioBridgeElement.srcObject !== mediaStreamDest.stream) {
-                audioBridgeElement.srcObject = mediaStreamDest.stream;
-            }
-            await audioBridgeElement.play();
-        }
-    } catch(e) {
-        console.warn("Background Audio failed to prime.", e);
-    }
-}
-
-export function coolDownAudioContext() {
-    if (silentLoopElement) {
-        try { silentLoopElement.pause(); } catch(e) {}
-    }
-    if (audioBridgeElement) {
-        try {
-            audioBridgeElement.pause();
-            audioBridgeElement.srcObject = null;
-        } catch(e) {}
-    }
+    } catch(e) { console.warn("Context priming failed", e); }
 }
 
 export function createPcmBlob(data: Float32Array): GeminiBlob {
@@ -239,9 +189,7 @@ export function pcmToWavBlob(pcmData: Uint8Array, sampleRate: number = 24000): B
     const view = new DataView(buffer);
 
     const writeString = (offset: number, string: string) => {
-        for (let i = 0; i < string.length; i++) {
-            view.setUint8(offset + i, string.charCodeAt(i));
-        }
+        for (let i = 0; i < string.length; i++) view.setUint8(offset + i, string.charCodeAt(i));
     };
 
     writeString(0, 'RIFF');
@@ -267,24 +215,15 @@ export function pcmToWavBlob(pcmData: Uint8Array, sampleRate: number = 24000): B
 export function audioBufferToWavBlob(buffer: AudioBuffer): Blob {
     const numChannels = buffer.numberOfChannels;
     const sampleRate = buffer.sampleRate;
-    const format = 1; // PCM
     const bitDepth = 16;
-    
     const bytesPerSample = bitDepth / 8;
     const blockAlign = numChannels * bytesPerSample;
-    
-    const bufferLength = buffer.length;
-    const dataSize = bufferLength * blockAlign;
-    const headerSize = 44;
-    const totalSize = headerSize + dataSize;
-    
-    const arrayBuffer = new ArrayBuffer(totalSize);
+    const dataSize = buffer.length * blockAlign;
+    const arrayBuffer = new ArrayBuffer(44 + dataSize);
     const view = new DataView(arrayBuffer);
     
     const writeString = (offset: number, string: string) => {
-        for (let i = 0; i < string.length; i++) {
-            view.setUint8(offset + i, string.charCodeAt(i));
-        }
+        for (let i = 0; i < string.length; i++) view.setUint8(offset + i, string.charCodeAt(i));
     };
     
     writeString(0, 'RIFF');
@@ -292,7 +231,7 @@ export function audioBufferToWavBlob(buffer: AudioBuffer): Blob {
     writeString(8, 'WAVE');
     writeString(12, 'fmt ');
     view.setUint32(16, 16, true);
-    view.setUint16(20, format, true);
+    view.setUint16(20, 1, true);
     view.setUint16(22, numChannels, true);
     view.setUint32(24, sampleRate, true);
     view.setUint32(28, sampleRate * blockAlign, true);
@@ -302,7 +241,7 @@ export function audioBufferToWavBlob(buffer: AudioBuffer): Blob {
     view.setUint32(40, dataSize, true);
     
     const offset = 44;
-    for (let i = 0; i < bufferLength; i++) {
+    for (let i = 0; i < buffer.length; i++) {
         for (let channel = 0; channel < numChannels; channel++) {
             const sample = buffer.getChannelData(channel)[i];
             const clamped = Math.max(-1, Math.min(1, sample));
@@ -310,21 +249,13 @@ export function audioBufferToWavBlob(buffer: AudioBuffer): Blob {
             view.setInt16(offset + (i * blockAlign) + (channel * bytesPerSample), intValue, true);
         }
     }
-    
     return new Blob([arrayBuffer], { type: 'audio/wav' });
 }
 
 export function concatAudioBuffers(buffers: AudioBuffer[], ctx: AudioContext): AudioBuffer | null {
     if (buffers.length === 0) return null;
-    if (buffers.length === 1) return buffers[0];
-    
     const totalLength = buffers.reduce((acc, buf) => acc + buf.length, 0);
-    const result = ctx.createBuffer(
-        buffers[0].numberOfChannels,
-        totalLength,
-        buffers[0].sampleRate
-    );
-    
+    const result = ctx.createBuffer(buffers[0].numberOfChannels, totalLength, buffers[0].sampleRate);
     for (let channel = 0; channel < buffers[0].numberOfChannels; channel++) {
         let offset = 0;
         for (const buffer of buffers) {
@@ -332,6 +263,5 @@ export function concatAudioBuffers(buffers: AudioBuffer[], ctx: AudioContext): A
             offset += buffer.length;
         }
     }
-    
     return result;
 }
