@@ -30,7 +30,7 @@ export const CreateChannelModal: React.FC<CreateChannelModalProps> = ({ isOpen, 
   // Visibility State
   const [visibility, setVisibility] = useState<'private' | 'public' | 'group'>('private');
   const [selectedGroupId, setSelectedGroupId] = useState('');
-  const [userGroups, setUserGroups] = useState<Group[]>([]);
+  const [userGroups, setSelectedUserGroups] = useState<Group[]>([]);
   const [loadingGroups, setLoadingGroups] = useState(false);
   
   // Membership State
@@ -69,7 +69,7 @@ export const CreateChannelModal: React.FC<CreateChannelModalProps> = ({ isOpen, 
     if (isOpen && currentUser && visibility === 'group') {
       setLoadingGroups(true);
       getUserGroups(currentUser.uid).then(groups => {
-        setUserGroups(groups);
+        setSelectedUserGroups(groups);
         if (groups.length > 0) setSelectedGroupId(groups[0].id);
         setLoadingGroups(false);
       });

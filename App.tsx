@@ -40,6 +40,7 @@ import { UserManual } from './components/UserManual';
 import { PrivacyPolicy } from './components/PrivacyPolicy';
 import { NotebookViewer } from './components/NotebookViewer'; 
 import { IconGenerator } from './components/IconGenerator';
+import { CardWorkshop } from './components/CardWorkshop';
 
 import { auth, isFirebaseConfigured } from './services/firebaseConfig';
 import { 
@@ -1063,7 +1064,7 @@ const App: React.FC = () => {
               <div className="relative">
                   <button 
                     onClick={() => setIsDesktopAppsOpen(!isDesktopAppsOpen)}
-                    className={`flex items-center space-x-2 px-3 py-1.5 rounded-lg transition-colors ${isDesktopAppsOpen ? 'bg-slate-800 text-white' : 'bg-slate-800/50 hover:bg-slate-800 text-slate-400 hover:text-white'}`}
+                    className={`flex items-center space-x-2 px-3 py-1.5 rounded-lg transition-colors ${isDesktopAppsOpen ? 'bg-slate-800 text-white' : 'text-slate-800/50 hover:bg-slate-800 text-slate-400 hover:text-white'}`}
                   >
                     <LayoutGrid size={16}/><span>Apps</span>
                   </button>

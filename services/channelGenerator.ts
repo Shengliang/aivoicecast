@@ -65,7 +65,7 @@ export async function generateChannelFromPrompt(
       Task: 
       1. Create a complete concept for a podcast channel based on the user's request.
       2. Generate a catchy Title and engaging Description.
-      3. Define a "System Instruction" for the AI Host. It should define a specific persona (e.g., "You are an excited historian...").
+      3. Define a "System Instruction" for the AI Host. It should define a specific persona.
       4. Select the best Voice Personality from this list: ${VOICES.join(', ')}.
       5. Generate 3-5 Tags.
       6. Create a "Welcome Message" for the live session.
@@ -86,8 +86,7 @@ export async function generateChannelFromPrompt(
             "title": "Chapter Title",
             "subTopics": [ {"title": "Subtopic Title"} ]
           }
-        ],
-        "imagePrompt": "A description of the podcast cover art visual style"
+        ]
       }
     `;
 
@@ -115,6 +114,10 @@ export async function generateChannelFromPrompt(
     
     if (auth.currentUser) incrementApiUsage(auth.currentUser.uid);
 
+    // Use a high-quality abstract placeholder based on the title to avoid "image generation" overhead/limits
+    const safeTitle = encodeURIComponent(parsed.title || "AI Podcast");
+    const imageUrl = `https://images.unsplash.com/photo-1614850523296-d8c1af93d400?w=600&q=80`; // Neutral high-quality abstract
+
     const newChannel: Channel = {
       id: channelId,
       title: parsed.title,
@@ -128,10 +131,10 @@ export async function generateChannelFromPrompt(
       dislikes: 0,
       comments: [],
       tags: parsed.tags || ['AI', 'Generated'],
-      imageUrl: `https://image.pollinations.ai/prompt/${encodeURIComponent(parsed.imagePrompt || parsed.title)}?width=600&height=400&nologo=true`,
+      imageUrl,
       welcomeMessage: parsed.welcomeMessage,
       starterPrompts: parsed.starterPrompts,
-      createdAt: Date.now(), // Ensure creation time is set
+      createdAt: Date.now(),
       chapters: parsed.chapters?.map((ch: any, cIdx: number) => ({
         id: `ch-${channelId}-${cIdx}`,
         title: ch.title,
@@ -185,7 +188,6 @@ export async function modifyCurriculumWithAI(
       1. Modify the curriculum structure based strictly on the User Instruction.
       2. You can ADD chapters, REMOVE chapters, ADD lessons (sub-topics), or RENAME items.
       3. Keep the structure logical.
-      4. If the user asks to "Add a chapter about X", create it with 3-4 relevant sub-topics.
 
       Return ONLY the new JSON structure:
       {
@@ -267,11 +269,7 @@ export async function generateChannelFromDocument(
       1. Extract a suitable Title and Description for the Podcast Channel based on the document.
       2. Define a System Instruction and Voice Name (Select one: Puck, Charon, Kore, Fenrir, Zephyr).
       3. Structure the content into a Curriculum (Chapters and Subtopics).
-         - If the document has explicit Chapters (e.g., "Chapter 1"), use them.
-         - If it's a single long text with sections, group them logically.
-         - SubTopic titles should be descriptive (e.g. "The Problem Space", "CRDT Architecture").
       4. Generate Tags, Welcome Message, and Starter Prompts.
-      5. Generate an image prompt for the cover art.
 
       Return ONLY a raw JSON object with this structure:
       {
@@ -287,8 +285,7 @@ export async function generateChannelFromDocument(
             "title": "Chapter Title",
             "subTopics": [ {"title": "Subtopic Title"} ]
           }
-        ],
-        "imagePrompt": "..."
+        ]
       }
     `;
 
@@ -329,10 +326,10 @@ export async function generateChannelFromDocument(
       dislikes: 0,
       comments: [],
       tags: parsed.tags || ['Document', 'AI'],
-      imageUrl: `https://image.pollinations.ai/prompt/${encodeURIComponent(parsed.imagePrompt || parsed.title)}?width=600&height=400&nologo=true`,
+      imageUrl: `https://images.unsplash.com/photo-1488190211105-8b0e65b80b4e?w=600&q=80`, // Document/Education theme abstract
       welcomeMessage: parsed.welcomeMessage,
       starterPrompts: parsed.starterPrompts,
-      createdAt: Date.now(), // Ensure creation time is set
+      createdAt: Date.now(),
       chapters: parsed.chapters?.map((ch: any, cIdx: number) => ({
         id: `ch-${channelId}-${cIdx}`,
         title: ch.title,
