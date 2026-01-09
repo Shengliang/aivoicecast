@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { ArrowLeft, Book, Play, Terminal, MoreVertical, Plus, Edit3, Trash2, Cpu, Share2, Sparkles, Loader2 } from 'lucide-react';
 import { Notebook, NotebookCell } from '../types';
@@ -39,12 +38,12 @@ export const NotebookViewer: React.FC<NotebookViewerProps> = ({ onBack, currentU
       setExplanation(null);
       
       try {
-          // FIX: Always use const ai = new GoogleGenAI({apiKey: process.env.API_KEY}); exclusively from process.env.API_KEY.
+          // Always use const ai = new GoogleGenAI({apiKey: process.env.API_KEY}); exclusively from process.env.API_KEY.
           const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
           const prompt = `Explain the following code snippet concisely for a student:\n\n${cell.content}`;
           
           const response = await ai.models.generateContent({
-              // FIX: Use gemini-3-flash-preview as recommended for text explanation tasks
+              // Use gemini-3-flash-preview as recommended for text explanation tasks
               model: 'gemini-3-flash-preview',
               contents: prompt
           });

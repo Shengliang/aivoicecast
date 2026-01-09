@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { getUserChannels, deleteUserChannel, saveUserChannel } from '../utils/db';
 import { getCreatorChannels } from '../services/firestoreService';

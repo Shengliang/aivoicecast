@@ -1,15 +1,14 @@
 import React, { useMemo, useRef, useState, useEffect, useCallback } from 'react';
 import { Channel, UserProfile, GeneratedLecture } from '../types';
-import { Play, MessageSquare, Heart, Share2, Bookmark, Music, Plus, Pause, Loader2, Volume2, VolumeX, GraduationCap, ChevronRight, Mic, AlignLeft, BarChart3, User, AlertCircle, Zap, Radio, Square, Sparkles } from 'lucide-react';
+import { Play, MessageSquare, Heart, Share2, Bookmark, Music, Plus, Pause, Loader2, Volume2, VolumeX, GraduationCap, ChevronRight, Mic, AlignLeft, BarChart3, User, AlertCircle, Zap, Radio, Square, Sparkles, Filter, RefreshCw } from 'lucide-react';
 import { ChannelCard } from './ChannelCard';
 import { CreatorProfileModal } from './CreatorProfileModal';
 import { followUser, unfollowUser } from '../services/firestoreService';
 import { generateLectureScript } from '../services/lectureGenerator';
 import { synthesizeSpeech } from '../services/tts';
 import { getCachedLectureScript, cacheLectureScript, getUserChannels } from '../utils/db';
-import { GEMINI_API_KEY, OPENAI_API_KEY } from '../services/private_keys';
-import { SPOTLIGHT_DATA } from '../utils/spotlightContent';
 import { OFFLINE_CHANNEL_ID, OFFLINE_CURRICULUM, OFFLINE_LECTURES } from '../utils/offlineContent';
+import { SPOTLIGHT_DATA } from '../utils/spotlightContent';
 import { warmUpAudioContext, getGlobalAudioContext, stopAllPlatformAudio, registerAudioOwner, logAudioEvent, isAudioOwner, getGlobalAudioGeneration } from '../utils/audioUtils';
 
 interface PodcastFeedProps {
@@ -29,7 +28,7 @@ interface PodcastFeedProps {
   handleVote?: (id: string, type: 'like' | 'dislike', e: React.MouseEvent) => void;
   
   filterMode?: 'foryou' | 'following' | 'mine';
-  isFeedActive?: boolean; // Controls whether logic/playback is enabled
+  isFeedActive?: boolean; 
 }
 
 const MobileFeedCard = ({ 
@@ -56,10 +55,9 @@ const MobileFeedCard = ({
     const [isAutoplayBlocked, setIsAutoplayBlocked] = useState(false);
     
     const [provider, setProvider] = useState<'system' | 'gemini' | 'openai'>(() => {
-        const hasOpenAI = !!(localStorage.getItem('openai_api_key') || process.env.OPENAI_API_KEY);
+        const hasOpenAI = !!(localStorage.getItem('openai_api_key'));
         if (hasOpenAI) return 'openai';
-        const hasGemini = !!(localStorage.getItem('gemini_api_key') || process.env.API_KEY);
-        return hasGemini ? 'gemini' : 'system';
+        return 'gemini';
     });
     
     const [trackIndex, setTrackIndex] = useState(-1); 
@@ -85,9 +83,6 @@ const MobileFeedCard = ({
         }
     }, [transcriptHistory]);
 
-    /**
-     * CLEAN STOP - Completely resets local and global state
-     */
     const stopAudioInternal = useCallback((source: string = "Local") => {
         localSessionIdRef.current++; 
         isLoopingRef.current = false;
@@ -106,7 +101,6 @@ const MobileFeedCard = ({
         logAudioEvent(MY_TOKEN, 'STOP', `Session Reset to ${localSessionIdRef.current} via ${source}`);
     }, [MY_TOKEN]);
 
-    // External wrapper that informs the global manager
     const stopAudioGlobal = useCallback(() => {
         stopAllPlatformAudio(`CardAction:${channel.id}`);
     }, [channel.id]);
@@ -187,7 +181,6 @@ const MobileFeedCard = ({
     const handleTogglePlay = async (e: React.MouseEvent) => {
         e.stopPropagation();
         
-        // Navigation case
         if (!isActive) { 
             stopAllPlatformAudio(`NavigationTransition:${channel.id}`);
             onChannelClick(channel.id); 
@@ -196,7 +189,6 @@ const MobileFeedCard = ({
         
         const ctx = getGlobalAudioContext();
         
-        // Critical for iPhone: Resume on user gesture
         if (ctx.state === 'suspended' || (ctx.state as any) === 'interrupted' || isAutoplayBlocked) {
             try {
                 await warmUpAudioContext(ctx);
@@ -206,9 +198,8 @@ const MobileFeedCard = ({
             }
         }
 
-        // Logical Toggle
         if (isBusy || isLoopingRef.current) { 
-            stopAudioGlobal(); // Reset global lock and increment gen
+            stopAudioGlobal();
             return; 
         }
         
@@ -407,8 +398,8 @@ const MobileFeedCard = ({
     return (
         <div className="h-full w-full snap-start relative flex flex-col justify-center bg-slate-900 border-b border-slate-800 overflow-hidden">
             <div className="absolute inset-0">
-                <img src={channel.imageUrl} alt={channel.title} className="w-full h-full object-cover opacity-60" loading={isActive ? "eager" : "lazy"} />
-                <div className="absolute inset-0 bg-gradient-to-b from-black/30 via-transparent to-black/90"></div>
+                <div className="absolute inset-0 bg-slate-950"></div>
+                <div className="absolute inset-0 bg-gradient-to-b from-indigo-500/10 via-transparent to-black/90"></div>
                 
                 {isAutoplayBlocked && isActive && (
                     <div className="absolute inset-0 z-40 bg-black/50 backdrop-blur-md flex flex-col items-center justify-center animate-fade-in">
@@ -483,7 +474,9 @@ const MobileFeedCard = ({
 
             <div className="absolute right-2 bottom-40 flex flex-col items-center gap-6 z-30">
                 <div className="relative mb-2 cursor-pointer" onClick={(e) => { e.stopPropagation(); onProfileClick(e, channel); }}>
-                    <img src={channel.imageUrl} className={`w-12 h-12 rounded-full border-2 object-cover ${isActive && playbackState === 'playing' ? 'animate-spin-slow' : ''}`} alt="Creator" />
+                    <div className="w-12 h-12 rounded-full border-2 border-slate-700 bg-slate-800 flex items-center justify-center overflow-hidden">
+                        <User size={24} className="text-slate-400" />
+                    </div>
                     {!isFollowed && channel.ownerId && (
                         <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 bg-red-500 rounded-full p-0.5 border border-white" onClick={(e) => onToggleFollow(e, channel.id, channel.ownerId)}><Plus size={12} color="white" strokeWidth={4} /></div>
                     )}
@@ -586,19 +579,44 @@ export const PodcastFeed: React.FC<PodcastFeedProps> = ({
 
   if (isDesktop) {
       return (
-        <>
-        <div className="h-full overflow-y-auto p-6 scrollbar-thin scrollbar-thumb-slate-800">
+        <div className="h-full overflow-y-auto p-6 md:p-10 scrollbar-thin scrollbar-thumb-slate-800 bg-slate-950">
             <div className="max-w-7xl mx-auto">
-                <h2 className="text-2xl font-bold text-white mb-6 flex items-center gap-2"><span className="bg-indigo-600 w-2 h-8 rounded-full"></span> Explore Podcasts</h2>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                <div className="flex items-center justify-between mb-10">
+                    <div className="flex items-center gap-4">
+                        <div className="bg-indigo-600 w-1.5 h-8 rounded-full shadow-lg shadow-indigo-500/20"></div>
+                        <div>
+                            <h2 className="text-3xl font-black text-white tracking-tight">Explore Podcasts</h2>
+                            <p className="text-slate-500 text-sm font-medium mt-1 uppercase tracking-widest">High-Density Knowledge Grid</p>
+                        </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <button onClick={onRefresh} className="p-2.5 bg-slate-900 border border-slate-800 rounded-xl text-slate-400 hover:text-white transition-all">
+                            <RefreshCw size={18} />
+                        </button>
+                    </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                     {recommendedChannels.map(channel => (
-                        <ChannelCard key={channel.id} channel={channel} handleChannelClick={onChannelClick} handleVote={handleVote || (() => {})} currentUser={currentUser} setChannelToEdit={setChannelToEdit || (() => {})} setIsSettingsModalOpen={setIsSettingsModalOpen || (() => {})} globalVoice={globalVoice} t={t || { host: 'Host' }} onCommentClick={onCommentClick || (() => {})} isLiked={userProfile?.likedChannelIds?.includes(channel.id)} onCreatorClick={(e) => { e.stopPropagation(); setViewingCreator(channel); }} />
+                        <ChannelCard 
+                          key={channel.id} 
+                          channel={channel} 
+                          handleChannelClick={onChannelClick} 
+                          handleVote={handleVote || (() => {})} 
+                          currentUser={currentUser} 
+                          setChannelToEdit={setChannelToEdit || (() => {})} 
+                          setIsSettingsModalOpen={setIsSettingsModalOpen || (() => {})} 
+                          globalVoice={globalVoice} 
+                          t={t || { host: 'Host' }} 
+                          onCommentClick={onCommentClick || (() => {})} 
+                          isLiked={userProfile?.likedChannelIds?.includes(channel.id)} 
+                          onCreatorClick={(e) => { e.stopPropagation(); setViewingCreator(channel); }} 
+                        />
                     ))}
                 </div>
             </div>
+            {viewingCreator && <CreatorProfileModal isOpen={true} onClose={() => setViewingCreator(null)} channel={viewingCreator} onMessage={() => { if (onMessageCreator && viewingCreator.ownerId) onMessageCreator(viewingCreator.ownerId, viewingCreator.author); setViewingCreator(null); }} onChannelClick={(id) => { setViewingCreator(null); onChannelClick(id); }} currentUser={currentUser} />}
         </div>
-        {viewingCreator && <CreatorProfileModal isOpen={true} onClose={() => setViewingCreator(null)} channel={viewingCreator} onMessage={() => { if (onMessageCreator && viewingCreator.ownerId) onMessageCreator(viewingCreator.ownerId, viewingCreator.author); setViewingCreator(null); }} onChannelClick={(id) => { setViewingCreator(null); onChannelClick(id); }} currentUser={currentUser} />}
-        </>
       );
   }
 

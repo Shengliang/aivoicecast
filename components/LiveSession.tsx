@@ -16,6 +16,7 @@ interface LiveSessionProps {
   videoEnabled?: boolean; 
   cameraEnabled?: boolean; 
   activeSegment?: { index: number, lectureId: string }; 
+  initialTranscript?: TranscriptItem[];
 }
 
 const UI_TEXT = {
@@ -59,7 +60,7 @@ const saveContentTool: FunctionDeclaration = {
 
 export const LiveSession: React.FC<LiveSessionProps> = ({ 
   channel, initialContext, lectureId, onEndSession, language, 
-  activeSegment 
+  activeSegment, initialTranscript
 }) => {
   const t = UI_TEXT[language];
   const [hasStarted, setHasStarted] = useState(false); 
@@ -68,7 +69,7 @@ export const LiveSession: React.FC<LiveSessionProps> = ({
   const [isUploading, setIsUploading] = useState(false);
   const [hasApiKey, setHasApiKey] = useState(true); 
   
-  const [transcript, setTranscript] = useState<TranscriptItem[]>([]);
+  const [transcript, setTranscript] = useState<TranscriptItem[]>(initialTranscript || []);
   const [currentLine, setCurrentLine] = useState<TranscriptItem | null>(null);
   const transcriptRef = useRef<TranscriptItem[]>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
