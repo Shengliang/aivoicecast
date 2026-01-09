@@ -74,7 +74,7 @@ export const Visualizer: React.FC<VisualizerProps> = ({ volume, isActive, color 
     };
   }, [isActive, volume, color]);
 
-  // Added React.createElement style or simply ensured React is available for JSX
+  // JSX elements like canvas require React to be in scope for older TS configurations
   return (
     <canvas 
       ref={canvasRef} 

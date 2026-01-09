@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ArrowLeft, Sparkles, Download, Loader2, AppWindow, RefreshCw, Layers, ShieldCheck, Key, Globe, Layout, Palette, Check, AlertCircle } from 'lucide-react';
+import { ArrowLeft, Sparkles, Download, Loader2, AppWindow, RefreshCw, Layers, ShieldCheck, Layout, Palette, AlertCircle } from 'lucide-react';
 import { GoogleGenAI } from "@google/genai";
 
 interface IconGeneratorProps {
@@ -16,7 +16,7 @@ const STYLE_PRESETS = [
   { name: 'Ink Wash', prompt: 'Traditional Chinese ink wash painting style, minimalist, elegant brush strokes, negative space, artistic' }
 ];
 
-export const IconGenerator: React.FC<IconGeneratorProps> = ({ onBack, currentUser }) => {
+export const IconGenerator: React.FC<IconGeneratorProps> = ({ onBack }) => {
   const [prompt, setPrompt] = useState('');
   const [selectedStyle, setSelectedStyle] = useState(STYLE_PRESETS[0]);
   const [isGenerating, setIsGenerating] = useState(false);

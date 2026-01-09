@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { Podcast, ArrowRight, ShieldCheck, Loader2, AlertCircle, Rocket, Shield, Code, Image as ImageIcon, MessageSquare, Sparkles, Users } from 'lucide-react';
 import { signInWithGoogle } from '../services/authService';
@@ -43,55 +44,8 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onPrivacyClick, onMissionC
       <div className="relative z-10 w-full max-w-md">
         <div className="bg-slate-900/80 backdrop-blur-2xl border border-slate-800 rounded-[3rem] shadow-2xl p-10 text-center animate-fade-in-up">
           
-          {/* Branded 'AIVoiceCast' App Icon (Neural Prism Design) */}
-          <div className="w-56 h-56 mx-auto mb-8 relative group">
-             <div className="absolute inset-0 bg-slate-950 rounded-[2.5rem] border border-slate-800 group-hover:border-indigo-500/50 transition-colors shadow-2xl"></div>
-             
-             <svg viewBox="0 0 512 512" className="relative z-10 w-full h-full p-4 drop-shadow-[0_0_20px_rgba(99,102,241,0.3)]">
-                <defs>
-                    <linearGradient id="prismGradLogin" x1="0%" y1="0%" x2="100%" y2="100%">
-                        <stop offset="0%" stopColor="#00f2ff" />
-                        <stop offset="50%" stopColor="#6366f1" />
-                        <stop offset="100%" stopColor="#a855f7" />
-                    </linearGradient>
-                </defs>
-                
-                {/* Orbital Rings */}
-                <g stroke="white" strokeWidth="1" strokeOpacity="0.05">
-                   <circle cx="256" cy="256" r="230" fill="none" />
-                   <circle cx="256" cy="256" r="210" fill="none" strokeDasharray="4 8" />
-                </g>
-
-                {/* The Faceted 'A' Prism */}
-                <path 
-                    d="M256 70 L400 410 H340 L310 330 H202 L172 410 H112 Z" 
-                    fill="none" 
-                    stroke="url(#prismGradLogin)" 
-                    strokeWidth="14" 
-                    strokeLinejoin="round" 
-                    className="animate-pulse"
-                />
-                
-                {/* Neural Waveform Synapse */}
-                <path 
-                    d="M202 290 h30 l12 -50 l12 80 l12 -100 l12 100 l12 -80 l12 50 h20" 
-                    stroke="white" 
-                    strokeWidth="10" 
-                    fill="none" 
-                    strokeLinecap="round" 
-                    strokeLinejoin="round" 
-                />
-
-                {/* Network Learning Nodes */}
-                <g fill="white">
-                   <circle cx="256" cy="70" r="14" />
-                   <circle cx="112" cy="410" r="14" />
-                   <circle cx="400" cy="410" r="14" />
-                   <circle cx="430" cy="220" r="8" fill="url(#prismGradLogin)" />
-                   <circle cx="82" cy="220" r="8" fill="url(#prismGradLogin)" />
-                </g>
-             </svg>
-             <div className="absolute -inset-10 bg-gradient-to-tr from-cyan-500/20 via-indigo-500/10 to-purple-500/20 rounded-full blur-[4rem] opacity-0 group-hover:opacity-100 transition-opacity"></div>
+          <div className="w-20 h-20 bg-gradient-to-tr from-indigo-600 to-purple-600 rounded-3xl mx-auto mb-8 flex items-center justify-center shadow-2xl shadow-indigo-500/20">
+             <Podcast className="text-white w-10 h-10" />
           </div>
 
           <h1 className="text-4xl font-black text-white mb-2 tracking-tighter uppercase">AIVoiceCast</h1>

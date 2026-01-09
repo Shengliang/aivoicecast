@@ -3,7 +3,7 @@ import { Channel, TranscriptItem, CommunityDiscussion } from '../types';
 import { GeminiLiveService } from '../services/geminiLive';
 import { Mic, AlertCircle, MessageSquare, Loader2, CloudUpload, X, ShieldCheck, Key } from 'lucide-react';
 import { auth } from '../services/firebaseConfig';
-import { uploadFileToStorage, saveDiscussion, linkDiscussionToLectureSegment, addChannelAttachment } from '../services/firestoreService';
+import { saveDiscussion, linkDiscussionToLectureSegment } from '../services/firestoreService';
 import { FunctionDeclaration, Type } from '@google/genai';
 
 interface LiveSessionProps {
@@ -59,7 +59,7 @@ const saveContentTool: FunctionDeclaration = {
 
 export const LiveSession: React.FC<LiveSessionProps> = ({ 
   channel, initialContext, lectureId, onEndSession, language, 
-  recordingEnabled, activeSegment 
+  activeSegment 
 }) => {
   const t = UI_TEXT[language];
   const [hasStarted, setHasStarted] = useState(false); 

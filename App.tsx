@@ -1,14 +1,12 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Channel, ViewState, UserProfile, TranscriptItem, SubscriptionTier } from './types';
 import { 
-  Podcast, Mic, Layout, Search, Sparkles, LogOut, 
-  Settings, Menu, X, Plus, Github, Database, Cloud, Globe, 
-  Calendar, Briefcase, Users, Disc, FileText, AlertTriangle, List, BookOpen, ChevronDown, Table as TableIcon, LayoutGrid, Rocket, Code, Wand2, PenTool, Rss, Loader2, MessageSquare,
-  Home, Video as VideoIcon, Inbox, User, PlusSquare, ArrowLeft, Play, Book, Gift, Square, Shield, RefreshCw, AppWindow, Smartphone
+  Podcast, Search, Sparkles, Plus, RefreshCw, 
+  Calendar, Briefcase, Users, Disc, FileText, AlertTriangle, LayoutGrid, Rocket, Code, PenTool, Rss, Loader2, MessageSquare,
+  Home, Video as VideoIcon, User, ArrowLeft, Play, Book, Gift, Square, Smartphone, Menu, X
 } from 'lucide-react';
 import { LiveSession } from './components/LiveSession';
 import { PodcastDetail } from './components/PodcastDetail';
-import { ChannelCard } from './components/ChannelCard';
 import { UserAuth } from './components/UserAuth';
 import { CreateChannelModal } from './components/CreateChannelModal';
 import { VoiceCreateModal } from './components/VoiceCreateModal';
@@ -28,7 +26,6 @@ import { MentorBooking } from './components/MentorBooking';
 import { RecordingList } from './components/RecordingList';
 import { DocumentList } from './components/DocumentList';
 import { CalendarView } from './components/CalendarView';
-import { PodcastListTable, SortKey } from './components/PodcastListTable';
 import { PodcastFeed } from './components/PodcastFeed'; 
 import { MissionManifesto } from './components/MissionManifesto';
 import { CodeStudio } from './components/CodeStudio';
@@ -42,23 +39,18 @@ import { CareerCenter } from './components/CareerCenter';
 import { UserManual } from './components/UserManual'; 
 import { PrivacyPolicy } from './components/PrivacyPolicy';
 import { NotebookViewer } from './components/NotebookViewer'; 
-import { CardWorkshop } from './components/CardWorkshop';
-import { CardExplorer } from './components/CardExplorer';
 import { IconGenerator } from './components/IconGenerator';
 
 import { auth, isFirebaseConfigured } from './services/firebaseConfig';
 import { 
-  voteChannel, publishChannelToFirestore, updateCommentInChannel, 
-  deleteCommentFromChannel, addCommentToChannel, getPublicChannels, 
+  voteChannel, publishChannelToFirestore, 
+  getPublicChannels, 
   subscribeToPublicChannels, getGroupChannels, getUserProfile,
-  setupSubscriptionListener, createOrGetDMChannel, subscribeToAllChannelsAdmin
+  setupSubscriptionListener, createOrGetDMChannel, subscribeToAllChannelsAdmin, addCommentToChannel
 } from './services/firestoreService';
 import { getUserChannels, saveUserChannel, deleteUserChannel } from './utils/db';
-import { HANDCRAFTED_CHANNELS, CATEGORY_STYLES, TOPIC_CATEGORIES } from './utils/initialData';
-import { OFFLINE_CHANNEL_ID } from './utils/offlineContent';
+import { HANDCRAFTED_CHANNELS } from './utils/initialData';
 import { warmUpAudioContext, stopAllPlatformAudio, isAnyAudioPlaying } from './utils/audioUtils';
-
-const APP_VERSION = "v3.85.2"; 
 
 const UI_TEXT = {
   en: {
@@ -121,7 +113,7 @@ const UI_TEXT = {
   }
 };
 
-type ExtendedViewState = ViewState | 'firestore_debug' | 'my_channel_debug' | 'card_viewer';
+type ExtendedViewState = ViewState | 'firestore_debug' | 'my_channel_debug';
 
 const App: React.FC = () => {
   const [language, setLanguage] = useState<'en' | 'zh'>('en');
@@ -153,13 +145,8 @@ const App: React.FC = () => {
   const [isPrivacyOpen, setIsPrivacyOpen] = useState(false);
 
   const [activeTab, setActiveTab] = useState('categories');
-  const [selectedCategory, setSelectedCategory] = useState('All');
   const [searchQuery, setSearchQuery] = useState('');
   
-  // Layout & Sorting
-  const [layoutMode, setLayoutMode] = useState<'grid' | 'table'>('grid');
-  const [sortConfig, setSortConfig] = useState<{ key: SortKey; direction: 'asc' | 'desc' }>({ key: 'createdAt', direction: 'desc' });
-
   // Data State
   const [channels, setChannels] = useState<Channel[]>(HANDCRAFTED_CHANNELS);
   const [publicChannels, setPublicChannels] = useState<Channel[]>([]);
@@ -209,7 +196,6 @@ const App: React.FC = () => {
 
   const allApps = [
     { id: 'podcasts', label: t.podcasts, icon: Podcast, action: () => { handleSetViewState('directory'); setActiveTab('categories'); }, color: 'text-indigo-400' },
-    { id: 'icon_lab', label: t.icons, icon: AppWindow, action: () => handleSetViewState('icon_generator'), color: 'text-cyan-400' },
     { id: 'mission', label: t.mission, icon: Rocket, action: () => handleSetViewState('mission'), color: 'text-orange-500' },
     { id: 'code_studio', label: t.code, icon: Code, action: () => handleSetViewState('code_studio'), color: 'text-blue-400' },
     { id: 'notebook_viewer', label: t.notebooks, icon: Book, action: () => handleSetViewState('notebook_viewer'), color: 'text-orange-300' },
@@ -320,12 +306,10 @@ const App: React.FC = () => {
 
     if (view === 'card' && id) {
         setViewCardId(id);
-        handleSetViewState('card_viewer');
+        handleSetViewState('card_workshop' as ExtendedViewState);
     } else if (view === 'card_workshop') {
         if (id) setViewCardId(id);
-        handleSetViewState('card_workshop');
-    } else if (view === 'card_explorer') {
-        handleSetViewState('card_explorer');
+        handleSetViewState('card_workshop' as ExtendedViewState);
     } else if (view === 'code') {
         handleSetViewState('code_studio');
     } else if (view === 'whiteboard') {
@@ -343,7 +327,7 @@ const App: React.FC = () => {
     } else if (view === 'notebooks') {
         handleSetViewState('notebook_viewer');
     } else if (view === 'icons') {
-        handleSetViewState('icon_generator');
+        handleSetViewState('icon_generator' as ExtendedViewState);
     } else if (view === 'podcast' && id) {
         setActiveChannelId(id);
         handleSetViewState('podcast_detail');
@@ -369,7 +353,7 @@ const App: React.FC = () => {
     } else if (view === 'debug_storage') {
         handleSetViewState('cloud_debug');
     } else if (view === 'debug_registry') {
-        handleSetViewState('public_debug');
+        handleSetViewState('public_debug' as ExtendedViewState);
     } else if (view === 'debug_my_channels') {
         handleSetViewState('my_channel_debug');
     }
@@ -438,14 +422,12 @@ const App: React.FC = () => {
               case 'mission': viewParam = 'mission'; break;
               case 'notebook_viewer': viewParam = 'notebooks'; break;
               case 'card_workshop': viewParam = 'card_workshop'; break;
-              case 'card_explorer': viewParam = 'card_explorer'; break;
-              case 'card_viewer': viewParam = 'card'; break;
-              case 'icon_generator': viewParam = 'icons'; break;
+              case 'icon_generator' as any: viewParam = 'icons'; break;
               case 'podcast_detail': viewParam = 'podcast'; break;
               case 'debug': viewParam = 'debug_local'; break;
               case 'firestore_debug': viewParam = 'debug_firestore'; break;
               case 'cloud_debug': viewParam = 'debug_storage'; break;
-              case 'public_debug': viewParam = 'debug_registry'; break;
+              case 'public_debug' as any: viewParam = 'debug_registry'; break;
               case 'my_channel_debug': viewParam = 'debug_my_channels'; break;
               default: viewParam = null;
           }
@@ -457,9 +439,7 @@ const App: React.FC = () => {
               params.set('id', activeChannelId);
           } else if (viewState === 'card_workshop' && viewCardId) {
               params.set('id', viewCardId);
-          } else if (viewState === 'card_viewer' && viewCardId) {
-              params.set('id', viewCardId);
-          } else if (viewState !== 'podcast_detail' && viewState !== 'card_viewer' && viewState !== 'card_workshop') {
+          } else if (viewState !== 'podcast_detail' && viewState !== 'card_workshop') {
               params.delete('id');
           }
       } else {
@@ -473,7 +453,6 @@ const App: React.FC = () => {
   useEffect(() => {
       if (currentUser && isFirebaseConfigured) {
           const unsub = setupSubscriptionListener(currentUser.uid, (newTier) => {
-              console.log("Subscription status updated:", newTier);
               setUserProfile(prev => prev ? { ...prev, subscriptionTier: newTier } : prev);
           });
           return () => unsub();
@@ -729,13 +708,6 @@ const App: React.FC = () => {
       }
   };
 
-  const handleSort = (key: SortKey) => {
-      setSortConfig(current => ({
-          key,
-          direction: current.key === key && current.direction === 'desc' ? 'asc' : 'desc'
-      }));
-  };
-
   const feedChannels = useMemo(() => {
       let data = [...channels];
       
@@ -814,10 +786,6 @@ const App: React.FC = () => {
 
   if (viewState === 'mission') {
       return <MissionManifesto onBack={() => handleSetViewState('directory')} />;
-  }
-
-  if (viewState === 'card_viewer') {
-      return <CardWorkshop onBack={() => { handleSetViewState('directory'); setViewCardId(undefined); }} cardId={viewCardId} isViewer={true} />;
   }
 
   if (!currentUser) {
@@ -1165,13 +1133,6 @@ const App: React.FC = () => {
         {viewState === 'user_guide' && <UserManual onBack={() => handleSetViewState('directory')} />}
         {viewState === 'notebook_viewer' && <NotebookViewer onBack={() => handleSetViewState('directory')} currentUser={currentUser} />}
         {viewState === 'card_workshop' && <CardWorkshop onBack={() => handleSetViewState('directory')} cardId={viewCardId} />}
-        {viewState === 'card_explorer' && (
-            <CardExplorer 
-                onBack={() => handleSetViewState('directory')}
-                onOpenCard={(id) => { setViewCardId(id); handleSetViewState('card_workshop'); }}
-                onCreateNew={() => { setViewCardId(undefined); handleSetViewState('card_workshop'); }}
-            />
-        )}
         
         {viewState === 'code_studio' && (
             <CodeStudio 
@@ -1186,7 +1147,7 @@ const App: React.FC = () => {
             />
         )}
 
-        {viewState === 'icon_generator' && (
+        {viewState === ('icon_generator' as any) && (
             <IconGenerator 
                 onBack={() => { handleSetViewState('directory'); }}
                 currentUser={currentUser}
@@ -1318,7 +1279,7 @@ const App: React.FC = () => {
 
         {viewState === 'debug' && <DebugView onBack={() => handleSetViewState('directory')} />}
         {viewState === 'cloud_debug' && <CloudDebugView onBack={() => handleSetViewState('directory')} />}
-        {viewState === 'public_debug' && <PublicChannelInspector onBack={() => handleSetViewState('directory')} />}
+        {viewState === ('public_debug' as any) && <PublicChannelInspector onBack={() => handleSetViewState('directory')} />}
         {viewState === 'my_channel_debug' && <MyChannelInspector onBack={() => handleSetViewState('directory')} />}
         {viewState === 'firestore_debug' && <FirestoreInspector onBack={() => handleSetViewState('directory')} />}
       </div>

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Channel, Group, Chapter } from '../types';
-import { X, Podcast, Sparkles, Lock, Globe, Users, FileText, Loader2, Clipboard, Crown, Calendar } from 'lucide-react';
+import { X, Sparkles, Lock, Globe, Users, FileText, Loader2, Clipboard, Crown, Calendar } from 'lucide-react';
 import { getUserGroups, getUserProfile } from '../services/firestoreService';
 import { generateChannelFromDocument } from '../services/channelGenerator';
 import { auth } from '../services/firebaseConfig';
@@ -86,7 +86,6 @@ export const CreateChannelModal: React.FC<CreateChannelModalProps> = ({ isOpen, 
     const imagePrompt = encodeURIComponent(`${title} ${description} digital art masterpiece`);
     
     // Calculate timestamp from releaseDate input (local time -> timestamp)
-    // We construct the date using local year/month/day to ensure it lands on the correct day in Calendar
     const [year, month, day] = releaseDate.split('-').map(Number);
     const targetDate = new Date(year, month - 1, day); // Month is 0-indexed
     const now = new Date();
@@ -253,7 +252,7 @@ export const CreateChannelModal: React.FC<CreateChannelModalProps> = ({ isOpen, 
                       onClick={() => setVisibility('private')}
                       className={`flex-1 py-2 rounded-lg text-sm font-medium flex items-center justify-center space-x-2 border transition-all ${visibility === 'private' ? 'bg-indigo-600 border-indigo-500 text-white' : !isPro ? 'bg-slate-900/50 border-slate-800 text-slate-600 cursor-not-allowed' : 'bg-slate-800 border-slate-700 text-slate-400 hover:bg-slate-700'}`}
                     >
-                      {isPro ? <Lock size={14} /> : <Lock size={14} />}
+                      <Lock size={14} />
                       <span>Private</span>
                     </button>
                     <button
@@ -270,7 +269,7 @@ export const CreateChannelModal: React.FC<CreateChannelModalProps> = ({ isOpen, 
                       onClick={() => setVisibility('group')}
                       className={`flex-1 py-2 rounded-lg text-sm font-medium flex items-center justify-center space-x-2 border transition-all ${visibility === 'group' ? 'bg-purple-600 border-purple-500 text-white' : !isPro ? 'bg-slate-900/50 border-slate-800 text-slate-600 cursor-not-allowed' : 'bg-slate-800 border-slate-700 text-slate-400 hover:bg-slate-700'}`}
                     >
-                      {isPro ? <Users size={14} /> : <Users size={14} />}
+                      <Users size={14} />
                       <span>Group</span>
                     </button>
                 </div>
@@ -299,7 +298,6 @@ export const CreateChannelModal: React.FC<CreateChannelModalProps> = ({ isOpen, 
               <div>
                 <label className="block text-sm font-medium text-slate-400 mb-1">
                   AI Persona Instruction
-                  <span className="text-xs text-slate-500 ml-2">(System Prompt)</span>
                 </label>
                 <textarea 
                   required
@@ -322,7 +320,7 @@ export const CreateChannelModal: React.FC<CreateChannelModalProps> = ({ isOpen, 
                       className={`px-3 py-2 rounded-lg text-sm font-medium transition-all border ${
                         voice === v 
                           ? 'bg-indigo-600 border-indigo-500 text-white' 
-                          : 'bg-slate-800 border-slate-700 text-slate-400 hover:bg-slate-700'
+                          : 'bg-slate-800 border-slate-700 text-slate-400'
                       }`}
                     >
                       {v}
