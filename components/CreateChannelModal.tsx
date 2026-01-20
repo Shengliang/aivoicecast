@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { Channel, Group, Chapter } from '../types';
 import { X, Sparkles, Lock, Globe, Users, FileText, Loader2, Clipboard, Crown, Calendar } from 'lucide-react';
@@ -47,7 +48,7 @@ export const CreateChannelModal: React.FC<CreateChannelModalProps> = ({ isOpen, 
       setScriptText('');
       setImportedChapters([]);
       setActiveTab('manual');
-      setVisibility('public'); // Default to public for free users
+      setVisibility('private'); // Default to private for everyone now
       
       // Set initial date if provided, else today.
       // Format as YYYY-MM-DD in local time
@@ -55,12 +56,10 @@ export const CreateChannelModal: React.FC<CreateChannelModalProps> = ({ isOpen, 
       const localIso = dateToUse.toLocaleDateString('en-CA'); // YYYY-MM-DD format
       setReleaseDate(localIso);
       
-      // Check Membership
+      // Check Membership (Still check for stats/UI but remove hard blocking)
       getUserProfile(currentUser.uid).then(profile => {
           const pro = profile?.subscriptionTier === 'pro';
           setIsPro(pro);
-          // If pro, default to private for convenience
-          if (pro) setVisibility('private');
       });
     }
   }, [isOpen, currentUser, initialDate]);
@@ -145,9 +144,6 @@ export const CreateChannelModal: React.FC<CreateChannelModalProps> = ({ isOpen, 
     } catch(e) {}
   };
 
-  /**
-   * Fix: Ensuring correct JSX for standard HTML elements in auth check
-   */
   if (!currentUser) {
     return (
       <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
@@ -241,19 +237,18 @@ export const CreateChannelModal: React.FC<CreateChannelModalProps> = ({ isOpen, 
                   </div>
               )}
 
-              {/* Visibility Section */}
+              {/* Visibility Section - Pro Restrictions Removed */}
               <div className="bg-slate-800/50 p-4 rounded-lg border border-slate-700 space-y-3">
                 <div className="flex justify-between items-center">
                     <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider">Visibility & Sharing</label>
-                    {!isPro && <span className="text-[10px] text-amber-400 flex items-center gap-1"><Crown size={10}/> Upgrade for Private</span>}
+                    <span className="text-[10px] text-indigo-400 flex items-center gap-1 font-bold uppercase tracking-tighter">Features Available to All</span>
                 </div>
                 
                 <div className="flex gap-2">
                     <button
                       type="button"
-                      disabled={!isPro}
                       onClick={() => setVisibility('private')}
-                      className={`flex-1 py-2 rounded-lg text-sm font-medium flex items-center justify-center space-x-2 border transition-all ${visibility === 'private' ? 'bg-indigo-600 border-indigo-500 text-white' : !isPro ? 'bg-slate-900/50 border-slate-800 text-slate-600 cursor-not-allowed' : 'bg-slate-800 border-slate-700 text-slate-400 hover:bg-slate-700'}`}
+                      className={`flex-1 py-2 rounded-lg text-sm font-medium flex items-center justify-center space-x-2 border transition-all ${visibility === 'private' ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-slate-800 border-slate-700 text-slate-400 hover:border-slate-500 hover:text-slate-200'}`}
                     >
                       <Lock size={14} />
                       <span>Private</span>
@@ -261,16 +256,15 @@ export const CreateChannelModal: React.FC<CreateChannelModalProps> = ({ isOpen, 
                     <button
                       type="button"
                       onClick={() => setVisibility('public')}
-                      className={`flex-1 py-2 rounded-lg text-sm font-medium flex items-center justify-center space-x-2 border transition-all ${visibility === 'public' ? 'bg-emerald-600 border-emerald-500 text-white' : 'bg-slate-800 border-slate-700 text-slate-400 hover:bg-slate-700'}`}
+                      className={`flex-1 py-2 rounded-lg text-sm font-medium flex items-center justify-center space-x-2 border transition-all ${visibility === 'public' ? 'bg-emerald-600 border-emerald-500 text-white' : 'bg-slate-800 border-slate-700 text-slate-400 hover:border-slate-500 hover:text-slate-200'}`}
                     >
                       <Globe size={14} />
                       <span>Public</span>
                     </button>
                     <button
                       type="button"
-                      disabled={!isPro}
                       onClick={() => setVisibility('group')}
-                      className={`flex-1 py-2 rounded-lg text-sm font-medium flex items-center justify-center space-x-2 border transition-all ${visibility === 'group' ? 'bg-purple-600 border-purple-500 text-white' : !isPro ? 'bg-slate-900/50 border-slate-800 text-slate-600 cursor-not-allowed' : 'bg-slate-800 border-slate-700 text-slate-400 hover:bg-slate-700'}`}
+                      className={`flex-1 py-2 rounded-lg text-sm font-medium flex items-center justify-center space-x-2 border transition-all ${visibility === 'group' ? 'bg-purple-600 border-purple-500 text-white' : 'bg-slate-800 border-slate-700 text-slate-400 hover:border-slate-500 hover:text-slate-200'}`}
                     >
                       <Users size={14} />
                       <span>Group</span>

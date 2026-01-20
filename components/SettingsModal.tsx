@@ -305,26 +305,25 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                         </div>
                                     </label>
 
-                                    <label className={`flex items-center justify-between p-3 rounded-lg border transition-all ${!isPaid ? 'opacity-60 cursor-not-allowed bg-slate-900/30 border-slate-800' : 'cursor-pointer'} ${isPaid && aiProvider === 'openai' ? 'bg-emerald-900/20 border-emerald-500' : isPaid ? 'bg-slate-900/50 border-slate-700 hover:bg-slate-800' : ''}`}>
+                                    <label className={`flex items-center justify-between p-3 rounded-lg border cursor-pointer transition-all ${aiProvider === 'openai' ? 'bg-emerald-900/20 border-emerald-500' : 'bg-slate-900/50 border-slate-700 hover:bg-slate-800'}`}>
                                         <div className="flex items-center gap-3">
                                             <input 
                                                 type="radio" 
                                                 name="ai_provider" 
                                                 value="openai"
                                                 checked={aiProvider === 'openai'}
-                                                onChange={() => isPaid && setAiProvider('openai')}
-                                                disabled={!isPaid}
+                                                onChange={() => setAiProvider('openai')}
                                                 className="accent-emerald-500"
                                             />
                                             <div>
                                                 <p className="text-sm font-bold text-white flex items-center gap-2">
                                                     OpenAI GPT-4o 
-                                                    {!isPaid && <span className="text-[10px] bg-amber-900/50 text-amber-400 px-1.5 py-0.5 rounded flex items-center gap-1 border border-amber-500/30"><Lock size={8}/> Pro Only</span>}
+                                                    <span className="text-[10px] bg-indigo-600/40 text-indigo-200 px-1.5 py-0.5 rounded border border-indigo-500/20 ml-1 uppercase font-bold">Available to All</span>
                                                 </p>
-                                                <p className="text-xs text-slate-500">Advanced reasoning. Requires Pro Membership.</p>
+                                                <p className="text-xs text-slate-500">Advanced reasoning. High quality logic.</p>
                                             </div>
                                         </div>
-                                        {aiProvider === 'openai' && isPaid && <Sparkles size={16} className="text-emerald-400" />}
+                                        {aiProvider === 'openai' && <Sparkles size={16} className="text-emerald-400" />}
                                     </label>
                                 </div>
                             </div>
@@ -380,7 +379,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                 {isPaid && <span className="bg-emerald-900/30 text-emerald-400 px-2 py-0.5 rounded text-xs font-bold border border-emerald-500/30">Active</span>}
                             </div>
                             <p className="text-xs text-slate-400 mt-2 max-w-sm">
-                                {isPaid ? "You have access to all premium features including Neural Voices, OpenAI Models, and Private Groups." : "Upgrade to Pro to unlock Neural Voices, Private Channels, OpenAI Models, and Unlimited Generation."}
+                                {isPaid ? "You have access to all premium features including Neural Voices, OpenAI Models, and Private Groups." : "Upgrade to Pro to unlock extra AI credits and private features."}
                             </p>
                         </div>
                         
